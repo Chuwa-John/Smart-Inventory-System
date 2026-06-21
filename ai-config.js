@@ -1,3 +1,3 @@
 export const aiConfig = {
-  proxyUrl: "http://localhost:8787/api/ai/advisor"
+  proxyUrl: "https://sanitaryflow-ai-proxy.onrender.com/api/ai/advisor"
 };
