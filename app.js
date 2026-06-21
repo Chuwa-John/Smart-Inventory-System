@@ -181,10 +181,13 @@ const state = {
   cart: [],
   sortKey: "name",
   sortDirection: 1,
+  authMode: "signup",
   firebaseReady: false,
   db: null,
   auth: null,
-  user: null
+  user: null,
+  unsubscribeProducts: null,
+  pendingBusinessName: ""
 };
 
 const currency = new Intl.NumberFormat("en-KE", {
@@ -195,6 +198,15 @@ const currency = new Intl.NumberFormat("en-KE", {
 
 const qs = (selector) => document.querySelector(selector);
 const qsa = (selector) => [...document.querySelectorAll(selector)];
+
+function esc(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
 
 function money(value) {
   return currency.format(value);
@@ -223,7 +235,7 @@ function calculateMetrics() {
     totalProducts: state.products.length,
     lowStock,
     out,
-    pendingPO: demoPurchases.length
+    pendingPO: state.user ? 0 : demoPurchases.length
   };
 }
 
@@ -358,8 +370,10 @@ function renderMovement() {
 }
 
 function renderFilters() {
+  const selectedCategory = qs("#categoryFilter")?.value || "all";
   const categories = ["all", ...new Set(state.products.map((product) => product.category))];
   qs("#categoryFilter").innerHTML = categories.map((category) => `<option value="${category}">${category === "all" ? "All categories" : category}</option>`).join("");
+  qs("#categoryFilter").value = categories.includes(selectedCategory) ? selectedCategory : "all";
 }
 
 function filteredProducts() {
@@ -382,21 +396,26 @@ function filteredProducts() {
 }
 
 function renderInventory() {
-  qs("#inventoryTable").innerHTML = filteredProducts()
+  const products = filteredProducts();
+  qs("#inventoryTable").innerHTML = products
     .map((product) => {
       const status = stockStatus(product);
       const label = status === "out" ? "Out of stock" : status === "low" ? "Low stock" : "Healthy";
       return `<tr>
-        <td><strong>${product.name}</strong><br><small>${product.brand} - ${product.shelf}</small></td>
-        <td>${product.category}</td>
-        <td>${product.sku}</td>
+        <td><strong>${esc(product.name)}</strong><br><small>${esc(product.brand)} - ${esc(product.shelf)}</small></td>
+        <td>${esc(product.category)}</td>
+        <td>${esc(product.sku)}</td>
         <td>${product.quantity}</td>
         <td>${product.reorderLevel}</td>
         <td>${money(product.sellingPrice)}</td>
         <td><span class="status ${status}">${label}</span></td>
+        <td class="table-actions">
+          <button class="ghost-button compact" data-edit-product="${product.id}">Edit</button>
+          <button class="ghost-button compact danger" data-delete-product="${product.id}">Delete</button>
+        </td>
       </tr>`;
     })
-    .join("");
+    .join("") || `<tr><td colspan="8" class="empty-state">No inventory yet. Add your first material or product to start tracking stock.</td></tr>`;
 }
 
 function renderPos() {
@@ -405,14 +424,14 @@ function renderPos() {
   qs("#posProducts").innerHTML = products
     .slice(0, 8)
     .map((product) => `<button class="pos-product" data-add-cart="${product.id}">
-      <strong>${product.name}</strong>
-      <span class="muted">${product.sku} - ${money(product.sellingPrice)} - ${product.quantity} available</span>
+      <strong>${esc(product.name)}</strong>
+      <span class="muted">${esc(product.sku)} - ${money(product.sellingPrice)} - ${product.quantity} available</span>
     </button>`)
     .join("");
 
   qs("#cartCount").textContent = state.cart.reduce((sum, item) => sum + item.qty, 0);
   qs("#cartItems").innerHTML = state.cart
-    .map((item) => `<div class="cart-item"><strong>${item.name}</strong><span class="muted">${item.qty} x ${money(item.sellingPrice)}</span></div>`)
+    .map((item) => `<div class="cart-item"><strong>${esc(item.name)}</strong><span class="muted">${item.qty} x ${money(item.sellingPrice)}</span></div>`)
     .join("") || `<span class="muted">No items in cart.</span>`;
   qs("#cartTotal").textContent = money(state.cart.reduce((sum, item) => sum + item.qty * item.sellingPrice, 0));
 }
@@ -524,19 +543,49 @@ function exportCsv() {
   URL.revokeObjectURL(url);
 }
 
-async function addProduct(product) {
-  product.id = crypto.randomUUID();
-  product.sold30 = 0;
-  product.sold90 = 0;
-  product.leadTimeDays = 10;
-  state.products.push(product);
+function productCollectionPath() {
+  if (!state.db || !state.user) return null;
+  return ["users", state.user.uid, "products"];
+}
 
-  if (state.db) {
+function openProductDialog(product = null) {
+  const form = qs("#productForm");
+  form.reset();
+  qs("#productDialogTitle").textContent = product ? "Edit Inventory Product" : "Add Inventory Product";
+  form.elements.id.value = product?.id || "";
+  if (product) {
+    Object.entries(product).forEach(([key, value]) => {
+      if (form.elements[key]) form.elements[key].value = value ?? "";
+    });
+  }
+  qs("#productDialog").showModal();
+}
+
+async function saveProduct(product) {
+  const existing = product.id ? state.products.find((item) => item.id === product.id) : null;
+  product.id = product.id || crypto.randomUUID();
+  product.sold30 = Number(existing?.sold30 ?? product.sold30 ?? 0);
+  product.sold90 = Number(existing?.sold90 ?? product.sold90 ?? 0);
+  product.leadTimeDays = Number(existing?.leadTimeDays ?? product.leadTimeDays ?? 10);
+
+  const localProduct = { ...existing, ...product };
+  state.products = existing
+    ? state.products.map((item) => (item.id === product.id ? localProduct : item))
+    : [...state.products, localProduct];
+
+  if (state.db && state.user) {
     try {
       const { collection, doc, serverTimestamp, setDoc } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js");
-      product.createdAt = serverTimestamp();
-      product.updatedAt = serverTimestamp();
-      await setDoc(doc(collection(state.db, "products"), product.id), product);
+      const [root, uid, child] = productCollectionPath();
+      await setDoc(
+        doc(collection(state.db, root, uid, child), product.id),
+        {
+          ...product,
+          createdAt: existing?.createdAt || serverTimestamp(),
+          updatedAt: serverTimestamp()
+        },
+        { merge: true }
+      );
     } catch (error) {
       console.warn(error);
       showToast("Saved locally. Firestore write failed.");
@@ -544,7 +593,27 @@ async function addProduct(product) {
   }
 
   renderAll();
-  showToast(`${product.name} added to inventory.`);
+  showToast(`${product.name} saved to inventory.`);
+}
+
+async function deleteProduct(productId) {
+  const product = state.products.find((item) => item.id === productId);
+  if (!product) return;
+  if (!window.confirm(`Delete ${product.name} from inventory?`)) return;
+
+  state.products = state.products.filter((item) => item.id !== productId);
+  state.cart = state.cart.filter((item) => item.id !== productId);
+  if (state.db && state.user) {
+    try {
+      const { deleteDoc, doc } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js");
+      await deleteDoc(doc(state.db, "users", state.user.uid, "products", productId));
+    } catch (error) {
+      console.warn(error);
+      showToast("Deleted locally. Firestore delete failed.");
+    }
+  }
+  renderAll();
+  showToast(`${product.name} deleted.`);
 }
 
 async function initFirebase() {
@@ -554,63 +623,52 @@ async function initFirebase() {
   try {
     const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js");
     const { getAnalytics, isSupported } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-analytics.js");
-    const { getAuth, signInAnonymously, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js");
-    const { getFirestore, collection, onSnapshot } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js");
+    const { getAuth, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js");
+    const { getFirestore } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js");
     const app = initializeApp(firebaseConfig);
     if (firebaseConfig.measurementId && (await isSupported())) {
       getAnalytics(app);
     }
     state.auth = getAuth(app);
     state.db = getFirestore(app);
-    await signInAnonymously(state.auth);
     state.firebaseReady = true;
     qs(".status-dot").classList.add("connected");
     qs("#connectionLabel").textContent = "Firebase connected";
+    qs("#connectionHint").textContent = "Create an account to begin";
 
     onAuthStateChanged(state.auth, async (user) => {
       state.user = user;
+      updateAuthUi();
       if (user) {
         await ensureUserProfile(user);
-      }
-    });
-
-    onSnapshot(collection(state.db, "products"), (snapshot) => {
-      if (!snapshot.empty) {
-        state.products = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-        renderAll();
+        state.pendingBusinessName = "";
+        subscribeToProducts();
       } else {
-        state.products = [...demoProducts];
+        if (state.unsubscribeProducts) state.unsubscribeProducts();
+        state.unsubscribeProducts = null;
+        state.products = [];
+        state.cart = [];
         renderAll();
-        seedDemoProducts();
       }
     });
   } catch (error) {
     console.warn(error);
-    const message = error?.code === "auth/admin-restricted-operation"
-      ? "Enable Anonymous sign-in in Firebase Auth."
-      : "Firebase config found, but connection failed.";
-    showToast(message);
+    showToast("Firebase config found, but connection failed.");
   }
 }
 
-async function seedDemoProducts() {
-  if (!state.db || localStorage.getItem("sanitaryflowSeededProducts") === "true") return;
+async function subscribeToProducts() {
+  if (!state.db || !state.user) return;
+  if (state.unsubscribeProducts) state.unsubscribeProducts();
   try {
-    const { collection, doc, serverTimestamp, writeBatch } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js");
-    const batch = writeBatch(state.db);
-    demoProducts.forEach((product) => {
-      batch.set(doc(collection(state.db, "products"), product.id), {
-        ...product,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
+    const { collection, onSnapshot } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js");
+    state.unsubscribeProducts = onSnapshot(collection(state.db, "users", state.user.uid, "products"), (snapshot) => {
+      state.products = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      renderAll();
     });
-    await batch.commit();
-    localStorage.setItem("sanitaryflowSeededProducts", "true");
-    showToast("Demo inventory seeded to Firestore.");
   } catch (error) {
     console.warn(error);
-    showToast("Could not seed demo inventory to Firestore.");
+    showToast("Could not load your inventory.");
   }
 }
 
@@ -618,18 +676,65 @@ async function ensureUserProfile(user) {
   if (!state.db) return;
   try {
     const { doc, serverTimestamp, setDoc } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js");
-    await setDoc(
-      doc(state.db, "users", user.uid),
-      {
-        uid: user.uid,
-        role: "Owner",
-        authProvider: "anonymous",
-        updatedAt: serverTimestamp()
-      },
-      { merge: true }
-    );
+    await setDoc(doc(state.db, "users", user.uid), {
+      uid: user.uid,
+      email: user.email || "",
+      businessName: state.pendingBusinessName || user.displayName || "",
+      role: "Owner",
+      authProvider: "password",
+      updatedAt: serverTimestamp()
+    }, { merge: true });
   } catch (error) {
     console.warn(error);
+  }
+}
+
+function updateAuthUi() {
+  const signedIn = Boolean(state.user);
+  qs("#authGate").classList.toggle("hidden", signedIn);
+  qs("#accountChip").hidden = !signedIn;
+  qs("#userEmail").textContent = state.user?.email || "Signed in";
+  qs("#connectionHint").textContent = signedIn ? "Your inventory is syncing" : "Sign in to sync inventory";
+}
+
+function setAuthMode(mode) {
+  state.authMode = mode;
+  const isSignup = mode === "signup";
+  qs("#authSubmitButton").textContent = isSignup ? "Create account" : "Sign in";
+  qs("#authModeButton").textContent = isSignup ? "I already have an account" : "Create a new account";
+  qs("#businessName").closest("label").hidden = !isSignup;
+  qs("#authPassword").autocomplete = isSignup ? "new-password" : "current-password";
+}
+
+async function handleAuthSubmit(event) {
+  event.preventDefault();
+  if (!state.auth) return showToast("Firebase is not connected yet.");
+  const form = new FormData(event.currentTarget);
+  const email = String(form.get("email") || "").trim();
+  const password = String(form.get("password") || "");
+  const businessName = String(form.get("businessName") || "").trim();
+
+  try {
+    const authApi = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js");
+    if (state.authMode === "signup") {
+      state.pendingBusinessName = businessName;
+      const credential = await authApi.createUserWithEmailAndPassword(state.auth, email, password);
+      if (businessName) await authApi.updateProfile(credential.user, { displayName: businessName });
+      showToast("Account created. Add your first inventory item.");
+    } else {
+      state.pendingBusinessName = "";
+      await authApi.signInWithEmailAndPassword(state.auth, email, password);
+      showToast("Signed in.");
+    }
+  } catch (error) {
+    console.warn(error);
+    const messages = {
+      "auth/email-already-in-use": "That email already has an account. Sign in instead.",
+      "auth/invalid-credential": "Email or password is incorrect.",
+      "auth/weak-password": "Use a password with at least 6 characters.",
+      "auth/operation-not-allowed": "Enable Email/Password sign-in in Firebase Auth."
+    };
+    showToast(messages[error.code] || "Authentication failed. Check your details and try again.");
   }
 }
 
@@ -658,6 +763,7 @@ function renderCommands(term = "") {
 }
 
 function renderAll() {
+  renderFilters();
   renderKpis();
   renderChart();
   renderAlertsAndRecommendations();
@@ -683,11 +789,19 @@ function bindEvents() {
   qs("#stockFilter").addEventListener("change", renderInventory);
   qs("#posSearch").addEventListener("input", renderPos);
   qs("#exportInventoryButton").addEventListener("click", exportCsv);
-  qs("#newProductButton").addEventListener("click", () => qs("#productDialog").showModal());
-  qs("#inventoryAddButton").addEventListener("click", () => qs("#productDialog").showModal());
+  qs("#newProductButton").addEventListener("click", () => openProductDialog());
+  qs("#inventoryAddButton").addEventListener("click", () => openProductDialog());
   qs("#closeProductDialog").addEventListener("click", () => qs("#productDialog").close());
   qs("#cancelProductDialog").addEventListener("click", () => qs("#productDialog").close());
   qs("#askAiButton").addEventListener("click", askAi);
+  qs("#authForm").addEventListener("submit", handleAuthSubmit);
+  qs("#authModeButton").addEventListener("click", () => setAuthMode(state.authMode === "signup" ? "signin" : "signup"));
+  qs("#signOutButton").addEventListener("click", async () => {
+    if (!state.auth) return;
+    const { signOut } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js");
+    await signOut(state.auth);
+    showToast("Signed out.");
+  });
 
   qsa("[data-question]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -714,6 +828,17 @@ function bindEvents() {
       if (cartItem) cartItem.qty += 1;
       else state.cart.push({ ...product, qty: 1 });
       renderPos();
+    }
+
+    const editButton = event.target.closest("[data-edit-product]");
+    if (editButton) {
+      const product = state.products.find((item) => item.id === editButton.dataset.editProduct);
+      if (product) openProductDialog(product);
+    }
+
+    const deleteButton = event.target.closest("[data-delete-product]");
+    if (deleteButton) {
+      deleteProduct(deleteButton.dataset.deleteProduct);
     }
 
     const command = event.target.closest("[data-command-view]");
@@ -747,13 +872,13 @@ function bindEvents() {
         state.cart.forEach((cartItem) => {
           const product = state.products.find((item) => item.id === cartItem.id);
           if (product) {
-            batch.update(doc(state.db, "products", cartItem.id), {
+            batch.update(doc(state.db, "users", state.user.uid, "products", cartItem.id), {
               quantity: product.quantity,
               updatedAt: serverTimestamp()
             });
           }
         });
-        const saleRef = doc(collection(state.db, "sales"));
+        const saleRef = doc(collection(state.db, "users", state.user.uid, "sales"));
         batch.set(saleRef, {
           items: saleItems,
           total,
@@ -762,7 +887,7 @@ function bindEvents() {
           cashierUid: state.user?.uid || null,
           createdAt: serverTimestamp()
         });
-        batch.set(doc(collection(state.db, "auditLogs")), {
+        batch.set(doc(collection(state.db, "users", state.user.uid, "auditLogs")), {
           action: "SALE_COMPLETED",
           total,
           itemCount: saleItems.length,
@@ -788,7 +913,7 @@ function bindEvents() {
     ["costPrice", "sellingPrice", "quantity", "reorderLevel"].forEach((key) => {
       product[key] = Number(product[key]);
     });
-    addProduct(product);
+    saveProduct(product);
     event.currentTarget.reset();
     qs("#productDialog").close();
   });
@@ -809,7 +934,7 @@ function bindEvents() {
   });
 }
 
-renderFilters();
+setAuthMode("signup");
 bindEvents();
 renderAll();
 initFirebase();

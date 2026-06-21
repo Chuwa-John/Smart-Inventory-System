@@ -34,7 +34,7 @@
           <span class="status-dot"></span>
           <div>
             <strong id="connectionLabel">Demo data</strong>
-            <span>Connect Firebase in `firebase-config.js`</span>
+            <span id="connectionHint">Sign in to sync inventory</span>
           </div>
         </div>
       </aside>
@@ -46,6 +46,10 @@
             <span>Search</span>
             <input id="globalSearch" type="search" placeholder="Search products, suppliers, customers..." />
             <kbd>Ctrl K</kbd>
+          </div>
+          <div class="account-chip" id="accountChip" hidden>
+            <span id="userEmail">Signed out</span>
+            <button class="ghost-button compact" id="signOutButton">Sign out</button>
           </div>
           <button class="ghost-button" id="themeButton">Light</button>
           <button class="primary-button" id="newProductButton">Add Product</button>
@@ -146,6 +150,7 @@
                   <th data-sort="reorderLevel">Reorder</th>
                   <th data-sort="sellingPrice">Price</th>
                   <th>Status</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="inventoryTable"></tbody>
@@ -293,9 +298,10 @@
     <dialog id="productDialog">
       <form method="dialog" id="productForm">
         <div class="dialog-head">
-          <h2>Add Inventory Product</h2>
+          <h2 id="productDialogTitle">Add Inventory Product</h2>
           <button class="icon-button" type="button" id="closeProductDialog" aria-label="Close">&times;</button>
         </div>
+        <input name="id" type="hidden" />
         <div class="form-grid">
           <label>Product name<input name="name" required /></label>
           <label>SKU<input name="sku" required /></label>
@@ -317,6 +323,21 @@
         </div>
       </form>
     </dialog>
+
+    <div class="auth-gate" id="authGate" aria-live="polite">
+      <form class="auth-panel" id="authForm">
+        <div>
+          <p class="eyebrow">Account access</p>
+          <h1>SanitaryFlow ERP</h1>
+          <p class="auth-copy">Create an account or sign in to manage your own inventory, prices, sales, and AI recommendations.</p>
+        </div>
+        <label>Business name<input id="businessName" name="businessName" autocomplete="organization" /></label>
+        <label>Email<input id="authEmail" name="email" type="email" autocomplete="email" required /></label>
+        <label>Password<input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="6" required /></label>
+        <button class="primary-button full-width" id="authSubmitButton" type="submit">Create account</button>
+        <button class="ghost-button full-width" id="authModeButton" type="button">I already have an account</button>
+      </form>
+    </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
