@@ -70,4 +70,4 @@ export const aiConfig = {
 - Rotate the Anthropic key if it has ever been pasted into chat, source code, or screenshots.
 - Keep `.env` out of Git.
 - In production, set `REQUIRE_FIREBASE_AUTH=true`.
-- When `REQUIRE_FIREBASE_AUTH=true`, configure your host so Firebase Admin can verify ID tokens. The simplest production approach is to provide Google Application Default Credentials or a service account through your hosting provider's secret manager.
+- When `REQUIRE_FIREBASE_AUTH=true`, set `FIREBASE_PROJECT_ID` to the Firebase project ID. The proxy verifies Firebase ID tokens with Google's Secure Token JWKS, so no Firebase Admin SDK or service-account JSON is required.

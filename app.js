@@ -586,7 +586,10 @@ async function initFirebase() {
     });
   } catch (error) {
     console.warn(error);
-    showToast("Firebase config found, but connection failed.");
+    const message = error?.code === "auth/admin-restricted-operation"
+      ? "Enable Anonymous sign-in in Firebase Auth."
+      : "Firebase config found, but connection failed.";
+    showToast(message);
   }
 }
 
