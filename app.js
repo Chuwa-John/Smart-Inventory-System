@@ -1,183 +1,8 @@
 import { firebaseConfig } from "./firebase-config.js";
 import { aiConfig } from "./ai-config.js";
 
-const demoProducts = [
-  {
-    id: "pvc-001",
-    name: "PVC Pipe 1 inch",
-    sku: "PVC-1IN-001",
-    barcode: "600100000001",
-    category: "PVC Pipes",
-    brand: "FlowMax",
-    supplier: "AquaLine Distributors",
-    description: "Class C pressure pipe, 6 meter length.",
-    costPrice: 520,
-    sellingPrice: 760,
-    quantity: 12,
-    reorderLevel: 20,
-    warehouse: "Main Warehouse",
-    shelf: "A1-03",
-    sold30: 88,
-    sold90: 240,
-    leadTimeDays: 7
-  },
-  {
-    id: "ppr-075",
-    name: "PPR Pipe 3/4 inch",
-    sku: "PPR-075-014",
-    barcode: "600100000014",
-    category: "PPR Pipes",
-    brand: "ThermoFit",
-    supplier: "Prime Plumbing Imports",
-    description: "Hot and cold water PPR pipe.",
-    costPrice: 430,
-    sellingPrice: 690,
-    quantity: 56,
-    reorderLevel: 25,
-    warehouse: "Main Warehouse",
-    shelf: "B2-01",
-    sold30: 102,
-    sold90: 308,
-    leadTimeDays: 10
-  },
-  {
-    id: "valve-012",
-    name: "Brass Ball Valve 1/2 inch",
-    sku: "VAL-BR-012",
-    barcode: "600100000212",
-    category: "Valves",
-    brand: "ValvePro",
-    supplier: "AquaLine Distributors",
-    description: "Full bore brass valve.",
-    costPrice: 350,
-    sellingPrice: 590,
-    quantity: 0,
-    reorderLevel: 15,
-    warehouse: "Main Warehouse",
-    shelf: "C4-08",
-    sold30: 61,
-    sold90: 188,
-    leadTimeDays: 5
-  },
-  {
-    id: "tank-500",
-    name: "Water Tank 500L",
-    sku: "TNK-500-001",
-    barcode: "600100000500",
-    category: "Water Tanks",
-    brand: "Kentank",
-    supplier: "TankWorld Kenya",
-    description: "Food grade vertical water tank.",
-    costPrice: 6200,
-    sellingPrice: 8750,
-    quantity: 8,
-    reorderLevel: 5,
-    warehouse: "Yard",
-    shelf: "Outdoor-2",
-    sold30: 12,
-    sold90: 32,
-    leadTimeDays: 14
-  },
-  {
-    id: "tap-004",
-    name: "Chrome Basin Mixer",
-    sku: "TAP-MIX-004",
-    barcode: "600100000604",
-    category: "Taps and Mixers",
-    brand: "CasaLux",
-    supplier: "Prime Plumbing Imports",
-    description: "Single lever basin mixer.",
-    costPrice: 1450,
-    sellingPrice: 2380,
-    quantity: 22,
-    reorderLevel: 12,
-    warehouse: "Showroom",
-    shelf: "D1-05",
-    sold30: 18,
-    sold90: 53,
-    leadTimeDays: 21
-  },
-  {
-    id: "toilet-eco",
-    name: "Dual Flush Toilet Set",
-    sku: "SAN-WC-ECO",
-    barcode: "600100000704",
-    category: "Toilets",
-    brand: "PureBath",
-    supplier: "Sanitary Hub",
-    description: "Close coupled ceramic toilet with dual flush.",
-    costPrice: 6400,
-    sellingPrice: 9950,
-    quantity: 3,
-    reorderLevel: 6,
-    warehouse: "Showroom",
-    shelf: "Display-1",
-    sold30: 4,
-    sold90: 17,
-    leadTimeDays: 15
-  },
-  {
-    id: "pump-075",
-    name: "Peripheral Water Pump 0.75HP",
-    sku: "PMP-PER-075",
-    barcode: "600100000904",
-    category: "Water Pumps",
-    brand: "HydroLift",
-    supplier: "PumpTech Supplies",
-    description: "Domestic pressure boosting pump.",
-    costPrice: 5200,
-    sellingPrice: 7850,
-    quantity: 14,
-    reorderLevel: 8,
-    warehouse: "Main Warehouse",
-    shelf: "E2-07",
-    sold30: 20,
-    sold90: 49,
-    leadTimeDays: 9
-  },
-  {
-    id: "sink-900",
-    name: "Stainless Kitchen Sink 900mm",
-    sku: "SNK-SS-900",
-    barcode: "600100000804",
-    category: "Sinks",
-    brand: "CasaLux",
-    supplier: "Sanitary Hub",
-    description: "Double bowl stainless steel sink.",
-    costPrice: 3100,
-    sellingPrice: 4950,
-    quantity: 17,
-    reorderLevel: 10,
-    warehouse: "Showroom",
-    shelf: "D4-02",
-    sold30: 8,
-    sold90: 29,
-    leadTimeDays: 12
-  }
-];
-
-const demoSuppliers = [
-  { name: "AquaLine Distributors", contact: "+254 700 010 100", terms: "Net 30", delivery: 6, reliability: 94, spend: 284000 },
-  { name: "Prime Plumbing Imports", contact: "+254 711 232 900", terms: "Net 45", delivery: 14, reliability: 88, spend: 361000 },
-  { name: "Sanitary Hub", contact: "+254 733 900 111", terms: "COD", delivery: 9, reliability: 91, spend: 197000 },
-  { name: "PumpTech Supplies", contact: "+254 722 560 909", terms: "Net 14", delivery: 7, reliability: 96, spend: 122000 }
-];
-
-const demoCustomers = [
-  { name: "Mwangi Construction Ltd", type: "Construction Company", balance: 48500, limit: 150000, purchases: 38 },
-  { name: "BuildRight Contractors", type: "Contractor", balance: 0, limit: 80000, purchases: 21 },
-  { name: "Kileleshwa Hardware", type: "Hardware Retailer", balance: 12600, limit: 60000, purchases: 44 },
-  { name: "Walk-In Customers", type: "Retail", balance: 0, limit: 0, purchases: 312 }
-];
-
-const demoPurchases = [
-  { po: "PO-1042", supplier: "AquaLine Distributors", status: "Awaiting delivery", expected: "2026-06-27", total: 87400 },
-  { po: "PO-1043", supplier: "Prime Plumbing Imports", status: "Pending approval", expected: "2026-07-05", total: 146900 },
-  { po: "PO-1044", supplier: "PumpTech Supplies", status: "Partially received", expected: "2026-06-24", total: 62800 }
-];
-
 const state = {
-  products: [...demoProducts],
+  products: [],
   cart: [],
   sortKey: "name",
   sortDirection: 1,
@@ -189,12 +14,6 @@ const state = {
   unsubscribeProducts: null,
   pendingBusinessName: ""
 };
-
-const currency = new Intl.NumberFormat("en-KE", {
-  style: "currency",
-  currency: "KES",
-  maximumFractionDigits: 0
-});
 
 const qs = (selector) => document.querySelector(selector);
 const qsa = (selector) => [...document.querySelectorAll(selector)];
@@ -208,10 +27,6 @@ function esc(value) {
     .replaceAll("'", "&#039;");
 }
 
-function money(value) {
-  return currency.format(value);
-}
-
 function stockStatus(product) {
   if (product.quantity <= 0) return "out";
   if (product.quantity <= product.reorderLevel) return "low";
@@ -219,39 +34,31 @@ function stockStatus(product) {
 }
 
 function calculateMetrics() {
-  const inventoryValue = state.products.reduce((sum, item) => sum + item.costPrice * item.quantity, 0);
-  const potentialRevenue = state.products.reduce((sum, item) => sum + item.sellingPrice * Math.min(item.quantity, item.sold30), 0);
-  const grossProfit = state.products.reduce((sum, item) => sum + (item.sellingPrice - item.costPrice) * item.sold30, 0);
+  const totalQuantity = state.products.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
   const lowStock = state.products.filter((item) => stockStatus(item) === "low").length;
   const out = state.products.filter((item) => stockStatus(item) === "out").length;
+  const categories = new Set(state.products.map((item) => item.category).filter(Boolean)).size;
+  const suppliers = new Set(state.products.map((item) => item.supplier).filter(Boolean)).size;
 
   return {
-    todaySales: potentialRevenue / 30,
-    weeklyRevenue: potentialRevenue / 4.2,
-    monthlyRevenue: potentialRevenue,
-    grossProfit,
-    netProfit: grossProfit * 0.72,
-    inventoryValue,
+    totalQuantity,
     totalProducts: state.products.length,
+    categories,
+    suppliers,
     lowStock,
-    out,
-    pendingPO: state.user ? 0 : demoPurchases.length
+    out
   };
 }
 
 function renderKpis() {
   const metrics = calculateMetrics();
   const cards = [
-    ["Today's Sales", money(metrics.todaySales), "+8.4%"],
-    ["Weekly Revenue", money(metrics.weeklyRevenue), "+12.1%"],
-    ["Monthly Revenue", money(metrics.monthlyRevenue), "+18.7%"],
-    ["Gross Profit", money(metrics.grossProfit), "+9.3%"],
-    ["Net Profit", money(metrics.netProfit), "+7.9%"],
-    ["Inventory Value", money(metrics.inventoryValue), "Live"],
-    ["Total Products", metrics.totalProducts, "Across branches"],
+    ["Total Products", metrics.totalProducts, "Your account"],
+    ["Total Quantity", metrics.totalQuantity, "Units in stock"],
+    ["Categories", metrics.categories, "Product groups"],
+    ["Suppliers", metrics.suppliers, "From your products"],
     ["Low Stock Items", metrics.lowStock, "Reorder now"],
-    ["Out of Stock Items", metrics.out, "Urgent"],
-    ["Pending Purchase Orders", metrics.pendingPO, "Procurement"]
+    ["Out of Stock Items", metrics.out, "Urgent"]
   ];
 
   qs("#kpiGrid").innerHTML = cards
@@ -262,18 +69,13 @@ function renderKpis() {
 function renderChart() {
   const canvas = qs("#salesChart");
   const ctx = canvas.getContext("2d");
-  const range = qs("#chartRange").value;
-  const dataSets = {
-    daily: [42, 58, 49, 72, 91, 84, 110, 97, 121, 132, 118, 146],
-    weekly: [260, 330, 305, 390, 418, 472, 510, 536, 590, 628, 642, 710],
-    monthly: [1180, 1410, 1320, 1650, 1840, 2010, 2250, 2380, 2520, 2740, 2910, 3180]
-  };
-  const labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const data = dataSets[range];
+  const chartProducts = state.products.slice(0, 12);
+  const labels = chartProducts.map((product) => String(product.name || "Item").slice(0, 10));
+  const data = chartProducts.map((product) => Number(product.quantity || 0));
   const width = canvas.width;
   const height = canvas.height;
   const pad = 44;
-  const max = Math.max(...data) * 1.18;
+  const max = Math.max(...data, 1) * 1.18;
 
   ctx.clearRect(0, 0, width, height);
   ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--line");
@@ -286,8 +88,15 @@ function renderChart() {
     ctx.stroke();
   }
 
+  if (!data.length) {
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted");
+    ctx.font = "15px Inter, sans-serif";
+    ctx.fillText("Add products to see stock levels here.", pad, height / 2);
+    return;
+  }
+
   const points = data.map((value, index) => ({
-    x: pad + ((width - pad * 2) / (data.length - 1)) * index,
+    x: pad + ((width - pad * 2) / Math.max(data.length - 1, 1)) * index,
     y: height - pad - (value / max) * (height - pad * 2)
   }));
 
@@ -320,12 +129,14 @@ function renderChart() {
 }
 
 function reorderRecommendation(product) {
-  const dailyDemand = product.sold90 / 90;
+  const dailyDemand = Number(product.sold90 || 0) / 90;
   const safetyStock = Math.ceil(dailyDemand * 7);
-  const expectedDemandDuringLeadTime = Math.ceil(dailyDemand * product.leadTimeDays);
-  const targetStock = product.reorderLevel + expectedDemandDuringLeadTime + safetyStock;
-  const recommendedQty = Math.max(0, targetStock - product.quantity);
-  const daysUntilStockout = product.quantity === 0 ? 0 : Math.floor(product.quantity / Math.max(dailyDemand, 0.1));
+  const expectedDemandDuringLeadTime = Math.ceil(dailyDemand * Number(product.leadTimeDays || 10));
+  const reorderLevel = Number(product.reorderLevel || 0);
+  const quantity = Number(product.quantity || 0);
+  const targetStock = reorderLevel + expectedDemandDuringLeadTime + safetyStock;
+  const recommendedQty = Math.max(0, targetStock - quantity);
+  const daysUntilStockout = quantity === 0 ? 0 : Math.floor(quantity / Math.max(dailyDemand, 0.1));
   return { recommendedQty, daysUntilStockout, expectedDemandDuringLeadTime };
 }
 
@@ -337,7 +148,7 @@ function renderAlertsAndRecommendations() {
       const status = stockStatus(product);
       return `<div class="alert-item ${status === "out" ? "red" : "amber"}">
         <strong>${product.name}</strong>
-        <span class="muted">${status === "out" ? "Out of stock" : `Below minimum stock. Current stock: ${product.quantity}, minimum: ${product.reorderLevel}.`}</span>
+        <span class="muted">${status === "out" ? "Out of stock" : `Below minimum stock. Current stock: ${product.quantity}.`}</span>
       </div>`;
     })
     .join("") || `<div class="alert-item"><strong>All clear</strong><span class="muted">No low stock or out-of-stock products.</span></div>`;
@@ -352,16 +163,16 @@ function renderAlertsAndRecommendations() {
     .map(({ product, rec }) => `<div class="recommendation">
       <strong>${product.name}</strong>
       <span>Reorder ${rec.recommendedQty} units now.</span>
-      <small class="muted">Estimated stockout in ${rec.daysUntilStockout} days. Lead time: ${product.leadTimeDays} days.</small>
+      <small class="muted">Estimated stockout in ${rec.daysUntilStockout} days.</small>
     </div>`)
     .join("");
 }
 
 function renderMovement() {
   const classes = [
-    ["Fast-moving products", state.products.filter((p) => p.sold30 >= 50).length, "#5ed08f"],
-    ["Slow-moving products", state.products.filter((p) => p.sold30 > 0 && p.sold30 < 12).length, "#f1b44c"],
-    ["Dead stock products", state.products.filter((p) => p.sold90 === 0).length, "#ef6666"],
+    ["Fast-moving products", state.products.filter((p) => Number(p.sold30 || 0) >= 50).length, "#5ed08f"],
+    ["Slow-moving products", state.products.filter((p) => Number(p.sold30 || 0) > 0 && Number(p.sold30 || 0) < 12).length, "#f1b44c"],
+    ["No sales recorded", state.products.filter((p) => Number(p.sold90 || 0) === 0).length, "#ef6666"],
     ["Healthy stock coverage", state.products.filter((p) => stockStatus(p) === "healthy").length, "#6aa7ff"]
   ];
   qs("#movementList").innerHTML = classes
@@ -402,12 +213,11 @@ function renderInventory() {
       const status = stockStatus(product);
       const label = status === "out" ? "Out of stock" : status === "low" ? "Low stock" : "Healthy";
       return `<tr>
-        <td><strong>${esc(product.name)}</strong><br><small>${esc(product.brand)} - ${esc(product.shelf)}</small></td>
+        <td><strong>${esc(product.name)}</strong></td>
         <td>${esc(product.category)}</td>
-        <td>${esc(product.sku)}</td>
+        <td>${esc(product.brand || "-")}</td>
+        <td>${esc(product.supplier || "-")}</td>
         <td>${product.quantity}</td>
-        <td>${product.reorderLevel}</td>
-        <td>${money(product.sellingPrice)}</td>
         <td><span class="status ${status}">${label}</span></td>
         <td class="table-actions">
           <button class="ghost-button compact" data-edit-product="${product.id}">Edit</button>
@@ -415,73 +225,44 @@ function renderInventory() {
         </td>
       </tr>`;
     })
-    .join("") || `<tr><td colspan="8" class="empty-state">No inventory yet. Add your first material or product to start tracking stock.</td></tr>`;
+    .join("") || `<tr><td colspan="7" class="empty-state">No inventory yet. Add your first material or product to start tracking stock.</td></tr>`;
 }
 
 function renderPos() {
   const term = qs("#posSearch").value.trim().toLowerCase();
-  const products = state.products.filter((product) => !term || [product.name, product.sku, product.barcode].join(" ").toLowerCase().includes(term));
+  const products = state.products.filter((product) => !term || [product.name, product.category, product.brand, product.supplier].join(" ").toLowerCase().includes(term));
   qs("#posProducts").innerHTML = products
     .slice(0, 8)
     .map((product) => `<button class="pos-product" data-add-cart="${product.id}">
       <strong>${esc(product.name)}</strong>
-      <span class="muted">${esc(product.sku)} - ${money(product.sellingPrice)} - ${product.quantity} available</span>
+      <span class="muted">${esc(product.category)} - ${esc(product.supplier || "No supplier")} - ${product.quantity} available</span>
     </button>`)
     .join("");
 
   qs("#cartCount").textContent = state.cart.reduce((sum, item) => sum + item.qty, 0);
   qs("#cartItems").innerHTML = state.cart
-    .map((item) => `<div class="cart-item"><strong>${esc(item.name)}</strong><span class="muted">${item.qty} x ${money(item.sellingPrice)}</span></div>`)
+    .map((item) => `<div class="cart-item"><strong>${esc(item.name)}</strong><span class="muted">${item.qty} selected</span></div>`)
     .join("") || `<span class="muted">No items in cart.</span>`;
-  qs("#cartTotal").textContent = money(state.cart.reduce((sum, item) => sum + item.qty * item.sellingPrice, 0));
-}
-
-function renderPurchasing() {
-  qs("#purchaseTable").innerHTML = demoPurchases
-    .map((po) => `<tr><td>${po.po}</td><td>${po.supplier}</td><td>${po.status}</td><td>${po.expected}</td><td>${money(po.total)}</td></tr>`)
-    .join("");
+  qs("#cartTotal").textContent = `${state.cart.reduce((sum, item) => sum + item.qty, 0)} item(s)`;
 }
 
 function renderCards() {
-  qs("#supplierCards").innerHTML = demoSuppliers
-    .map((supplier) => `<article class="entity-card">
-      <strong>${supplier.name}</strong>
-      <span class="muted">${supplier.contact} - ${supplier.terms}</span>
-      <span>Avg delivery: ${supplier.delivery} days</span>
-      <span>Reliability score: ${supplier.reliability}%</span>
-      <span>Purchase spend: ${money(supplier.spend)}</span>
-    </article>`)
-    .join("");
-
-  qs("#customerCards").innerHTML = demoCustomers
-    .map((customer) => `<article class="entity-card">
-      <strong>${customer.name}</strong>
-      <span class="muted">${customer.type}</span>
-      <span>Outstanding: ${money(customer.balance)}</span>
-      <span>Credit limit: ${money(customer.limit)}</span>
-      <span>Purchases: ${customer.purchases}</span>
-    </article>`)
-    .join("");
-
-  const reports = ["Sales Report", "Profit Report", "Inventory Valuation", "Supplier Scorecard", "Customer Balances", "Branch Performance", "Tax Summary", "Dead Stock Report"];
+  const reports = ["Inventory Summary", "Stock Quantity Report", "Supplier List", "Low Stock Report", "Out of Stock Report", "CSV Export"];
   qs("#reportGrid").innerHTML = reports.map((report) => `<article class="report-card"><strong>${report}</strong><span class="muted">Export PDF, Excel, or CSV</span><button class="ghost-button">Generate</button></article>`).join("");
-
-  const zones = ["Main Warehouse - Racks A-E", "Showroom - Displays D1-D5", "Yard - Tanks and HDPE", "Branch 2 - Retail Store"];
-  qs("#warehouseMap").innerHTML = zones.map((zone, index) => `<div class="warehouse-zone"><strong>${zone}</strong><p class="muted">${24 + index * 11} bins tracked with movement history.</p></div>`).join("");
 }
 
 function localAiAnswer(question) {
   const low = state.products.filter((product) => stockStatus(product) !== "healthy");
-  const marginLeaders = [...state.products].sort((a, b) => b.sold30 * (b.sellingPrice - b.costPrice) - a.sold30 * (a.sellingPrice - a.costPrice)).slice(0, 3);
+  const highStock = [...state.products].sort((a, b) => Number(b.quantity || 0) - Number(a.quantity || 0)).slice(0, 3);
   const recs = low.map((product) => ({ product, rec: reorderRecommendation(product) }));
 
-  return `<p><strong>Local recommendation:</strong> ${question || "Focus this week on stock availability and gross margin."}</p>
+  return `<p><strong>Local recommendation:</strong> ${question || "Focus this week on stock availability and clean inventory records."}</p>
   <ul>
     <li>Urgent reorder: ${recs.map(({ product, rec }) => `${product.name} (${rec.recommendedQty} units)`).join(", ") || "none"}.</li>
-    <li>Top profit products: ${marginLeaders.map((product) => product.name).join(", ")}.</li>
-    <li>Supplier watch: Prime Plumbing Imports has the longest lead time, so order earlier for imported fittings and mixers.</li>
+    <li>Highest stocked products: ${highStock.map((product) => product.name).join(", ") || "none"}.</li>
+    <li>Supplier fields come only from products you add to this account.</li>
   </ul>
-  <p class="muted">Spark-plan mode is active. This advisor uses local inventory math; Anthropic needs a separate secure backend or a temporary browser key mode later.</p>`;
+  <p class="muted">This advisor uses only your signed-in inventory snapshot.</p>`;
 }
 
 async function askAi() {
@@ -501,8 +282,6 @@ async function askAi() {
           question,
           snapshot: {
             products: state.products,
-            suppliers: demoSuppliers,
-            purchases: demoPurchases,
             metrics: calculateMetrics()
           }
         })
@@ -532,7 +311,7 @@ function showToast(message) {
 }
 
 function exportCsv() {
-  const headers = ["name", "sku", "barcode", "category", "brand", "supplier", "costPrice", "sellingPrice", "quantity", "reorderLevel", "warehouse", "shelf"];
+  const headers = ["name", "category", "brand", "supplier", "quantity"];
   const rows = state.products.map((product) => headers.map((header) => JSON.stringify(product[header] ?? "")).join(","));
   const blob = new Blob([[headers.join(","), ...rows].join("\n")], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
@@ -622,13 +401,9 @@ async function initFirebase() {
 
   try {
     const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js");
-    const { getAnalytics, isSupported } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-analytics.js");
     const { getAuth, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js");
     const { getFirestore } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js");
     const app = initializeApp(firebaseConfig);
-    if (firebaseConfig.measurementId && (await isSupported())) {
-      getAnalytics(app);
-    }
     state.auth = getAuth(app);
     state.db = getFirestore(app);
     state.firebaseReady = true;
@@ -749,10 +524,6 @@ function renderCommands(term = "") {
     ["dashboard", "Open Dashboard"],
     ["inventory", "Open Inventory"],
     ["pos", "Open Point of Sale"],
-    ["purchasing", "Open Purchasing"],
-    ["suppliers", "Open Suppliers"],
-    ["customers", "Open Customers"],
-    ["warehouse", "Open Warehouse"],
     ["reports", "Open Reports"],
     ["ai", "Open AI Advisor"]
   ].filter(([, label]) => label.toLowerCase().includes(term.toLowerCase()));
@@ -770,7 +541,6 @@ function renderAll() {
   renderMovement();
   renderInventory();
   renderPos();
-  renderPurchasing();
   renderCards();
 }
 
@@ -853,10 +623,12 @@ function bindEvents() {
     const saleItems = state.cart.map((cartItem) => ({
       productId: cartItem.id,
       name: cartItem.name,
-      sku: cartItem.sku,
+      category: cartItem.category || "",
+      brand: cartItem.brand || "",
+      supplier: cartItem.supplier || "",
       qty: cartItem.qty,
-      sellingPrice: cartItem.sellingPrice,
-      lineTotal: cartItem.qty * cartItem.sellingPrice
+      sellingPrice: Number(cartItem.sellingPrice || 0),
+      lineTotal: cartItem.qty * Number(cartItem.sellingPrice || 0)
     }));
     const total = saleItems.reduce((sum, item) => sum + item.lineTotal, 0);
 
@@ -910,9 +682,15 @@ function bindEvents() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const product = Object.fromEntries(form.entries());
-    ["costPrice", "sellingPrice", "quantity", "reorderLevel"].forEach((key) => {
-      product[key] = Number(product[key]);
-    });
+    product.quantity = Number(product.quantity || 0);
+    product.sku = product.sku || `${String(product.name || "ITEM").trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 18) || "ITEM"}-${Date.now().toString().slice(-6)}`;
+    product.barcode = product.barcode || "";
+    product.description = product.description || "";
+    product.costPrice = Number(product.costPrice || 0);
+    product.sellingPrice = Number(product.sellingPrice || 0);
+    product.reorderLevel = Number(product.reorderLevel || 0);
+    product.warehouse = product.warehouse || "";
+    product.shelf = product.shelf || "";
     saveProduct(product);
     event.currentTarget.reset();
     qs("#productDialog").close();

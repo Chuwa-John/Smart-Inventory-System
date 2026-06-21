@@ -22,10 +22,6 @@
           <button class="nav-item active" data-view="dashboard">Dashboard</button>
           <button class="nav-item" data-view="inventory">Inventory</button>
           <button class="nav-item" data-view="pos">Point of Sale</button>
-          <button class="nav-item" data-view="purchasing">Purchasing</button>
-          <button class="nav-item" data-view="suppliers">Suppliers</button>
-          <button class="nav-item" data-view="customers">Customers</button>
-          <button class="nav-item" data-view="warehouse">Warehouse</button>
           <button class="nav-item" data-view="reports">Reports</button>
           <button class="nav-item" data-view="ai">AI Advisor</button>
         </nav>
@@ -33,7 +29,7 @@
         <div class="sidebar-card">
           <span class="status-dot"></span>
           <div>
-            <strong id="connectionLabel">Demo data</strong>
+            <strong id="connectionLabel">Account inventory</strong>
             <span id="connectionHint">Sign in to sync inventory</span>
           </div>
         </div>
@@ -44,7 +40,7 @@
           <button class="icon-button mobile-menu" id="mobileMenuButton" aria-label="Open menu">&#9776;</button>
           <div class="search-wrap">
             <span>Search</span>
-            <input id="globalSearch" type="search" placeholder="Search products, suppliers, customers..." />
+            <input id="globalSearch" type="search" placeholder="Search your products..." />
             <kbd>Ctrl K</kbd>
           </div>
           <div class="account-chip" id="accountChip" hidden>
@@ -70,13 +66,11 @@
             <article class="panel sales-panel">
               <div class="panel-head">
                 <div>
-                  <p class="eyebrow">Sales analytics</p>
-                  <h2>Revenue trend</h2>
+                  <p class="eyebrow">Inventory analytics</p>
+                  <h2>Stock levels</h2>
                 </div>
                 <select id="chartRange" aria-label="Chart range">
-                  <option value="daily">Daily</option>
-                  <option value="weekly">Weekly</option>
-                  <option value="monthly">Monthly</option>
+                  <option value="quantity">Quantity</option>
                 </select>
               </div>
               <canvas id="salesChart" width="900" height="320"></canvas>
@@ -145,10 +139,9 @@
                 <tr>
                   <th data-sort="name">Product</th>
                   <th data-sort="category">Category</th>
-                  <th data-sort="sku">SKU</th>
+                  <th data-sort="brand">Brand</th>
+                  <th data-sort="supplier">Supplier</th>
                   <th data-sort="quantity">Qty</th>
-                  <th data-sort="reorderLevel">Reorder</th>
-                  <th data-sort="sellingPrice">Price</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
@@ -169,7 +162,7 @@
             <article class="panel">
               <div class="panel-head">
                 <h2>Product Search</h2>
-                <input id="posSearch" type="search" placeholder="Scan barcode or search SKU" />
+                <input id="posSearch" type="search" placeholder="Search products" />
               </div>
               <div class="pos-products" id="posProducts"></div>
             </article>
@@ -194,67 +187,6 @@
           </div>
         </section>
 
-        <section class="view" id="purchasing">
-          <div class="page-title">
-            <div>
-              <p class="eyebrow">Procurement</p>
-              <h1>Purchase Management</h1>
-            </div>
-            <button class="primary-button">Create PO</button>
-          </div>
-          <div class="workflow">
-            <div>Draft PO</div>
-            <div>Approval</div>
-            <div>Supplier Invoice</div>
-            <div>Goods Received</div>
-            <div>Stock Updated</div>
-          </div>
-          <article class="panel table-panel">
-            <table>
-              <thead>
-                <tr>
-                  <th>PO</th>
-                  <th>Supplier</th>
-                  <th>Status</th>
-                  <th>Expected</th>
-                  <th>Total</th>
-                </tr>
-              </thead>
-              <tbody id="purchaseTable"></tbody>
-            </table>
-          </article>
-        </section>
-
-        <section class="view" id="suppliers">
-          <div class="page-title">
-            <div>
-              <p class="eyebrow">Partner performance</p>
-              <h1>Supplier Management</h1>
-            </div>
-          </div>
-          <div class="card-grid" id="supplierCards"></div>
-        </section>
-
-        <section class="view" id="customers">
-          <div class="page-title">
-            <div>
-              <p class="eyebrow">Accounts</p>
-              <h1>Customer Management</h1>
-            </div>
-          </div>
-          <div class="card-grid" id="customerCards"></div>
-        </section>
-
-        <section class="view" id="warehouse">
-          <div class="page-title">
-            <div>
-              <p class="eyebrow">Locations</p>
-              <h1>Warehouse & Branch Control</h1>
-            </div>
-          </div>
-          <div class="warehouse-map" id="warehouseMap"></div>
-        </section>
-
         <section class="view" id="reports">
           <div class="page-title">
             <div>
@@ -277,10 +209,10 @@
               <div class="question-grid">
                 <button data-question="Which products will run out soon?">Stockout risk</button>
                 <button data-question="What should I reorder this week?">Reorder plan</button>
-                <button data-question="Which products generate the most profit?">Profit leaders</button>
-                <button data-question="Which products are not selling?">Dead stock</button>
+                <button data-question="Which products have the most stock?">Highest stock</button>
+                <button data-question="Which products have no sales recorded?">No sales recorded</button>
               </div>
-              <textarea id="aiQuestion" rows="5" placeholder="Ask about inventory, suppliers, sales, pricing, or forecasts..."></textarea>
+              <textarea id="aiQuestion" rows="5" placeholder="Ask about your inventory, stock levels, sales, or forecasts..."></textarea>
               <button class="primary-button" id="askAiButton">Ask AI Advisor</button>
             </article>
             <article class="panel ai-answer">
@@ -304,19 +236,11 @@
         <input name="id" type="hidden" />
         <div class="form-grid">
           <label>Product name<input name="name" required /></label>
-          <label>SKU<input name="sku" required /></label>
-          <label>Barcode<input name="barcode" /></label>
           <label>Category<input name="category" required /></label>
           <label>Brand<input name="brand" /></label>
-          <label>Supplier<input name="supplier" /></label>
-          <label>Cost price<input name="costPrice" type="number" min="0" required /></label>
-          <label>Selling price<input name="sellingPrice" type="number" min="0" required /></label>
+          <label>Suppliers<input name="supplier" /></label>
           <label>Quantity<input name="quantity" type="number" min="0" required /></label>
-          <label>Reorder level<input name="reorderLevel" type="number" min="0" required /></label>
-          <label>Warehouse<input name="warehouse" /></label>
-          <label>Shelf<input name="shelf" /></label>
         </div>
-        <label>Description<textarea name="description" rows="3"></textarea></label>
         <div class="button-row end">
           <button class="ghost-button" type="button" id="cancelProductDialog">Cancel</button>
           <button class="primary-button" value="default">Save Product</button>
@@ -329,7 +253,7 @@
         <div>
           <p class="eyebrow">Account access</p>
           <h1>SanitaryFlow ERP</h1>
-          <p class="auth-copy">Create an account or sign in to manage your own inventory, prices, sales, and AI recommendations.</p>
+          <p class="auth-copy">Create an account or sign in to manage your own inventory, stock levels, sales, and AI recommendations.</p>
         </div>
         <label>Business name<input id="businessName" name="businessName" autocomplete="organization" /></label>
         <label>Email<input id="authEmail" name="email" type="email" autocomplete="email" required /></label>

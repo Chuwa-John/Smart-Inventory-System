@@ -8,12 +8,10 @@ service cloud.firestore {
 
     function validProduct() {
       return request.resource.data.name is string
-        && request.resource.data.sku is string
         && request.resource.data.category is string
-        && request.resource.data.costPrice is number
-        && request.resource.data.sellingPrice is number
-        && request.resource.data.quantity is number
-        && request.resource.data.reorderLevel is number;
+        && request.resource.data.brand is string
+        && request.resource.data.supplier is string
+        && request.resource.data.quantity is number;
     }
 
     match /users/{userId} {
@@ -29,18 +27,6 @@ service cloud.firestore {
       match /sales/{saleId} {
         allow read, create: if signedIn() && request.auth.uid == userId;
         allow update, delete: if false;
-      }
-
-      match /purchaseOrders/{poId} {
-        allow read, write: if signedIn() && request.auth.uid == userId;
-      }
-
-      match /suppliers/{supplierId} {
-        allow read, write: if signedIn() && request.auth.uid == userId;
-      }
-
-      match /customers/{customerId} {
-        allow read, write: if signedIn() && request.auth.uid == userId;
       }
 
       match /auditLogs/{logId} {
