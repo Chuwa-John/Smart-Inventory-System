@@ -3,8 +3,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import cors from "cors";
 import express from "express";
 import rateLimit from "express-rate-limit";
-import admin from "firebase-admin";
 import helmet from "helmet";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
@@ -14,15 +14,18 @@ const corsOrigins = String(process.env.CORS_ORIGINS || "http://localhost:5173")
   .filter(Boolean);
 const requireFirebaseAuth = String(process.env.REQUIRE_FIREBASE_AUTH || "false") === "true";
 const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
+const firebaseProjectId = process.env.FIREBASE_PROJECT_ID || "";
+const firebaseIssuer = firebaseProjectId ? `https://securetoken.google.com/${firebaseProjectId}` : "";
+const firebaseJwks = createRemoteJWKSet(
+  new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com")
+);
 
 if (!process.env.ANTHROPIC_API_KEY) {
   throw new Error("ANTHROPIC_API_KEY is required.");
 }
 
-if (requireFirebaseAuth && admin.apps.length === 0) {
-  admin.initializeApp({
-    projectId: process.env.FIREBASE_PROJECT_ID
-  });
+if (requireFirebaseAuth && !firebaseProjectId) {
+  throw new Error("FIREBASE_PROJECT_ID is required when REQUIRE_FIREBASE_AUTH=true.");
 }
 
 const anthropic = new Anthropic({
@@ -121,7 +124,15 @@ async function verifyFirebaseToken(req, res, next) {
     const header = req.headers.authorization || "";
     const token = header.startsWith("Bearer ") ? header.slice(7) : "";
     if (!token) return res.status(401).json({ error: "Missing Firebase auth token." });
-    req.user = await admin.auth().verifyIdToken(token);
+    const { payload } = await jwtVerify(token, firebaseJwks, {
+      issuer: firebaseIssuer,
+      audience: firebaseProjectId
+    });
+    req.user = {
+      uid: payload.sub,
+      email: payload.email || null,
+      firebase: payload.firebase || null
+    };
     return next();
   } catch {
     return res.status(401).json({ error: "Invalid Firebase auth token." });
