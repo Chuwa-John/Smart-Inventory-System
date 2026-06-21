@@ -14,6 +14,6 @@ services:
       - key: CORS_ORIGINS
         value: https://sanitaryflow-erp.web.app,https://sanitaryflow-erp.firebaseapp.com,http://localhost:5173
       - key: REQUIRE_FIREBASE_AUTH
-        value: "false"
+        value: "true"
       - key: FIREBASE_PROJECT_ID
         value: sanitaryflow-erp
