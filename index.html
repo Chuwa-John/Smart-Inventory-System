@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SanitaryFlow ERP</title>
+    <link rel="preconnect" href="https://www.gstatic.com" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <div class="brand">
+          <div class="brand-mark">SF</div>
+          <div>
+            <strong>SanitaryFlow</strong>
+            <span>AI Inventory ERP</span>
+          </div>
+        </div>
+
+        <nav class="nav-list">
+          <button class="nav-item active" data-view="dashboard">Dashboard</button>
+          <button class="nav-item" data-view="inventory">Inventory</button>
+          <button class="nav-item" data-view="pos">Point of Sale</button>
+          <button class="nav-item" data-view="purchasing">Purchasing</button>
+          <button class="nav-item" data-view="suppliers">Suppliers</button>
+          <button class="nav-item" data-view="customers">Customers</button>
+          <button class="nav-item" data-view="warehouse">Warehouse</button>
+          <button class="nav-item" data-view="reports">Reports</button>
+          <button class="nav-item" data-view="ai">AI Advisor</button>
+        </nav>
+
+        <div class="sidebar-card">
+          <span class="status-dot"></span>
+          <div>
+            <strong id="connectionLabel">Demo data</strong>
+            <span>Connect Firebase in `firebase-config.js`</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <button class="icon-button mobile-menu" id="mobileMenuButton" aria-label="Open menu">&#9776;</button>
+          <div class="search-wrap">
+            <span>Search</span>
+            <input id="globalSearch" type="search" placeholder="Search products, suppliers, customers..." />
+            <kbd>Ctrl K</kbd>
+          </div>
+          <button class="ghost-button" id="themeButton">Light</button>
+          <button class="primary-button" id="newProductButton">Add Product</button>
+        </header>
+
+        <section class="view active" id="dashboard">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">Today</p>
+              <h1>Operations Command Center</h1>
+            </div>
+            <div class="branch-pill">Main Branch - Nairobi</div>
+          </div>
+
+          <div class="kpi-grid" id="kpiGrid"></div>
+
+          <div class="dashboard-grid">
+            <article class="panel sales-panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Sales analytics</p>
+                  <h2>Revenue trend</h2>
+                </div>
+                <select id="chartRange" aria-label="Chart range">
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              <canvas id="salesChart" width="900" height="320"></canvas>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Smart alerts</p>
+                  <h2>Needs attention</h2>
+                </div>
+                <span class="count-badge" id="alertCount">0</span>
+              </div>
+              <div class="alert-list" id="alertList"></div>
+            </article>
+          </div>
+
+          <div class="dashboard-grid secondary-grid">
+            <article class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Inventory analytics</p>
+                  <h2>Movement classes</h2>
+                </div>
+              </div>
+              <div class="movement-list" id="movementList"></div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">AI reorder engine</p>
+                  <h2>Purchase recommendations</h2>
+                </div>
+              </div>
+              <div class="recommendation-list" id="recommendationList"></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" id="inventory">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">Stock control</p>
+              <h1>Inventory Management</h1>
+            </div>
+            <div class="button-row">
+              <button class="ghost-button" id="exportInventoryButton">Export CSV</button>
+              <button class="primary-button" id="inventoryAddButton">Add Product</button>
+            </div>
+          </div>
+
+          <div class="filters">
+            <select id="categoryFilter" aria-label="Category filter"></select>
+            <select id="stockFilter" aria-label="Stock status filter">
+              <option value="all">All stock states</option>
+              <option value="low">Low stock</option>
+              <option value="out">Out of stock</option>
+              <option value="healthy">Healthy</option>
+            </select>
+          </div>
+
+          <article class="panel table-panel">
+            <table>
+              <thead>
+                <tr>
+                  <th data-sort="name">Product</th>
+                  <th data-sort="category">Category</th>
+                  <th data-sort="sku">SKU</th>
+                  <th data-sort="quantity">Qty</th>
+                  <th data-sort="reorderLevel">Reorder</th>
+                  <th data-sort="sellingPrice">Price</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="inventoryTable"></tbody>
+            </table>
+          </article>
+        </section>
+
+        <section class="view" id="pos">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">Fast checkout</p>
+              <h1>Point of Sale</h1>
+            </div>
+          </div>
+          <div class="pos-grid">
+            <article class="panel">
+              <div class="panel-head">
+                <h2>Product Search</h2>
+                <input id="posSearch" type="search" placeholder="Scan barcode or search SKU" />
+              </div>
+              <div class="pos-products" id="posProducts"></div>
+            </article>
+            <article class="panel cart-panel">
+              <div class="panel-head">
+                <h2>Current Sale</h2>
+                <span class="count-badge" id="cartCount">0</span>
+              </div>
+              <div id="cartItems" class="cart-items"></div>
+              <div class="cart-total">
+                <span>Total</span>
+                <strong id="cartTotal">KES 0</strong>
+              </div>
+              <div class="payment-grid">
+                <button class="ghost-button">Cash</button>
+                <button class="ghost-button">Mobile Money</button>
+                <button class="ghost-button">Card</button>
+                <button class="ghost-button">Split</button>
+              </div>
+              <button class="primary-button full-width" id="completeSaleButton">Complete Sale</button>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" id="purchasing">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">Procurement</p>
+              <h1>Purchase Management</h1>
+            </div>
+            <button class="primary-button">Create PO</button>
+          </div>
+          <div class="workflow">
+            <div>Draft PO</div>
+            <div>Approval</div>
+            <div>Supplier Invoice</div>
+            <div>Goods Received</div>
+            <div>Stock Updated</div>
+          </div>
+          <article class="panel table-panel">
+            <table>
+              <thead>
+                <tr>
+                  <th>PO</th>
+                  <th>Supplier</th>
+                  <th>Status</th>
+                  <th>Expected</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody id="purchaseTable"></tbody>
+            </table>
+          </article>
+        </section>
+
+        <section class="view" id="suppliers">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">Partner performance</p>
+              <h1>Supplier Management</h1>
+            </div>
+          </div>
+          <div class="card-grid" id="supplierCards"></div>
+        </section>
+
+        <section class="view" id="customers">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">Accounts</p>
+              <h1>Customer Management</h1>
+            </div>
+          </div>
+          <div class="card-grid" id="customerCards"></div>
+        </section>
+
+        <section class="view" id="warehouse">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">Locations</p>
+              <h1>Warehouse & Branch Control</h1>
+            </div>
+          </div>
+          <div class="warehouse-map" id="warehouseMap"></div>
+        </section>
+
+        <section class="view" id="reports">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">Business intelligence</p>
+              <h1>Reports</h1>
+            </div>
+          </div>
+          <div class="report-grid" id="reportGrid"></div>
+        </section>
+
+        <section class="view" id="ai">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">Anthropic powered</p>
+              <h1>AI Business Advisor</h1>
+            </div>
+          </div>
+          <div class="ai-layout">
+            <article class="panel">
+              <div class="question-grid">
+                <button data-question="Which products will run out soon?">Stockout risk</button>
+                <button data-question="What should I reorder this week?">Reorder plan</button>
+                <button data-question="Which products generate the most profit?">Profit leaders</button>
+                <button data-question="Which products are not selling?">Dead stock</button>
+              </div>
+              <textarea id="aiQuestion" rows="5" placeholder="Ask about inventory, suppliers, sales, pricing, or forecasts..."></textarea>
+              <button class="primary-button" id="askAiButton">Ask AI Advisor</button>
+            </article>
+            <article class="panel ai-answer">
+              <div class="panel-head">
+                <h2>Recommendation</h2>
+                <span id="aiMode" class="count-badge">Local</span>
+              </div>
+              <div id="aiAnswer"></div>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="productDialog">
+      <form method="dialog" id="productForm">
+        <div class="dialog-head">
+          <h2>Add Inventory Product</h2>
+          <button class="icon-button" type="button" id="closeProductDialog" aria-label="Close">&times;</button>
+        </div>
+        <div class="form-grid">
+          <label>Product name<input name="name" required /></label>
+          <label>SKU<input name="sku" required /></label>
+          <label>Barcode<input name="barcode" /></label>
+          <label>Category<input name="category" required /></label>
+          <label>Brand<input name="brand" /></label>
+          <label>Supplier<input name="supplier" /></label>
+          <label>Cost price<input name="costPrice" type="number" min="0" required /></label>
+          <label>Selling price<input name="sellingPrice" type="number" min="0" required /></label>
+          <label>Quantity<input name="quantity" type="number" min="0" required /></label>
+          <label>Reorder level<input name="reorderLevel" type="number" min="0" required /></label>
+          <label>Warehouse<input name="warehouse" /></label>
+          <label>Shelf<input name="shelf" /></label>
+        </div>
+        <label>Description<textarea name="description" rows="3"></textarea></label>
+        <div class="button-row end">
+          <button class="ghost-button" type="button" id="cancelProductDialog">Cancel</button>
+          <button class="primary-button" value="default">Save Product</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <div class="command-palette" id="commandPalette" aria-hidden="true">
+      <div class="command-box">
+        <input id="commandInput" placeholder="Type a command or module name" />
+        <div id="commandResults"></div>
+      </div>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+node_modules/
+firebase-debug.log
+firebase-debug.*.log
+.firebase/
+.runtimeconfig.json
+.env
+proxy/.env
+work/
+outputs/

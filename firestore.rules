@@ -1,0 +1,53 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function validProduct() {
+      return request.resource.data.name is string
+        && request.resource.data.sku is string
+        && request.resource.data.category is string
+        && request.resource.data.costPrice is number
+        && request.resource.data.sellingPrice is number
+        && request.resource.data.quantity is number
+        && request.resource.data.reorderLevel is number;
+    }
+
+    match /products/{productId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && validProduct();
+      allow delete: if signedIn();
+    }
+
+    match /sales/{saleId} {
+      allow read, create: if signedIn();
+      allow update, delete: if false;
+    }
+
+    match /purchaseOrders/{poId} {
+      allow read, write: if signedIn();
+    }
+
+    match /suppliers/{supplierId} {
+      allow read, write: if signedIn();
+    }
+
+    match /customers/{customerId} {
+      allow read, write: if signedIn();
+    }
+
+    match /users/{userId} {
+      allow read, create, update: if signedIn() && request.auth.uid == userId;
+      allow delete: if false;
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update, delete: if false;
+    }
+  }
+}
