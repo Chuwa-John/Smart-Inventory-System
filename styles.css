@@ -541,8 +541,33 @@ th[data-sort] {
   min-height: 360px;
 }
 
-.ai-answer ul {
-  padding-left: 20px;
+.chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.chat-bubble {
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  line-height: 1.5;
+  max-width: 92%;
+}
+
+.chat-bubble.user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: #051310;
+  border-color: var(--accent);
+}
+
+.chat-bubble.assistant {
+  align-self: flex-start;
+  background: color-mix(in srgb, var(--panel-soft) 70%, transparent);
 }
 
 dialog {

@@ -172,15 +172,21 @@
                 <span class="count-badge" id="cartCount">0</span>
               </div>
               <div id="cartItems" class="cart-items"></div>
+              <div class="button-row end">
+                <button class="ghost-button compact" id="clearCartButton" type="button">Clear Cart</button>
+              </div>
               <div class="cart-total">
                 <span>Total</span>
                 <strong id="cartTotal">KES 0</strong>
               </div>
-              <div class="payment-grid">
-                <button class="ghost-button">Cash</button>
-                <button class="ghost-button">Mobile Money</button>
-                <button class="ghost-button">Card</button>
-                <button class="ghost-button">Split</button>
+              <div class="payment-grid" id="paymentGrid">
+                <button class="ghost-button payment-option active" data-payment="cash" type="button">Cash</button>
+                <button class="ghost-button payment-option" data-payment="mobile" type="button">Mobile Money</button>
+                <button class="ghost-button payment-option" data-payment="card" type="button">Card</button>
+              </div>
+              <div class="cash-tender-row" id="cashTenderRow">
+                <label>Amount tendered<input id="cashTendered" type="number" min="0" placeholder="Enter cash received" /></label>
+                <div class="change-due"><span>Change due</span><strong id="changeDue">KES 0</strong></div>
               </div>
               <button class="primary-button full-width" id="completeSaleButton">Complete Sale</button>
             </article>
@@ -240,11 +246,13 @@
           <label>Brand<input name="brand" /></label>
           <label>Suppliers<input name="supplier" /></label>
           <label>Quantity<input name="quantity" type="number" min="0" required /></label>
+          <label>Low stock threshold<input name="reorderLevel" type="number" min="0" placeholder="e.g. 10" /></label>
         </div>
         <div class="button-row end">
           <button class="ghost-button" type="button" id="cancelProductDialog">Cancel</button>
           <button class="primary-button" value="default">Save Product</button>
         </div>
+
       </form>
     </dialog>
 
@@ -272,6 +280,9 @@
       </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     <script type="module" src="./app.js"></script>
   </body>
 </html>

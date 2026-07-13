@@ -12,7 +12,7 @@ services:
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-4-6
       - key: CORS_ORIGINS
-        value: https://sanitaryflow-erp.web.app,https://sanitaryflow-erp.firebaseapp.com,http://localhost:5173
+        value: https://sanitaryflow-erp.web.app,https://sanitaryflow-erp.firebaseapp.com,http://localhost:5173,http://localhost:5500,http://127.0.0.1:5500
       - key: REQUIRE_FIREBASE_AUTH
         value: "true"
       - key: FIREBASE_PROJECT_ID

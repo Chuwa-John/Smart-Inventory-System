@@ -4,6 +4,7 @@ import { aiConfig } from "./ai-config.js";
 const state = {
   products: [],
   cart: [],
+  paymentMethod: "cash",
   sortKey: "name",
   sortDirection: 1,
   authMode: "signup",
@@ -12,7 +13,8 @@ const state = {
   auth: null,
   user: null,
   unsubscribeProducts: null,
-  pendingBusinessName: ""
+  pendingBusinessName: "",
+  cachedProfile: null
 };
 
 const qs = (selector) => document.querySelector(selector);
@@ -25,6 +27,14 @@ function esc(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function debounce(fn, delay) {
+  let timeoutId;
+  return (...args) => {
+    window.clearTimeout(timeoutId);
+    timeoutId = window.setTimeout(() => fn(...args), delay);
+  };
 }
 
 function stockStatus(product) {
@@ -147,7 +157,7 @@ function renderAlertsAndRecommendations() {
     .map((product) => {
       const status = stockStatus(product);
       return `<div class="alert-item ${status === "out" ? "red" : "amber"}">
-        <strong>${product.name}</strong>
+        <strong>${esc(product.name)}</strong>
         <span class="muted">${status === "out" ? "Out of stock" : `Below minimum stock. Current stock: ${product.quantity}.`}</span>
       </div>`;
     })
@@ -161,7 +171,7 @@ function renderAlertsAndRecommendations() {
 
   qs("#recommendationList").innerHTML = recs
     .map(({ product, rec }) => `<div class="recommendation">
-      <strong>${product.name}</strong>
+      <strong>${esc(product.name)}</strong>
       <span>Reorder ${rec.recommendedQty} units now.</span>
       <small class="muted">Estimated stockout in ${rec.daysUntilStockout} days.</small>
     </div>`)
@@ -182,8 +192,15 @@ function renderMovement() {
 
 function renderFilters() {
   const selectedCategory = qs("#categoryFilter")?.value || "all";
-  const categories = ["all", ...new Set(state.products.map((product) => product.category))];
-  qs("#categoryFilter").innerHTML = categories.map((category) => `<option value="${category}">${category === "all" ? "All categories" : category}</option>`).join("");
+  const seen = new Map();
+  state.products.forEach((product) => {
+    const raw = String(product.category || "").trim();
+    if (!raw) return;
+    const key = raw.toLowerCase();
+    if (!seen.has(key)) seen.set(key, raw);
+  });
+  const categories = ["all", ...seen.values()];
+  qs("#categoryFilter").innerHTML = categories.map((category) => `<option value="${esc(category)}">${category === "all" ? "All categories" : esc(category)}</option>`).join("");
   qs("#categoryFilter").value = categories.includes(selectedCategory) ? selectedCategory : "all";
 }
 
@@ -196,7 +213,7 @@ function filteredProducts() {
       const haystack = [product.name, product.sku, product.category, product.brand, product.supplier].join(" ").toLowerCase();
       return !term || haystack.includes(term);
     })
-    .filter((product) => category === "all" || product.category === category)
+    .filter((product) => category === "all" || String(product.category || "").trim().toLowerCase() === category.trim().toLowerCase())
     .filter((product) => stock === "all" || stockStatus(product) === stock)
     .sort((a, b) => {
       const left = a[state.sortKey];
@@ -235,20 +252,54 @@ function renderPos() {
     .slice(0, 8)
     .map((product) => `<button class="pos-product" data-add-cart="${product.id}">
       <strong>${esc(product.name)}</strong>
-      <span class="muted">${esc(product.category)} - ${esc(product.supplier || "No supplier")} - ${product.quantity} available</span>
+      <span class="muted">${esc(product.category)} - KES ${Number(product.sellingPrice || 0).toLocaleString()} - ${product.quantity} available</span>
     </button>`)
     .join("");
 
-  qs("#cartCount").textContent = state.cart.reduce((sum, item) => sum + item.qty, 0);
+  const totalQty = state.cart.reduce((sum, item) => sum + item.qty, 0);
+  const totalAmount = state.cart.reduce((sum, item) => sum + item.qty * Number(item.sellingPrice || 0), 0);
+
+  qs("#cartCount").textContent = totalQty;
   qs("#cartItems").innerHTML = state.cart
-    .map((item) => `<div class="cart-item"><strong>${esc(item.name)}</strong><span class="muted">${item.qty} selected</span></div>`)
+    .map((item) => `<div class="cart-item">
+      <div class="cart-item-info">
+        <strong>${esc(item.name)}</strong>
+        <span class="muted">KES ${Number(item.sellingPrice || 0).toLocaleString()} each</span>
+      </div>
+      <div class="cart-item-controls">
+        <button class="ghost-button compact" data-decrease-cart="${item.id}" type="button" aria-label="Decrease quantity">-</button>
+        <span class="cart-item-qty">${item.qty}</span>
+        <button class="ghost-button compact" data-increase-cart="${item.id}" type="button" aria-label="Increase quantity">+</button>
+        <button class="ghost-button compact danger" data-remove-cart="${item.id}" type="button" aria-label="Remove item">Remove</button>
+      </div>
+      <strong class="cart-item-total">KES ${(item.qty * Number(item.sellingPrice || 0)).toLocaleString()}</strong>
+    </div>`)
     .join("") || `<span class="muted">No items in cart.</span>`;
-  qs("#cartTotal").textContent = `${state.cart.reduce((sum, item) => sum + item.qty, 0)} item(s)`;
+
+  qs("#cartTotal").textContent = `KES ${totalAmount.toLocaleString()}`;
+
+  const cashTenderRow = qs("#cashTenderRow");
+  cashTenderRow.hidden = state.paymentMethod !== "cash";
+  const tendered = Number(qs("#cashTendered")?.value || 0);
+  const change = Math.max(0, tendered - totalAmount);
+  qs("#changeDue").textContent = `KES ${change.toLocaleString()}`;
 }
 
 function renderCards() {
   const reports = ["Inventory Summary", "Stock Quantity Report", "Supplier List", "Low Stock Report", "Out of Stock Report", "CSV Export"];
-  qs("#reportGrid").innerHTML = reports.map((report) => `<article class="report-card"><strong>${report}</strong><span class="muted">Export PDF, Excel, or CSV</span><button class="ghost-button">Generate</button></article>`).join("");
+  qs("#reportGrid").innerHTML = reports
+    .map(
+      (report) => `<article class="report-card">
+        <strong>${report}</strong>
+        <span class="muted">Export PDF, Excel, or CSV</span>
+        <div class="report-actions">
+          <button class="ghost-button compact" data-generate-report="csv">CSV</button>
+          <button class="ghost-button compact" data-generate-report="pdf">PDF</button>
+          <button class="ghost-button compact" data-generate-report="xlsx">Excel</button>
+        </div>
+      </article>`
+    )
+    .join("");
 }
 
 function localAiAnswer(question) {
@@ -256,10 +307,10 @@ function localAiAnswer(question) {
   const highStock = [...state.products].sort((a, b) => Number(b.quantity || 0) - Number(a.quantity || 0)).slice(0, 3);
   const recs = low.map((product) => ({ product, rec: reorderRecommendation(product) }));
 
-  return `<p><strong>Local recommendation:</strong> ${question || "Focus this week on stock availability and clean inventory records."}</p>
+  return `<p><strong>Local recommendation:</strong> ${esc(question) || "Focus this week on stock availability and clean inventory records."}</p>
   <ul>
-    <li>Urgent reorder: ${recs.map(({ product, rec }) => `${product.name} (${rec.recommendedQty} units)`).join(", ") || "none"}.</li>
-    <li>Highest stocked products: ${highStock.map((product) => product.name).join(", ") || "none"}.</li>
+    <li>Urgent reorder: ${recs.map(({ product, rec }) => `${esc(product.name)} (${rec.recommendedQty} units)`).join(", ") || "none"}.</li>
+    <li>Highest stocked products: ${highStock.map((product) => esc(product.name)).join(", ") || "none"}.</li>
     <li>Supplier fields come only from products you add to this account.</li>
   </ul>
   <p class="muted">This advisor uses only your signed-in inventory snapshot.</p>`;
@@ -281,7 +332,15 @@ async function askAi() {
         body: JSON.stringify({
           question,
           snapshot: {
-            products: state.products,
+            products: state.products.map((product) => ({
+              name: product.name,
+              category: product.category,
+              quantity: Number(product.quantity || 0),
+              reorderLevel: Number(product.reorderLevel || 0),
+              sold30: Number(product.sold30 || 0),
+              sold90: Number(product.sold90 || 0),
+              leadTimeDays: Number(product.leadTimeDays || 10)
+            })),
             metrics: calculateMetrics()
           }
         })
@@ -291,7 +350,7 @@ async function askAi() {
         throw new Error(payload.error || "AI proxy request failed.");
       }
       qs("#aiMode").textContent = "Claude";
-      qs("#aiAnswer").innerHTML = `<p>${String(payload.answer).replaceAll("\n", "<br>")}</p>`;
+      qs("#aiAnswer").innerHTML = `<p>${esc(payload.answer).replaceAll("\n", "<br>")}</p>`;
       return;
     } catch (error) {
       console.warn(error);
@@ -322,6 +381,77 @@ function exportCsv() {
   URL.revokeObjectURL(url);
 }
 
+function buildReportRows() {
+  return state.products.map((product) => {
+    const status = stockStatus(product);
+    const label = status === "out" ? "Out of stock" : status === "low" ? "Low stock" : "Healthy";
+    return {
+      Name: product.name || "",
+      Category: product.category || "",
+      Brand: product.brand || "-",
+      Supplier: product.supplier || "-",
+      Quantity: Number(product.quantity || 0),
+      "Reorder Level": Number(product.reorderLevel || 0),
+      Status: label
+    };
+  });
+}
+
+function generateReportCsv() {
+  const rows = buildReportRows();
+  if (!rows.length) return showToast("No inventory data to export yet.");
+  const headers = Object.keys(rows[0]);
+  const csvRows = rows.map((row) => headers.map((header) => JSON.stringify(row[header] ?? "")).join(","));
+  const blob = new Blob([[headers.join(","), ...csvRows].join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "sanitaryflow-report.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function generateReportPdf() {
+  const rows = buildReportRows();
+  if (!rows.length) return showToast("No inventory data to export yet.");
+  const jsPdfCtor = window.jspdf && window.jspdf.jsPDF;
+  if (!jsPdfCtor) return showToast("PDF library did not load. Check your connection and try again.");
+  const doc = new jsPdfCtor();
+  doc.setFontSize(14);
+  doc.text("SanitaryFlow Inventory Report", 14, 16);
+  doc.setFontSize(10);
+  doc.text(new Date().toLocaleString(), 14, 22);
+  const headers = Object.keys(rows[0]);
+  const body = rows.map((row) => headers.map((header) => String(row[header])));
+  if (typeof doc.autoTable === "function") {
+    doc.autoTable({ head: [headers], body, startY: 28 });
+  } else {
+    let y = 30;
+    doc.text(headers.join(" | "), 14, y);
+    rows.forEach((row) => {
+      y += 6;
+      doc.text(headers.map((header) => String(row[header])).join(" | "), 14, y);
+    });
+  }
+  doc.save("sanitaryflow-report.pdf");
+}
+
+function generateReportXlsx() {
+  const rows = buildReportRows();
+  if (!rows.length) return showToast("No inventory data to export yet.");
+  if (!window.XLSX) return showToast("Excel library did not load. Check your connection and try again.");
+  const worksheet = window.XLSX.utils.json_to_sheet(rows);
+  const workbook = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(workbook, worksheet, "Inventory");
+  window.XLSX.writeFile(workbook, "sanitaryflow-report.xlsx");
+}
+
+function generateReport(format) {
+  if (format === "csv") return generateReportCsv();
+  if (format === "pdf") return generateReportPdf();
+  if (format === "xlsx") return generateReportXlsx();
+}
+
 function productCollectionPath() {
   if (!state.db || !state.user) return null;
   return ["users", state.user.uid, "products"];
@@ -340,6 +470,29 @@ function openProductDialog(product = null) {
   qs("#productDialog").showModal();
 }
 
+const PRODUCT_FIELD_LIMITS = {
+  name: 120,
+  category: 60,
+  brand: 60,
+  supplier: 60
+};
+
+function validateProductFields(product) {
+  for (const [field, maxLength] of Object.entries(PRODUCT_FIELD_LIMITS)) {
+    const value = String(product[field] ?? "");
+    if (value.length > maxLength) {
+      return `${field.charAt(0).toUpperCase() + field.slice(1)} must be ${maxLength} characters or fewer.`;
+    }
+  }
+  return null;
+}
+
+function clampNonNegativeNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return null;
+  return number;
+}
+
 async function saveProduct(product) {
   const existing = product.id ? state.products.find((item) => item.id === product.id) : null;
   product.id = product.id || crypto.randomUUID();
@@ -354,7 +507,7 @@ async function saveProduct(product) {
 
   if (state.db && state.user) {
     try {
-      const { collection, doc, serverTimestamp, setDoc } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js");
+      const { collection, doc, serverTimestamp, setDoc } = state.firebaseApi.firestore;
       const [root, uid, child] = productCollectionPath();
       await setDoc(
         doc(collection(state.db, root, uid, child), product.id),
@@ -384,7 +537,7 @@ async function deleteProduct(productId) {
   state.cart = state.cart.filter((item) => item.id !== productId);
   if (state.db && state.user) {
     try {
-      const { deleteDoc, doc } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js");
+      const { deleteDoc, doc } = state.firebaseApi.firestore;
       await deleteDoc(doc(state.db, "users", state.user.uid, "products", productId));
     } catch (error) {
       console.warn(error);
@@ -400,18 +553,34 @@ async function initFirebase() {
   if (!hasConfig) return;
 
   try {
-    const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js");
-    const { getAuth, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js");
-    const { getFirestore } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js");
-    const app = initializeApp(firebaseConfig);
-    state.auth = getAuth(app);
-    state.db = getFirestore(app);
+    const appApi = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js");
+    const authApi = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js");
+    const firestoreApi = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js");
+    state.firebaseApi = { app: appApi, auth: authApi, firestore: firestoreApi };
+
+    const app = appApi.initializeApp(firebaseConfig);
+
+    try {
+      if (typeof window.process === "undefined") {
+        window.process = { env: {} };
+      }
+      const { initializeAppCheck, ReCaptchaV3Provider } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-app-check.js");
+      initializeAppCheck(app, {
+        provider: new ReCaptchaV3Provider("6LdtGFEtAAAAABK4HX_ufjUMskc7pix12Lz2NMGd"),
+        isTokenAutoRefreshEnabled: true
+      });
+    } catch (appCheckError) {
+      console.warn("App Check failed to initialize; continuing without it.", appCheckError);
+    }
+
+    state.auth = authApi.getAuth(app);
+    state.db = firestoreApi.getFirestore(app);
     state.firebaseReady = true;
     qs(".status-dot").classList.add("connected");
     qs("#connectionLabel").textContent = "Firebase connected";
     qs("#connectionHint").textContent = "Create an account to begin";
 
-    onAuthStateChanged(state.auth, async (user) => {
+    authApi.onAuthStateChanged(state.auth, async (user) => {
       state.user = user;
       updateAuthUi();
       if (user) {
@@ -436,7 +605,7 @@ async function subscribeToProducts() {
   if (!state.db || !state.user) return;
   if (state.unsubscribeProducts) state.unsubscribeProducts();
   try {
-    const { collection, onSnapshot } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js");
+    const { collection, onSnapshot } = state.firebaseApi.firestore;
     state.unsubscribeProducts = onSnapshot(collection(state.db, "users", state.user.uid, "products"), (snapshot) => {
       state.products = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
       renderAll();
@@ -449,16 +618,24 @@ async function subscribeToProducts() {
 
 async function ensureUserProfile(user) {
   if (!state.db) return;
+  const businessName = state.pendingBusinessName || user.displayName || "";
+  const cached = state.user?.uid === user.uid ? state.cachedProfile : null;
+  const unchanged = cached
+    && cached.email === (user.email || "")
+    && cached.businessName === businessName;
+  if (unchanged) return;
+
   try {
-    const { doc, serverTimestamp, setDoc } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js");
+    const { doc, serverTimestamp, setDoc } = state.firebaseApi.firestore;
     await setDoc(doc(state.db, "users", user.uid), {
       uid: user.uid,
       email: user.email || "",
-      businessName: state.pendingBusinessName || user.displayName || "",
+      businessName,
       role: "Owner",
       authProvider: "password",
       updatedAt: serverTimestamp()
     }, { merge: true });
+    state.cachedProfile = { email: user.email || "", businessName };
   } catch (error) {
     console.warn(error);
   }
@@ -481,6 +658,42 @@ function setAuthMode(mode) {
   qs("#authPassword").autocomplete = isSignup ? "new-password" : "current-password";
 }
 
+const AUTH_MAX_ATTEMPTS = 5;
+const AUTH_WINDOW_MS = 15 * 60 * 1000;
+
+function authFailureKey(email) {
+  return `authFailures:${email.toLowerCase()}`;
+}
+
+function getAuthFailures(email) {
+  try {
+    const raw = sessionStorage.getItem(authFailureKey(email));
+    const attempts = raw ? JSON.parse(raw) : [];
+    const cutoff = Date.now() - AUTH_WINDOW_MS;
+    return attempts.filter((timestamp) => timestamp > cutoff);
+  } catch (error) {
+    return [];
+  }
+}
+
+function recordAuthFailure(email) {
+  try {
+    const attempts = getAuthFailures(email);
+    attempts.push(Date.now());
+    sessionStorage.setItem(authFailureKey(email), JSON.stringify(attempts));
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
+function clearAuthFailures(email) {
+  try {
+    sessionStorage.removeItem(authFailureKey(email));
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
 async function handleAuthSubmit(event) {
   event.preventDefault();
   if (!state.auth) return showToast("Firebase is not connected yet.");
@@ -489,20 +702,31 @@ async function handleAuthSubmit(event) {
   const password = String(form.get("password") || "");
   const businessName = String(form.get("businessName") || "").trim();
 
+  if (email && getAuthFailures(email).length >= AUTH_MAX_ATTEMPTS) {
+    showToast("Too many failed attempts for this email. Please wait 15 minutes and try again.");
+    return;
+  }
+
+  const submitButton = qs("#authSubmitButton");
+  submitButton.disabled = true;
+
   try {
-    const authApi = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js");
+    const authApi = state.firebaseApi.auth;
     if (state.authMode === "signup") {
       state.pendingBusinessName = businessName;
       const credential = await authApi.createUserWithEmailAndPassword(state.auth, email, password);
       if (businessName) await authApi.updateProfile(credential.user, { displayName: businessName });
+      clearAuthFailures(email);
       showToast("Account created. Add your first inventory item.");
     } else {
       state.pendingBusinessName = "";
       await authApi.signInWithEmailAndPassword(state.auth, email, password);
+      clearAuthFailures(email);
       showToast("Signed in.");
     }
   } catch (error) {
     console.warn(error);
+    recordAuthFailure(email);
     const messages = {
       "auth/email-already-in-use": "That email already has an account. Sign in instead.",
       "auth/invalid-credential": "Email or password is incorrect.",
@@ -510,6 +734,8 @@ async function handleAuthSubmit(event) {
       "auth/operation-not-allowed": "Enable Email/Password sign-in in Firebase Auth."
     };
     showToast(messages[error.code] || "Authentication failed. Check your details and try again.");
+  } finally {
+    submitButton.disabled = false;
   }
 }
 
@@ -554,10 +780,16 @@ function bindEvents() {
     renderChart();
   });
   qs("#chartRange").addEventListener("change", renderChart);
-  qs("#globalSearch").addEventListener("input", renderInventory);
+  qs("#globalSearch").addEventListener("input", debounce(renderInventory, 250));
   qs("#categoryFilter").addEventListener("change", renderInventory);
   qs("#stockFilter").addEventListener("change", renderInventory);
-  qs("#posSearch").addEventListener("input", renderPos);
+  qs("#posSearch").addEventListener("input", debounce(renderPos, 250));
+  qs("#clearCartButton").addEventListener("click", () => {
+    if (!state.cart.length) return;
+    state.cart = [];
+    renderPos();
+  });
+  qs("#cashTendered").addEventListener("input", renderPos);
   qs("#exportInventoryButton").addEventListener("click", exportCsv);
   qs("#newProductButton").addEventListener("click", () => openProductDialog());
   qs("#inventoryAddButton").addEventListener("click", () => openProductDialog());
@@ -568,7 +800,7 @@ function bindEvents() {
   qs("#authModeButton").addEventListener("click", () => setAuthMode(state.authMode === "signup" ? "signin" : "signup"));
   qs("#signOutButton").addEventListener("click", async () => {
     if (!state.auth) return;
-    const { signOut } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js");
+    const { signOut } = state.firebaseApi.auth;
     await signOut(state.auth);
     showToast("Signed out.");
   });
@@ -595,8 +827,48 @@ function bindEvents() {
       const product = state.products.find((item) => item.id === cartButton.dataset.addCart);
       if (!product || product.quantity <= 0) return showToast("This product is out of stock.");
       const cartItem = state.cart.find((item) => item.id === product.id);
-      if (cartItem) cartItem.qty += 1;
-      else state.cart.push({ ...product, qty: 1 });
+      if (cartItem) {
+        if (cartItem.qty >= product.quantity) return showToast("No more stock available for this product.");
+        cartItem.qty += 1;
+      } else {
+        state.cart.push({ ...product, qty: 1 });
+      }
+      renderPos();
+    }
+
+    const increaseButton = event.target.closest("[data-increase-cart]");
+    if (increaseButton) {
+      const cartItem = state.cart.find((item) => item.id === increaseButton.dataset.increaseCart);
+      const product = state.products.find((item) => item.id === increaseButton.dataset.increaseCart);
+      if (cartItem && product) {
+        if (cartItem.qty >= product.quantity) return showToast("No more stock available for this product.");
+        cartItem.qty += 1;
+        renderPos();
+      }
+    }
+
+    const decreaseButton = event.target.closest("[data-decrease-cart]");
+    if (decreaseButton) {
+      const cartItem = state.cart.find((item) => item.id === decreaseButton.dataset.decreaseCart);
+      if (cartItem) {
+        cartItem.qty -= 1;
+        if (cartItem.qty <= 0) {
+          state.cart = state.cart.filter((item) => item.id !== decreaseButton.dataset.decreaseCart);
+        }
+        renderPos();
+      }
+    }
+
+    const removeButton = event.target.closest("[data-remove-cart]");
+    if (removeButton) {
+      state.cart = state.cart.filter((item) => item.id !== removeButton.dataset.removeCart);
+      renderPos();
+    }
+
+    const paymentButton = event.target.closest("[data-payment]");
+    if (paymentButton) {
+      state.paymentMethod = paymentButton.dataset.payment;
+      qsa("[data-payment]").forEach((button) => button.classList.toggle("active", button.dataset.payment === state.paymentMethod));
       renderPos();
     }
 
@@ -616,10 +888,17 @@ function bindEvents() {
       openView(command.dataset.commandView);
       qs("#commandPalette").classList.remove("open");
     }
+
+    const reportButton = event.target.closest("[data-generate-report]");
+    if (reportButton) {
+      console.log("Report button clicked:", reportButton.dataset.generateReport);
+      generateReport(reportButton.dataset.generateReport);
+    }
   });
 
   qs("#completeSaleButton").addEventListener("click", async () => {
     if (!state.cart.length) return showToast("Add products to the cart first.");
+
     const saleItems = state.cart.map((cartItem) => ({
       productId: cartItem.id,
       name: cartItem.name,
@@ -631,64 +910,114 @@ function bindEvents() {
       lineTotal: cartItem.qty * Number(cartItem.sellingPrice || 0)
     }));
     const total = saleItems.reduce((sum, item) => sum + item.lineTotal, 0);
+    const paymentMethod = state.paymentMethod || "cash";
+    const cashTendered = Number(qs("#cashTendered")?.value || 0);
 
-    state.cart.forEach((cartItem) => {
-      const product = state.products.find((item) => item.id === cartItem.id);
-      if (product) product.quantity = Math.max(0, product.quantity - cartItem.qty);
-    });
+    if (paymentMethod === "cash" && cashTendered < total) {
+      showToast("Cash tendered is less than the sale total.");
+      return;
+    }
+    const changeDue = paymentMethod === "cash" ? Math.max(0, cashTendered - total) : 0;
 
-    if (state.db) {
+    const completeButton = qs("#completeSaleButton");
+    completeButton.disabled = true;
+
+    if (state.db && state.user) {
       try {
-        const { collection, doc, serverTimestamp, writeBatch } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js");
-        const batch = writeBatch(state.db);
-        state.cart.forEach((cartItem) => {
-          const product = state.products.find((item) => item.id === cartItem.id);
-          if (product) {
-            batch.update(doc(state.db, "users", state.user.uid, "products", cartItem.id), {
-              quantity: product.quantity,
+        const { collection, doc, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
+        await runTransaction(state.db, async (transaction) => {
+          const productRefs = state.cart.map((cartItem) => doc(state.db, "users", state.user.uid, "products", cartItem.id));
+          const productSnaps = await Promise.all(productRefs.map((ref) => transaction.get(ref)));
+
+          productSnaps.forEach((snap, index) => {
+            const cartItem = state.cart[index];
+            if (!snap.exists()) throw new Error(`${cartItem.name} no longer exists.`);
+            const currentQuantity = Number(snap.data().quantity || 0);
+            if (currentQuantity < cartItem.qty) {
+              throw new Error(`Not enough stock for ${cartItem.name}. Only ${currentQuantity} left.`);
+            }
+          });
+
+          productSnaps.forEach((snap, index) => {
+            const cartItem = state.cart[index];
+            const currentQuantity = Number(snap.data().quantity || 0);
+            transaction.update(productRefs[index], {
+              quantity: currentQuantity - cartItem.qty,
               updatedAt: serverTimestamp()
             });
-          }
+          });
+
+          const saleRef = doc(collection(state.db, "users", state.user.uid, "sales"));
+          transaction.set(saleRef, {
+            items: saleItems,
+            total,
+            paymentMethod,
+            cashTendered: paymentMethod === "cash" ? cashTendered : null,
+            changeDue: paymentMethod === "cash" ? changeDue : null,
+            branchId: "main",
+            cashierUid: state.user?.uid || null,
+            createdAt: serverTimestamp()
+          });
+
+          const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
+          transaction.set(auditRef, {
+            action: "SALE_COMPLETED",
+            total,
+            paymentMethod,
+            itemCount: saleItems.length,
+            uid: state.user?.uid || null,
+            createdAt: serverTimestamp()
+          });
         });
-        const saleRef = doc(collection(state.db, "users", state.user.uid, "sales"));
-        batch.set(saleRef, {
-          items: saleItems,
-          total,
-          paymentMethod: "cash",
-          branchId: "main",
-          cashierUid: state.user?.uid || null,
-          createdAt: serverTimestamp()
-        });
-        batch.set(doc(collection(state.db, "users", state.user.uid, "auditLogs")), {
-          action: "SALE_COMPLETED",
-          total,
-          itemCount: saleItems.length,
-          uid: state.user?.uid || null,
-          createdAt: serverTimestamp()
-        });
-        await batch.commit();
       } catch (error) {
         console.warn(error);
-        showToast("Sale completed locally. Firestore sync failed.");
+        showToast(error.message || "Sale failed. Please recheck stock and try again.");
+        completeButton.disabled = false;
+        return;
       }
+    } else {
+      state.cart.forEach((cartItem) => {
+        const product = state.products.find((item) => item.id === cartItem.id);
+        if (product) product.quantity = Math.max(0, product.quantity - cartItem.qty);
+      });
     }
 
     state.cart = [];
+    if (qs("#cashTendered")) qs("#cashTendered").value = "";
     renderAll();
-    showToast("Sale completed and inventory updated.");
+    completeButton.disabled = false;
+    showToast(changeDue > 0 ? `Sale completed. Give KES ${changeDue.toLocaleString()} change.` : "Sale completed and inventory updated.");
   });
 
   qs("#productForm").addEventListener("submit", (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const product = Object.fromEntries(form.entries());
-    product.quantity = Number(product.quantity || 0);
+
+    const fieldError = validateProductFields(product);
+    if (fieldError) {
+      showToast(fieldError);
+      return;
+    }
+
+    const quantity = clampNonNegativeNumber(product.quantity);
+    const costPrice = clampNonNegativeNumber(product.costPrice || 0);
+    const sellingPrice = clampNonNegativeNumber(product.sellingPrice || 0);
+    const reorderLevel = clampNonNegativeNumber(product.reorderLevel || 0);
+
+    if (quantity === null || costPrice === null || sellingPrice === null || reorderLevel === null) {
+      showToast("Quantity and price fields must be zero or positive numbers.");
+      return;
+    }
+
+    product.quantity = quantity;
+    product.costPrice = costPrice;
+    product.sellingPrice = sellingPrice;
+    product.reorderLevel = reorderLevel;
+    product.category = String(product.category || "").trim();
     product.sku = product.sku || `${String(product.name || "ITEM").trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 18) || "ITEM"}-${Date.now().toString().slice(-6)}`;
     product.barcode = product.barcode || "";
     product.description = product.description || "";
-    product.costPrice = Number(product.costPrice || 0);
-    product.sellingPrice = Number(product.sellingPrice || 0);
-    product.reorderLevel = Number(product.reorderLevel || 0);
     product.warehouse = product.warehouse || "";
     product.shelf = product.shelf || "";
     saveProduct(product);
