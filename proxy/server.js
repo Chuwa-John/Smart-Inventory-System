@@ -53,43 +53,16 @@ app.use(
   })
 );
 
-const allowedTopics = [
-  "inventory",
-  "stock",
-  "reorder",
-  "supplier",
-  "purchase",
-  "sales",
-  "profit",
-  "revenue",
-  "customer",
-  "warehouse",
-  "branch",
-  "pos",
-  "barcode",
-  "plumbing",
-  "sanitary",
-  "pipe",
-  "valve",
-  "fitting",
-  "tank",
-  "sink",
-  "toilet",
-  "tap",
-  "mixer",
-  "pump",
-  "report",
-  "forecast",
-  "dead stock",
-  "slow-moving",
-  "fast-moving",
-  "pricing"
-];
+const MAX_HISTORY_MESSAGES = 20;
+const MAX_MESSAGE_LENGTH = 4000;
 
-function isQuestionInScope(question) {
-  const normalized = String(question || "").toLowerCase();
-  if (normalized.length < 3 || normalized.length > 700) return false;
-  return allowedTopics.some((topic) => normalized.includes(topic));
+function sanitizeConversation(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  return list
+    .filter((message) => message && (message.role === "user" || message.role === "assistant") && typeof message.content === "string")
+    .map((message) => ({ role: message.role, content: message.content.trim() }))
+    .filter((message) => message.content.length > 0 && message.content.length <= MAX_MESSAGE_LENGTH)
+    .slice(-MAX_HISTORY_MESSAGES);
 }
 
 function compactProduct(product) {
@@ -144,10 +117,12 @@ app.get("/health", (_req, res) => {
 });
 
 app.post("/api/ai/advisor", verifyFirebaseToken, async (req, res) => {
-  const question = String(req.body?.question || "").trim();
-  if (!isQuestionInScope(question)) {
+  const conversation = sanitizeConversation(req.body?.messages);
+  const lastMessage = conversation[conversation.length - 1];
+
+  if (!conversation.length || !lastMessage || lastMessage.role !== "user") {
     return res.status(400).json({
-      error: "Ask a question about SanitaryFlow inventory, sales, purchasing, suppliers, customers, warehouse, reports, or plumbing and sanitary stock."
+      error: "Please enter a question (up to 700 characters)."
     });
   }
 
@@ -163,15 +138,14 @@ app.post("/api/ai/advisor", verifyFirebaseToken, async (req, res) => {
         "Only answer questions about this plumbing and sanitary inventory management system.",
         "Allowed areas: inventory, POS, stockouts, reorder quantities, supplier performance, purchase orders, customers, warehouse, reports, pricing, profit, revenue, and plumbing or sanitary product operations.",
         "If the user asks outside those areas, refuse briefly and redirect them to SanitaryFlow ERP tasks.",
-        "Use only the provided business snapshot. Do not invent exact quantities, suppliers, revenue, or customer facts.",
-        "Return concise, practical recommendations with bullets when useful."
+        "Do not invent exact quantities, suppliers, revenue, or customer facts beyond the provided snapshot.",
+        "Return concise, practical recommendations with bullets when useful.",
+        "The user may ask in any language, including Swahili, Sheng, or mixed English/Swahili. Always respond in the same language the question was asked in.",
+        "Judge topic relevance by meaning, not by exact keywords \u2014 a question can be on-topic even if phrased in an unusual way, a different language, or with typos.",
+        "This is an ongoing conversation \u2014 use earlier turns for context when relevant.",
+        `Current business snapshot (JSON): ${JSON.stringify(snapshot)}`
       ].join(" "),
-      messages: [
-        {
-          role: "user",
-          content: JSON.stringify({ question, snapshot })
-        }
-      ]
+      messages: conversation
     });
 
     const answer = response.content

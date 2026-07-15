@@ -6,34 +6,89 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
     function validProduct() {
-      return request.resource.data.name is string
-        && request.resource.data.category is string
-        && request.resource.data.brand is string
-        && request.resource.data.supplier is string
-        && request.resource.data.quantity is number;
+      let d = request.resource.data;
+      return d.name is string && d.name.size() > 0 && d.name.size() <= 120
+        && d.category is string && d.category.size() <= 60
+        && d.brand is string && d.brand.size() <= 60
+        && d.supplier is string && d.supplier.size() <= 60
+        && d.quantity is number && d.quantity >= 0
+        && (!('costPrice' in d) || (d.costPrice is number && d.costPrice >= 0))
+        && (!('sellingPrice' in d) || (d.sellingPrice is number && d.sellingPrice >= 0))
+        && (!('reorderLevel' in d) || (d.reorderLevel is number && d.reorderLevel >= 0));
+    }
+
+    function productImmutableFieldsUnchanged() {
+      return request.resource.data.id == resource.data.id
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    function validSaleItem(item) {
+      return item.productId is string
+        && item.qty is number && item.qty > 0
+        && item.lineTotal is number && item.lineTotal >= 0;
+    }
+
+    function validSale() {
+      let d = request.resource.data;
+      return d.items is list && d.items.size() > 0 && d.items.size() <= 100
+        && d.total is number && d.total >= 0
+        && d.cashierUid == request.auth.uid
+        && d.paymentMethod in ['cash', 'mobile', 'card']
+        && d.voided == false;
+    }
+
+    function validAuditLog() {
+      return request.resource.data.uid == request.auth.uid
+        && request.resource.data.action is string;
     }
 
     match /users/{userId} {
-      allow read, create, update: if signedIn() && request.auth.uid == userId;
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId)
+        && request.resource.data.uid == userId;
       allow delete: if false;
 
       match /products/{productId} {
-        allow read: if signedIn() && request.auth.uid == userId;
-        allow create, update: if signedIn() && request.auth.uid == userId && validProduct();
-        allow delete: if signedIn() && request.auth.uid == userId;
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && validProduct();
+        allow update: if isOwner(userId) && validProduct() && productImmutableFieldsUnchanged();
+        allow delete: if isOwner(userId);
       }
 
       match /sales/{saleId} {
-        allow read, create: if signedIn() && request.auth.uid == userId;
-        allow update, delete: if false;
-      }
+  allow read: if isOwner(userId);
+  allow create: if isOwner(userId) && validSale();
+  allow update: if isOwner(userId) && validVoidUpdate();
+  allow delete: if false;
+}
 
       match /auditLogs/{logId} {
-        allow read: if signedIn() && request.auth.uid == userId;
-        allow create: if signedIn() && request.auth.uid == userId;
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && validAuditLog();
         allow update, delete: if false;
       }
+      function validVoidUpdate() {
+  let before = resource.data;
+  let after = request.resource.data;
+  return before.voided == false
+    && after.voided == true
+    && after.voidedAt is timestamp
+    // every other field must stay exactly as it was
+    && after.items == before.items
+    && after.total == before.total
+    && after.paymentMethod == before.paymentMethod
+    && after.cashTendered == before.cashTendered
+    && after.changeDue == before.changeDue
+    && after.branchId == before.branchId
+    && after.cashierUid == before.cashierUid
+    && after.createdAt == before.createdAt;
+}
     }
   }
 }

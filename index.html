@@ -14,23 +14,23 @@
           <div class="brand-mark">SF</div>
           <div>
             <strong>SanitaryFlow</strong>
-            <span>AI Inventory ERP</span>
+            <span data-i18n="brand.tagline">AI Inventory ERP</span>
           </div>
         </div>
 
         <nav class="nav-list">
-          <button class="nav-item active" data-view="dashboard">Dashboard</button>
-          <button class="nav-item" data-view="inventory">Inventory</button>
-          <button class="nav-item" data-view="pos">Point of Sale</button>
-          <button class="nav-item" data-view="reports">Reports</button>
-          <button class="nav-item" data-view="ai">AI Advisor</button>
+          <button class="nav-item active" data-view="dashboard" data-i18n="nav.dashboard">Dashboard</button>
+          <button class="nav-item" data-view="inventory" data-i18n="nav.inventory">Inventory</button>
+          <button class="nav-item" data-view="pos" data-i18n="nav.pos">Point of Sale</button>
+          <button class="nav-item" data-view="reports" data-i18n="nav.reports">Reports</button>
+          <button class="nav-item" data-view="ai" data-i18n="nav.ai">AI Advisor</button>
         </nav>
 
         <div class="sidebar-card">
           <span class="status-dot"></span>
           <div>
             <strong id="connectionLabel">Account inventory</strong>
-            <span id="connectionHint">Sign in to sync inventory</span>
+            <span id="connectionHint" data-i18n="sidebar.connectionHintSignedOut">Sign in to sync inventory</span>
           </div>
         </div>
       </aside>
@@ -40,24 +40,30 @@
           <button class="icon-button mobile-menu" id="mobileMenuButton" aria-label="Open menu">&#9776;</button>
           <div class="search-wrap">
             <span>Search</span>
-            <input id="globalSearch" type="search" placeholder="Search your products..." />
+            <input id="globalSearch" type="search" placeholder="Search your products..." data-i18n-placeholder="topbar.searchPlaceholder" />
             <kbd>Ctrl K</kbd>
           </div>
           <div class="account-chip" id="accountChip" hidden>
             <span id="userEmail">Signed out</span>
-            <button class="ghost-button compact" id="signOutButton">Sign out</button>
+            <button class="ghost-button compact" id="signOutButton" data-i18n="topbar.signOut">Sign out</button>
           </div>
+          <button class="ghost-button compact" id="langToggleButton" type="button">Kiswahili</button>
           <button class="ghost-button" id="themeButton">Light</button>
-          <button class="primary-button" id="newProductButton">Add Product</button>
+          <button class="primary-button" id="newProductButton" data-i18n="topbar.addProduct">Add Product</button>
         </header>
 
         <section class="view active" id="dashboard">
           <div class="page-title">
             <div>
-              <p class="eyebrow">Today</p>
-              <h1>Operations Command Center</h1>
+              <p class="eyebrow" data-i18n="dashboard.eyebrowToday">Today</p>
+              <h1 data-i18n="dashboard.title">Operations Command Center</h1>
             </div>
-            <div class="branch-pill">Main Branch - Nairobi</div>
+            <div class="store-switcher">
+              <select id="storeSwitcher" aria-label="Current store"></select>
+              <button class="ghost-button compact" id="addStoreButton" type="button" data-i18n="dashboard.addStore">+ Store</button>
+              <button class="ghost-button compact" id="renameStoreButton" type="button" data-i18n="dashboard.renameStore">Rename</button>
+              <button class="ghost-button compact" id="archiveStoreButton" type="button" data-i18n="dashboard.archiveStore">Archive</button>
+            </div>
           </div>
 
           <div class="kpi-grid" id="kpiGrid"></div>
@@ -66,11 +72,11 @@
             <article class="panel sales-panel">
               <div class="panel-head">
                 <div>
-                  <p class="eyebrow">Inventory analytics</p>
-                  <h2>Stock levels</h2>
+                  <p class="eyebrow" data-i18n="dashboard.analyticsEyebrow">Inventory analytics</p>
+                  <h2 data-i18n="dashboard.stockLevelsTitle">Stock levels</h2>
                 </div>
                 <select id="chartRange" aria-label="Chart range">
-                  <option value="quantity">Quantity</option>
+                  <option value="quantity" data-i18n="dashboard.chartQuantity">Quantity</option>
                 </select>
               </div>
               <canvas id="salesChart" width="900" height="320"></canvas>
@@ -79,10 +85,13 @@
             <article class="panel">
               <div class="panel-head">
                 <div>
-                  <p class="eyebrow">Smart alerts</p>
-                  <h2>Needs attention</h2>
+                  <p class="eyebrow" data-i18n="dashboard.alertsEyebrow">Smart alerts</p>
+                  <h2 data-i18n="dashboard.needsAttention">Needs attention</h2>
                 </div>
-                <span class="count-badge" id="alertCount">0</span>
+                <div class="alert-head-controls">
+                  <label class="alert-popup-toggle"><input type="checkbox" id="stockAlertPopupToggle" checked /> <span data-i18n="dashboard.popupAlerts">Popup alerts</span></label>
+                  <span class="count-badge" id="alertCount">0</span>
+                </div>
               </div>
               <div class="alert-list" id="alertList"></div>
             </article>
@@ -92,8 +101,8 @@
             <article class="panel">
               <div class="panel-head">
                 <div>
-                  <p class="eyebrow">Inventory analytics</p>
-                  <h2>Movement classes</h2>
+                  <p class="eyebrow" data-i18n="dashboard.analyticsEyebrow">Inventory analytics</p>
+                  <h2 data-i18n="dashboard.movementTitle">Movement classes</h2>
                 </div>
               </div>
               <div class="movement-list" id="movementList"></div>
@@ -102,8 +111,8 @@
             <article class="panel">
               <div class="panel-head">
                 <div>
-                  <p class="eyebrow">AI reorder engine</p>
-                  <h2>Purchase recommendations</h2>
+                  <p class="eyebrow" data-i18n="dashboard.aiEngineEyebrow">AI reorder engine</p>
+                  <h2 data-i18n="dashboard.recommendationsTitle">Purchase recommendations</h2>
                 </div>
               </div>
               <div class="recommendation-list" id="recommendationList"></div>
@@ -114,22 +123,22 @@
         <section class="view" id="inventory">
           <div class="page-title">
             <div>
-              <p class="eyebrow">Stock control</p>
-              <h1>Inventory Management</h1>
+              <p class="eyebrow" data-i18n="inventory.eyebrow">Stock control</p>
+              <h1 data-i18n="inventory.title">Inventory Management</h1>
             </div>
             <div class="button-row">
-              <button class="ghost-button" id="exportInventoryButton">Export CSV</button>
-              <button class="primary-button" id="inventoryAddButton">Add Product</button>
+              <button class="ghost-button" id="exportInventoryButton" data-i18n="inventory.exportCsv">Export CSV</button>
+              <button class="primary-button" id="inventoryAddButton" data-i18n="inventory.addProduct">Add Product</button>
             </div>
           </div>
 
           <div class="filters">
             <select id="categoryFilter" aria-label="Category filter"></select>
             <select id="stockFilter" aria-label="Stock status filter">
-              <option value="all">All stock states</option>
-              <option value="low">Low stock</option>
-              <option value="out">Out of stock</option>
-              <option value="healthy">Healthy</option>
+              <option value="all" data-i18n="inventory.stockAll">All stock states</option>
+              <option value="low" data-i18n="inventory.stockLow">Low stock</option>
+              <option value="out" data-i18n="inventory.stockOut">Out of stock</option>
+              <option value="healthy" data-i18n="inventory.stockHealthy">Healthy</option>
             </select>
           </div>
 
@@ -137,13 +146,13 @@
             <table>
               <thead>
                 <tr>
-                  <th data-sort="name">Product</th>
-                  <th data-sort="category">Category</th>
-                  <th data-sort="brand">Brand</th>
-                  <th data-sort="supplier">Supplier</th>
-                  <th data-sort="quantity">Qty</th>
-                  <th>Status</th>
-                  <th>Actions</th>
+                  <th data-sort="name" data-i18n="inventory.thProduct">Product</th>
+                  <th data-sort="category" data-i18n="inventory.thCategory">Category</th>
+                  <th data-sort="brand" data-i18n="inventory.thBrand">Brand</th>
+                  <th data-sort="supplier" data-i18n="inventory.thSupplier">Supplier</th>
+                  <th data-sort="quantity" data-i18n="inventory.thQty">Qty</th>
+                  <th data-i18n="inventory.thStatus">Status</th>
+                  <th data-i18n="inventory.thActions">Actions</th>
                 </tr>
               </thead>
               <tbody id="inventoryTable"></tbody>
@@ -154,41 +163,43 @@
         <section class="view" id="pos">
           <div class="page-title">
             <div>
-              <p class="eyebrow">Fast checkout</p>
-              <h1>Point of Sale</h1>
+              <p class="eyebrow" data-i18n="pos.eyebrow">Fast checkout</p>
+              <h1 data-i18n="pos.title">Point of Sale</h1>
             </div>
           </div>
           <div class="pos-grid">
             <article class="panel">
               <div class="panel-head">
-                <h2>Product Search</h2>
-                <input id="posSearch" type="search" placeholder="Search products" />
+                <h2 data-i18n="pos.productSearch">Product Search</h2>
+                <input id="posSearch" type="search" placeholder="Search products" data-i18n-placeholder="pos.searchPlaceholder" />
               </div>
               <div class="pos-products" id="posProducts"></div>
             </article>
             <article class="panel cart-panel">
               <div class="panel-head">
-                <h2>Current Sale</h2>
+                <h2 data-i18n="pos.currentSale">Current Sale</h2>
                 <span class="count-badge" id="cartCount">0</span>
               </div>
               <div id="cartItems" class="cart-items"></div>
               <div class="button-row end">
-                <button class="ghost-button compact" id="clearCartButton" type="button">Clear Cart</button>
+                <button class="ghost-button compact" id="undoCartButton" type="button" disabled data-i18n="pos.undoAction">Undo Last Action</button>
+                <button class="ghost-button compact" id="clearCartButton" type="button" data-i18n="pos.clearCart">Clear Cart</button>
               </div>
               <div class="cart-total">
-                <span>Total</span>
+                <span data-i18n="pos.total">Total</span>
                 <strong id="cartTotal">KES 0</strong>
               </div>
               <div class="payment-grid" id="paymentGrid">
-                <button class="ghost-button payment-option active" data-payment="cash" type="button">Cash</button>
-                <button class="ghost-button payment-option" data-payment="mobile" type="button">Mobile Money</button>
-                <button class="ghost-button payment-option" data-payment="card" type="button">Card</button>
+                <button class="ghost-button payment-option active" data-payment="cash" type="button" data-i18n="pos.cash">Cash</button>
+                <button class="ghost-button payment-option" data-payment="mobile" type="button" data-i18n="pos.mobile">Mobile Money</button>
+                <button class="ghost-button payment-option" data-payment="card" type="button" data-i18n="pos.card">Card</button>
               </div>
               <div class="cash-tender-row" id="cashTenderRow">
-                <label>Amount tendered<input id="cashTendered" type="number" min="0" placeholder="Enter cash received" /></label>
-                <div class="change-due"><span>Change due</span><strong id="changeDue">KES 0</strong></div>
+                <label><span data-i18n="pos.amountTendered">Amount tendered</span><input id="cashTendered" type="number" min="0" placeholder="Enter cash received" data-i18n-placeholder="pos.tenderedPlaceholder" /></label>
+                <div class="change-due"><span data-i18n="pos.changeDue">Change due</span><strong id="changeDue">KES 0</strong></div>
               </div>
-              <button class="primary-button full-width" id="completeSaleButton">Complete Sale</button>
+              <button class="primary-button full-width" id="completeSaleButton" data-i18n="pos.completeSale">Complete Sale</button>
+              <button class="ghost-button full-width" id="undoSaleButton" type="button" disabled data-i18n="pos.undoSale">Undo Last Sale</button>
             </article>
           </div>
         </section>
@@ -196,18 +207,60 @@
         <section class="view" id="reports">
           <div class="page-title">
             <div>
-              <p class="eyebrow">Business intelligence</p>
-              <h1>Reports</h1>
+              <p class="eyebrow" data-i18n="reports.eyebrow">Business intelligence</p>
+              <h1 data-i18n="reports.title">Reports</h1>
             </div>
           </div>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.financialEyebrow">Financial tracking</p>
+                <h2 data-i18n="reports.salesTitle">Sales &amp; Payment Reports</h2>
+              </div>
+              <select id="salesRangePreset" aria-label="Date range">
+                <option value="today" data-i18n="reports.rangeToday">Today</option>
+                <option value="week" data-i18n="reports.rangeWeek">This week</option>
+                <option value="month" selected data-i18n="reports.rangeMonth">This month</option>
+                <option value="all" data-i18n="reports.rangeAll">All time</option>
+                <option value="custom" data-i18n="reports.rangeCustom">Custom range</option>
+              </select>
+            </div>
+            <div class="sales-range-custom" id="salesRangeCustom" hidden>
+              <label><span data-i18n="reports.from">From</span><input id="salesRangeFrom" type="date" /></label>
+              <label><span data-i18n="reports.to">To</span><input id="salesRangeTo" type="date" /></label>
+            </div>
+            <div class="payment-method-grid" id="paymentMethodGrid"></div>
+            <div class="payment-summary" id="paymentSummary"></div>
+            <div class="store-breakdown" id="storeBreakdown" hidden></div>
+            <div class="button-row end">
+              <button class="ghost-button compact" id="exportPaymentCsvButton" type="button" data-i18n="reports.exportCsv">Export CSV</button>
+              <button class="ghost-button compact" id="exportPaymentPdfButton" type="button" data-i18n="reports.exportPdf">Export PDF</button>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="monthlyReport.sectionEyebrow">AI-generated</p>
+                <h2 data-i18n="monthlyReport.sectionTitle">Monthly Reports</h2>
+              </div>
+              <div class="button-row" style="gap:8px">
+                <label style="flex-direction:row;align-items:center;gap:6px;color:inherit"><span data-i18n="monthlyReport.monthLabel">Month</span><input id="monthlyReportMonth" type="month" /></label>
+                <button class="primary-button compact" id="generateMonthlyReportButton" type="button" data-i18n="monthlyReport.generateButton">Generate Report</button>
+              </div>
+            </div>
+            <div class="report-grid" id="monthlyReportsList"></div>
+          </article>
+
           <div class="report-grid" id="reportGrid"></div>
         </section>
 
         <section class="view" id="ai">
           <div class="page-title">
             <div>
-              <p class="eyebrow">Anthropic powered</p>
-              <h1>AI Business Advisor</h1>
+              <p class="eyebrow" data-i18n="ai.eyebrow">Anthropic powered</p>
+              <h1 data-i18n="ai.title">AI Business Advisor</h1>
             </div>
           </div>
           <div class="ai-layout">
@@ -217,21 +270,56 @@
                 <button data-question="What should I reorder this week?">Reorder plan</button>
                 <button data-question="Which products have the most stock?">Highest stock</button>
                 <button data-question="Which products have no sales recorded?">No sales recorded</button>
+                <button data-question="How do I use the POS?">Guide: POS</button>
+                <button data-question="How do I manage inventory?">Guide: Inventory</button>
+                <button data-question="How do I read my reports?">Guide: Reports</button>
+                <button data-question="How do I use multiple stores?">Guide: Multi-store</button>
               </div>
-              <textarea id="aiQuestion" rows="5" placeholder="Ask about your inventory, stock levels, sales, or forecasts..."></textarea>
-              <button class="primary-button" id="askAiButton">Ask AI Advisor</button>
+              <textarea id="aiQuestion" rows="5" placeholder="Ask about your inventory, stock levels, sales, or forecasts..." data-i18n-placeholder="ai.questionPlaceholder"></textarea>
+              <button class="primary-button" id="askAiButton" data-i18n="ai.askButton">Ask AI Advisor</button>
             </article>
             <article class="panel ai-answer">
               <div class="panel-head">
-                <h2>Recommendation</h2>
-                <span id="aiMode" class="count-badge">Local</span>
+                <h2 data-i18n="ai.conversation">Conversation</h2>
+                <div class="button-row" style="gap:8px">
+                  <span id="aiMode" class="count-badge">Local</span>
+                  <button class="ghost-button compact" id="clearChatButton" type="button" data-i18n="ai.clear">Clear</button>
+                </div>
               </div>
-              <div id="aiAnswer"></div>
+              <div id="aiAnswer" class="chat-log"></div>
             </article>
           </div>
         </section>
       </main>
     </div>
+
+    <dialog id="stockAlertDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="stockAlert.title">Stock Alert</h2>
+        <button class="icon-button" type="button" id="stockAlertPopupClose" aria-label="Close">&times;</button>
+      </div>
+      <p><strong id="stockAlertProductName"></strong></p>
+      <p id="stockAlertDetail" class="muted"></p>
+      <p id="stockAlertSuggestion" class="muted"></p>
+      <p id="stockAlertQueueNote" class="muted"></p>
+      <div class="button-row end">
+        <button class="primary-button" type="button" id="stockAlertPopupOk" data-i18n="stockAlert.ok">OK</button>
+      </div>
+    </dialog>
+
+    <dialog id="monthlyReportDialog">
+      <div class="dialog-head">
+        <h2 id="monthlyReportDialogTitle"></h2>
+        <button class="icon-button" type="button" id="closeMonthlyReportDialog" aria-label="Close">&times;</button>
+      </div>
+      <div class="kpi-grid" id="monthlyReportDetailKpis"></div>
+      <p class="muted" data-i18n="monthlyReport.detailSummaryLabel" style="margin-top:14px">Summary</p>
+      <p id="monthlyReportDetailSummary" style="white-space:pre-line;line-height:1.6"></p>
+      <div class="button-row end">
+        <button class="ghost-button compact" type="button" id="exportMonthlyReportPdfButton" data-i18n="monthlyReport.exportPdfButton">Export PDF</button>
+        <button class="ghost-button" type="button" id="closeMonthlyReportDialogBottom" data-i18n="product.cancel">Cancel</button>
+      </div>
+    </dialog>
 
     <dialog id="productDialog">
       <form method="dialog" id="productForm">
@@ -241,16 +329,23 @@
         </div>
         <input name="id" type="hidden" />
         <div class="form-grid">
-          <label>Product name<input name="name" required /></label>
-          <label>Category<input name="category" required /></label>
-          <label>Brand<input name="brand" /></label>
-          <label>Suppliers<input name="supplier" /></label>
-          <label>Quantity<input name="quantity" type="number" min="0" required /></label>
-          <label>Low stock threshold<input name="reorderLevel" type="number" min="0" placeholder="e.g. 10" /></label>
+          <label><span data-i18n="product.nameLabel">Product name</span><input name="name" required /></label>
+          <label><span data-i18n="product.categoryLabel">Category</span><input name="category" required /></label>
+          <label><span data-i18n="product.brandLabel">Brand</span><input name="brand" /></label>
+          <label><span data-i18n="product.supplierLabel">Suppliers</span><input name="supplier" /></label>
+          <label><span data-i18n="product.quantityLabel">Quantity</span><input name="quantity" type="number" min="0" required /></label>
+          <label><span data-i18n="product.priceLabel">Selling price (KES)</span><input name="sellingPrice" type="number" min="0" step="0.01" required /></label>
+          <label><span data-i18n="product.priceTypeLabel">Price type</span>
+            <select name="priceType">
+              <option value="fixed" data-i18n="product.priceFixed">Fixed price</option>
+              <option value="dynamic" data-i18n="product.priceDynamic">Flexible / dynamic price</option>
+            </select>
+          </label>
+          <label><span data-i18n="product.reorderLabel">Low stock threshold</span><input name="reorderLevel" type="number" min="0" placeholder="e.g. 10" data-i18n-placeholder="product.reorderPlaceholder" /></label>
         </div>
         <div class="button-row end">
-          <button class="ghost-button" type="button" id="cancelProductDialog">Cancel</button>
-          <button class="primary-button" value="default">Save Product</button>
+          <button class="ghost-button" type="button" id="cancelProductDialog" data-i18n="product.cancel">Cancel</button>
+          <button class="primary-button" value="default" data-i18n="product.save">Save Product</button>
         </div>
 
       </form>
@@ -259,13 +354,13 @@
     <div class="auth-gate" id="authGate" aria-live="polite">
       <form class="auth-panel" id="authForm">
         <div>
-          <p class="eyebrow">Account access</p>
+          <p class="eyebrow" data-i18n="auth.eyebrow">Account access</p>
           <h1>SanitaryFlow ERP</h1>
-          <p class="auth-copy">Create an account or sign in to manage your own inventory, stock levels, sales, and AI recommendations.</p>
+          <p class="auth-copy" data-i18n="auth.copy">Create an account or sign in to manage your own inventory, stock levels, sales, and AI recommendations.</p>
         </div>
-        <label>Business name<input id="businessName" name="businessName" autocomplete="organization" /></label>
-        <label>Email<input id="authEmail" name="email" type="email" autocomplete="email" required /></label>
-        <label>Password<input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="6" required /></label>
+        <label><span data-i18n="auth.businessName">Business name</span><input id="businessName" name="businessName" autocomplete="organization" /></label>
+        <label><span data-i18n="auth.email">Email</span><input id="authEmail" name="email" type="email" autocomplete="email" required /></label>
+        <label><span data-i18n="auth.password">Password</span><input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="6" required /></label>
         <button class="primary-button full-width" id="authSubmitButton" type="submit">Create account</button>
         <button class="ghost-button full-width" id="authModeButton" type="button">I already have an account</button>
       </form>
@@ -275,7 +370,7 @@
 
     <div class="command-palette" id="commandPalette" aria-hidden="true">
       <div class="command-box">
-        <input id="commandInput" placeholder="Type a command or module name" />
+        <input id="commandInput" placeholder="Type a command or module name" data-i18n-placeholder="command.placeholder" />
         <div id="commandResults"></div>
       </div>
     </div>
