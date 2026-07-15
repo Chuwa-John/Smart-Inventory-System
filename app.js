@@ -616,44 +616,60 @@ function renderChart() {
   const canvas = qs("#salesChart");
   const ctx = canvas.getContext("2d");
   const chartProducts = storeProducts().slice(0, 12);
-  const labels = chartProducts.map((product) => String(product.name || "Item").slice(0, 10));
+  const labels = chartProducts.map((product) => {
+    const parts = [product.name, product.brand, product.category].filter(Boolean);
+    return parts.join(" \u2022 ").slice(0, 28);
+  });
   const data = chartProducts.map((product) => Number(product.quantity || 0));
   const width = canvas.width;
   const height = canvas.height;
-  const pad = 44;
+  const padLeft = 56;
+  const padRight = 20;
+  const padTop = 24;
+  const padBottom = 78;
   const max = Math.max(...data, 1) * 1.18;
+  const mutedColor = getComputedStyle(document.documentElement).getPropertyValue("--muted");
 
   ctx.clearRect(0, 0, width, height);
   ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--line");
   ctx.lineWidth = 1;
-  for (let i = 0; i < 5; i += 1) {
-    const y = pad + ((height - pad * 2) / 4) * i;
+
+  const gridLines = 5;
+  for (let i = 0; i < gridLines; i += 1) {
+    const y = padTop + ((height - padTop - padBottom) / (gridLines - 1)) * i;
     ctx.beginPath();
-    ctx.moveTo(pad, y);
-    ctx.lineTo(width - pad, y);
+    ctx.moveTo(padLeft, y);
+    ctx.lineTo(width - padRight, y);
     ctx.stroke();
+
+    const value = Math.round(max - (max / (gridLines - 1)) * i);
+    ctx.fillStyle = mutedColor;
+    ctx.font = "11px Inter, sans-serif";
+    ctx.textAlign = "right";
+    ctx.fillText(String(value), padLeft - 8, y + 4);
   }
+  ctx.textAlign = "left";
 
   if (!data.length) {
-    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted");
+    ctx.fillStyle = mutedColor;
     ctx.font = "15px Inter, sans-serif";
-    ctx.fillText(t("chart.emptyPrompt"), pad, height / 2);
+    ctx.fillText(t("chart.emptyPrompt"), padLeft, height / 2);
     return;
   }
 
   const points = data.map((value, index) => ({
-    x: pad + ((width - pad * 2) / Math.max(data.length - 1, 1)) * index,
-    y: height - pad - (value / max) * (height - pad * 2)
+    x: padLeft + ((width - padLeft - padRight) / Math.max(data.length - 1, 1)) * index,
+    y: height - padBottom - (value / max) * (height - padTop - padBottom)
   }));
 
-  const gradient = ctx.createLinearGradient(0, pad, 0, height - pad);
+  const gradient = ctx.createLinearGradient(0, padTop, 0, height - padBottom);
   gradient.addColorStop(0, "rgba(70, 194, 161, 0.35)");
   gradient.addColorStop(1, "rgba(106, 167, 255, 0.02)");
 
   ctx.beginPath();
-  ctx.moveTo(points[0].x, height - pad);
+  ctx.moveTo(points[0].x, height - padBottom);
   points.forEach((point) => ctx.lineTo(point.x, point.y));
-  ctx.lineTo(points[points.length - 1].x, height - pad);
+  ctx.lineTo(points[points.length - 1].x, height - padBottom);
   ctx.closePath();
   ctx.fillStyle = gradient;
   ctx.fill();
@@ -667,10 +683,15 @@ function renderChart() {
   ctx.lineWidth = 4;
   ctx.stroke();
 
-  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted");
-  ctx.font = "13px Inter, sans-serif";
+  ctx.fillStyle = mutedColor;
+  ctx.font = "11px Inter, sans-serif";
   labels.forEach((label, index) => {
-    ctx.fillText(label, points[index].x - 10, height - 14);
+    ctx.save();
+    ctx.translate(points[index].x, height - padBottom + 14);
+    ctx.rotate(-Math.PI / 5);
+    ctx.textAlign = "right";
+    ctx.fillText(label, 0, 0);
+    ctx.restore();
   });
 }
 
