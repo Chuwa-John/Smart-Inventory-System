@@ -27,6 +27,7 @@ const state = {
   stores: [],
   currentStoreId: "",
   unsubscribeStores: null,
+  pendingTransferProductId: null,
   stockAlertPopupEnabled: true,
   productsInitialized: false,
   stockAlertQueue: [],
@@ -117,6 +118,9 @@ const DICTIONARY = {
     "dialog.newStoreNamePrompt": "New store name (e.g. Mombasa Road Branch):",
     "dialog.transferDestinationPrompt": "Transfer \"{name}\" to which store?\n{list}\n\nEnter the number:",
     "dialog.transferQuantityPrompt": "How many units of \"{name}\" to transfer? (Available: {quantity})",
+    "dialog.transferTitle": "Transfer Stock", "dialog.transferDestinationLabel": "Destination store",
+    "dialog.transferQuantityLabel": "Quantity to transfer", "dialog.transferConfirm": "Transfer",
+    "dialog.transferProductLabel": "{name} \u2014 {quantity} available at {store}",
     "dialog.deleteConfirm": "Delete {name} from inventory?",
     "dialog.undoSaleConfirm": "Undo the last completed sale? This will restore stock quantities.",
     "dialog.editPricePrompt": "Enter new price for {name} (KES):",
@@ -325,6 +329,9 @@ const DICTIONARY = {
     "dialog.newStoreNamePrompt": "Jina la duka jipya (mfano, Tawi la Mombasa Road):",
     "dialog.transferDestinationPrompt": "Hamisha \"{name}\" kwenda duka gani?\n{list}\n\nWeka nambari:",
     "dialog.transferQuantityPrompt": "Vitengo vingapi vya \"{name}\" kuhamisha? (Vinavyopatikana: {quantity})",
+    "dialog.transferTitle": "Hamisha Hisa", "dialog.transferDestinationLabel": "Duka la kupokea",
+    "dialog.transferQuantityLabel": "Kiasi cha kuhamisha", "dialog.transferConfirm": "Hamisha",
+    "dialog.transferProductLabel": "{name} \u2014 {quantity} zinapatikana katika {store}",
     "dialog.deleteConfirm": "Futa {name} kutoka kwenye hisa?",
     "dialog.undoSaleConfirm": "Tengua mauzo ya mwisho yaliyokamilika? Hii itarejesha kiasi cha hisa.",
     "dialog.editPricePrompt": "Weka bei mpya ya {name} (KES):",
@@ -894,7 +901,7 @@ function renderPosProducts() {
     .slice(0, 8)
     .map((product) => `<div class="pos-product">
       <strong>${esc(product.name)}</strong>
-      <span class="muted">${esc(product.category)} - KES ${Number(product.sellingPrice || 0).toLocaleString()} - ${t("pos.available", { quantity: product.quantity })}</span>
+      <span class="muted">${esc(product.category)} \u2022 ${esc(product.brand || "-")} - KES ${Number(product.sellingPrice || 0).toLocaleString()} - ${t("pos.available", { quantity: product.quantity })}</span>
       <div class="pos-product-controls">
         <input type="number" min="1" max="${product.quantity}" value="1" class="pos-qty-input" data-qty-input="${product.id}" aria-label="${esc(t("pos.qtyAriaLabel", { name: product.name }))}" />
         ${product.priceType === "dynamic" ? `<input type="number" min="0" step="0.01" class="pos-price-input" data-price-input="${product.id}" placeholder="${esc(t("pos.pricePerUnitPlaceholder"))}" />` : ""}
@@ -1695,29 +1702,55 @@ async function saveProduct(product) {
   showToast(t("toast.productSaved", { name: product.name }));
 }
 
-async function transferStock(productId) {
+function openTransferDialog(productId) {
   const product = state.products.find((item) => item.id === productId);
   if (!product) return;
   const sourceStoreId = productStoreId(product);
   const otherStores = activeStores().filter((store) => store.id !== sourceStoreId);
   if (!otherStores.length) return showToast(t("toast.needTwoStoresTransfer"));
   if (!state.db || !state.user) return showToast(t("toast.signInToTransfer"));
+  if (!qs("#transferDialog")) {
+    console.warn("transferDialog markup missing from index.html");
+    return showToast(t("toast.transferFailed"));
+  }
 
-  const destinationLabel = otherStores.map((store, index) => `${index + 1}. ${store.name}`).join("\n");
-  const destinationInput = window.prompt(t("dialog.transferDestinationPrompt", { name: product.name, list: destinationLabel }));
-  if (destinationInput === null) return;
-  const destinationStore = otherStores[Number(destinationInput) - 1];
+  state.pendingTransferProductId = productId;
+  const sourceStore = state.stores.find((store) => store.id === sourceStoreId);
+  qs("#transferProductLabel").textContent = t("dialog.transferProductLabel", {
+    name: product.name,
+    quantity: product.quantity,
+    store: sourceStore?.name || t("storeSwitcher.fallbackName")
+  });
+  qs("#transferDestinationSelect").innerHTML = otherStores
+    .map((store) => `<option value="${store.id}">${esc(store.name || t("storeSwitcher.fallbackName"))}</option>`)
+    .join("");
+  const qtyInput = qs("#transferQuantityInput");
+  qtyInput.max = product.quantity;
+  qtyInput.value = Math.min(1, product.quantity);
+  qs("#transferDialog").showModal();
+}
+
+async function confirmTransfer() {
+  const productId = state.pendingTransferProductId;
+  const product = state.products.find((item) => item.id === productId);
+  if (!product) return qs("#transferDialog").close();
+
+  const destinationStoreId = qs("#transferDestinationSelect").value;
+  const destinationStore = state.stores.find((store) => store.id === destinationStoreId);
   if (!destinationStore) return showToast(t("toast.invalidStoreSelection"));
 
-  const qtyInput = window.prompt(t("dialog.transferQuantityPrompt", { name: product.name, quantity: product.quantity }));
-  if (qtyInput === null) return;
-  const qty = Math.floor(Number(qtyInput));
+  const qty = Math.floor(Number(qs("#transferQuantityInput").value));
   if (!Number.isFinite(qty) || qty <= 0 || qty > product.quantity) return showToast(t("toast.invalidTransferQuantity"));
 
   try {
-    const { collection, doc, runTransaction, serverTimestamp, query, where } = state.firebaseApi.firestore;
+    const { collection, doc, runTransaction, serverTimestamp, query, where, getDocs } = state.firebaseApi.firestore;
     const productsRef = collection(state.db, "users", state.user.uid, "products");
     const sourceRef = doc(productsRef, product.id);
+
+    const matchQuery = query(productsRef, where("storeId", "==", destinationStore.id), where("sku", "==", product.sku));
+    const matchSnapOutsideTx = await getDocs(matchQuery);
+    const destinationRef = matchSnapOutsideTx.empty ? doc(productsRef) : matchSnapOutsideTx.docs[0].ref;
+    const destinationExisted = !matchSnapOutsideTx.empty;
 
     await runTransaction(state.db, async (transaction) => {
       const sourceSnap = await transaction.get(sourceRef);
@@ -1725,14 +1758,15 @@ async function transferStock(productId) {
       const sourceQty = Number(sourceSnap.data().quantity || 0);
       if (sourceQty < qty) throw new Error(t("txerror.notEnoughStockTransfer"));
 
-      const matchQuery = query(productsRef, where("storeId", "==", destinationStore.id), where("sku", "==", product.sku));
-      const matchSnap = await transaction.get(matchQuery);
-      const destinationRef = matchSnap.empty ? doc(productsRef) : matchSnap.docs[0].ref;
+      let destinationQty = 0;
+      if (destinationExisted) {
+        const destinationSnap = await transaction.get(destinationRef);
+        destinationQty = destinationSnap.exists() ? Number(destinationSnap.data().quantity || 0) : 0;
+      }
 
       transaction.update(sourceRef, { quantity: sourceQty - qty, updatedAt: serverTimestamp() });
 
-      if (!matchSnap.empty) {
-        const destinationQty = Number(matchSnap.docs[0].data().quantity || 0);
+      if (destinationExisted) {
         transaction.update(destinationRef, { quantity: destinationQty + qty, updatedAt: serverTimestamp() });
       } else {
         const { id, ...rest } = product;
@@ -1748,6 +1782,7 @@ async function transferStock(productId) {
     });
 
     showToast(t("toast.transferred", { qty, unit: qty === 1 ? t("toast.unitSingular") : t("toast.unitPlural"), name: product.name, store: destinationStore.name }));
+    qs("#transferDialog").close();
   } catch (error) {
     console.warn(error);
     showToast(error.message || t("toast.transferFailed"));
@@ -2281,6 +2316,9 @@ function bindEvents() {
   qs("#inventoryAddButton").addEventListener("click", () => openProductDialog());
   qs("#closeProductDialog").addEventListener("click", () => qs("#productDialog").close());
   qs("#cancelProductDialog").addEventListener("click", () => qs("#productDialog").close());
+  qs("#closeTransferDialog")?.addEventListener("click", () => qs("#transferDialog").close());
+  qs("#cancelTransferDialog")?.addEventListener("click", () => qs("#transferDialog").close());
+  qs("#confirmTransferButton")?.addEventListener("click", confirmTransfer);
   qs("#askAiButton").addEventListener("click", askAi);
   qs("#clearChatButton").addEventListener("click", () => {
     state.chatHistory = [];
@@ -2424,7 +2462,7 @@ function bindEvents() {
 
     const transferButton = event.target.closest("[data-transfer-product]");
     if (transferButton) {
-      transferStock(transferButton.dataset.transferProduct);
+      openTransferDialog(transferButton.dataset.transferProduct);
       return;
     }
 

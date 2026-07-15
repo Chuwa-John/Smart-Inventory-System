@@ -351,6 +351,26 @@
       </form>
     </dialog>
 
+    <dialog id="transferDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="dialog.transferTitle">Transfer Stock</h2>
+        <button class="icon-button" type="button" id="closeTransferDialog" aria-label="Close">&times;</button>
+      </div>
+      <p id="transferProductLabel" class="muted"></p>
+      <div class="form-grid">
+        <label><span data-i18n="dialog.transferDestinationLabel">Destination store</span>
+          <select id="transferDestinationSelect"></select>
+        </label>
+        <label><span data-i18n="dialog.transferQuantityLabel">Quantity to transfer</span>
+          <input id="transferQuantityInput" type="number" min="1" step="1" />
+        </label>
+      </div>
+      <div class="button-row end">
+        <button class="ghost-button" type="button" id="cancelTransferDialog" data-i18n="product.cancel">Cancel</button>
+        <button class="primary-button" type="button" id="confirmTransferButton" data-i18n="dialog.transferConfirm">Transfer</button>
+      </div>
+    </dialog>
+
     <div class="auth-gate" id="authGate" aria-live="polite">
       <form class="auth-panel" id="authForm">
         <div>
