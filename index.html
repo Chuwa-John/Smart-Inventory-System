@@ -372,15 +372,26 @@
     </dialog>
 
     <div class="auth-gate" id="authGate" aria-live="polite">
-      <form class="auth-panel" id="authForm">
+      <form class="auth-panel" id="authForm" novalidate>
         <div>
           <p class="eyebrow" data-i18n="auth.eyebrow">Account access</p>
           <h1>SanitaryFlow ERP</h1>
           <p class="auth-copy" data-i18n="auth.copy">Create an account or sign in to manage your own inventory, stock levels, sales, and AI recommendations.</p>
         </div>
         <label><span data-i18n="auth.businessName">Business name</span><input id="businessName" name="businessName" autocomplete="organization" /></label>
-        <label><span data-i18n="auth.email">Email</span><input id="authEmail" name="email" type="email" autocomplete="email" required /></label>
-        <label><span data-i18n="auth.password">Password</span><input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="6" required /></label>
+        <label><span data-i18n="auth.email">Email</span><input id="authEmail" name="email" type="email" autocomplete="email" required /><span class="field-error" id="authEmailError"></span></label>
+        <label><span data-i18n="auth.password">Password</span><input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="6" required /><span class="field-error" id="authPasswordError"></span></label>
+        <label id="authConfirmPasswordRow"><span data-i18n="auth.confirmPassword">Confirm password</span><input id="authConfirmPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="6" /><span class="field-error" id="authConfirmPasswordError"></span></label>
+        <label class="auth-consent-row" id="authConsentRow">
+          <input id="authConsent" name="consent" type="checkbox" required />
+          <span>
+            <span data-i18n="auth.consentPrefix">I agree to the</span>
+            <a href="./terms.html" target="_blank" rel="noopener" data-i18n="auth.consentTerms">Terms &amp; Conditions</a>
+            <span data-i18n="auth.consentAnd">and</span>
+            <a href="./privacy-policy.html" target="_blank" rel="noopener" data-i18n="auth.consentPrivacy">Privacy Policy</a><span data-i18n="auth.consentSuffix">.</span>
+          </span>
+        </label>
+        <span class="field-error" id="authConsentError"></span>
         <button class="primary-button full-width" id="authSubmitButton" type="submit">Create account</button>
         <button class="ghost-button full-width" id="authModeButton" type="button">I already have an account</button>
       </form>

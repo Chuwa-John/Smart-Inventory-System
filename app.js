@@ -112,6 +112,9 @@ const DICTIONARY = {
     "auth.eyebrow": "Account access",
     "auth.copy": "Create an account or sign in to manage your own inventory, stock levels, sales, and AI recommendations.",
     "auth.businessName": "Business name", "auth.email": "Email", "auth.password": "Password",
+    "auth.confirmPassword": "Confirm password",
+    "auth.consentPrefix": "I agree to the", "auth.consentTerms": "Terms & Conditions",
+    "auth.consentAnd": "and", "auth.consentPrivacy": "Privacy Policy", "auth.consentSuffix": ".",
     "stockAlert.title": "Stock Alert", "stockAlert.ok": "OK",
     "command.placeholder": "Type a command or module name",
     "dialog.overridePasswordPrompt": "Enter the price override password:",
@@ -222,6 +225,11 @@ const DICTIONARY = {
     "chat.emptyState": "Ask a question about your inventory to get started \u2014 in any language.",
     "auth.createAccount": "Create account", "auth.signIn": "Sign in",
     "auth.haveAccount": "I already have an account", "auth.newAccount": "Create a new account",
+    "auth.errorRequired": "This field is required.",
+    "auth.errorEmailInvalid": "Enter a valid email address.",
+    "auth.errorPasswordShort": "Password must be at least 6 characters.",
+    "auth.errorPasswordMismatch": "Passwords do not match.",
+    "auth.errorConsentRequired": "Please accept the Terms & Conditions and Privacy Policy.",
     "theme.light": "Light", "theme.dark": "Dark",
     "product.editTitle": "Edit Inventory Product", "product.addTitle": "Add Inventory Product",
     "inventory.edit": "Edit", "inventory.transfer": "Transfer", "inventory.delete": "Delete",
@@ -263,6 +271,8 @@ const DICTIONARY = {
     "toast.authInvalidCredential": "Email or password is incorrect.",
     "toast.authWeakPassword": "Use a password with at least 6 characters.",
     "toast.authOperationNotAllowed": "Enable Email/Password sign-in in Firebase Auth.",
+    "toast.consentRequired": "Please accept the Terms & Conditions and Privacy Policy to create an account.",
+    "toast.passwordMismatch": "Passwords do not match.",
     "toast.outOfStock": "This product is out of stock.",
     "toast.selectStoreToSell": "Select a specific store to make a sale.",
     "toast.enterPricePerUnit": "Enter a price per unit for this product.",
@@ -323,6 +333,9 @@ const DICTIONARY = {
     "auth.eyebrow": "Ufikiaji wa akaunti",
     "auth.copy": "Fungua akaunti au ingia ili kusimamia hisa yako, viwango vya bidhaa, mauzo, na mapendekezo ya AI.",
     "auth.businessName": "Jina la biashara", "auth.email": "Barua pepe", "auth.password": "Nenosiri",
+    "auth.confirmPassword": "Thibitisha nenosiri",
+    "auth.consentPrefix": "Nakubali", "auth.consentTerms": "Sheria na Masharti",
+    "auth.consentAnd": "na", "auth.consentPrivacy": "Sera ya Faragha", "auth.consentSuffix": ".",
     "stockAlert.title": "Arifa ya Hisa", "stockAlert.ok": "Sawa",
     "command.placeholder": "Andika amri au jina la sehemu",
     "dialog.overridePasswordPrompt": "Weka nenosiri la kubadilisha bei:",
@@ -433,6 +446,11 @@ const DICTIONARY = {
     "chat.emptyState": "Uliza swali kuhusu hisa yako kuanza \u2014 kwa lugha yoyote.",
     "auth.createAccount": "Fungua akaunti", "auth.signIn": "Ingia",
     "auth.haveAccount": "Nina akaunti tayari", "auth.newAccount": "Fungua akaunti mpya",
+    "auth.errorRequired": "Sehemu hii inahitajika.",
+    "auth.errorEmailInvalid": "Weka barua pepe sahihi.",
+    "auth.errorPasswordShort": "Nenosiri liwe na angalau herufi 6.",
+    "auth.errorPasswordMismatch": "Manenosiri hayafanani.",
+    "auth.errorConsentRequired": "Tafadhali kubali Sheria na Masharti na Sera ya Faragha.",
     "theme.light": "Mwanga", "theme.dark": "Giza",
     "product.editTitle": "Hariri Bidhaa ya Hisa", "product.addTitle": "Ongeza Bidhaa ya Hisa",
     "inventory.edit": "Hariri", "inventory.transfer": "Hamisha", "inventory.delete": "Futa",
@@ -474,6 +492,8 @@ const DICTIONARY = {
     "toast.authInvalidCredential": "Barua pepe au nenosiri si sahihi.",
     "toast.authWeakPassword": "Tumia nenosiri lenye angalau herufi 6.",
     "toast.authOperationNotAllowed": "Wezesha kuingia kwa Barua pepe/Nenosiri kwenye Firebase Auth.",
+    "toast.consentRequired": "Tafadhali kubali Sheria na Masharti na Sera ya Faragha kabla ya kufungua akaunti.",
+    "toast.passwordMismatch": "Manenosiri hayafanani.",
     "toast.outOfStock": "Bidhaa hii haipo kwenye hisa.",
     "toast.selectStoreToSell": "Chagua duka mahususi kufanya mauzo.",
     "toast.enterPricePerUnit": "Weka bei kwa kila kitengo cha bidhaa hii.",
@@ -2126,15 +2146,20 @@ async function ensureUserProfile(user) {
 
   try {
     const { doc, serverTimestamp, setDoc } = state.firebaseApi.firestore;
+    const consentPayload = state.pendingConsent
+      ? { legalConsent: { ...state.pendingConsent, acceptedAt: serverTimestamp() } }
+      : {};
     await setDoc(doc(state.db, "users", user.uid), {
       uid: user.uid,
       email: user.email || "",
       businessName,
       role: "Owner",
       authProvider: "password",
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
+      ...consentPayload
     }, { merge: true });
     state.cachedProfile = { email: user.email || "", businessName };
+    state.pendingConsent = null;
   } catch (error) {
     console.warn(error);
   }
@@ -2155,10 +2180,23 @@ function setAuthMode(mode) {
   qs("#authModeButton").textContent = isSignup ? t("auth.haveAccount") : t("auth.newAccount");
   qs("#businessName").closest("label").hidden = !isSignup;
   qs("#authPassword").autocomplete = isSignup ? "new-password" : "current-password";
+  const consentRow = qs("#authConsentRow");
+  if (consentRow) {
+    consentRow.hidden = !isSignup;
+    qs("#authConsent").required = isSignup;
+  }
+  const confirmPasswordRow = qs("#authConfirmPasswordRow");
+  if (confirmPasswordRow) {
+    confirmPasswordRow.hidden = !isSignup;
+    qs("#authConfirmPassword").required = isSignup;
+    if (!isSignup) qs("#authConfirmPassword").value = "";
+  }
+  clearAuthFieldErrors();
 }
 
 const AUTH_MAX_ATTEMPTS = 5;
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
+const LEGAL_DOC_VERSION = "2026-07-15";
 
 function authFailureKey(email) {
   return `authFailures:${email.toLowerCase()}`;
@@ -2193,16 +2231,89 @@ function clearAuthFailures(email) {
   }
 }
 
+const AUTH_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function setFieldError(fieldId, message) {
+  const el = qs(`#${fieldId}`);
+  if (el) el.textContent = message || "";
+}
+
+function clearAuthFieldErrors() {
+  qsa(".field-error").forEach((el) => { el.textContent = ""; });
+}
+
+function validateAuthEmail() {
+  const value = qs("#authEmail").value.trim();
+  if (!value) {
+    setFieldError("authEmailError", t("auth.errorRequired"));
+    return false;
+  }
+  if (!AUTH_EMAIL_PATTERN.test(value)) {
+    setFieldError("authEmailError", t("auth.errorEmailInvalid"));
+    return false;
+  }
+  setFieldError("authEmailError", "");
+  return true;
+}
+
+function validateAuthPassword() {
+  const value = qs("#authPassword").value;
+  if (!value) {
+    setFieldError("authPasswordError", t("auth.errorRequired"));
+    return false;
+  }
+  if (value.length < 6) {
+    setFieldError("authPasswordError", t("auth.errorPasswordShort"));
+    return false;
+  }
+  setFieldError("authPasswordError", "");
+  return true;
+}
+
+function validateAuthConfirmPassword() {
+  if (state.authMode !== "signup") return true;
+  const password = qs("#authPassword").value;
+  const confirm = qs("#authConfirmPassword").value;
+  if (!confirm) {
+    setFieldError("authConfirmPasswordError", t("auth.errorRequired"));
+    return false;
+  }
+  if (password !== confirm) {
+    setFieldError("authConfirmPasswordError", t("auth.errorPasswordMismatch"));
+    return false;
+  }
+  setFieldError("authConfirmPasswordError", "");
+  return true;
+}
+
+function validateAuthConsent() {
+  if (state.authMode !== "signup") return true;
+  const checked = qs("#authConsent").checked;
+  setFieldError("authConsentError", checked ? "" : t("auth.errorConsentRequired"));
+  return checked;
+}
+
+function validateAuthForm() {
+  const validEmail = validateAuthEmail();
+  const validPassword = validateAuthPassword();
+  const validConfirm = validateAuthConfirmPassword();
+  const validConsent = validateAuthConsent();
+  return validEmail && validPassword && validConfirm && validConsent;
+}
+
 async function handleAuthSubmit(event) {
   event.preventDefault();
   if (!state.auth) return showToast(t("toast.firebaseNotConnected"));
+
+  if (!validateAuthForm()) return;
+
   const form = new FormData(event.currentTarget);
   const email = String(form.get("email") || "").trim();
   const password = String(form.get("password") || "");
   const businessName = String(form.get("businessName") || "").trim();
 
   if (email && getAuthFailures(email).length >= AUTH_MAX_ATTEMPTS) {
-    showToast(t("toast.tooManyFailedAttempts"));
+    setFieldError("authEmailError", t("toast.tooManyFailedAttempts"));
     return;
   }
 
@@ -2213,6 +2324,7 @@ async function handleAuthSubmit(event) {
     const authApi = state.firebaseApi.auth;
     if (state.authMode === "signup") {
       state.pendingBusinessName = businessName;
+      state.pendingConsent = { accepted: true, version: LEGAL_DOC_VERSION, acceptedAt: new Date().toISOString() };
       const credential = await authApi.createUserWithEmailAndPassword(state.auth, email, password);
       if (businessName) await authApi.updateProfile(credential.user, { displayName: businessName });
       clearAuthFailures(email);
@@ -2226,13 +2338,16 @@ async function handleAuthSubmit(event) {
   } catch (error) {
     console.warn(error);
     recordAuthFailure(email);
-    const messageKeys = {
+    const fieldErrorKeys = {
       "auth/email-already-in-use": "toast.authEmailInUse",
       "auth/invalid-credential": "toast.authInvalidCredential",
-      "auth/weak-password": "toast.authWeakPassword",
-      "auth/operation-not-allowed": "toast.authOperationNotAllowed"
+      "auth/weak-password": "toast.authWeakPassword"
     };
-    showToast(t(messageKeys[error.code] || "toast.authFailedGeneric"));
+    if (fieldErrorKeys[error.code]) {
+      setFieldError("authEmailError", t(fieldErrorKeys[error.code]));
+    } else {
+      showToast(t(error.code === "auth/operation-not-allowed" ? "toast.authOperationNotAllowed" : "toast.authFailedGeneric"));
+    }
   } finally {
     submitButton.disabled = false;
   }
@@ -2352,6 +2467,15 @@ function bindEvents() {
     }
   });
   qs("#authForm").addEventListener("submit", handleAuthSubmit);
+  qs("#authEmail").addEventListener("blur", validateAuthEmail);
+  qs("#authEmail").addEventListener("input", () => setFieldError("authEmailError", ""));
+  qs("#authPassword").addEventListener("blur", validateAuthPassword);
+  qs("#authPassword").addEventListener("input", () => {
+    setFieldError("authPasswordError", "");
+    if (qs("#authConfirmPassword").value) validateAuthConfirmPassword();
+  });
+  qs("#authConfirmPassword").addEventListener("input", validateAuthConfirmPassword);
+  qs("#authConsent").addEventListener("change", validateAuthConsent);
   qs("#authModeButton").addEventListener("click", () => setAuthMode(state.authMode === "signup" ? "signin" : "signup"));
   qs("#signOutButton").addEventListener("click", async () => {
     if (!state.auth) return;

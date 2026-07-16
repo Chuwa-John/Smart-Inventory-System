@@ -720,6 +720,92 @@ dialog::backdrop {
   line-height: 1.5;
 }
 
+.auth-consent-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.auth-consent-row input {
+  width: auto;
+  margin-top: 3px;
+  flex: 0 0 auto;
+}
+
+.auth-consent-row > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.field-error {
+  display: block;
+  min-height: 1em;
+  color: var(--red);
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+.legal-doc {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 48px 24px 80px;
+  line-height: 1.7;
+}
+
+.legal-doc h1 {
+  font-size: 2rem;
+  margin-bottom: 6px;
+}
+
+.legal-doc h2 {
+  font-size: 1.15rem;
+  margin-top: 34px;
+  margin-bottom: 10px;
+  color: var(--accent);
+}
+
+.legal-doc h3 {
+  font-size: 1rem;
+  margin-top: 20px;
+  margin-bottom: 8px;
+}
+
+.legal-doc p,
+.legal-doc li {
+  color: var(--muted);
+  font-size: 0.94rem;
+}
+
+.legal-doc ul,
+.legal-doc ol {
+  padding-left: 22px;
+  display: grid;
+  gap: 6px;
+}
+
+.legal-doc .doc-meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.legal-doc .placeholder {
+  color: var(--amber);
+  font-weight: 700;
+}
+
+.legal-doc .back-link {
+  display: inline-block;
+  margin-bottom: 24px;
+  color: var(--blue);
+}
+
 .dialog-head {
   display: flex;
   justify-content: space-between;
