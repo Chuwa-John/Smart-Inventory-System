@@ -17,6 +17,7 @@ service cloud.firestore {
         && d.brand is string && d.brand.size() <= 60
         && d.supplier is string && d.supplier.size() <= 60
         && d.quantity is number && d.quantity >= 0
+        && d.storeId is string && d.storeId.size() > 0
         && (!('costPrice' in d) || (d.costPrice is number && d.costPrice >= 0))
         && (!('sellingPrice' in d) || (d.sellingPrice is number && d.sellingPrice >= 0))
         && (!('reorderLevel' in d) || (d.reorderLevel is number && d.reorderLevel >= 0));
@@ -24,27 +25,63 @@ service cloud.firestore {
 
     function productImmutableFieldsUnchanged() {
       return request.resource.data.id == resource.data.id
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && request.resource.data.createdAt == resource.data.createdAt
+        && (!('storeId' in resource.data) || request.resource.data.storeId == resource.data.storeId);
     }
 
     function validSaleItem(item) {
       return item.productId is string
+        && item.name is string && item.name.size() > 0
         && item.qty is number && item.qty > 0
         && item.lineTotal is number && item.lineTotal >= 0;
     }
 
+    function itemValidAt(items, i) {
+      return i >= items.size() || validSaleItem(items[i]);
+    }
+
+    function allItemsValid(items) {
+      return itemValidAt(items, 0) && itemValidAt(items, 1) && itemValidAt(items, 2) && itemValidAt(items, 3) &&
+        itemValidAt(items, 4) && itemValidAt(items, 5) && itemValidAt(items, 6) && itemValidAt(items, 7) &&
+        itemValidAt(items, 8) && itemValidAt(items, 9) && itemValidAt(items, 10) && itemValidAt(items, 11) &&
+        itemValidAt(items, 12) && itemValidAt(items, 13) && itemValidAt(items, 14) && itemValidAt(items, 15) &&
+        itemValidAt(items, 16) && itemValidAt(items, 17) && itemValidAt(items, 18) && itemValidAt(items, 19) &&
+        itemValidAt(items, 20) && itemValidAt(items, 21) && itemValidAt(items, 22) && itemValidAt(items, 23) &&
+        itemValidAt(items, 24) && itemValidAt(items, 25) && itemValidAt(items, 26) && itemValidAt(items, 27) &&
+        itemValidAt(items, 28) && itemValidAt(items, 29) && itemValidAt(items, 30) && itemValidAt(items, 31) &&
+        itemValidAt(items, 32) && itemValidAt(items, 33) && itemValidAt(items, 34) && itemValidAt(items, 35) &&
+        itemValidAt(items, 36) && itemValidAt(items, 37) && itemValidAt(items, 38) && itemValidAt(items, 39);
+    }
+
     function validSale() {
       let d = request.resource.data;
-      return d.items is list && d.items.size() > 0 && d.items.size() <= 100
+      return d.items is list && d.items.size() > 0 && d.items.size() <= 40
         && d.total is number && d.total >= 0
         && d.cashierUid == request.auth.uid
         && d.paymentMethod in ['cash', 'mobile', 'card']
-        && d.voided == false;
+        && d.voided == false
+        && d.storeId is string && d.storeId.size() > 0
+        && d.staffId is string && d.staffId.size() > 0
+        && d.staffName is string && d.staffName.size() > 0 && d.staffName.size() <= 80
+        && d.orderNumber is string && d.orderNumber.matches('^[0-9]{1,10}$')
+        && allItemsValid(d.items);
     }
 
     function validAuditLog() {
       return request.resource.data.uid == request.auth.uid
         && request.resource.data.action is string;
+    }
+
+    function validStore() {
+      let d = request.resource.data;
+      return d.name is string && d.name.size() > 0 && d.name.size() <= 60
+        && (!('archived' in d) || d.archived is bool);
+    }
+
+    function validStaff() {
+      let d = request.resource.data;
+      return d.name is string && d.name.size() > 0 && d.name.size() <= 80
+        && (!('archived' in d) || d.archived is bool);
     }
 
     match /users/{userId} {
@@ -61,34 +98,68 @@ service cloud.firestore {
         allow delete: if isOwner(userId);
       }
 
-      match /sales/{saleId} {
-  allow read: if isOwner(userId);
-  allow create: if isOwner(userId) && validSale();
-  allow update: if isOwner(userId) && validVoidUpdate();
-  allow delete: if false;
-}
+      match /stores/{storeId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && validStore();
+        allow update: if isOwner(userId) && validStore();
+        allow delete: if false;
+      }
 
-      match /auditLogs/{logId} {
+      match /staff/{staffId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && validStaff();
+        allow update: if isOwner(userId) && validStaff();
+        allow delete: if isOwner(userId);
+      }
+
+      match /sales/{saleId} {
+        function validVoidUpdate() {
+          let before = resource.data;
+          let after = request.resource.data;
+          return before.voided == false
+            && after.voided == true
+            && after.voidedAt is timestamp
+            && after.items == before.items
+            && after.total == before.total
+            && after.paymentMethod == before.paymentMethod
+            && after.cashTendered == before.cashTendered
+            && after.changeDue == before.changeDue
+            && after.branchId == before.branchId
+            && after.cashierUid == before.cashierUid
+            && after.createdAt == before.createdAt
+            && (!('storeId' in before) || after.storeId == before.storeId)
+            && (!('staffId' in before) || after.staffId == before.staffId)
+            && (!('orderNumber' in before) || after.orderNumber == before.orderNumber);
+        }
+
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && validSale();
+        allow update: if isOwner(userId) && validVoidUpdate();
+        allow delete: if false;
+      }
+
+     match /auditLogs/{logId} {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId) && validAuditLog();
         allow update, delete: if false;
       }
-      function validVoidUpdate() {
-  let before = resource.data;
-  let after = request.resource.data;
-  return before.voided == false
-    && after.voided == true
-    && after.voidedAt is timestamp
-    // every other field must stay exactly as it was
-    && after.items == before.items
-    && after.total == before.total
-    && after.paymentMethod == before.paymentMethod
-    && after.cashTendered == before.cashTendered
-    && after.changeDue == before.changeDue
-    && after.branchId == before.branchId
-    && after.cashierUid == before.cashierUid
-    && after.createdAt == before.createdAt;
-}
+
+      match /monthlyReports/{reportId} {
+        function validMonthlyReport() {
+          let d = request.resource.data;
+          return d.storeId is string && d.storeId.size() > 0
+            && d.periodLabel is string && d.periodLabel.matches('^[0-9]{4}-(0[1-9]|1[0-2])$')
+            && d.periodStart is timestamp && d.periodEnd is timestamp
+            && d.generatedBy == request.auth.uid
+            && d.metrics is map
+            && d.aiSummary is string && d.aiSummary.size() <= 6000;
+        }
+
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && validMonthlyReport();
+        allow update: if isOwner(userId) && validMonthlyReport();
+        allow delete: if false;
+      }
     }
   }
 }
