@@ -189,6 +189,14 @@
                 <span data-i18n="pos.total">Total</span>
                 <strong id="cartTotal">KES 0</strong>
               </div>
+              <div class="staff-controls">
+                <select id="posStaffSelect" aria-label="Staff member"></select>
+                <button class="ghost-button compact" id="addStaffButton" type="button" data-i18n="pos.addStaff">+ Staff</button>
+                <button class="ghost-button compact danger" id="removeStaffButton" type="button" data-i18n="pos.removeStaff">Remove Staff</button>
+              </div>
+              <label><span data-i18n="pos.orderNumberLabel">Order number (from sales sheet)</span>
+                <input id="posOrderNumber" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="e.g. 8097" data-i18n-placeholder="pos.orderNumberPlaceholder" />
+              </label>
               <div class="payment-grid" id="paymentGrid">
                 <button class="ghost-button payment-option active" data-payment="cash" type="button" data-i18n="pos.cash">Cash</button>
                 <button class="ghost-button payment-option" data-payment="mobile" type="button" data-i18n="pos.mobile">Mobile Money</button>
@@ -237,6 +245,71 @@
               <button class="ghost-button compact" id="exportPaymentCsvButton" type="button" data-i18n="reports.exportCsv">Export CSV</button>
               <button class="ghost-button compact" id="exportPaymentPdfButton" type="button" data-i18n="reports.exportPdf">Export PDF</button>
             </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.financialEyebrow">Financial tracking</p>
+                <h2 data-i18n="reports.staffBreakdownTitle">Sales by Staff</h2>
+              </div>
+              <input id="orderNumberSearch" type="search" placeholder="Search order number" data-i18n-placeholder="reports.searchOrderPlaceholder" />
+            </div>
+            <div id="orderNumberSearchResult" class="muted" hidden></div>
+            <div class="table-panel" style="box-shadow:none;border:none">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="reports.staffColumn">Staff</th>
+                    <th data-i18n="pos.cash">Cash</th>
+                    <th data-i18n="pos.mobile">Mobile Money</th>
+                    <th data-i18n="pos.card">Card</th>
+                    <th data-i18n="pos.total">Total</th>
+                    <th data-i18n="reports.ordersColumn">Orders</th>
+                  </tr>
+                </thead>
+                <tbody id="staffBreakdownTable"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.financialEyebrow">Financial tracking</p>
+                <h2 data-i18n="reports.staffOrderLookupTitle">Order Lookup</h2>
+              </div>
+            </div>
+            <div class="form-grid">
+              <label><span data-i18n="pos.staffLabel">Staff member</span>
+                <select id="staffOrderLookupStaff"></select>
+              </label>
+              <label><span data-i18n="reports.staffOrderLookupDateLabel">Date</span>
+                <input id="staffOrderLookupDate" type="date" />
+              </label>
+              <label><span data-i18n="reports.staffOrderLookupOrderLabel">Order number</span>
+                <select id="staffOrderLookupOrderNumber"></select>
+              </label>
+            </div>
+            <div class="button-row end">
+              <button class="ghost-button compact" id="staffOrderLookupAllButton" type="button" data-i18n="reports.staffOrderLookupAllButton">Generate All Orders</button>
+              <button class="primary-button compact" id="staffOrderLookupButton" type="button" data-i18n="reports.staffOrderLookupButton">Find Order</button>
+            </div>
+            <div id="staffOrderLookupResult" class="staff-order-result"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.financialEyebrow">Financial tracking</p>
+                <h2 data-i18n="reports.dailyStaffReportTitle">Daily Staff Report</h2>
+              </div>
+              <div class="button-row" style="gap:8px">
+                <input id="dailyStaffReportDate" type="date" />
+                <button class="primary-button compact" id="dailyStaffReportButton" type="button" data-i18n="reports.dailyStaffReportButton">Generate Daily Report</button>
+              </div>
+            </div>
+            <div id="dailyStaffReportResult" class="daily-staff-report"></div>
           </article>
 
           <article class="panel">
@@ -409,6 +482,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-    <script type="module" src="./app.js"></script>
+    <script type="module" src="./app.js?v=20260716"></script>
   </body>
 </html>

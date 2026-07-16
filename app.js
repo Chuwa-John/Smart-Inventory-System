@@ -27,6 +27,9 @@ const state = {
   stores: [],
   currentStoreId: "",
   unsubscribeStores: null,
+  staff: [],
+  unsubscribeStaff: null,
+  selectedStaffId: "",
   pendingTransferProductId: null,
   stockAlertPopupEnabled: true,
   productsInitialized: false,
@@ -95,6 +98,36 @@ const DICTIONARY = {
     "pos.cash": "Cash", "pos.mobile": "Mobile Money", "pos.card": "Card",
     "pos.amountTendered": "Amount tendered", "pos.tenderedPlaceholder": "Enter cash received",
     "pos.changeDue": "Change due", "pos.completeSale": "Complete Sale", "pos.undoSale": "Undo Last Sale",
+    "pos.staffLabel": "Staff member", "pos.selectStaffPlaceholder": "Select staff",
+    "pos.addStaff": "+ Staff", "pos.removeStaff": "Remove Staff",
+    "pos.orderNumberLabel": "Order number (from sales sheet)", "pos.orderNumberPlaceholder": "e.g. 8097",
+    "reports.staffBreakdownTitle": "Sales by Staff", "reports.staffColumn": "Staff",
+    "reports.ordersColumn": "Orders", "reports.allStaffRow": "All staff",
+    "reports.searchOrderPlaceholder": "Search order number", "reports.orderNotFound": "No sale found for that order number.",
+    "reports.orderFoundLabel": "Order #{orderNumber} \u2014 {name}, {date}, {method}, KES {total}",
+    "reports.staffOrderLookupTitle": "Order Lookup",
+    "reports.staffOrderLookupDateLabel": "Date",
+    "reports.staffOrderLookupOrderLabel": "Order number",
+    "reports.staffOrderLookupButton": "Find Order",
+    "reports.staffOrderLookupEmpty": "Select a staff member, date, and order number, then click Find Order.",
+    "reports.staffOrderLookupNotFound": "No matching order found for that staff member, date, and order number.",
+    "reports.staffOrderLookupTimeLabel": "Time",
+    "reports.staffOrderLookupPaymentLabel": "Payment Method",
+    "reports.staffOrderLookupTotalLabel": "Order Total",
+    "reports.staffOrderLookupColItem": "Item",
+    "reports.staffOrderLookupColQty": "Qty",
+    "reports.staffOrderLookupColUnitPrice": "Unit Price",
+    "reports.staffOrderLookupColLineTotal": "Line Total",
+    "reports.dailyStaffReportTitle": "Daily Staff Report",
+    "reports.dailyStaffReportButton": "Generate Daily Report",
+    "reports.dailyStaffReportEmpty": "Choose a date and click Generate Daily Report.",
+    "reports.dailyStaffReportNoSales": "No sales recorded for this date.",
+    "reports.dailyStaffReportItemsLabel": "Items",
+    "reports.dailyStaffReportOrderColumn": "Order #",
+    "reports.dailyStaffReportGrandTotal": "Grand Total (All Staff)",
+    "reports.staffOrderLookupAllButton": "Generate All Orders",
+    "reports.staffOrderLookupNoOrders": "No orders for this staff member on this date.",
+    "reports.staffOrderLookupSelectStaffDate": "Select a staff member and date first.",
     "reports.eyebrow": "Business intelligence", "reports.title": "Reports",
     "reports.financialEyebrow": "Financial tracking", "reports.salesTitle": "Sales & Payment Reports",
     "reports.rangeToday": "Today", "reports.rangeWeek": "This week", "reports.rangeMonth": "This month",
@@ -127,6 +160,9 @@ const DICTIONARY = {
     "dialog.deleteConfirm": "Delete {name} from inventory?",
     "dialog.undoSaleConfirm": "Undo the last completed sale? This will restore stock quantities.",
     "dialog.editPricePrompt": "Enter new price for {name} (KES):",
+    "dialog.newStaffNamePrompt": "New staff member's name:",
+    "dialog.removeStaffConfirm": "Remove \"{name}\" from staff? Past sales will keep their name on record.",
+    "dialog.duplicateOrderConfirm": "Order #{orderNumber} is already recorded for {name}. Record it again anyway?",
     "connection.firebaseConnected": "Firebase connected",
     "connection.createAccountToBegin": "Create an account to begin",
     "connection.inventorySyncing": "Your inventory is syncing",
@@ -218,7 +254,7 @@ const DICTIONARY = {
     "report.colPaymentMethod": "Payment Method", "report.colTransactions": "Transactions",
     "report.colTotalKes": "Total (KES)", "report.colAvgSaleKes": "Average Sale (KES)",
     "report.colTopItems": "Top Items", "report.combined": "Combined", "report.storePrefix": "Store: {name}",
-    "tutorial.pos": "How to use Point of Sale:\n1. Open the POS tab and search or browse for a product.\n2. Set the quantity, then click Add. Products flagged as flexible/dynamic price ask for a price per unit first.\n3. Adjust quantities in the cart with +/-, the qty box, or Remove. Use Undo Last Action if you make a mistake.\n4. Pick a payment method (Cash, Mobile Money, Card). For cash, enter the amount tendered to see change due.\n5. Click Complete Sale. If you need to reverse it, use Undo Last Sale right after \u2014 stock is restored automatically.",
+    "tutorial.pos": "How to use Point of Sale:\n1. Open the POS tab and search or browse for a product.\n2. Set the quantity, then click Add. Products flagged as flexible/dynamic price ask for a price per unit first.\n3. Adjust quantities in the cart with +/-, the qty box, or Remove. Use Undo Last Action if you make a mistake.\n4. Pick the staff member making the sale, and enter the order number from their physical sales sheet.\n5. Pick a payment method (Cash, Mobile Money, Card). For cash, enter the amount tendered to see change due.\n6. Click Complete Sale. If you need to reverse it, use Undo Last Sale right after \u2014 stock is restored automatically.",
     "tutorial.inventory": "How to manage inventory:\n1. Go to Inventory and click Add Product (or use the Dashboard button). Fill in name, category, quantity, and selling price.\n2. Set a Low stock threshold so the product shows up in Smart alerts and reorder recommendations once it dips below that number.\n3. Choose Fixed price for normal items, or Flexible/dynamic price if the price varies per sale.\n4. Use Edit on any row to update details, or Delete to remove a product. If you have 2+ stores, Transfer moves stock between them.\n5. Use the category and stock-status filters above the table, or the search bar, to find items quickly.",
     "tutorial.reports": "How to read your reports:\n1. The Reports tab breaks sales down by payment method \u2014 cash, mobile money, and card \u2014 with totals, counts, and top items each.\n2. Pick a date range preset (today, week, month, all time) or choose Custom range for specific dates.\n3. If you're viewing All Stores, a per-store breakdown appears below the combined summary.\n4. Use Export CSV or Export PDF to save the payment report. The Inventory Summary cards further down export stock data separately.",
     "tutorial.stores": "How to work with multiple stores:\n1. Use the store switcher on the Dashboard to change which store you're viewing or working in.\n2. Click + Store to add a new branch. Once you have 2+ stores, an \"All Stores (combined)\" option appears for read-only overviews.\n3. While All Stores is selected, adding products, adding to cart, and completing sales are disabled \u2014 switch to one specific store first.\n4. Use the Transfer button on an inventory row to move stock from one store to another; matching SKUs merge automatically.",
@@ -261,6 +297,11 @@ const DICTIONARY = {
     "toast.couldNotCreateFirstStore": "Could not create your first store.",
     "toast.couldNotLoadStores": "Could not load your stores.",
     "toast.storeAdded": "{name} added.", "toast.couldNotCreateStore": "Could not create store.",
+    "toast.signInToAddStaff": "Sign in to add staff.", "toast.staffAdded": "{name} added to staff.",
+    "toast.couldNotAddStaff": "Could not add staff member.", "toast.staffRemoved": "{name} removed from staff.",
+    "toast.couldNotRemoveStaff": "Could not remove staff member.", "toast.selectStaffFirst": "Select a staff member first.",
+    "toast.orderNumberRequired": "Enter the order number from the sales sheet.",
+    "toast.orderNumberInvalid": "Order number must contain digits only.",
     "toast.couldNotSaveAlertSetting": "Could not save alert popup setting.",
     "toast.tooManyFailedAttempts": "Too many failed attempts for this email. Please wait 15 minutes and try again.",
     "toast.accountCreated": "Account created. Add your first inventory item.",
@@ -316,6 +357,36 @@ const DICTIONARY = {
     "pos.cash": "Fedha Taslimu", "pos.mobile": "Pesa za Simu", "pos.card": "Kadi",
     "pos.amountTendered": "Kiasi kilicholipwa", "pos.tenderedPlaceholder": "Weka fedha zilizopokelewa",
     "pos.changeDue": "Chenji", "pos.completeSale": "Kamilisha Mauzo", "pos.undoSale": "Tengua Mauzo ya Mwisho",
+    "pos.staffLabel": "Mfanyakazi", "pos.selectStaffPlaceholder": "Chagua mfanyakazi",
+    "pos.addStaff": "+ Mfanyakazi", "pos.removeStaff": "Ondoa Mfanyakazi",
+    "pos.orderNumberLabel": "Nambari ya oda (kutoka karatasi ya mauzo)", "pos.orderNumberPlaceholder": "mfano 8097",
+    "reports.staffBreakdownTitle": "Mauzo kwa Mfanyakazi", "reports.staffColumn": "Mfanyakazi",
+    "reports.ordersColumn": "Oda", "reports.allStaffRow": "Wafanyakazi wote",
+    "reports.searchOrderPlaceholder": "Tafuta nambari ya oda", "reports.orderNotFound": "Hakuna mauzo yaliyopatikana kwa nambari hiyo ya oda.",
+    "reports.orderFoundLabel": "Oda #{orderNumber} \u2014 {name}, {date}, {method}, KES {total}",
+    "reports.staffOrderLookupTitle": "Tafuta Oda",
+    "reports.staffOrderLookupDateLabel": "Tarehe",
+    "reports.staffOrderLookupOrderLabel": "Nambari ya oda",
+    "reports.staffOrderLookupButton": "Tafuta Oda",
+    "reports.staffOrderLookupEmpty": "Chagua mfanyakazi, tarehe, na nambari ya oda, kisha bofya Tafuta Oda.",
+    "reports.staffOrderLookupNotFound": "Hakuna oda iliyopatikana kwa mfanyakazi, tarehe, na nambari hiyo.",
+    "reports.staffOrderLookupTimeLabel": "Muda",
+    "reports.staffOrderLookupPaymentLabel": "Njia ya Malipo",
+    "reports.staffOrderLookupTotalLabel": "Jumla ya Oda",
+    "reports.staffOrderLookupColItem": "Bidhaa",
+    "reports.staffOrderLookupColQty": "Kiasi",
+    "reports.staffOrderLookupColUnitPrice": "Bei kwa Kitengo",
+    "reports.staffOrderLookupColLineTotal": "Jumla ya Bidhaa",
+    "reports.dailyStaffReportTitle": "Ripoti ya Wafanyakazi ya Siku",
+    "reports.dailyStaffReportButton": "Tengeneza Ripoti ya Siku",
+    "reports.dailyStaffReportEmpty": "Chagua tarehe kisha bofya Tengeneza Ripoti ya Siku.",
+    "reports.dailyStaffReportNoSales": "Hakuna mauzo yaliyorekodiwa kwa tarehe hii.",
+    "reports.dailyStaffReportItemsLabel": "Bidhaa",
+    "reports.dailyStaffReportOrderColumn": "Oda #",
+    "reports.dailyStaffReportGrandTotal": "Jumla Kuu (Wafanyakazi Wote)",
+    "reports.staffOrderLookupAllButton": "Tengeneza Oda Zote",
+    "reports.staffOrderLookupNoOrders": "Hakuna oda za mfanyakazi huyu kwa tarehe hii.",
+    "reports.staffOrderLookupSelectStaffDate": "Chagua mfanyakazi na tarehe kwanza.",
     "reports.eyebrow": "Taarifa za biashara", "reports.title": "Ripoti",
     "reports.financialEyebrow": "Ufuatiliaji wa fedha", "reports.salesTitle": "Ripoti za Mauzo na Malipo",
     "reports.rangeToday": "Leo", "reports.rangeWeek": "Wiki hii", "reports.rangeMonth": "Mwezi huu",
@@ -348,6 +419,9 @@ const DICTIONARY = {
     "dialog.deleteConfirm": "Futa {name} kutoka kwenye hisa?",
     "dialog.undoSaleConfirm": "Tengua mauzo ya mwisho yaliyokamilika? Hii itarejesha kiasi cha hisa.",
     "dialog.editPricePrompt": "Weka bei mpya ya {name} (KES):",
+    "dialog.newStaffNamePrompt": "Jina la mfanyakazi mpya:",
+    "dialog.removeStaffConfirm": "Ondoa \"{name}\" kwenye orodha ya wafanyakazi? Mauzo ya awali yatabaki na jina lake.",
+    "dialog.duplicateOrderConfirm": "Oda #{orderNumber} tayari imesajiliwa kwa {name}. Uisajili tena?",
     "connection.firebaseConnected": "Firebase imeunganishwa",
     "connection.createAccountToBegin": "Fungua akaunti kuanza",
     "connection.inventorySyncing": "Hisa yako inasawazishwa",
@@ -439,7 +513,7 @@ const DICTIONARY = {
     "report.colPaymentMethod": "Njia ya Malipo", "report.colTransactions": "Miamala",
     "report.colTotalKes": "Jumla (KES)", "report.colAvgSaleKes": "Wastani wa Mauzo (KES)",
     "report.colTopItems": "Bidhaa Bora", "report.combined": "Jumla", "report.storePrefix": "Duka: {name}",
-    "tutorial.pos": "Jinsi ya kutumia Sehemu ya Mauzo (POS):\n1. Fungua kichupo cha POS na utafute au uvinjari bidhaa.\n2. Weka kiasi, kisha bofya Ongeza. Bidhaa zenye bei inayobadilika huuliza bei kwa kila kitengo kwanza.\n3. Rekebisha kiasi kwenye kikapu kwa +/-, kisanduku cha kiasi, au Ondoa. Tumia Tengua Kitendo cha Mwisho ukikosea.\n4. Chagua njia ya malipo (Fedha Taslimu, Pesa za Simu, Kadi). Kwa fedha taslimu, weka kiasi kilicholipwa ili kuona chenji.\n5. Bofya Kamilisha Mauzo. Ukihitaji kutengua, tumia Tengua Mauzo ya Mwisho mara moja \u2014 hisa hurejeshwa kiotomatiki.",
+    "tutorial.pos": "Jinsi ya kutumia Sehemu ya Mauzo (POS):\n1. Fungua kichupo cha POS na utafute au uvinjari bidhaa.\n2. Weka kiasi, kisha bofya Ongeza. Bidhaa zenye bei inayobadilika huuliza bei kwa kila kitengo kwanza.\n3. Rekebisha kiasi kwenye kikapu kwa +/-, kisanduku cha kiasi, au Ondoa. Tumia Tengua Kitendo cha Mwisho ukikosea.\n4. Chagua mfanyakazi anayefanya mauzo, na uweke nambari ya oda kutoka kwenye karatasi yake ya mauzo.\n5. Chagua njia ya malipo (Fedha Taslimu, Pesa za Simu, Kadi). Kwa fedha taslimu, weka kiasi kilicholipwa ili kuona chenji.\n6. Bofya Kamilisha Mauzo. Ukihitaji kutengua, tumia Tengua Mauzo ya Mwisho mara moja \u2014 hisa hurejeshwa kiotomatiki.",
     "tutorial.inventory": "Jinsi ya kusimamia hisa:\n1. Nenda kwenye Hisa na bofya Ongeza Bidhaa (au tumia kitufe cha Dashibodi). Jaza jina, aina, kiasi, na bei ya kuuza.\n2. Weka Kiwango cha chini cha hisa ili bidhaa ionekane kwenye Arifa muhimu na mapendekezo ya kuagiza upya ikipungua chini ya kiwango hicho.\n3. Chagua Bei maalum kwa bidhaa za kawaida, au Bei inayobadilika ikiwa bei hubadilika kwa kila mauzo.\n4. Tumia Hariri kwenye safu yoyote kubadilisha maelezo, au Futa kuondoa bidhaa. Ukiwa na maduka 2 au zaidi, Hamisha huhamisha hisa kati yao.\n5. Tumia vichujio vya aina na hali ya hisa juu ya jedwali, au sanduku la utafutaji, kupata bidhaa haraka.",
     "tutorial.reports": "Jinsi ya kusoma ripoti zako:\n1. Kichupo cha Ripoti kinagawanya mauzo kwa njia ya malipo \u2014 fedha taslimu, pesa za simu, na kadi \u2014 na jumla, idadi, na bidhaa bora za kila moja.\n2. Chagua muda maalum uliowekwa (leo, wiki, mwezi, muda wote) au chagua Muda maalum kwa tarehe mahususi.\n3. Ukiwa unaangalia Maduka Yote, mchanganuo wa kila duka unaonekana chini ya muhtasari wa pamoja.\n4. Tumia Hamisha CSV au Hamisha PDF kuhifadhi ripoti ya malipo. Kadi za Muhtasari wa Hisa chini zaidi huhamisha data ya hisa kando.",
     "tutorial.stores": "Jinsi ya kufanya kazi na maduka mengi:\n1. Tumia kibadilishaji duka kwenye Dashibodi kubadilisha duka unaloangalia au kufanyia kazi.\n2. Bofya + Duka kuongeza tawi jipya. Ukiwa na maduka 2 au zaidi, chaguo la \"Maduka Yote (pamoja)\" litaonekana kwa muhtasari wa kusoma tu.\n3. Wakati Maduka Yote limechaguliwa, kuongeza bidhaa, kuongeza kwenye kikapu, na kukamilisha mauzo hazitafanya kazi \u2014 badilisha kwenda duka mahususi kwanza.\n4. Tumia kitufe cha Hamisha kwenye safu ya hisa kuhamisha hisa kutoka duka moja kwenda lingine; SKU zinazolingana huungana kiotomatiki.",
@@ -482,6 +556,11 @@ const DICTIONARY = {
     "toast.couldNotCreateFirstStore": "Imeshindwa kuunda duka lako la kwanza.",
     "toast.couldNotLoadStores": "Imeshindwa kupakia maduka yako.",
     "toast.storeAdded": "{name} imeongezwa.", "toast.couldNotCreateStore": "Imeshindwa kuunda duka.",
+    "toast.signInToAddStaff": "Ingia ili kuongeza mfanyakazi.", "toast.staffAdded": "{name} ameongezwa kwenye wafanyakazi.",
+    "toast.couldNotAddStaff": "Imeshindwa kuongeza mfanyakazi.", "toast.staffRemoved": "{name} ameondolewa kwenye wafanyakazi.",
+    "toast.couldNotRemoveStaff": "Imeshindwa kuondoa mfanyakazi.", "toast.selectStaffFirst": "Chagua mfanyakazi kwanza.",
+    "toast.orderNumberRequired": "Weka nambari ya oda kutoka kwenye karatasi ya mauzo.",
+    "toast.orderNumberInvalid": "Nambari ya oda lazima iwe na tarakimu pekee.",
     "toast.couldNotSaveAlertSetting": "Imeshindwa kuhifadhi mpangilio wa arifa ibukizi.",
     "toast.tooManyFailedAttempts": "Majaribio mengi yameshindwa kwa barua pepe hii. Tafadhali subiri dakika 15 na ujaribu tena.",
     "toast.accountCreated": "Akaunti imefunguliwa. Ongeza bidhaa yako ya kwanza ya hisa.",
@@ -996,6 +1075,7 @@ function renderCart() {
 function renderPos() {
   renderPosProducts();
   renderCart();
+  renderStaffSelect();
 }
 
 function getSalesRangeBounds() {
@@ -1289,6 +1369,8 @@ function renderPaymentReports() {
     <div class="payment-summary-row"><span>${t("report.totalTransactions")}</span><span>${transactionCount}</span></div>
   `;
   renderStoreBreakdown();
+  renderStaffBreakdown();
+  renderStaffOrderLookupSelect();
 }
 
 function computeStoreBreakdown() {
@@ -1334,6 +1416,305 @@ function renderStoreBreakdown() {
     .join("");
 }
 
+function computeStaffBreakdown() {
+  const sales = filteredSales();
+  const byStaff = new Map();
+  sales.forEach((sale) => {
+    const key = sale.staffId || "unassigned";
+    if (!byStaff.has(key)) {
+      byStaff.set(key, { staffName: sale.staffName || t("report.none"), cash: 0, mobile: 0, card: 0, total: 0, orders: 0 });
+    }
+    const entry = byStaff.get(key);
+    const method = sale.paymentMethod || "cash";
+    const amount = Number(sale.total || 0);
+    if (method === "cash") entry.cash += amount;
+    else if (method === "mobile") entry.mobile += amount;
+    else if (method === "card") entry.card += amount;
+    entry.total += amount;
+    entry.orders += 1;
+  });
+  return [...byStaff.values()].sort((a, b) => b.total - a.total);
+}
+
+function renderStaffBreakdown() {
+  const tbody = qs("#staffBreakdownTable");
+  if (!tbody) return;
+  const rows = computeStaffBreakdown();
+  const totals = rows.reduce(
+    (acc, row) => ({
+      cash: acc.cash + row.cash,
+      mobile: acc.mobile + row.mobile,
+      card: acc.card + row.card,
+      total: acc.total + row.total,
+      orders: acc.orders + row.orders
+    }),
+    { cash: 0, mobile: 0, card: 0, total: 0, orders: 0 }
+  );
+
+  const bodyRows = rows
+    .map(
+      (row) => `<tr>
+        <td>${esc(row.staffName)}</td>
+        <td>KES ${row.cash.toLocaleString()}</td>
+        <td>KES ${row.mobile.toLocaleString()}</td>
+        <td>KES ${row.card.toLocaleString()}</td>
+        <td><strong>KES ${row.total.toLocaleString()}</strong></td>
+        <td>${row.orders}</td>
+      </tr>`
+    )
+    .join("");
+
+  const totalRow = rows.length
+    ? `<tr>
+        <td><strong>${t("reports.allStaffRow")}</strong></td>
+        <td><strong>KES ${totals.cash.toLocaleString()}</strong></td>
+        <td><strong>KES ${totals.mobile.toLocaleString()}</strong></td>
+        <td><strong>KES ${totals.card.toLocaleString()}</strong></td>
+        <td><strong>KES ${totals.total.toLocaleString()}</strong></td>
+        <td><strong>${totals.orders}</strong></td>
+      </tr>`
+    : "";
+
+  tbody.innerHTML = bodyRows + totalRow || `<tr><td colspan="6" class="empty-state">${t("cart.empty")}</td></tr>`;
+}
+
+function saleMatchesDate(sale, dateStr) {
+  if (!dateStr) return false;
+  const date = saleDate(sale);
+  if (!date) return false;
+  const localDateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  return localDateStr === dateStr;
+}
+
+function knownStaffOptions() {
+  const map = new Map();
+  activeStaff().forEach((member) => map.set(member.id, member.name || ""));
+  state.sales.forEach((sale) => {
+    if (sale.staffId && !map.has(sale.staffId)) map.set(sale.staffId, sale.staffName || "");
+  });
+  return [...map.entries()].map(([id, name]) => ({ id, name }));
+}
+
+function renderStaffOrderLookupSelect() {
+  const select = qs("#staffOrderLookupStaff");
+  if (!select) return;
+  const previousValue = select.value;
+  const options = knownStaffOptions();
+  select.innerHTML = options.map((o) => `<option value="${o.id}">${esc(o.name)}</option>`).join("") || `<option value="">${t("pos.selectStaffPlaceholder")}</option>`;
+  if (options.some((o) => o.id === previousValue)) select.value = previousValue;
+  renderStaffOrderNumberOptions();
+}
+
+function findStaffSalesForDay(staffId, dateStr) {
+  if (!staffId || !dateStr) return [];
+  return state.sales
+    .filter((sale) => !sale.voided && sale.staffId === staffId && saleMatchesDate(sale, dateStr))
+    .sort((a, b) => (saleDate(a)?.getTime() || 0) - (saleDate(b)?.getTime() || 0));
+}
+
+function buildStaffOrderCard(sale) {
+  const date = saleDate(sale);
+  const itemRows = (sale.items || [])
+    .map((item) => `<tr>
+      <td>${esc(item.name)}</td>
+      <td>${Number(item.qty || 0)}</td>
+      <td>KES ${Number(item.sellingPrice || 0).toLocaleString()}</td>
+      <td>KES ${Number(item.lineTotal || 0).toLocaleString()}</td>
+    </tr>`)
+    .join("");
+  return `<div class="staff-order-card">
+    <div class="payment-summary-row"><strong>${t("reports.staffOrderLookupOrderLabel")}</strong><span>#${esc(sale.orderNumber || "")}</span></div>
+    <div class="payment-summary-row"><span>${t("reports.staffOrderLookupTimeLabel")}</span><span>${date ? date.toLocaleString() : "-"}</span></div>
+    <div class="payment-summary-row"><span>${t("reports.staffOrderLookupPaymentLabel")}</span><span>${paymentMethodLabel(sale.paymentMethod || "cash")}</span></div>
+    <table>
+      <thead>
+        <tr>
+          <th>${t("reports.staffOrderLookupColItem")}</th>
+          <th>${t("reports.staffOrderLookupColQty")}</th>
+          <th>${t("reports.staffOrderLookupColUnitPrice")}</th>
+          <th>${t("reports.staffOrderLookupColLineTotal")}</th>
+        </tr>
+      </thead>
+      <tbody>${itemRows}</tbody>
+    </table>
+    <div class="payment-summary-row"><strong>${t("reports.staffOrderLookupTotalLabel")}</strong><strong>KES ${Number(sale.total || 0).toLocaleString()}</strong></div>
+  </div>`;
+}
+
+function renderStaffOrderNumberOptions() {
+  const select = qs("#staffOrderLookupOrderNumber");
+  if (!select) return;
+  const staffId = qs("#staffOrderLookupStaff")?.value || "";
+  const dateStr = qs("#staffOrderLookupDate")?.value || "";
+  const sales = findStaffSalesForDay(staffId, dateStr);
+  const previousValue = select.value;
+
+  if (!staffId || !dateStr || !sales.length) {
+    select.innerHTML = `<option value="">${t("reports.staffOrderLookupNoOrders")}</option>`;
+    select.disabled = true;
+    return;
+  }
+
+  select.disabled = false;
+  select.innerHTML = sales
+    .map((sale) => {
+      const date = saleDate(sale);
+      const timeLabel = date ? date.toLocaleTimeString() : "";
+      return `<option value="${esc(sale.orderNumber || "")}">#${esc(sale.orderNumber || "")} \u2014 KES ${Number(sale.total || 0).toLocaleString()} (${timeLabel})</option>`;
+    })
+    .join("");
+  if (sales.some((sale) => String(sale.orderNumber || "") === previousValue)) select.value = previousValue;
+}
+
+function renderStaffOrderLookupResult() {
+  const container = qs("#staffOrderLookupResult");
+  if (!container) return;
+  const staffId = qs("#staffOrderLookupStaff")?.value || "";
+  const dateStr = qs("#staffOrderLookupDate")?.value || "";
+  const orderNumber = qs("#staffOrderLookupOrderNumber")?.value || "";
+
+  if (!staffId || !dateStr) {
+    container.innerHTML = `<p class="muted">${t("reports.staffOrderLookupSelectStaffDate")}</p>`;
+    return;
+  }
+  if (!orderNumber) {
+    container.innerHTML = `<p class="muted">${t("reports.staffOrderLookupNoOrders")}</p>`;
+    return;
+  }
+
+  const match = findStaffSalesForDay(staffId, dateStr).find((sale) => String(sale.orderNumber || "") === orderNumber);
+  if (!match) {
+    container.innerHTML = `<p class="muted">${t("reports.staffOrderLookupNotFound")}</p>`;
+    return;
+  }
+
+  container.innerHTML = buildStaffOrderCard(match);
+}
+
+function renderStaffAllOrdersResult() {
+  const container = qs("#staffOrderLookupResult");
+  if (!container) return;
+  const staffId = qs("#staffOrderLookupStaff")?.value || "";
+  const dateStr = qs("#staffOrderLookupDate")?.value || "";
+
+  if (!staffId || !dateStr) {
+    container.innerHTML = `<p class="muted">${t("reports.staffOrderLookupSelectStaffDate")}</p>`;
+    return;
+  }
+
+  const sales = findStaffSalesForDay(staffId, dateStr);
+  if (!sales.length) {
+    container.innerHTML = `<p class="muted">${t("reports.staffOrderLookupNoOrders")}</p>`;
+    return;
+  }
+
+  const staffName = sales[0].staffName || t("report.none");
+  const dayTotal = sales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
+  const cards = sales.map((sale) => buildStaffOrderCard(sale)).join("");
+
+  container.innerHTML = `<div class="payment-summary-row"><strong>${esc(staffName)}</strong><strong>KES ${dayTotal.toLocaleString()}</strong></div>` + cards;
+}
+
+function computeDailyStaffReport(dateStr) {
+  if (!dateStr) return { staffEntries: [], grandTotal: 0 };
+  const scoped = state.sales.filter((sale) => {
+    if (sale.voided) return false;
+    if (state.db && state.currentStoreId !== "all" && saleStoreId(sale) !== state.currentStoreId) return false;
+    return saleMatchesDate(sale, dateStr);
+  });
+
+  const byStaff = new Map();
+  scoped.forEach((sale) => {
+    const key = sale.staffId || "unassigned";
+    if (!byStaff.has(key)) byStaff.set(key, { staffName: sale.staffName || t("report.none"), sales: [], total: 0 });
+    const entry = byStaff.get(key);
+    entry.sales.push(sale);
+    entry.total += Number(sale.total || 0);
+  });
+
+  const staffEntries = [...byStaff.values()].sort((a, b) => b.total - a.total);
+  const grandTotal = staffEntries.reduce((sum, entry) => sum + entry.total, 0);
+  return { staffEntries, grandTotal };
+}
+
+function renderDailyStaffReport() {
+  const container = qs("#dailyStaffReportResult");
+  if (!container) return;
+  const dateStr = qs("#dailyStaffReportDate")?.value || "";
+  if (!dateStr) {
+    container.innerHTML = `<p class="muted">${t("reports.dailyStaffReportEmpty")}</p>`;
+    return;
+  }
+
+  const { staffEntries, grandTotal } = computeDailyStaffReport(dateStr);
+  if (!staffEntries.length) {
+    container.innerHTML = `<p class="muted">${t("reports.dailyStaffReportNoSales")}</p>`;
+    return;
+  }
+
+  container.innerHTML = staffEntries
+    .map((entry) => {
+      const orderRows = entry.sales
+        .map((sale) => {
+          const date = saleDate(sale);
+          const itemsSummary = (sale.items || []).map((item) => `${item.name} (${item.qty})`).join(", ");
+          return `<tr>
+            <td>#${esc(sale.orderNumber || "")}</td>
+            <td>${date ? date.toLocaleTimeString() : "-"}</td>
+            <td>${paymentMethodLabel(sale.paymentMethod || "cash")}</td>
+            <td>${esc(itemsSummary)}</td>
+            <td>KES ${Number(sale.total || 0).toLocaleString()}</td>
+          </tr>`;
+        })
+        .join("");
+      return `<div class="daily-staff-card">
+        <div class="payment-summary-row"><strong>${esc(entry.staffName)}</strong><strong>KES ${entry.total.toLocaleString()}</strong></div>
+        <table>
+          <thead>
+            <tr>
+              <th>${t("reports.dailyStaffReportOrderColumn")}</th>
+              <th>${t("reports.staffOrderLookupTimeLabel")}</th>
+              <th>${t("report.colPaymentMethod")}</th>
+              <th>${t("reports.dailyStaffReportItemsLabel")}</th>
+              <th>${t("pos.total")}</th>
+            </tr>
+          </thead>
+          <tbody>${orderRows}</tbody>
+        </table>
+      </div>`;
+    })
+    .join("") + `<div class="payment-summary-row"><strong>${t("reports.dailyStaffReportGrandTotal")}</strong><strong>KES ${grandTotal.toLocaleString()}</strong></div>`;
+}
+
+function searchOrderNumber() {
+  const resultBox = qs("#orderNumberSearchResult");
+  if (!resultBox) return;
+  const term = qs("#orderNumberSearch").value.trim();
+  if (!term) {
+    resultBox.hidden = true;
+    return;
+  }
+  const matches = state.sales.filter((sale) => !sale.voided && String(sale.orderNumber || "") === term);
+  if (!matches.length) {
+    resultBox.hidden = false;
+    resultBox.textContent = t("reports.orderNotFound");
+    return;
+  }
+  resultBox.hidden = false;
+  resultBox.innerHTML = matches
+    .map((sale) => {
+      const date = saleDate(sale);
+      return t("reports.orderFoundLabel", {
+        orderNumber: sale.orderNumber,
+        name: sale.staffName || t("report.none"),
+        date: date ? date.toLocaleDateString() : "-",
+        method: paymentMethodLabel(sale.paymentMethod || "cash"),
+        total: Number(sale.total || 0).toLocaleString()
+      });
+    })
+    .join("<br>");
+}
+
 function buildPaymentReportRows() {
   const { breakdown, grandTotal, transactionCount } = computePaymentReport();
   const colPaymentMethod = t("report.colPaymentMethod");
@@ -1366,6 +1747,15 @@ function buildPaymentReportRows() {
       });
     });
   }
+  computeStaffBreakdown().forEach((entry) => {
+    rows.push({
+      [colPaymentMethod]: `${t("reports.staffColumn")}: ${entry.staffName}`,
+      [colTransactions]: entry.orders,
+      [colTotalKes]: entry.total,
+      [colAvgSaleKes]: entry.orders ? Math.round(entry.total / entry.orders) : 0,
+      [colTopItems]: `${t("pos.cash")} KES ${entry.cash} / ${t("pos.mobile")} KES ${entry.mobile} / ${t("pos.card")} KES ${entry.card}`
+    });
+  });
   return rows;
 }
 
@@ -1889,6 +2279,8 @@ async function undoLastSale() {
       const product = state.products.find((p) => p.id === item.productId);
       if (product) product.quantity += item.qty;
     });
+    const localSale = [...state.sales].reverse().find((entry) => !entry.voided && entry.id?.startsWith("local-"));
+    if (localSale) localSale.voided = true;
   }
 
   state.lastSale = null;
@@ -1938,6 +2330,7 @@ async function initFirebase() {
         subscribeToProducts();
         subscribeToSales();
         subscribeToStores();
+        subscribeToStaff();
         subscribeToMonthlyReports();
       } else {
         if (state.unsubscribeProducts) state.unsubscribeProducts();
@@ -1946,12 +2339,16 @@ async function initFirebase() {
         state.unsubscribeSales = null;
         if (state.unsubscribeStores) state.unsubscribeStores();
         state.unsubscribeStores = null;
+        if (state.unsubscribeStaff) state.unsubscribeStaff();
+        state.unsubscribeStaff = null;
         if (state.unsubscribeMonthlyReports) state.unsubscribeMonthlyReports();
         state.unsubscribeMonthlyReports = null;
         state.products = [];
         state.cart = [];
         state.sales = [];
         state.stores = [];
+        state.staff = [];
+        state.selectedStaffId = "";
         state.monthlyReports = [];
         state.currentStoreId = "";
         state.productsInitialized = false;
@@ -2106,6 +2503,70 @@ function renderStoreSwitcher() {
   const allOption = active.length > 1 ? `<option value="all">${t("storeSwitcher.allStores")}</option>` : "";
   select.innerHTML = storeOptions + allOption;
   select.value = state.currentStoreId;
+}
+
+function activeStaff() {
+  return state.staff.filter((member) => !member.archived);
+}
+
+async function subscribeToStaff() {
+  if (!state.db || !state.user) return;
+  if (state.unsubscribeStaff) state.unsubscribeStaff();
+  try {
+    const { collection, onSnapshot, orderBy, query } = state.firebaseApi.firestore;
+    const staffQuery = query(collection(state.db, "users", state.user.uid, "staff"), orderBy("createdAt", "asc"));
+    state.unsubscribeStaff = onSnapshot(staffQuery, (snapshot) => {
+      state.staff = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      if (!state.selectedStaffId || !activeStaff().some((member) => member.id === state.selectedStaffId)) {
+        state.selectedStaffId = activeStaff()[0]?.id || "";
+      }
+      renderStaffSelect();
+      renderStaffOrderLookupSelect();
+    });
+  } catch (error) {
+    console.warn(error);
+    showToast(t("toast.couldNotLoadStores"));
+  }
+}
+
+async function addStaffMember() {
+  const name = window.prompt(t("dialog.newStaffNamePrompt"));
+  if (!name || !name.trim()) return;
+  if (!state.db || !state.user) return showToast(t("toast.signInToAddStaff"));
+  try {
+    const { collection, doc, serverTimestamp, setDoc } = state.firebaseApi.firestore;
+    const staffRef = doc(collection(state.db, "users", state.user.uid, "staff"));
+    await setDoc(staffRef, { name: name.trim().slice(0, 80), createdAt: serverTimestamp() });
+    state.selectedStaffId = staffRef.id;
+    showToast(t("toast.staffAdded", { name: name.trim() }));
+  } catch (error) {
+    console.warn(error);
+    showToast(t("toast.couldNotAddStaff"));
+  }
+}
+
+async function removeStaffMember() {
+  const member = state.staff.find((item) => item.id === state.selectedStaffId);
+  if (!member) return showToast(t("toast.selectStaffFirst"));
+  if (!window.confirm(t("dialog.removeStaffConfirm", { name: member.name || "" }))) return;
+  if (!state.db || !state.user) return showToast(t("toast.signInToAddStaff"));
+  try {
+    const { doc, deleteDoc } = state.firebaseApi.firestore;
+    await deleteDoc(doc(state.db, "users", state.user.uid, "staff", member.id));
+    state.selectedStaffId = "";
+    showToast(t("toast.staffRemoved", { name: member.name || "" }));
+  } catch (error) {
+    console.warn(error);
+    showToast(t("toast.couldNotRemoveStaff"));
+  }
+}
+
+function renderStaffSelect() {
+  const select = qs("#posStaffSelect");
+  if (!select) return;
+  const options = activeStaff().map((member) => `<option value="${member.id}">${esc(member.name || "")}</option>`).join("");
+  select.innerHTML = options || `<option value="">${t("pos.selectStaffPlaceholder")}</option>`;
+  select.value = state.selectedStaffId;
 }
 
 async function loadUserSettings(user) {
@@ -2440,6 +2901,17 @@ function bindEvents() {
   qs("#addStoreButton").addEventListener("click", createStore);
   qs("#renameStoreButton")?.addEventListener("click", renameStore);
   qs("#archiveStoreButton")?.addEventListener("click", archiveStore);
+  qs("#posStaffSelect")?.addEventListener("change", (event) => {
+    state.selectedStaffId = event.target.value;
+  });
+  qs("#addStaffButton")?.addEventListener("click", addStaffMember);
+  qs("#removeStaffButton")?.addEventListener("click", removeStaffMember);
+  qs("#orderNumberSearch")?.addEventListener("input", debounce(searchOrderNumber, 250));
+  qs("#staffOrderLookupStaff")?.addEventListener("change", renderStaffOrderNumberOptions);
+  qs("#staffOrderLookupDate")?.addEventListener("change", renderStaffOrderNumberOptions);
+  qs("#staffOrderLookupButton")?.addEventListener("click", renderStaffOrderLookupResult);
+  qs("#staffOrderLookupAllButton")?.addEventListener("click", renderStaffAllOrdersResult);
+  qs("#dailyStaffReportButton")?.addEventListener("click", renderDailyStaffReport);
   qs("#langToggleButton").addEventListener("click", () => setLanguage(state.language === "en" ? "sw" : "en"));
   qs("#stockAlertPopupToggle").addEventListener("change", (event) => setStockAlertPopupEnabled(event.target.checked));
   qs("#stockAlertPopupClose").addEventListener("click", closeStockAlertPopup);
@@ -2660,6 +3132,21 @@ function bindEvents() {
     if (state.db && !state.currentStoreId) return showToast(t("toast.loadingStore"));
     if (state.db && state.currentStoreId === "all") return showToast(t("toast.selectStoreBeforeSale"));
 
+    const staffMember = state.staff.find((member) => member.id === state.selectedStaffId);
+    if (!staffMember) return showToast(t("toast.selectStaffFirst"));
+
+    const orderNumberRaw = qs("#posOrderNumber")?.value.trim() || "";
+    if (!orderNumberRaw) return showToast(t("toast.orderNumberRequired"));
+    if (!/^[0-9]+$/.test(orderNumberRaw)) return showToast(t("toast.orderNumberInvalid"));
+
+    const duplicate = state.sales.find(
+      (sale) => !sale.voided && sale.staffId === staffMember.id && String(sale.orderNumber || "") === orderNumberRaw
+    );
+    if (duplicate) {
+      const proceed = window.confirm(t("dialog.duplicateOrderConfirm", { orderNumber: orderNumberRaw, name: staffMember.name || "" }));
+      if (!proceed) return;
+    }
+
     const saleItems = state.cart.map((cartItem) => ({
       productId: cartItem.id,
       name: cartItem.name,
@@ -2679,6 +3166,11 @@ function bindEvents() {
       return;
     }
     const changeDue = paymentMethod === "cash" ? Math.max(0, cashTendered - total) : 0;
+
+    if (!staffMember.id || !String(staffMember.name || "").trim() || !/^[0-9]{1,10}$/.test(orderNumberRaw)) {
+      showToast(t("toast.saleFailedGeneric"));
+      return;
+    }
 
     const completeButton = qs("#completeSaleButton");
     completeButton.disabled = true;
@@ -2718,6 +3210,9 @@ function bindEvents() {
             branchId: state.currentStoreId,
             storeId: state.currentStoreId,
             cashierUid: state.user?.uid || null,
+            staffId: staffMember.id,
+            staffName: staffMember.name || "",
+            orderNumber: orderNumberRaw,
             voided: false,
             createdAt: serverTimestamp()
           });
@@ -2745,12 +3240,26 @@ function bindEvents() {
         const product = state.products.find((item) => item.id === cartItem.id);
         if (product) product.quantity = Math.max(0, product.quantity - cartItem.qty);
       });
+      state.sales.push({
+        id: `local-${Date.now()}`,
+        items: saleItems,
+        total,
+        paymentMethod,
+        cashTendered: paymentMethod === "cash" ? cashTendered : null,
+        changeDue: paymentMethod === "cash" ? changeDue : null,
+        staffId: staffMember.id,
+        staffName: staffMember.name || "",
+        orderNumber: orderNumberRaw,
+        voided: false,
+        createdAt: new Date()
+      });
       state.lastSale = { mode: "local", items: saleItems, paymentMethod, total };
     }
 
     state.cart = [];
     state.cartHistory = [];
     if (qs("#cashTendered")) qs("#cashTendered").value = "";
+    if (qs("#posOrderNumber")) qs("#posOrderNumber").value = "";
     renderAll();
     completeButton.disabled = false;
     showToast(changeDue > 0 ? t("toast.saleCompletedChange", { change: changeDue.toLocaleString() }) : t("toast.saleCompleted"));

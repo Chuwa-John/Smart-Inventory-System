@@ -588,12 +588,51 @@ th[data-sort] {
   min-width: 160px;
 }
 
+.staff-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 14px 0 10px;
+}
+
+.staff-controls select {
+  min-width: 160px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+
 .store-breakdown {
   margin-top: 16px;
   border-top: 1px solid var(--line);
   padding-top: 14px;
   display: grid;
   gap: 4px;
+}
+
+.staff-order-result,
+.daily-staff-report {
+  margin-top: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.staff-order-card,
+.daily-staff-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+  background: color-mix(in srgb, var(--panel-soft) 70%, transparent);
+}
+
+.staff-order-card table,
+.daily-staff-card table {
+  min-width: 0;
 }
 
 .workflow {
