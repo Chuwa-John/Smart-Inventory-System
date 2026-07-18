@@ -1972,7 +1972,7 @@ function renderChatLog() {
   container.scrollTop = container.scrollHeight;
 }
 
-const AI_PROXY_TIMEOUT_MS = 15000;
+const AI_PROXY_TIMEOUT_MS = 60000;
 
 async function postToAiProxy(messages, snapshot) {
   const controller = new AbortController();
