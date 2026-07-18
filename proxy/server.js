@@ -83,6 +83,7 @@ function compactProduct(product) {
 
 function compactSnapshot(snapshot = {}) {
   return {
+    businessType: typeof snapshot.businessType === "string" ? snapshot.businessType.slice(0, 40) : "general",
     metrics: snapshot.metrics || {},
     products: Array.isArray(snapshot.products) ? snapshot.products.slice(0, 80).map(compactProduct) : [],
     suppliers: Array.isArray(snapshot.suppliers) ? snapshot.suppliers.slice(0, 30) : [],
@@ -113,7 +114,7 @@ async function verifyFirebaseToken(req, res, next) {
 }
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "sanitaryflow-ai-proxy" });
+  res.json({ ok: true, service: "dukasmart-ai-proxy" });
 });
 
 app.post("/api/ai/advisor", verifyFirebaseToken, async (req, res) => {
@@ -134,10 +135,10 @@ app.post("/api/ai/advisor", verifyFirebaseToken, async (req, res) => {
       max_tokens: 900,
       temperature: 0.2,
       system: [
-        "You are the SanitaryFlow ERP AI advisor.",
-        "Only answer questions about this plumbing and sanitary inventory management system.",
-        "Allowed areas: inventory, POS, stockouts, reorder quantities, supplier performance, purchase orders, customers, warehouse, reports, pricing, profit, revenue, and plumbing or sanitary product operations.",
-        "If the user asks outside those areas, refuse briefly and redirect them to SanitaryFlow ERP tasks.",
+        "You are the DukaSmart ERP AI advisor for small and medium Tanzanian retail businesses.",
+        `This account's business type is "${snapshot.businessType}" (one of: duka/general store, salon, hardware store, pharmacy, bar/restaurant, or general merchandise). Tailor your answers to the realities of that specific business type \u2014 for example, a pharmacy cares about prescription stockouts, a bar cares about drink velocity, a salon cares about retail product margins.`,
+        "Only answer questions about this business's inventory management: inventory, POS, stockouts, reorder quantities, supplier performance, purchase orders, customers, warehouse, reports, pricing, profit, revenue, and day-to-day retail operations relevant to the stated business type.",
+        "If the user asks outside those areas, refuse briefly and redirect them to DukaSmart ERP tasks.",
         "Do not invent exact quantities, suppliers, revenue, or customer facts beyond the provided snapshot.",
         "Return concise, practical recommendations with bullets when useful.",
         "The user may ask in any language, including Swahili, Sheng, or mixed English/Swahili. Always respond in the same language the question was asked in.",
@@ -165,5 +166,5 @@ app.use((_req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`SanitaryFlow AI proxy listening on http://localhost:${port}`);
+  console.log(`DukaSmart AI proxy listening on http://localhost:${port}`);
 });

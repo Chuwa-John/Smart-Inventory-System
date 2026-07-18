@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>SanitaryFlow ERP</title>
+    <title>DukaSmart ERP</title>
     <link rel="preconnect" href="https://www.gstatic.com" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -11,9 +11,9 @@
     <div class="app-shell">
       <aside class="sidebar" aria-label="Primary navigation">
         <div class="brand">
-          <div class="brand-mark">SF</div>
+          <div class="brand-mark">DS</div>
           <div>
-            <strong>SanitaryFlow</strong>
+            <strong>DukaSmart</strong>
             <span data-i18n="brand.tagline">AI Inventory ERP</span>
           </div>
         </div>
@@ -61,9 +61,9 @@
             <div class="store-switcher">
               <select id="storeSwitcher" aria-label="Current store"></select>
               <button class="ghost-button compact" id="addStoreButton" type="button" data-i18n="dashboard.addStore">+ Store</button>
-              <button class="ghost-button compact" id="renameStoreButton" type="button" data-i18n="dashboard.renameStore">Rename</button>
-              <button class="ghost-button compact" id="archiveStoreButton" type="button" data-i18n="dashboard.archiveStore">Archive</button>
-            </div>
+               <button class="ghost-button compact" id="renameStoreButton" type="button" data-i18n="dashboard.renameStore">Rename</button>
+              <button class="ghost-button compact" id="setBusinessTypeButton" type="button" data-i18n="dashboard.setBusinessType">Business Type</button>
+              <button class="ghost-button compact" id="archiveStoreButton" type="button" data-i18n="dashboard.archiveStore">Archive</button>            </div>
           </div>
 
           <div class="kpi-grid" id="kpiGrid"></div>
@@ -187,7 +187,7 @@
               </div>
               <div class="cart-total">
                 <span data-i18n="pos.total">Total</span>
-                <strong id="cartTotal">KES 0</strong>
+                <strong id="cartTotal">TZS 0</strong>
               </div>
               <div class="staff-controls">
                 <select id="posStaffSelect" aria-label="Staff member"></select>
@@ -204,7 +204,7 @@
               </div>
               <div class="cash-tender-row" id="cashTenderRow">
                 <label><span data-i18n="pos.amountTendered">Amount tendered</span><input id="cashTendered" type="number" min="0" placeholder="Enter cash received" data-i18n-placeholder="pos.tenderedPlaceholder" /></label>
-                <div class="change-due"><span data-i18n="pos.changeDue">Change due</span><strong id="changeDue">KES 0</strong></div>
+                <div class="change-due"><span data-i18n="pos.changeDue">Change due</span><strong id="changeDue">TZS 0</strong></div>
               </div>
               <button class="primary-button full-width" id="completeSaleButton" data-i18n="pos.completeSale">Complete Sale</button>
               <button class="ghost-button full-width" id="undoSaleButton" type="button" disabled data-i18n="pos.undoSale">Undo Last Sale</button>
@@ -338,11 +338,8 @@
           </div>
           <div class="ai-layout">
             <article class="panel">
+              <div class="question-grid" id="aiSmartQuestions"></div>
               <div class="question-grid">
-                <button data-question="Which products will run out soon?">Stockout risk</button>
-                <button data-question="What should I reorder this week?">Reorder plan</button>
-                <button data-question="Which products have the most stock?">Highest stock</button>
-                <button data-question="Which products have no sales recorded?">No sales recorded</button>
                 <button data-question="How do I use the POS?">Guide: POS</button>
                 <button data-question="How do I manage inventory?">Guide: Inventory</button>
                 <button data-question="How do I read my reports?">Guide: Reports</button>
@@ -403,11 +400,12 @@
         <input name="id" type="hidden" />
         <div class="form-grid">
           <label><span data-i18n="product.nameLabel">Product name</span><input name="name" required /></label>
-          <label><span data-i18n="product.categoryLabel">Category</span><input name="category" required /></label>
+         <label><span data-i18n="product.categoryLabel">Category</span><input name="category" list="categorySuggestions" required /></label>
+          <datalist id="categorySuggestions"></datalist>
           <label><span data-i18n="product.brandLabel">Brand</span><input name="brand" /></label>
           <label><span data-i18n="product.supplierLabel">Suppliers</span><input name="supplier" /></label>
           <label><span data-i18n="product.quantityLabel">Quantity</span><input name="quantity" type="number" min="0" required /></label>
-          <label><span data-i18n="product.priceLabel">Selling price (KES)</span><input name="sellingPrice" type="number" min="0" step="0.01" required /></label>
+          <label><span data-i18n="product.priceLabel">Selling price (TZS)</span> <input name="sellingPrice" type="number" min="0" step="1" required /></label>
           <label><span data-i18n="product.priceTypeLabel">Price type</span>
             <select name="priceType">
               <option value="fixed" data-i18n="product.priceFixed">Fixed price</option>
@@ -448,7 +446,7 @@
       <form class="auth-panel" id="authForm" novalidate>
         <div>
           <p class="eyebrow" data-i18n="auth.eyebrow">Account access</p>
-          <h1>SanitaryFlow ERP</h1>
+          <h1>DukaSmart ERP</h1>
           <p class="auth-copy" data-i18n="auth.copy">Create an account or sign in to manage your own inventory, stock levels, sales, and AI recommendations.</p>
         </div>
         <label><span data-i18n="auth.businessName">Business name</span><input id="businessName" name="businessName" autocomplete="organization" /></label>

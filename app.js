@@ -35,7 +35,7 @@ const state = {
   productsInitialized: false,
   stockAlertQueue: [],
   stockAlertPopupOpen: false,
-  language: localStorage.getItem("sanitaryflow:lang") || "en",
+  language: localStorage.getItem("dukasmart:lang") || localStorage.getItem("sanitaryflow:lang") || "en",
   monthlyReports: [],
   unsubscribeMonthlyReports: null,
   reportMonthSelection: new Date().toISOString().slice(0, 7),
@@ -43,6 +43,79 @@ const state = {
 };
 
 const MAX_CHAT_HISTORY = 20;
+
+const BUSINESS_TYPE_OPTIONS = [
+  { key: "duka", en: "Duka / General store", sw: "Duka la Jumla" },
+  { key: "salon", en: "Salon / Beauty", sw: "Saluni" },
+  { key: "hardware", en: "Hardware store", sw: "Duka la Vifaa vya Ujenzi" },
+  { key: "pharmacy", en: "Pharmacy", sw: "Famasi" },
+  { key: "bar", en: "Bar / Restaurant", sw: "Baa / Mkahawa" },
+  { key: "general", en: "Other / General merchandise", sw: "Nyingine / Jumla" }
+];
+
+const CATEGORY_TEMPLATES = {
+  duka: ["Groceries", "Beverages", "Snacks", "Household Items", "Toiletries", "Airtime & Data", "Cleaning Supplies", "Cooking Oil & Fats", "Grains & Flour"],
+  salon: ["Hair Products", "Skin Care", "Nail Products", "Salon Tools & Equipment", "Extensions & Wigs", "Cosmetics"],
+  hardware: ["Tools", "Plumbing Supplies", "Electrical Supplies", "Paints & Coatings", "Fasteners & Fittings", "Building Materials"],
+  pharmacy: ["Prescription Medicine", "Over-the-Counter Medicine", "First Aid", "Baby & Maternal Care", "Vitamins & Supplements", "Medical Devices"],
+  bar: ["Beer", "Spirits", "Wine", "Soft Drinks", "Snacks & Bites", "Bar Supplies"],
+  general: []
+};
+
+// NOTE: Swahili strings below are machine-assisted, not reviewed by a native
+// speaker. Please have a fluent Swahili speaker verify before production use.
+const QUESTION_TEMPLATES = {
+  duka: [
+    { label: { en: "Restock soon", sw: "Agiza upya" }, question: { en: "Which fast-moving items should I restock soon?", sw: "Ni bidhaa gani zinazouzwa haraka ninazopaswa kuagiza tena hivi karibuni?" } },
+    { label: { en: "Slow movers", sw: "Zinazouzwa polepole" }, question: { en: "What slow-moving stock should I discount or stop ordering?", sw: "Ni hisa gani inayouzwa polepole ninayopaswa kupunguza bei au kuacha kuagiza?" } },
+    { label: { en: "Top suppliers", sw: "Wasambazaji wakuu" }, question: { en: "Which suppliers do I rely on most?", sw: "Ninategemea zaidi wasambazaji gani?" } },
+    { label: { en: "Reorder plan", sw: "Mpango wa kuagiza" }, question: { en: "What should I reorder this week?", sw: "Nini ninapaswa kuagiza tena wiki hii?" } }
+  ],
+  salon: [
+    { label: { en: "Low stock", sw: "Hisa chache" }, question: { en: "Which hair or skin products are almost out of stock?", sw: "Ni bidhaa gani za nywele au ngozi zinazokaribia kuisha?" } },
+    { label: { en: "Promote this week", sw: "Tangaza wiki hii" }, question: { en: "What retail products should I promote to clients this week?", sw: "Ni bidhaa gani za rejareja ninazopaswa kutangaza kwa wateja wiki hii?" } },
+    { label: { en: "Tools to reorder", sw: "Vifaa vya kuagiza" }, question: { en: "Which salon tools or equipment need reordering?", sw: "Ni vifaa gani vya saluni vinavyohitaji kuagizwa tena?" } },
+    { label: { en: "Best category", sw: "Aina bora" }, question: { en: "What's my best-selling product category?", sw: "Ni aina gani ya bidhaa inayouzwa zaidi?" } }
+  ],
+  hardware: [
+    { label: { en: "Running low", sw: "Vinavyopungua" }, question: { en: "Which tools or materials are running low?", sw: "Ni zana au vifaa gani vinavyopungua?" } },
+    { label: { en: "Before next job", sw: "Kabla ya kazi" }, question: { en: "What building materials should I reorder before the next big job?", sw: "Ni vifaa gani vya ujenzi ninavyopaswa kuagiza kabla ya kazi kubwa ijayo?" } },
+    { label: { en: "Long lead times", sw: "Muda mrefu wa usambazaji" }, question: { en: "Which products have long supplier lead times I should plan around?", sw: "Ni bidhaa gani zenye muda mrefu wa usambazaji ninazopaswa kuzipangia mapema?" } },
+    { label: { en: "Slow movers", sw: "Zinazouzwa polepole" }, question: { en: "What slow-moving stock is tying up my shelf space?", sw: "Ni hisa gani inayouzwa polepole inayochukua nafasi ya rafu?" } }
+  ],
+  pharmacy: [
+    { label: { en: "Meds running low", sw: "Dawa chache" }, question: { en: "Which medicines are close to running out?", sw: "Ni dawa gani zinazokaribia kuisha?" } },
+    { label: { en: "Fastest OTC", sw: "OTC za haraka" }, question: { en: "What over-the-counter products sell fastest?", sw: "Ni bidhaa gani zisizohitaji dawa za daktari zinazouzwa haraka zaidi?" } },
+    { label: { en: "Urgent Rx reorder", sw: "Rx za haraka" }, question: { en: "Which prescription items need urgent reorder?", sw: "Ni dawa gani za agizo la daktari zinazohitaji kuagizwa tena haraka?" } },
+    { label: { en: "Stockout risk", sw: "Hatari ya kuisha" }, question: { en: "What's my stockout risk this week?", sw: "Hatari yangu ya kuishiwa na hisa ni kiasi gani wiki hii?" } }
+  ],
+  bar: [
+    { label: { en: "Low stock drinks", sw: "Vinywaji vichache" }, question: { en: "Which drinks are almost out of stock?", sw: "Ni vinywaji gani vinavyokaribia kuisha?" } },
+    { label: { en: "Best seller", sw: "Kinachouzwa zaidi" }, question: { en: "What's my best-selling drink this month?", sw: "Ni kinywaji gani kinachouzwa zaidi mwezi huu?" } },
+    { label: { en: "Bar supplies", sw: "Vifaa vya baa" }, question: { en: "Which bar supplies do I need to reorder?", sw: "Ni vifaa gani vya baa ninavyohitaji kuagiza tena?" } },
+    { label: { en: "Slow movers", sw: "Zinazouzwa polepole" }, question: { en: "What slow-moving stock should I stop ordering?", sw: "Ni hisa gani inayouzwa polepole ninayopaswa kuacha kuagiza?" } }
+  ],
+  general: [
+    { label: { en: "Stockout risk", sw: "Hatari ya kuisha" }, question: { en: "Which products will run out soon?", sw: "Ni bidhaa gani zitakazoisha hivi karibuni?" } },
+    { label: { en: "Reorder plan", sw: "Mpango wa kuagiza" }, question: { en: "What should I reorder this week?", sw: "Nini ninapaswa kuagiza tena wiki hii?" } },
+    { label: { en: "Highest stock", sw: "Hisa nyingi zaidi" }, question: { en: "Which products have the most stock?", sw: "Ni bidhaa gani zenye hisa nyingi zaidi?" } },
+    { label: { en: "No sales recorded", sw: "Hakuna mauzo" }, question: { en: "Which products have no sales recorded?", sw: "Ni bidhaa gani hazina mauzo yaliyorekodiwa?" } }
+  ]
+};
+
+const BUSINESS_TIPS = {
+  duka: { en: "For general stores, focus on keeping fast-moving grocery and household items in stock \u2014 stockouts on daily basics send customers to competitors.", sw: "Kwa maduka ya jumla, zingatia kuweka bidhaa za nyumbani na vyakula zinazouzwa haraka \u2014 kuishiwa na bidhaa za kila siku huwapeleka wateja kwa washindani." },
+  salon: { en: "For salons, retail products (not just service supplies) often carry the best margins \u2014 keep your top sellers visible and in stock.", sw: "Kwa saluni, bidhaa za rejareja (si tu vifaa vya huduma) mara nyingi huwa na faida kubwa \u2014 hakikisha zinazouzwa zaidi zinaonekana na zipo." },
+  hardware: { en: "For hardware stores, plan reorders around supplier lead times \u2014 building materials often take longer to restock than everyday items.", sw: "Kwa maduka ya vifaa vya ujenzi, panga kuagiza tena kulingana na muda wa usambazaji \u2014 vifaa vya ujenzi mara nyingi huchukua muda mrefu kuliko bidhaa za kawaida." },
+  pharmacy: { en: "For pharmacies, prioritize prescription and first-aid items in your reorder plan \u2014 stockouts here directly affect customer health needs.", sw: "Kwa famasi, zingatia dawa za agizo la daktari na huduma ya kwanza katika mpango wako wa kuagiza \u2014 kuishiwa hapa kunaathiri moja kwa moja mahitaji ya afya ya wateja." },
+  bar: { en: "For bars and restaurants, track your best-selling drinks closely \u2014 running out of a popular item on a busy night costs real revenue.", sw: "Kwa baa na mikahawa, fuatilia kwa karibu vinywaji vinavyouzwa zaidi \u2014 kuishiwa na kinywaji maarufu usiku wa shughuli nyingi hupoteza mapato halisi." },
+  general: { en: "Keep an eye on both your fastest and slowest movers \u2014 reorder the former promptly and reconsider stocking the latter.", sw: "Angalia bidhaa zinazouzwa haraka na zile zinazouzwa polepole \u2014 agiza tena za haraka mapema na fikiria upya kuhusu zile za polepole." }
+};
+
+function currentBusinessType() {
+  const store = state.stores.find((item) => item.id === state.currentStoreId);
+  return store?.businessType || "general";
+}
 
 function paymentMethodLabel(method) {
   return t(`pos.${method}`);
@@ -104,7 +177,7 @@ const DICTIONARY = {
     "reports.staffBreakdownTitle": "Sales by Staff", "reports.staffColumn": "Staff",
     "reports.ordersColumn": "Orders", "reports.allStaffRow": "All staff",
     "reports.searchOrderPlaceholder": "Search order number", "reports.orderNotFound": "No sale found for that order number.",
-    "reports.orderFoundLabel": "Order #{orderNumber} \u2014 {name}, {date}, {method}, KES {total}",
+    "reports.orderFoundLabel": "Order #{orderNumber} \u2014 {name}, {date}, {method}, TZS {total}",
     "reports.staffOrderLookupTitle": "Order Lookup",
     "reports.staffOrderLookupDateLabel": "Date",
     "reports.staffOrderLookupOrderLabel": "Order number",
@@ -138,7 +211,7 @@ const DICTIONARY = {
     "ai.askButton": "Ask AI Advisor", "ai.conversation": "Conversation", "ai.clear": "Clear",
     "product.nameLabel": "Product name", "product.categoryLabel": "Category", "product.brandLabel": "Brand",
     "product.supplierLabel": "Suppliers", "product.quantityLabel": "Quantity",
-    "product.priceLabel": "Selling price (KES)", "product.priceTypeLabel": "Price type",
+    "product.priceLabel": "Selling price (TZS)", "product.priceTypeLabel": "Price type",
     "product.priceFixed": "Fixed price", "product.priceDynamic": "Flexible / dynamic price",
     "product.reorderLabel": "Low stock threshold", "product.reorderPlaceholder": "e.g. 10",
     "product.cancel": "Cancel", "product.save": "Save Product",
@@ -152,6 +225,7 @@ const DICTIONARY = {
     "command.placeholder": "Type a command or module name",
     "dialog.overridePasswordPrompt": "Enter the price override password:",
     "dialog.newStoreNamePrompt": "New store name (e.g. Mombasa Road Branch):",
+    "dialog.businessTypePrompt": "Choose a business type for this store:\n{list}\n\nEnter the number:",
     "dialog.transferDestinationPrompt": "Transfer \"{name}\" to which store?\n{list}\n\nEnter the number:",
     "dialog.transferQuantityPrompt": "How many units of \"{name}\" to transfer? (Available: {quantity})",
     "dialog.transferTitle": "Transfer Stock", "dialog.transferDestinationLabel": "Destination store",
@@ -159,7 +233,7 @@ const DICTIONARY = {
     "dialog.transferProductLabel": "{name} \u2014 {quantity} available at {store}",
     "dialog.deleteConfirm": "Delete {name} from inventory?",
     "dialog.undoSaleConfirm": "Undo the last completed sale? This will restore stock quantities.",
-    "dialog.editPricePrompt": "Enter new price for {name} (KES):",
+    "dialog.editPricePrompt": "Enter new price for {name} (TZS):",
     "dialog.newStaffNamePrompt": "New staff member's name:",
     "dialog.removeStaffConfirm": "Remove \"{name}\" from staff? Past sales will keep their name on record.",
     "dialog.duplicateOrderConfirm": "Order #{orderNumber} is already recorded for {name}. Record it again anyway?",
@@ -202,7 +276,7 @@ const DICTIONARY = {
     "monthlyReport.noSalesData": "No sales recorded for this period yet.",
     "monthlyReport.failedGeneric": "Could not save the monthly report.",
     "monthlyReport.couldNotLoad": "Could not load monthly reports.",
-    "monthlyReport.revenueLine": "For {period}: KES {revenue} in revenue across {count} transactions.",
+    "monthlyReport.revenueLine": "For {period}: TZS {revenue} in revenue across {count} transactions.",
     "monthlyReport.topProductsLine": "Top sellers: {list}.",
     "monthlyReport.noTopProducts": "No product sales recorded this period.",
     "monthlyReport.stockLine": "{low} products are low on stock and {out} are out of stock.",
@@ -222,14 +296,18 @@ const DICTIONARY = {
     "localAi.headerWithQuestion": "Local recommendation for: \"{question}\"",
     "localAi.headerNoQuestion": "Local recommendation: focus this week on stock availability and clean inventory records.",
     "localAi.urgentReorder": "Urgent reorder: {list}.",
+    "localAi.mostUrgent": "Most urgent: {name} is estimated to run out in {days} days.",
+    "localAi.movementSummary": "Movement snapshot: {fast} fast-moving, {slow} slow-moving, {none} with no recorded sales.",
     "localAi.highestStocked": "Highest stocked products: {list}.",
+    "localAi.businessTip": "Tip: {tip}",
     "localAi.supplierNote": "Supplier fields come only from products you add to this account.",
     "localAi.disclaimer": "(This advisor uses only your signed-in inventory snapshot. The AI proxy is unavailable, so this is a local, rule-based summary.)",
-    "dashboard.renameStore": "Rename", "dashboard.archiveStore": "Archive",
+    "dashboard.renameStore": "Rename", "dashboard.archiveStore": "Archive", "dashboard.setBusinessType": "Business Type",
     "dialog.renameStorePrompt": "New name for this store:",
     "dialog.archiveStoreConfirm": "Archive \"{name}\"? It will be hidden from the store switcher but its history is kept.",
     "toast.selectSpecificStore": "Select a specific store first.",
     "toast.storeRenamed": "Store renamed to {name}.", "toast.couldNotRenameStore": "Could not rename store.",
+    "toast.businessTypeSet": "Business type updated. Category suggestions will reflect it.",
     "toast.storeArchived": "{name} archived.", "toast.couldNotArchiveStore": "Could not archive store.",
     "toast.cannotArchiveLastStore": "You need at least one active store; archive another store first.",
     "kpi.totalProducts": "Total Products", "kpi.totalProductsDelta": "Your account",
@@ -252,7 +330,7 @@ const DICTIONARY = {
     "report.topItems": "Top items", "report.none": "none", "report.combinedTotal": "Combined total",
     "report.share": "share", "report.totalTransactions": "Total transactions", "report.perStoreTotals": "Per-store totals",
     "report.colPaymentMethod": "Payment Method", "report.colTransactions": "Transactions",
-    "report.colTotalKes": "Total (KES)", "report.colAvgSaleKes": "Average Sale (KES)",
+    "report.colTotalTZS": "Total (TZS)", "report.colAvgSaleTZS": "Average Sale (TZS)",
     "report.colTopItems": "Top Items", "report.combined": "Combined", "report.storePrefix": "Store: {name}",
     "tutorial.pos": "How to use Point of Sale:\n1. Open the POS tab and search or browse for a product.\n2. Set the quantity, then click Add. Products flagged as flexible/dynamic price ask for a price per unit first.\n3. Adjust quantities in the cart with +/-, the qty box, or Remove. Use Undo Last Action if you make a mistake.\n4. Pick the staff member making the sale, and enter the order number from their physical sales sheet.\n5. Pick a payment method (Cash, Mobile Money, Card). For cash, enter the amount tendered to see change due.\n6. Click Complete Sale. If you need to reverse it, use Undo Last Sale right after \u2014 stock is restored automatically.",
     "tutorial.inventory": "How to manage inventory:\n1. Go to Inventory and click Add Product (or use the Dashboard button). Fill in name, category, quantity, and selling price.\n2. Set a Low stock threshold so the product shows up in Smart alerts and reorder recommendations once it dips below that number.\n3. Choose Fixed price for normal items, or Flexible/dynamic price if the price varies per sale.\n4. Use Edit on any row to update details, or Delete to remove a product. If you have 2+ stores, Transfer moves stock between them.\n5. Use the category and stock-status filters above the table, or the search bar, to find items quickly.",
@@ -326,7 +404,7 @@ const DICTIONARY = {
     "toast.selectStoreBeforeSale": "Select a specific store before completing a sale.",
     "toast.cashLessThanTotal": "Cash tendered is less than the sale total.",
     "toast.saleFailedGeneric": "Sale failed. Please recheck stock and try again.",
-    "toast.saleCompletedChange": "Sale completed. Give KES {change} change.",
+    "toast.saleCompletedChange": "Sale completed. Give TZS {change} change.",
     "toast.saleCompleted": "Sale completed and inventory updated.",
     "toast.quantityPriceInvalid": "Quantity and price fields must be zero or positive numbers.",
     "toast.fieldTooLong": "{field} must be {max} characters or fewer."
@@ -363,7 +441,7 @@ const DICTIONARY = {
     "reports.staffBreakdownTitle": "Mauzo kwa Mfanyakazi", "reports.staffColumn": "Mfanyakazi",
     "reports.ordersColumn": "Oda", "reports.allStaffRow": "Wafanyakazi wote",
     "reports.searchOrderPlaceholder": "Tafuta nambari ya oda", "reports.orderNotFound": "Hakuna mauzo yaliyopatikana kwa nambari hiyo ya oda.",
-    "reports.orderFoundLabel": "Oda #{orderNumber} \u2014 {name}, {date}, {method}, KES {total}",
+    "reports.orderFoundLabel": "Oda #{orderNumber} \u2014 {name}, {date}, {method}, TZS {total}",
     "reports.staffOrderLookupTitle": "Tafuta Oda",
     "reports.staffOrderLookupDateLabel": "Tarehe",
     "reports.staffOrderLookupOrderLabel": "Nambari ya oda",
@@ -397,7 +475,7 @@ const DICTIONARY = {
     "ai.askButton": "Uliza Mshauri wa AI", "ai.conversation": "Mazungumzo", "ai.clear": "Futa",
     "product.nameLabel": "Jina la bidhaa", "product.categoryLabel": "Aina", "product.brandLabel": "Chapa",
     "product.supplierLabel": "Wasambazaji", "product.quantityLabel": "Kiasi",
-    "product.priceLabel": "Bei ya kuuza (KES)", "product.priceTypeLabel": "Aina ya bei",
+    "product.priceLabel": "Bei ya kuuza (TZS)", "product.priceTypeLabel": "Aina ya bei",
     "product.priceFixed": "Bei maalum", "product.priceDynamic": "Bei inayobadilika",
     "product.reorderLabel": "Kiwango cha chini cha hisa", "product.reorderPlaceholder": "mfano, 10",
     "product.cancel": "Ghairi", "product.save": "Hifadhi Bidhaa",
@@ -411,6 +489,7 @@ const DICTIONARY = {
     "command.placeholder": "Andika amri au jina la sehemu",
     "dialog.overridePasswordPrompt": "Weka nenosiri la kubadilisha bei:",
     "dialog.newStoreNamePrompt": "Jina la duka jipya (mfano, Tawi la Mombasa Road):",
+    "dialog.businessTypePrompt": "Chagua aina ya biashara kwa duka hili:\n{list}\n\nWeka nambari:",
     "dialog.transferDestinationPrompt": "Hamisha \"{name}\" kwenda duka gani?\n{list}\n\nWeka nambari:",
     "dialog.transferQuantityPrompt": "Vitengo vingapi vya \"{name}\" kuhamisha? (Vinavyopatikana: {quantity})",
     "dialog.transferTitle": "Hamisha Hisa", "dialog.transferDestinationLabel": "Duka la kupokea",
@@ -418,7 +497,7 @@ const DICTIONARY = {
     "dialog.transferProductLabel": "{name} \u2014 {quantity} zinapatikana katika {store}",
     "dialog.deleteConfirm": "Futa {name} kutoka kwenye hisa?",
     "dialog.undoSaleConfirm": "Tengua mauzo ya mwisho yaliyokamilika? Hii itarejesha kiasi cha hisa.",
-    "dialog.editPricePrompt": "Weka bei mpya ya {name} (KES):",
+    "dialog.editPricePrompt": "Weka bei mpya ya {name} (TZS):",
     "dialog.newStaffNamePrompt": "Jina la mfanyakazi mpya:",
     "dialog.removeStaffConfirm": "Ondoa \"{name}\" kwenye orodha ya wafanyakazi? Mauzo ya awali yatabaki na jina lake.",
     "dialog.duplicateOrderConfirm": "Oda #{orderNumber} tayari imesajiliwa kwa {name}. Uisajili tena?",
@@ -461,7 +540,7 @@ const DICTIONARY = {
     "monthlyReport.noSalesData": "Hakuna mauzo yaliyorekodiwa kwa kipindi hiki bado.",
     "monthlyReport.failedGeneric": "Imeshindwa kuhifadhi ripoti ya mwezi.",
     "monthlyReport.couldNotLoad": "Imeshindwa kupakia ripoti za mwezi.",
-    "monthlyReport.revenueLine": "Kwa {period}: KES {revenue} mapato kutoka miamala {count}.",
+    "monthlyReport.revenueLine": "Kwa {period}: TZS {revenue} mapato kutoka miamala {count}.",
     "monthlyReport.topProductsLine": "Bidhaa bora zilizouzwa: {list}.",
     "monthlyReport.noTopProducts": "Hakuna mauzo ya bidhaa yaliyorekodiwa kipindi hiki.",
     "monthlyReport.stockLine": "Bidhaa {low} zina hisa chache na {out} hazipo kabisa.",
@@ -481,14 +560,18 @@ const DICTIONARY = {
     "localAi.headerWithQuestion": "Pendekezo la ndani kwa: \"{question}\"",
     "localAi.headerNoQuestion": "Pendekezo la ndani: zingatia upatikanaji wa hisa na kusafisha kumbukumbu za hisa wiki hii.",
     "localAi.urgentReorder": "Agiza upya haraka: {list}.",
+    "localAi.mostUrgent": "Ya haraka zaidi: {name} inakadiriwa kuisha kwa siku {days}.",
+    "localAi.movementSummary": "Muhtasari wa mwendo: {fast} zinazouzwa haraka, {slow} zinazouzwa polepole, {none} bila mauzo yaliyorekodiwa.",
     "localAi.highestStocked": "Bidhaa zenye hisa nyingi zaidi: {list}.",
+    "localAi.businessTip": "Kidokezo: {tip}",
     "localAi.supplierNote": "Taarifa za wasambazaji zinatoka tu kwenye bidhaa ulizoongeza kwenye akaunti hii.",
     "localAi.disclaimer": "(Mshauri huyu hutumia tu picha ya hisa ya akaunti uliyoingia. Proksi ya AI haipatikani, hivyo huu ni muhtasari wa ndani, wa kanuni.)",
-    "dashboard.renameStore": "Badilisha Jina", "dashboard.archiveStore": "Hifadhi Kumbukumbu",
+    "dashboard.renameStore": "Badilisha Jina", "dashboard.archiveStore": "Hifadhi Kumbukumbu", "dashboard.setBusinessType": "Aina ya Biashara",
     "dialog.renameStorePrompt": "Jina jipya la duka hili:",
     "dialog.archiveStoreConfirm": "Hifadhi kumbukumbu ya \"{name}\"? Litafichwa kwenye kibadilishaji duka lakini historia yake itabaki.",
     "toast.selectSpecificStore": "Chagua duka mahususi kwanza.",
     "toast.storeRenamed": "Jina la duka limebadilishwa kuwa {name}.", "toast.couldNotRenameStore": "Imeshindwa kubadilisha jina la duka.",
+    "toast.businessTypeSet": "Aina ya biashara imesasishwa. Mapendekezo ya aina za bidhaa yatabadilika.",
     "toast.storeArchived": "{name} imehifadhiwa kumbukumbu.", "toast.couldNotArchiveStore": "Imeshindwa kuhifadhi kumbukumbu ya duka.",
     "toast.cannotArchiveLastStore": "Unahitaji angalau duka moja linalofanya kazi; hifadhi kumbukumbu ya duka lingine kwanza.",
     "kpi.totalProducts": "Jumla ya Bidhaa", "kpi.totalProductsDelta": "Akaunti yako",
@@ -511,7 +594,7 @@ const DICTIONARY = {
     "report.topItems": "Bidhaa bora", "report.none": "hakuna", "report.combinedTotal": "Jumla ya pamoja",
     "report.share": "sehemu", "report.totalTransactions": "Jumla ya miamala", "report.perStoreTotals": "Jumla za kila duka",
     "report.colPaymentMethod": "Njia ya Malipo", "report.colTransactions": "Miamala",
-    "report.colTotalKes": "Jumla (KES)", "report.colAvgSaleKes": "Wastani wa Mauzo (KES)",
+    "report.colTotalTZS": "Jumla (TZS)", "report.colAvgSaleTZS": "Wastani wa Mauzo (TZS)",
     "report.colTopItems": "Bidhaa Bora", "report.combined": "Jumla", "report.storePrefix": "Duka: {name}",
     "tutorial.pos": "Jinsi ya kutumia Sehemu ya Mauzo (POS):\n1. Fungua kichupo cha POS na utafute au uvinjari bidhaa.\n2. Weka kiasi, kisha bofya Ongeza. Bidhaa zenye bei inayobadilika huuliza bei kwa kila kitengo kwanza.\n3. Rekebisha kiasi kwenye kikapu kwa +/-, kisanduku cha kiasi, au Ondoa. Tumia Tengua Kitendo cha Mwisho ukikosea.\n4. Chagua mfanyakazi anayefanya mauzo, na uweke nambari ya oda kutoka kwenye karatasi yake ya mauzo.\n5. Chagua njia ya malipo (Fedha Taslimu, Pesa za Simu, Kadi). Kwa fedha taslimu, weka kiasi kilicholipwa ili kuona chenji.\n6. Bofya Kamilisha Mauzo. Ukihitaji kutengua, tumia Tengua Mauzo ya Mwisho mara moja \u2014 hisa hurejeshwa kiotomatiki.",
     "tutorial.inventory": "Jinsi ya kusimamia hisa:\n1. Nenda kwenye Hisa na bofya Ongeza Bidhaa (au tumia kitufe cha Dashibodi). Jaza jina, aina, kiasi, na bei ya kuuza.\n2. Weka Kiwango cha chini cha hisa ili bidhaa ionekane kwenye Arifa muhimu na mapendekezo ya kuagiza upya ikipungua chini ya kiwango hicho.\n3. Chagua Bei maalum kwa bidhaa za kawaida, au Bei inayobadilika ikiwa bei hubadilika kwa kila mauzo.\n4. Tumia Hariri kwenye safu yoyote kubadilisha maelezo, au Futa kuondoa bidhaa. Ukiwa na maduka 2 au zaidi, Hamisha huhamisha hisa kati yao.\n5. Tumia vichujio vya aina na hali ya hisa juu ya jedwali, au sanduku la utafutaji, kupata bidhaa haraka.",
@@ -585,7 +668,7 @@ const DICTIONARY = {
     "toast.selectStoreBeforeSale": "Chagua duka mahususi kabla ya kukamilisha mauzo.",
     "toast.cashLessThanTotal": "Fedha zilizolipwa ni chini ya jumla ya mauzo.",
     "toast.saleFailedGeneric": "Mauzo yameshindwa. Angalia hisa tena na ujaribu tena.",
-    "toast.saleCompletedChange": "Mauzo yamekamilika. Toa chenji ya KES {change}.",
+    "toast.saleCompletedChange": "Mauzo yamekamilika. Toa chenji ya TZS {change}.",
     "toast.saleCompleted": "Mauzo yamekamilika na hisa imesasishwa.",
     "toast.quantityPriceInvalid": "Sehemu za kiasi na bei lazima ziwe sifuri au chanya.",
     "toast.fieldTooLong": "{field} lazima iwe na herufi {max} au chache."
@@ -613,7 +696,7 @@ function translateStaticDom() {
 function setLanguage(nextLanguage) {
   state.language = nextLanguage;
   try {
-    localStorage.setItem("sanitaryflow:lang", nextLanguage);
+    localStorage.setItem("dukasmart:lang", nextLanguage);
   } catch (error) {
     console.warn(error);
   }
@@ -1021,7 +1104,7 @@ function renderPosProducts() {
     .slice(0, 8)
     .map((product) => `<div class="pos-product">
       <strong>${esc(product.name)}</strong>
-      <span class="muted">${esc(product.category)} \u2022 ${esc(product.brand || "-")} - KES ${Number(product.sellingPrice || 0).toLocaleString()} - ${t("pos.available", { quantity: product.quantity })}</span>
+      <span class="muted">${esc(product.category)} \u2022 ${esc(product.brand || "-")} - TZS ${Number(product.sellingPrice || 0).toLocaleString()} - ${t("pos.available", { quantity: product.quantity })}</span>
       <div class="pos-product-controls">
         <input type="number" min="1" max="${product.quantity}" value="1" class="pos-qty-input" data-qty-input="${product.id}" aria-label="${esc(t("pos.qtyAriaLabel", { name: product.name }))}" />
         ${product.priceType === "dynamic" ? `<input type="number" min="0" step="0.01" class="pos-price-input" data-price-input="${product.id}" placeholder="${esc(t("pos.pricePerUnitPlaceholder"))}" />` : ""}
@@ -1043,7 +1126,7 @@ function renderCart() {
       return `<div class="cart-item">
         <div class="cart-item-info">
           <strong>${esc(item.name)}</strong>
-          <span class="muted">KES ${Number(item.sellingPrice || 0).toLocaleString()} each
+          <span class="muted">TZS ${Number(item.sellingPrice || 0).toLocaleString()} each
             ${item.priceType !== "dynamic" ? `<button class="link-button" data-edit-price="${item.id}" type="button">${t("cart.editPrice")}</button>` : ""}
           </span>
         </div>
@@ -1053,18 +1136,18 @@ function renderCart() {
           <button class="ghost-button compact" data-increase-cart="${item.id}" type="button" aria-label="${esc(t("cart.increaseAriaLabel"))}">+</button>
           <button class="ghost-button compact danger" data-remove-cart="${item.id}" type="button" aria-label="${esc(t("cart.removeAriaLabel"))}">${t("cart.removeButton")}</button>
         </div>
-        <strong class="cart-item-total">KES ${(item.qty * Number(item.sellingPrice || 0)).toLocaleString()}</strong>
+        <strong class="cart-item-total">TZS ${(item.qty * Number(item.sellingPrice || 0)).toLocaleString()}</strong>
       </div>`;
     })
     .join("") || `<span class="muted">${t("cart.empty")}</span>`;
 
-  qs("#cartTotal").textContent = `KES ${totalAmount.toLocaleString()}`;
+  qs("#cartTotal").textContent = `TZS ${totalAmount.toLocaleString()}`;
 
   const cashTenderRow = qs("#cashTenderRow");
   cashTenderRow.hidden = state.paymentMethod !== "cash";
   const tendered = Number(qs("#cashTendered")?.value || 0);
   const change = Math.max(0, tendered - totalAmount);
-  qs("#changeDue").textContent = `KES ${change.toLocaleString()}`;
+  qs("#changeDue").textContent = `TZS ${change.toLocaleString()}`;
 
   const undoCartButton = qs("#undoCartButton");
   if (undoCartButton) undoCartButton.disabled = !state.cartHistory.length;
@@ -1200,7 +1283,7 @@ async function generateMonthlyReportNarrative(monthKey, metrics) {
   const languageName = state.language === "sw" ? "Swahili" : "English";
   const promptLines = [
     `Write a concise monthly business performance summary in ${languageName} for the period ${monthKey}.`,
-    `Revenue: KES ${metrics.revenue}. Transactions: ${metrics.transactionCount}. Average sale: KES ${Math.round(metrics.avgSale)}. Units sold: ${metrics.unitsSold}.`,
+    `Revenue: TZS ${metrics.revenue}. Transactions: ${metrics.transactionCount}. Average sale: TZS ${Math.round(metrics.avgSale)}. Units sold: ${metrics.unitsSold}.`,
     `Top products: ${metrics.topProducts.map((product) => `${product.name} (${product.qty})`).join(", ") || "none"}.`,
     `Low stock items: ${metrics.lowStockCount}. Out-of-stock items: ${metrics.outOfStockCount}.`,
     "Include 2-3 short, specific action recommendations. Keep the whole response under 150 words."
@@ -1214,7 +1297,7 @@ function renderMonthlyReportsList() {
   container.innerHTML = state.monthlyReports
     .map((report) => `<article class="report-card" data-view-monthly-report="${report.id}" style="cursor:pointer">
         <strong>${esc(report.periodLabel)}</strong>
-        <span class="muted">KES ${Number(report.metrics?.revenue || 0).toLocaleString()} \u2014 ${Number(report.metrics?.transactionCount || 0)} ${report.metrics?.transactionCount === 1 ? t("report.transaction") : t("report.transactions")}</span>
+        <span class="muted">TZS ${Number(report.metrics?.revenue || 0).toLocaleString()} \u2014 ${Number(report.metrics?.transactionCount || 0)} ${report.metrics?.transactionCount === 1 ? t("report.transaction") : t("report.transactions")}</span>
       </article>`)
     .join("") || `<p class="muted">${t("monthlyReport.emptyState")}</p>`;
 }
@@ -1226,9 +1309,9 @@ function openMonthlyReportDetail(reportId) {
   const metrics = report.metrics || {};
   qs("#monthlyReportDialogTitle").textContent = report.periodLabel;
   qs("#monthlyReportDetailKpis").innerHTML = [
-    [t("monthlyReport.detailRevenue"), `KES ${Number(metrics.revenue || 0).toLocaleString()}`],
+    [t("monthlyReport.detailRevenue"), `TZS ${Number(metrics.revenue || 0).toLocaleString()}`],
     [t("monthlyReport.detailTransactions"), Number(metrics.transactionCount || 0)],
-    [t("monthlyReport.detailAvgSale"), `KES ${Math.round(Number(metrics.avgSale || 0)).toLocaleString()}`],
+    [t("monthlyReport.detailAvgSale"), `TZS ${Math.round(Number(metrics.avgSale || 0)).toLocaleString()}`],
     [t("monthlyReport.detailUnitsSold"), Number(metrics.unitsSold || 0)],
     [t("monthlyReport.detailLowStock"), Number(metrics.lowStockCount || 0)],
     [t("monthlyReport.detailOutOfStock"), Number(metrics.outOfStockCount || 0)]
@@ -1245,14 +1328,14 @@ function exportMonthlyReportPdf() {
   const metrics = report.metrics || {};
   const doc = new jsPdfCtor();
   doc.setFontSize(14);
-  doc.text(`SanitaryFlow Monthly Report \u2014 ${report.periodLabel}`, 14, 16);
+  doc.text(`DukaSmart Monthly Report \u2014 ${report.periodLabel}`, 14, 16);
   doc.setFontSize(10);
   doc.text(new Date().toLocaleString(), 14, 22);
 
   const kpiRows = [
-    [t("monthlyReport.detailRevenue"), `KES ${Number(metrics.revenue || 0).toLocaleString()}`],
+    [t("monthlyReport.detailRevenue"), `TZS ${Number(metrics.revenue || 0).toLocaleString()}`],
     [t("monthlyReport.detailTransactions"), String(Number(metrics.transactionCount || 0))],
-    [t("monthlyReport.detailAvgSale"), `KES ${Math.round(Number(metrics.avgSale || 0)).toLocaleString()}`],
+    [t("monthlyReport.detailAvgSale"), `TZS ${Math.round(Number(metrics.avgSale || 0)).toLocaleString()}`],
     [t("monthlyReport.detailUnitsSold"), String(Number(metrics.unitsSold || 0))],
     [t("monthlyReport.detailLowStock"), String(Number(metrics.lowStockCount || 0))],
     [t("monthlyReport.detailOutOfStock"), String(Number(metrics.outOfStockCount || 0))]
@@ -1277,7 +1360,7 @@ function exportMonthlyReportPdf() {
   const summaryLines = doc.splitTextToSize(report.aiSummary || "", 180);
   doc.text(summaryLines, 14, y);
 
-  doc.save(`sanitaryflow-monthly-report-${report.periodLabel}.pdf`);
+  doc.save(`dukasmart-monthly-report-${report.periodLabel}.pdf`);
 }
 
 async function subscribeToMonthlyReports() {
@@ -1355,14 +1438,14 @@ function renderPaymentReports() {
   grid.innerHTML = breakdown
     .map((entry) => `<div class="payment-method-card">
       <span class="muted">${paymentMethodLabel(entry.method)}</span>
-      <strong class="method-total">KES ${entry.total.toLocaleString()}</strong>
-      <span class="muted">${entry.count} ${entry.count === 1 ? t("report.transaction") : t("report.transactions")} - ${t("report.avg")} KES ${Math.round(entry.average).toLocaleString()}</span>
+      <strong class="method-total">TZS ${entry.total.toLocaleString()}</strong>
+      <span class="muted">${entry.count} ${entry.count === 1 ? t("report.transaction") : t("report.transactions")} - ${t("report.avg")} TZS ${Math.round(entry.average).toLocaleString()}</span>
       <span class="muted">${t("report.topItems")}: ${entry.topItems.join(", ") || t("report.none")}</span>
     </div>`)
     .join("");
 
   summary.innerHTML = `
-    <div class="payment-summary-row"><strong>${t("report.combinedTotal")}</strong><strong>KES ${grandTotal.toLocaleString()}</strong></div>
+    <div class="payment-summary-row"><strong>${t("report.combinedTotal")}</strong><strong>TZS ${grandTotal.toLocaleString()}</strong></div>
     ${breakdown
       .map((entry) => `<div class="payment-summary-row"><span>${paymentMethodLabel(entry.method)} ${t("report.share")}</span><span>${grandTotal ? Math.round((entry.total / grandTotal) * 100) : 0}%</span></div>`)
       .join("")}
@@ -1412,7 +1495,7 @@ function renderStoreBreakdown() {
   if (!showBreakdown) return;
   const rows = computeStoreBreakdown();
   container.innerHTML = `<strong>${t("report.perStoreTotals")}</strong>` + rows
-    .map(({ store, total, count }) => `<div class="payment-summary-row"><span>${esc(store.name || "Store")}</span><span>KES ${total.toLocaleString()} (${count})</span></div>`)
+    .map(({ store, total, count }) => `<div class="payment-summary-row"><span>${esc(store.name || "Store")}</span><span>TZS ${total.toLocaleString()} (${count})</span></div>`)
     .join("");
 }
 
@@ -1455,10 +1538,10 @@ function renderStaffBreakdown() {
     .map(
       (row) => `<tr>
         <td>${esc(row.staffName)}</td>
-        <td>KES ${row.cash.toLocaleString()}</td>
-        <td>KES ${row.mobile.toLocaleString()}</td>
-        <td>KES ${row.card.toLocaleString()}</td>
-        <td><strong>KES ${row.total.toLocaleString()}</strong></td>
+        <td>TZS ${row.cash.toLocaleString()}</td>
+        <td>TZS ${row.mobile.toLocaleString()}</td>
+        <td>TZS ${row.card.toLocaleString()}</td>
+        <td><strong>TZS ${row.total.toLocaleString()}</strong></td>
         <td>${row.orders}</td>
       </tr>`
     )
@@ -1467,10 +1550,10 @@ function renderStaffBreakdown() {
   const totalRow = rows.length
     ? `<tr>
         <td><strong>${t("reports.allStaffRow")}</strong></td>
-        <td><strong>KES ${totals.cash.toLocaleString()}</strong></td>
-        <td><strong>KES ${totals.mobile.toLocaleString()}</strong></td>
-        <td><strong>KES ${totals.card.toLocaleString()}</strong></td>
-        <td><strong>KES ${totals.total.toLocaleString()}</strong></td>
+        <td><strong>TZS ${totals.cash.toLocaleString()}</strong></td>
+        <td><strong>TZS ${totals.mobile.toLocaleString()}</strong></td>
+        <td><strong>TZS ${totals.card.toLocaleString()}</strong></td>
+        <td><strong>TZS ${totals.total.toLocaleString()}</strong></td>
         <td><strong>${totals.orders}</strong></td>
       </tr>`
     : "";
@@ -1518,8 +1601,8 @@ function buildStaffOrderCard(sale) {
     .map((item) => `<tr>
       <td>${esc(item.name)}</td>
       <td>${Number(item.qty || 0)}</td>
-      <td>KES ${Number(item.sellingPrice || 0).toLocaleString()}</td>
-      <td>KES ${Number(item.lineTotal || 0).toLocaleString()}</td>
+      <td>TZS ${Number(item.sellingPrice || 0).toLocaleString()}</td>
+      <td>TZS ${Number(item.lineTotal || 0).toLocaleString()}</td>
     </tr>`)
     .join("");
   return `<div class="staff-order-card">
@@ -1537,7 +1620,7 @@ function buildStaffOrderCard(sale) {
       </thead>
       <tbody>${itemRows}</tbody>
     </table>
-    <div class="payment-summary-row"><strong>${t("reports.staffOrderLookupTotalLabel")}</strong><strong>KES ${Number(sale.total || 0).toLocaleString()}</strong></div>
+    <div class="payment-summary-row"><strong>${t("reports.staffOrderLookupTotalLabel")}</strong><strong>TZS ${Number(sale.total || 0).toLocaleString()}</strong></div>
   </div>`;
 }
 
@@ -1560,7 +1643,7 @@ function renderStaffOrderNumberOptions() {
     .map((sale) => {
       const date = saleDate(sale);
       const timeLabel = date ? date.toLocaleTimeString() : "";
-      return `<option value="${esc(sale.orderNumber || "")}">#${esc(sale.orderNumber || "")} \u2014 KES ${Number(sale.total || 0).toLocaleString()} (${timeLabel})</option>`;
+      return `<option value="${esc(sale.orderNumber || "")}">#${esc(sale.orderNumber || "")} \u2014 TZS ${Number(sale.total || 0).toLocaleString()} (${timeLabel})</option>`;
     })
     .join("");
   if (sales.some((sale) => String(sale.orderNumber || "") === previousValue)) select.value = previousValue;
@@ -1612,7 +1695,7 @@ function renderStaffAllOrdersResult() {
   const dayTotal = sales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
   const cards = sales.map((sale) => buildStaffOrderCard(sale)).join("");
 
-  container.innerHTML = `<div class="payment-summary-row"><strong>${esc(staffName)}</strong><strong>KES ${dayTotal.toLocaleString()}</strong></div>` + cards;
+  container.innerHTML = `<div class="payment-summary-row"><strong>${esc(staffName)}</strong><strong>TZS ${dayTotal.toLocaleString()}</strong></div>` + cards;
 }
 
 function computeDailyStaffReport(dateStr) {
@@ -1663,12 +1746,12 @@ function renderDailyStaffReport() {
             <td>${date ? date.toLocaleTimeString() : "-"}</td>
             <td>${paymentMethodLabel(sale.paymentMethod || "cash")}</td>
             <td>${esc(itemsSummary)}</td>
-            <td>KES ${Number(sale.total || 0).toLocaleString()}</td>
+            <td>TZS ${Number(sale.total || 0).toLocaleString()}</td>
           </tr>`;
         })
         .join("");
       return `<div class="daily-staff-card">
-        <div class="payment-summary-row"><strong>${esc(entry.staffName)}</strong><strong>KES ${entry.total.toLocaleString()}</strong></div>
+        <div class="payment-summary-row"><strong>${esc(entry.staffName)}</strong><strong>TZS ${entry.total.toLocaleString()}</strong></div>
         <table>
           <thead>
             <tr>
@@ -1683,7 +1766,7 @@ function renderDailyStaffReport() {
         </table>
       </div>`;
     })
-    .join("") + `<div class="payment-summary-row"><strong>${t("reports.dailyStaffReportGrandTotal")}</strong><strong>KES ${grandTotal.toLocaleString()}</strong></div>`;
+    .join("") + `<div class="payment-summary-row"><strong>${t("reports.dailyStaffReportGrandTotal")}</strong><strong>TZS ${grandTotal.toLocaleString()}</strong></div>`;
 }
 
 function searchOrderNumber() {
@@ -1719,21 +1802,21 @@ function buildPaymentReportRows() {
   const { breakdown, grandTotal, transactionCount } = computePaymentReport();
   const colPaymentMethod = t("report.colPaymentMethod");
   const colTransactions = t("report.colTransactions");
-  const colTotalKes = t("report.colTotalKes");
-  const colAvgSaleKes = t("report.colAvgSaleKes");
+  const colTotalTZS = t("report.colTotalTZS");
+  const colAvgSaleTZS = t("report.colAvgSaleTZS");
   const colTopItems = t("report.colTopItems");
   const rows = breakdown.map((entry) => ({
     [colPaymentMethod]: paymentMethodLabel(entry.method),
     [colTransactions]: entry.count,
-    [colTotalKes]: entry.total,
-    [colAvgSaleKes]: Math.round(entry.average),
+    [colTotalTZS]: entry.total,
+    [colAvgSaleTZS]: Math.round(entry.average),
     [colTopItems]: entry.topItems.join("; ") || t("report.none")
   }));
   rows.push({
     [colPaymentMethod]: t("report.combined"),
     [colTransactions]: transactionCount,
-    [colTotalKes]: grandTotal,
-    [colAvgSaleKes]: transactionCount ? Math.round(grandTotal / transactionCount) : 0,
+    [colTotalTZS]: grandTotal,
+    [colAvgSaleTZS]: transactionCount ? Math.round(grandTotal / transactionCount) : 0,
     [colTopItems]: ""
   });
   if (state.currentStoreId === "all" && state.stores.length > 1) {
@@ -1741,8 +1824,8 @@ function buildPaymentReportRows() {
       rows.push({
         [colPaymentMethod]: t("report.storePrefix", { name: store.name || "Store" }),
         [colTransactions]: count,
-        [colTotalKes]: total,
-        [colAvgSaleKes]: count ? Math.round(total / count) : 0,
+        [colTotalTZS]: total,
+        [colAvgSaleTZS]: count ? Math.round(total / count) : 0,
         [colTopItems]: ""
       });
     });
@@ -1751,9 +1834,9 @@ function buildPaymentReportRows() {
     rows.push({
       [colPaymentMethod]: `${t("reports.staffColumn")}: ${entry.staffName}`,
       [colTransactions]: entry.orders,
-      [colTotalKes]: entry.total,
-      [colAvgSaleKes]: entry.orders ? Math.round(entry.total / entry.orders) : 0,
-      [colTopItems]: `${t("pos.cash")} KES ${entry.cash} / ${t("pos.mobile")} KES ${entry.mobile} / ${t("pos.card")} KES ${entry.card}`
+      [colTotalTZS]: entry.total,
+      [colAvgSaleTZS]: entry.orders ? Math.round(entry.total / entry.orders) : 0,
+      [colTopItems]: `${t("pos.cash")} TZS ${entry.cash} / ${t("pos.mobile")} TZS ${entry.mobile} / ${t("pos.card")} TZS ${entry.card}`
     });
   });
   return rows;
@@ -1767,7 +1850,7 @@ function exportPaymentReportCsv() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "sanitaryflow-payment-report.csv";
+  link.download = "dukasmart-payment-report.csv";
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -1778,7 +1861,7 @@ function exportPaymentReportPdf() {
   if (!jsPdfCtor) return showToast(t("toast.pdfLibraryFailed"));
   const doc = new jsPdfCtor();
   doc.setFontSize(14);
-  doc.text("SanitaryFlow Payment Report", 14, 16);
+  doc.text("DukaSmart Payment Report", 14, 16);
   doc.setFontSize(10);
   doc.text(new Date().toLocaleString(), 14, 22);
   const headers = Object.keys(rows[0]);
@@ -1793,7 +1876,7 @@ function exportPaymentReportPdf() {
       doc.text(headers.map((header) => String(row[header])).join(" | "), 14, y);
     });
   }
-  doc.save("sanitaryflow-payment-report.pdf");
+  doc.save("dukasmart-payment-report.pdf");
 }
 
 function renderCards() {
@@ -1814,17 +1897,36 @@ function renderCards() {
 }
 
 function localAiAnswerText(question) {
-  const low = storeProducts().filter((product) => stockStatus(product) !== "healthy");
-  const highStock = [...storeProducts()].sort((a, b) => Number(b.quantity || 0) - Number(a.quantity || 0)).slice(0, 3);
-  const recs = low.map((product) => ({ product, rec: reorderRecommendation(product) }));
+  const products = storeProducts();
+  const low = products.filter((product) => stockStatus(product) !== "healthy");
+  const highStock = [...products].sort((a, b) => Number(b.quantity || 0) - Number(a.quantity || 0)).slice(0, 3);
+  const recs = low
+    .map((product) => ({ product, rec: reorderRecommendation(product) }))
+    .sort((a, b) => a.rec.daysUntilStockout - b.rec.daysUntilStockout);
+
+  const fastMoving = products.filter((p) => Number(p.sold30 || 0) >= 50).length;
+  const slowMoving = products.filter((p) => Number(p.sold30 || 0) > 0 && Number(p.sold30 || 0) < 12).length;
+  const noSales = products.filter((p) => Number(p.sold90 || 0) === 0).length;
+
+  const tipEntry = BUSINESS_TIPS[currentBusinessType()] || BUSINESS_TIPS.general;
+  const tip = tipEntry[state.language] || tipEntry.en;
 
   const lines = [
     question ? t("localAi.headerWithQuestion", { question }) : t("localAi.headerNoQuestion"),
-    t("localAi.urgentReorder", { list: recs.map(({ product, rec }) => `${product.name} (${rec.recommendedQty})`).join(", ") || t("report.none") }),
+    t("localAi.urgentReorder", { list: recs.map(({ product, rec }) => `${product.name} (${rec.recommendedQty})`).join(", ") || t("report.none") })
+  ];
+
+  if (recs.length && recs[0].rec.daysUntilStockout > 0) {
+    lines.push(t("localAi.mostUrgent", { name: recs[0].product.name, days: recs[0].rec.daysUntilStockout }));
+  }
+
+  lines.push(
+    t("localAi.movementSummary", { fast: fastMoving, slow: slowMoving, none: noSales }),
     t("localAi.highestStocked", { list: highStock.map((product) => product.name).join(", ") || t("report.none") }),
+    t("localAi.businessTip", { tip }),
     t("localAi.supplierNote"),
     t("localAi.disclaimer")
-  ];
+  );
   return lines.join("\n");
 }
 
@@ -1847,6 +1949,15 @@ function matchTutorialTopic(question) {
     if (topic.keywords.some((keyword) => normalized.includes(keyword))) return topic.key;
   }
   return null;
+}
+
+function renderAiQuestionSuggestions() {
+  const container = qs("#aiSmartQuestions");
+  if (!container) return;
+  const questions = QUESTION_TEMPLATES[currentBusinessType()] || QUESTION_TEMPLATES.general;
+  container.innerHTML = questions
+    .map((item) => `<button data-question="${esc(item.question[state.language] || item.question.en)}">${esc(item.label[state.language] || item.label.en)}</button>`)
+    .join("");
 }
 
 function renderChatLog() {
@@ -1903,6 +2014,7 @@ async function postToAiProxy(messages, snapshot) {
 
 async function callAiProxy(historyForRequest) {
   return postToAiProxy(historyForRequest, {
+    businessType: currentBusinessType(),
     products: storeProducts().map((product) => ({
       name: product.name,
       category: product.category,
@@ -1968,7 +2080,7 @@ function exportCsv() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "sanitaryflow-inventory.csv";
+  link.download = "dukasmart-inventory.csv";
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -1998,7 +2110,7 @@ function generateReportCsv() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "sanitaryflow-report.csv";
+  link.download = "dukasmart-report.csv";
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -2010,7 +2122,7 @@ function generateReportPdf() {
   if (!jsPdfCtor) return showToast(t("toast.pdfLibraryFailed"));
   const doc = new jsPdfCtor();
   doc.setFontSize(14);
-  doc.text("SanitaryFlow Inventory Report", 14, 16);
+  doc.text("DukaSmart Inventory Report", 14, 16);
   doc.setFontSize(10);
   doc.text(new Date().toLocaleString(), 14, 22);
   const headers = Object.keys(rows[0]);
@@ -2025,7 +2137,7 @@ function generateReportPdf() {
       doc.text(headers.map((header) => String(row[header])).join(" | "), 14, y);
     });
   }
-  doc.save("sanitaryflow-report.pdf");
+  doc.save("dukasmart-report.pdf");
 }
 
 function generateReportXlsx() {
@@ -2035,7 +2147,7 @@ function generateReportXlsx() {
   const worksheet = window.XLSX.utils.json_to_sheet(rows);
   const workbook = window.XLSX.utils.book_new();
   window.XLSX.utils.book_append_sheet(workbook, worksheet, "Inventory");
-  window.XLSX.writeFile(workbook, "sanitaryflow-report.xlsx");
+  window.XLSX.writeFile(workbook, "dukasmart-report.xlsx");
 }
 
 function generateReport(format) {
@@ -2050,6 +2162,7 @@ function productCollectionPath() {
 }
 
 function openProductDialog(product = null) {
+  populateCategorySuggestions();
   const form = qs("#productForm");
   form.reset();
   qs("#productDialogTitle").textContent = product ? t("product.editTitle") : t("product.addTitle");
@@ -2433,16 +2546,55 @@ async function subscribeToStores() {
     showToast(t("toast.couldNotLoadStores"));
   }
 }
- 
+
+ function promptBusinessTypeSelection(currentKey) {
+  const list = BUSINESS_TYPE_OPTIONS
+    .map((option, index) => `${index + 1}. ${state.language === "sw" ? option.sw : option.en}`)
+    .join("\n");
+  const promptText = t("dialog.businessTypePrompt", { list });
+  const defaultValue = currentKey ? String(BUSINESS_TYPE_OPTIONS.findIndex((o) => o.key === currentKey) + 1) : "";
+  const raw = window.prompt(promptText, defaultValue);
+  if (raw === null) return null;
+  const index = Number(raw.trim()) - 1;
+  if (!Number.isInteger(index) || index < 0 || index >= BUSINESS_TYPE_OPTIONS.length) return null;
+  return BUSINESS_TYPE_OPTIONS[index].key;
+}
+
+function populateCategorySuggestions() {
+  const datalist = qs("#categorySuggestions");
+  if (!datalist) return;
+  const store = state.stores.find((item) => item.id === state.currentStoreId);
+  const templateCategories = CATEGORY_TEMPLATES[store?.businessType] || [];
+  const existingCategories = [...new Set(state.products.map((product) => String(product.category || "").trim()).filter(Boolean))];
+  const merged = [...new Set([...templateCategories, ...existingCategories])];
+  datalist.innerHTML = merged.map((category) => `<option value="${esc(category)}"></option>`).join("");
+}
+
+async function setStoreBusinessType() {
+  if (!state.currentStoreId || state.currentStoreId === "all") return showToast(t("toast.selectSpecificStore"));
+  const store = state.stores.find((item) => item.id === state.currentStoreId);
+  if (!store) return;
+  const nextType = promptBusinessTypeSelection(store.businessType);
+  if (!nextType) return;
+  if (!state.db || !state.user) return showToast(t("toast.signInToAddStore"));
+  try {
+    const { doc, setDoc } = state.firebaseApi.firestore;
+    await setDoc(doc(state.db, "users", state.user.uid, "stores", store.id), { businessType: nextType }, { merge: true });
+    showToast(t("toast.businessTypeSet"));
+  } catch (error) {
+    console.warn(error);
+    showToast(t("toast.couldNotRenameStore"));
+  }
+}
 async function createStore() {
   const name = window.prompt(t("dialog.newStoreNamePrompt"));
   if (!name || !name.trim()) return;
   if (!state.db || !state.user) return showToast(t("toast.signInToAddStore"));
+  const businessType = promptBusinessTypeSelection() || "general";
   try {
     const { collection, doc, serverTimestamp, setDoc } = state.firebaseApi.firestore;
     const storeRef = doc(collection(state.db, "users", state.user.uid, "stores"));
-    await setDoc(storeRef, { name: name.trim().slice(0, 60), createdAt: serverTimestamp() });
-    state.currentStoreId = storeRef.id;
+    await setDoc(storeRef, { name: name.trim().slice(0, 60), businessType, createdAt: serverTimestamp() });    state.currentStoreId = storeRef.id;
     showToast(t("toast.storeAdded", { name: name.trim() }));
   } catch (error) {
     console.warn(error);
@@ -2844,6 +2996,7 @@ function renderAll() {
   renderPos();
   renderCards();
   renderPaymentReports();
+  renderAiQuestionSuggestions();
 }
 
 function bindEvents() {
@@ -2901,6 +3054,7 @@ function bindEvents() {
   qs("#addStoreButton").addEventListener("click", createStore);
   qs("#renameStoreButton")?.addEventListener("click", renameStore);
   qs("#archiveStoreButton")?.addEventListener("click", archiveStore);
+  qs("#setBusinessTypeButton")?.addEventListener("click", setStoreBusinessType);
   qs("#posStaffSelect")?.addEventListener("change", (event) => {
     state.selectedStaffId = event.target.value;
   });
@@ -2956,13 +3110,6 @@ function bindEvents() {
     showToast(t("toast.signedOut"));
   });
 
-  qsa("[data-question]").forEach((button) => {
-    button.addEventListener("click", () => {
-      qs("#aiQuestion").value = button.dataset.question;
-      askAi();
-    });
-  });
-
   qsa("th[data-sort]").forEach((header) => {
     header.addEventListener("click", () => {
       const key = header.dataset.sort;
@@ -2973,6 +3120,13 @@ function bindEvents() {
   });
 
   document.addEventListener("click", async (event) => {
+    const questionButton = event.target.closest("[data-question]");
+    if (questionButton) {
+      qs("#aiQuestion").value = questionButton.dataset.question;
+      askAi();
+      return;
+    }
+
     const cartButton = event.target.closest("[data-add-cart]");
     if (cartButton) {
       const product = state.products.find((item) => item.id === cartButton.dataset.addCart);
