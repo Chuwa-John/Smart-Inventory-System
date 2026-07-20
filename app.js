@@ -39,7 +39,10 @@ const state = {
   monthlyReports: [],
   unsubscribeMonthlyReports: null,
   reportMonthSelection: new Date().toISOString().slice(0, 7),
-  openMonthlyReportId: null
+  openMonthlyReportId: null,
+  barcodeScanTarget: null,
+  barcodeScannerInstance: null,
+  lastReceiptSale: null
 };
 
 const MAX_CHAT_HISTORY = 20;
@@ -206,7 +209,7 @@ const DICTIONARY = {
     "reports.rangeToday": "Today", "reports.rangeWeek": "This week", "reports.rangeMonth": "This month",
     "reports.rangeAll": "All time", "reports.rangeCustom": "Custom range",
     "reports.from": "From", "reports.to": "To", "reports.exportCsv": "Export CSV", "reports.exportPdf": "Export PDF",
-    "ai.eyebrow": "Anthropic powered", "ai.title": "AI Business Advisor",
+    "ai.eyebrow": "Smart insights", "ai.title": "Ask About Your Business",
     "ai.questionPlaceholder": "Ask about your inventory, stock levels, sales, or forecasts...",
     "ai.askButton": "Ask AI Advisor", "ai.conversation": "Conversation", "ai.clear": "Clear",
     "product.nameLabel": "Product name", "product.categoryLabel": "Category", "product.brandLabel": "Brand",
@@ -407,7 +410,35 @@ const DICTIONARY = {
     "toast.saleCompletedChange": "Sale completed. Give TZS {change} change.",
     "toast.saleCompleted": "Sale completed and inventory updated.",
     "toast.quantityPriceInvalid": "Quantity and price fields must be zero or positive numbers.",
-    "toast.fieldTooLong": "{field} must be {max} characters or fewer."
+    "toast.fieldTooLong": "{field} must be {max} characters or fewer.",
+    "product.barcodeLabel": "Barcode", "product.scanButton": "Scan",
+    "pos.scanBarcode": "Scan Barcode",
+    "barcodeScanner.title": "Scan Barcode",
+    "barcodeScanner.hint": "Point your camera at the barcode.",
+    "barcodeScanner.cancel": "Cancel",
+    "toast.barcodeLibraryFailed": "Barcode scanner library did not load. Check your connection and try again.",
+    "toast.cameraAccessFailed": "Could not access the camera. Check permissions and try again.",
+    "toast.barcodeCaptured": "Barcode captured.",
+    "toast.barcodeNoMatch": "No product found for barcode {code}.",
+    "toast.barcodeAdded": "{name} added from barcode scan.",
+    "receipt.title": "Receipt", "receipt.printButton": "Print",
+    "receipt.downloadButton": "Download PDF", "receipt.close": "Close",
+    "receipt.dateLabel": "Date", "receipt.thankYou": "Thank you for your business!",
+    "toast.popupBlocked": "Could not open print window. Check your browser's popup blocker.",
+    "pos.customerName": "Customer name (optional)",
+    "pos.customerPhone": "Customer phone (optional)",
+    "pos.customerNamePlaceholder": "e.g. Amina",
+    "pos.customerPhonePlaceholder": "e.g. 07XXXXXXXX",
+    "receipt.customerLabel": "Customer",
+    "reports.topCustomersTitle": "Top Customers",
+    "reports.topCustomersEmpty": "No customer sales recorded yet for this range.",
+    "reports.colCustomerName": "Customer",
+    "reports.colCustomerPhone": "Phone",
+    "reports.colTotalSpent": "Total Spent",
+    "reports.colLastVisit": "Last Visit",
+    "dashboard.askAiButton": "Ask AI about this",
+    "dashboard.askAiQuestionAlerts": "Which of my low-stock or out-of-stock products should I reorder first, and how much?",
+    "dashboard.askAiQuestionRecommendations": "Explain my current purchase recommendations and what I should order this week."
   },
   sw: {
     "nav.dashboard": "Dashibodi", "nav.inventory": "Hisa", "nav.pos": "Mauzo",
@@ -470,7 +501,7 @@ const DICTIONARY = {
     "reports.rangeToday": "Leo", "reports.rangeWeek": "Wiki hii", "reports.rangeMonth": "Mwezi huu",
     "reports.rangeAll": "Muda wote", "reports.rangeCustom": "Muda maalum",
     "reports.from": "Kutoka", "reports.to": "Hadi", "reports.exportCsv": "Hamisha CSV", "reports.exportPdf": "Hamisha PDF",
-    "ai.eyebrow": "Inaendeshwa na Anthropic", "ai.title": "Mshauri wa Biashara wa AI",
+    "ai.eyebrow": "Ufahamu Mahiri", "ai.title": "Uliza Kuhusu Biashara Yako",
     "ai.questionPlaceholder": "Uliza kuhusu hisa, kiwango cha bidhaa, mauzo, au utabiri...",
     "ai.askButton": "Uliza Mshauri wa AI", "ai.conversation": "Mazungumzo", "ai.clear": "Futa",
     "product.nameLabel": "Jina la bidhaa", "product.categoryLabel": "Aina", "product.brandLabel": "Chapa",
@@ -485,6 +516,11 @@ const DICTIONARY = {
     "auth.confirmPassword": "Thibitisha nenosiri",
     "auth.consentPrefix": "Nakubali", "auth.consentTerms": "Sheria na Masharti",
     "auth.consentAnd": "na", "auth.consentPrivacy": "Sera ya Faragha", "auth.consentSuffix": ".",
+    "auth.whyTitle": "Kwa Nini DukaSmart",
+    "auth.whyMultiStore": "Fuatilia hisa ya matawi yako yote kwenye dashibodi moja.",
+    "auth.whyOffline": "Endelea kuuza hata mtandao ukikatika \u2014 hujisawazisha kiotomatiki ukirudi mtandaoni.",
+    "auth.whyReceipts": "Chapisha au shiriki risiti kupitia WhatsApp, ukiwa na ufuatiliaji wa fedha taslimu, pesa za simu, na kadi.",
+    "auth.whyAi": "Uliza Mshauri wa AI ni bidhaa zipi za kuagiza tena, kwa Kiingereza au Kiswahili.",
     "stockAlert.title": "Arifa ya Hisa", "stockAlert.ok": "Sawa",
     "command.placeholder": "Andika amri au jina la sehemu",
     "dialog.overridePasswordPrompt": "Weka nenosiri la kubadilisha bei:",
@@ -671,7 +707,38 @@ const DICTIONARY = {
     "toast.saleCompletedChange": "Mauzo yamekamilika. Toa chenji ya TZS {change}.",
     "toast.saleCompleted": "Mauzo yamekamilika na hisa imesasishwa.",
     "toast.quantityPriceInvalid": "Sehemu za kiasi na bei lazima ziwe sifuri au chanya.",
-    "toast.fieldTooLong": "{field} lazima iwe na herufi {max} au chache."
+    "toast.fieldTooLong": "{field} lazima iwe na herufi {max} au chache.",
+    "product.barcodeLabel": "Msimbo pau", "product.scanButton": "Changanua",
+    "pos.scanBarcode": "Changanua Msimbo Pau",
+    "barcodeScanner.title": "Changanua Msimbo Pau",
+    "barcodeScanner.hint": "Elekeza kamera yako kwenye msimbo pau.",
+    "barcodeScanner.cancel": "Ghairi",
+    "toast.barcodeLibraryFailed": "Maktaba ya kichanganuzi haikupakia. Angalia muunganisho wako na ujaribu tena.",
+    "toast.cameraAccessFailed": "Imeshindwa kufikia kamera. Angalia ruhusa na ujaribu tena.",
+    "toast.barcodeCaptured": "Msimbo pau umepatikana.",
+    "toast.barcodeNoMatch": "Hakuna bidhaa iliyopatikana kwa msimbo pau {code}.",
+    "toast.barcodeAdded": "{name} imeongezwa kwa kuchanganua msimbo pau.",
+    "receipt.title": "Risiti", "receipt.printButton": "Chapisha",
+    "receipt.downloadButton": "Pakua PDF", "receipt.close": "Funga",
+    "receipt.dateLabel": "Tarehe", "receipt.thankYou": "Asante kwa biashara yako!",
+    "toast.popupBlocked": "Imeshindwa kufungua dirisha la kuchapisha. Angalia kizuizi cha madirisha ibukizi cha kivinjari chako.",
+    "pos.customerName": "Jina la mteja (hiari)",
+    "pos.customerPhone": "Namba ya simu ya mteja (hiari)",
+    "pos.customerNamePlaceholder": "mfano, Amina",
+    "pos.customerPhonePlaceholder": "mfano, 07XXXXXXXX",
+    "receipt.customerLabel": "Mteja",
+    "reports.topCustomersTitle": "Wateja Bora",
+    "reports.topCustomersEmpty": "Hakuna mauzo ya wateja yaliyorekodiwa kwa muda huu.",
+    "reports.colCustomerName": "Mteja",
+    "reports.colCustomerPhone": "Simu",
+    "reports.colTotalSpent": "Jumla Aliyotumia",
+    "reports.colLastVisit": "Ziara ya Mwisho",
+    "receipt.whatsappButton": "Shiriki kupitia WhatsApp",
+    "dialog.customerPhonePrompt": "Weka namba ya simu ya mteja kushiriki risiti hii:",
+    "toast.invalidPhoneNumber": "Weka namba sahihi ya simu ya Tanzania (mfano 07XXXXXXXX).",
+    "dashboard.askAiButton": "Uliza AI kuhusu hili",
+    "dashboard.askAiQuestionAlerts": "Ni bidhaa zipi zenye hisa chache au zilizoisha ninazopaswa kuagiza kwanza, na kiasi gani?",
+    "dashboard.askAiQuestionRecommendations": "Eleza mapendekezo yangu ya sasa ya ununuzi na nini ninachopaswa kuagiza wiki hii."
   }
 };
 
@@ -1453,6 +1520,7 @@ function renderPaymentReports() {
   `;
   renderStoreBreakdown();
   renderStaffBreakdown();
+  renderTopCustomers();
   renderStaffOrderLookupSelect();
 }
 
@@ -1559,6 +1627,45 @@ function renderStaffBreakdown() {
     : "";
 
   tbody.innerHTML = bodyRows + totalRow || `<tr><td colspan="6" class="empty-state">${t("cart.empty")}</td></tr>`;
+}
+
+function computeCustomerBreakdown() {
+  const sales = filteredSales();
+  const byCustomer = new Map();
+  sales.forEach((sale) => {
+    const phone = String(sale.customerPhone || "").trim();
+    const name = String(sale.customerName || "").trim();
+    if (!phone && !name) return;
+    const key = phone || `name:${name.toLowerCase()}`;
+    if (!byCustomer.has(key)) {
+      byCustomer.set(key, { name: "", phone: "", orders: 0, total: 0, lastVisit: null });
+    }
+    const entry = byCustomer.get(key);
+    if (name && !entry.name) entry.name = name;
+    if (phone && !entry.phone) entry.phone = phone;
+    entry.orders += 1;
+    entry.total += Number(sale.total || 0);
+    const date = saleDate(sale);
+    if (date && (!entry.lastVisit || date > entry.lastVisit)) entry.lastVisit = date;
+  });
+  return [...byCustomer.values()].sort((a, b) => b.total - a.total);
+}
+
+function renderTopCustomers() {
+  const tbody = qs("#topCustomersTable");
+  if (!tbody) return;
+  const rows = computeCustomerBreakdown().slice(0, 10);
+  tbody.innerHTML = rows
+    .map(
+      (row) => `<tr>
+        <td>${esc(row.name || t("report.none"))}</td>
+        <td>${esc(row.phone || "-")}</td>
+        <td>${row.orders}</td>
+        <td><strong>TZS ${row.total.toLocaleString()}</strong></td>
+        <td>${row.lastVisit ? row.lastVisit.toLocaleDateString() : "-"}</td>
+      </tr>`
+    )
+    .join("") || `<tr><td colspan="5" class="empty-state">${t("reports.topCustomersEmpty")}</td></tr>`;
 }
 
 function saleMatchesDate(sale, dateStr) {
@@ -2180,14 +2287,16 @@ const PRODUCT_FIELD_LIMITS = {
   name: 120,
   category: 60,
   brand: 60,
-  supplier: 60
+  supplier: 60,
+  barcode: 64
 };
 
 const PRODUCT_FIELD_LABEL_KEYS = {
   name: "product.nameLabel",
   category: "product.categoryLabel",
   brand: "product.brandLabel",
-  supplier: "product.supplierLabel"
+  supplier: "product.supplierLabel",
+  barcode: "product.barcodeLabel"
 };
 
 function validateProductFields(product) {
@@ -2332,6 +2441,268 @@ async function confirmTransfer() {
     console.warn(error);
     showToast(error.message || t("toast.transferFailed"));
   }
+}
+
+function findProductByBarcode(code) {
+  const trimmed = String(code || "").trim();
+  if (!trimmed) return null;
+  return storeProducts().find((product) => String(product.barcode || "").trim() === trimmed) || null;
+}
+
+function addProductToCartById(productId, options = {}) {
+  const product = state.products.find((item) => item.id === productId);
+  if (!product || product.quantity <= 0) {
+    showToast(t("toast.outOfStock"));
+    return { failed: true };
+  }
+  if (state.db && state.currentStoreId === "all") {
+    showToast(t("toast.selectStoreToSell"));
+    return { failed: true };
+  }
+
+  const requestedQty = Math.max(1, Math.floor(Number(options.qty || 1)));
+  let unitPrice = Number(product.sellingPrice || 0);
+  if (product.priceType === "dynamic") {
+    if (options.unitPrice && options.unitPrice > 0) {
+      unitPrice = options.unitPrice;
+    } else {
+      return { needsPrice: true, product };
+    }
+  }
+
+  const existingCartItem = state.cart.find((item) => item.id === product.id);
+  const existingQty = existingCartItem?.qty || 0;
+  if (existingQty + requestedQty > product.quantity) {
+    showToast(t("toast.notEnoughStockQty"));
+    return { failed: true };
+  }
+  if (!existingCartItem && state.cart.length >= 40) {
+    showToast(t("toast.cartLimitReached"));
+    return { failed: true };
+  }
+
+  pushCartHistory();
+  if (existingCartItem) {
+    existingCartItem.qty += requestedQty;
+    if (product.priceType === "dynamic") existingCartItem.sellingPrice = unitPrice;
+  } else {
+    state.cart.push({ ...product, qty: requestedQty, sellingPrice: unitPrice });
+  }
+  renderCart();
+  return { success: true, product };
+}
+
+async function closeBarcodeScanner() {
+  const scanner = state.barcodeScannerInstance;
+  state.barcodeScannerInstance = null;
+  qs("#barcodeScannerDialog").close();
+  if (scanner) {
+    try {
+      await scanner.stop();
+      scanner.clear();
+    } catch (error) {
+      console.warn(error);
+    }
+  }
+}
+
+function handleBarcodeScanned(decodedText) {
+  const target = state.barcodeScanTarget;
+  closeBarcodeScanner();
+
+  if (target === "product") {
+    const form = qs("#productForm");
+    if (form?.elements.barcode) form.elements.barcode.value = decodedText;
+    showToast(t("toast.barcodeCaptured"));
+    return;
+  }
+
+  const product = findProductByBarcode(decodedText);
+  if (!product) {
+    qs("#posSearch").value = decodedText;
+    renderPosProducts();
+    showToast(t("toast.barcodeNoMatch", { code: decodedText }));
+    return;
+  }
+
+  if (product.priceType === "dynamic") {
+    qs("#posSearch").value = product.name;
+    renderPosProducts();
+    showToast(t("toast.enterPricePerUnit"));
+    return;
+  }
+
+  const result = addProductToCartById(product.id, { qty: 1 });
+  if (result?.success) showToast(t("toast.barcodeAdded", { name: product.name }));
+}
+
+function openBarcodeScanner(target) {
+  if (!window.Html5Qrcode) return showToast(t("toast.barcodeLibraryFailed"));
+
+  state.barcodeScanTarget = target;
+  qs("#barcodeScannerStatus").textContent = "";
+  qs("#barcodeScannerDialog").showModal();
+
+  const scanner = new Html5Qrcode("barcodeReaderRegion", {
+    formatsToSupport: [
+      Html5QrcodeSupportedFormats.EAN_13,
+      Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.UPC_A,
+      Html5QrcodeSupportedFormats.UPC_E,
+      Html5QrcodeSupportedFormats.CODE_128,
+      Html5QrcodeSupportedFormats.CODE_39,
+      Html5QrcodeSupportedFormats.CODABAR,
+      Html5QrcodeSupportedFormats.ITF,
+      Html5QrcodeSupportedFormats.QR_CODE
+    ],
+    verbose: false
+  });
+  state.barcodeScannerInstance = scanner;
+
+  scanner
+    .start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 260, height: 160 } },
+      (decodedText) => handleBarcodeScanned(decodedText),
+      () => {}
+    )
+    .catch((error) => {
+      console.warn(error);
+      qs("#barcodeScannerStatus").textContent = t("toast.cameraAccessFailed");
+    });
+}
+
+function receiptMeta(sale) {
+  const store = state.stores.find((item) => item.id === (sale.storeId || state.currentStoreId));
+  const storeName = store?.name || t("storeSwitcher.fallbackName");
+  const businessName = state.cachedProfile?.businessName || state.user?.displayName || "DukaSmart";
+  const date = sale.createdAt
+    ? (typeof sale.createdAt.toDate === "function" ? sale.createdAt.toDate() : new Date(sale.createdAt))
+    : new Date();
+  return { storeName, businessName, date };
+}
+
+function buildReceiptHtml(sale) {
+  const { storeName, businessName, date } = receiptMeta(sale);
+  const itemRows = (sale.items || [])
+    .map(
+      (item) => `
+      <div class="receipt-row"><span>${esc(item.name)}</span><span>TZS ${Number(item.lineTotal || 0).toLocaleString()}</span></div>
+      <div class="receipt-row muted"><span>${Number(item.qty || 0)} x TZS ${Number(item.sellingPrice || 0).toLocaleString()}</span><span></span></div>`
+    )
+    .join("");
+  return `
+    <div class="receipt-center"><strong>${esc(businessName)}</strong></div>
+    <div class="receipt-center muted">${esc(storeName)}</div>
+    <div class="receipt-divider"></div>
+    <div class="receipt-row"><span>${t("receipt.dateLabel")}</span><span>${date.toLocaleString()}</span></div>
+    ${sale.staffName ? `<div class="receipt-row"><span>${t("pos.staffLabel")}</span><span>${esc(sale.staffName)}</span></div>` : ""}
+    ${sale.customerName ? `<div class="receipt-row"><span>${t("receipt.customerLabel")}</span><span>${esc(sale.customerName)}</span></div>` : ""}
+    ${sale.orderNumber ? `<div class="receipt-row"><span>${t("reports.staffOrderLookupOrderLabel")}</span><span>#${esc(sale.orderNumber)}</span></div>` : ""}
+    <div class="receipt-row"><span>${t("report.colPaymentMethod")}</span><span>${paymentMethodLabel(sale.paymentMethod || "cash")}</span></div>
+    <div class="receipt-divider"></div>
+    ${itemRows}
+    <div class="receipt-divider"></div>
+    <div class="receipt-row"><strong>${t("pos.total")}</strong><strong>TZS ${Number(sale.total || 0).toLocaleString()}</strong></div>
+    ${
+      sale.paymentMethod === "cash" && sale.cashTendered != null
+        ? `<div class="receipt-row"><span>${t("pos.amountTendered")}</span><span>TZS ${Number(sale.cashTendered || 0).toLocaleString()}</span></div>
+    <div class="receipt-row"><span>${t("pos.changeDue")}</span><span>TZS ${Number(sale.changeDue || 0).toLocaleString()}</span></div>`
+        : ""
+    }
+    <div class="receipt-divider"></div>
+    <div class="receipt-center muted">${t("receipt.thankYou")}</div>
+  `;
+}
+
+function openReceiptDialog(sale) {
+  state.lastReceiptSale = sale;
+  qs("#receiptContent").innerHTML = buildReceiptHtml(sale);
+  qs("#receiptDialog").showModal();
+}
+
+function printReceipt() {
+  const content = qs("#receiptContent")?.innerHTML;
+  if (!content) return;
+  const printWindow = window.open("", "_blank", "width=380,height=600");
+  if (!printWindow) return showToast(t("toast.popupBlocked"));
+  printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Receipt</title>
+    <style>
+      body{font-family:'Courier New',monospace;font-size:12px;padding:12px;color:#000;}
+      .receipt-row{display:flex;justify-content:space-between;gap:8px;margin:2px 0;}
+      .receipt-divider{border-top:1px dashed #000;margin:6px 0;}
+      .receipt-center{text-align:center;}
+      .muted{color:#444;}
+    </style></head><body>${content}</body></html>`);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+  printWindow.close();
+}
+
+function buildReceiptTextLines(sale) {
+  const { storeName, businessName, date } = receiptMeta(sale);
+  const lines = [businessName, storeName, "", `${t("receipt.dateLabel")}: ${date.toLocaleString()}`];
+  if (sale.staffName) lines.push(`${t("pos.staffLabel")}: ${sale.staffName}`);
+  if (sale.customerName) lines.push(`${t("receipt.customerLabel")}: ${sale.customerName}`);
+  if (sale.orderNumber) lines.push(`${t("reports.staffOrderLookupOrderLabel")}: #${sale.orderNumber}`);
+  lines.push(`${t("report.colPaymentMethod")}: ${paymentMethodLabel(sale.paymentMethod || "cash")}`, "--------------------------------");
+  (sale.items || []).forEach((item) => {
+    lines.push(item.name);
+    lines.push(`  ${item.qty} x TZS ${Number(item.sellingPrice || 0).toLocaleString()} = TZS ${Number(item.lineTotal || 0).toLocaleString()}`);
+  });
+  lines.push("--------------------------------", `${t("pos.total")}: TZS ${Number(sale.total || 0).toLocaleString()}`);
+  if (sale.paymentMethod === "cash" && sale.cashTendered != null) {
+    lines.push(`${t("pos.amountTendered")}: TZS ${Number(sale.cashTendered || 0).toLocaleString()}`);
+    lines.push(`${t("pos.changeDue")}: TZS ${Number(sale.changeDue || 0).toLocaleString()}`);
+  }
+  lines.push("", t("receipt.thankYou"));
+  return lines;
+}
+
+function normalizeTzPhoneForWhatsApp(rawPhone) {
+  const digits = String(rawPhone || "").replace(/[^\d]/g, "");
+  if (digits.startsWith("255") && digits.length === 12) return digits;
+  if (digits.startsWith("0") && digits.length === 10) return `255${digits.slice(1)}`;
+  if (digits.length === 9) return `255${digits}`;
+  return null;
+}
+
+function shareReceiptWhatsApp() {
+  const sale = state.lastReceiptSale;
+  if (!sale) return;
+
+  let rawPhone = sale.customerPhone;
+  if (!rawPhone) {
+    rawPhone = window.prompt(t("dialog.customerPhonePrompt"));
+    if (rawPhone === null) return;
+  }
+
+  const normalized = normalizeTzPhoneForWhatsApp(rawPhone);
+  if (!normalized) return showToast(t("toast.invalidPhoneNumber"));
+
+  const text = buildReceiptTextLines(sale).join("\n");
+  window.open(`https://wa.me/${normalized}?text=${encodeURIComponent(text)}`, "_blank");
+}
+
+function downloadReceiptPdf() {
+  const sale = state.lastReceiptSale;
+  if (!sale) return;
+  const jsPdfCtor = window.jspdf && window.jspdf.jsPDF;
+  if (!jsPdfCtor) return showToast(t("toast.pdfLibraryFailed"));
+
+  const lines = buildReceiptTextLines(sale);
+  const doc = new jsPdfCtor({ unit: "mm", format: [80, Math.max(120, 40 + lines.length * 5)] });
+  doc.setFont("courier", "normal");
+  doc.setFontSize(9);
+  let y = 8;
+  lines.forEach((line) => {
+    doc.splitTextToSize(line, 72).forEach((wrapped) => {
+      doc.text(wrapped, 4, y);
+      y += 4.5;
+    });
+  });
+  doc.save(`receipt-${sale.orderNumber || Date.now()}.pdf`);
 }
 
 async function deleteProduct(productId) {
@@ -3091,6 +3462,19 @@ function bindEvents() {
   qs("#closeTransferDialog")?.addEventListener("click", () => qs("#transferDialog").close());
   qs("#cancelTransferDialog")?.addEventListener("click", () => qs("#transferDialog").close());
   qs("#confirmTransferButton")?.addEventListener("click", confirmTransfer);
+  qs("#scanProductBarcodeButton")?.addEventListener("click", () => openBarcodeScanner("product"));
+  qs("#scanPosBarcodeButton")?.addEventListener("click", () => openBarcodeScanner("pos"));
+  qs("#closeBarcodeScannerDialog")?.addEventListener("click", closeBarcodeScanner);
+  qs("#cancelBarcodeScannerDialog")?.addEventListener("click", closeBarcodeScanner);
+  qs("#barcodeScannerDialog")?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeBarcodeScanner();
+  });
+  qs("#printReceiptButton")?.addEventListener("click", printReceipt);
+  qs("#downloadReceiptPdfButton")?.addEventListener("click", downloadReceiptPdf);
+  qs("#shareReceiptWhatsAppButton")?.addEventListener("click", shareReceiptWhatsApp);
+  qs("#closeReceiptDialog")?.addEventListener("click", () => qs("#receiptDialog").close());
+  qs("#closeReceiptDialogBottom")?.addEventListener("click", () => qs("#receiptDialog").close());
   qs("#askAiButton").addEventListener("click", askAi);
   qs("#clearChatButton").addEventListener("click", () => {
     state.chatHistory = [];
@@ -3137,16 +3521,26 @@ function bindEvents() {
       return;
     }
 
+    const askAiButton = event.target.closest("[data-ask-ai]");
+    if (askAiButton) {
+      const question = askAiButton.dataset.askAi === "recommendations"
+        ? t("dashboard.askAiQuestionRecommendations")
+        : t("dashboard.askAiQuestionAlerts");
+      openView("ai");
+      qs("#aiQuestion").value = question;
+      askAi();
+      return;
+    }
+
     const cartButton = event.target.closest("[data-add-cart]");
     if (cartButton) {
       const product = state.products.find((item) => item.id === cartButton.dataset.addCart);
-      if (!product || product.quantity <= 0) return showToast(t("toast.outOfStock"));
-      if (state.db && state.currentStoreId === "all") return showToast(t("toast.selectStoreToSell"));
+      if (!product) return;
 
       const qtyInput = qs(`[data-qty-input="${product.id}"]`);
       const requestedQty = Math.max(1, Math.floor(Number(qtyInput?.value || 1)));
 
-      let unitPrice = Number(product.sellingPrice || 0);
+      let unitPrice;
       let priceInput = null;
       if (product.priceType === "dynamic") {
         priceInput = qs(`[data-price-input="${product.id}"]`);
@@ -3155,23 +3549,8 @@ function bindEvents() {
         unitPrice = enteredPrice;
       }
 
-      const existingCartItem = state.cart.find((item) => item.id === product.id);
-      const existingQty = existingCartItem?.qty || 0;
-      if (existingQty + requestedQty > product.quantity) {
-        return showToast(t("toast.notEnoughStockQty"));
-      }
-      if (!existingCartItem && state.cart.length >= 40) {
-        return showToast(t("toast.cartLimitReached"));
-      }
-
-      pushCartHistory();
-      if (existingCartItem) {
-        existingCartItem.qty += requestedQty;
-        if (product.priceType === "dynamic") existingCartItem.sellingPrice = unitPrice;
-      } else {
-        state.cart.push({ ...product, qty: requestedQty, sellingPrice: unitPrice });
-      }
-      renderCart();
+      const result = addProductToCartById(product.id, { qty: requestedQty, unitPrice });
+      if (!result?.success) return;
       if (qtyInput) qtyInput.value = 1;
       if (priceInput) priceInput.value = "";
       return;
@@ -3303,6 +3682,9 @@ function bindEvents() {
     if (!orderNumberRaw) return showToast(t("toast.orderNumberRequired"));
     if (!/^[0-9]+$/.test(orderNumberRaw)) return showToast(t("toast.orderNumberInvalid"));
 
+    const customerName = (qs("#posCustomerName")?.value || "").trim().slice(0, 80);
+    const customerPhone = (qs("#posCustomerPhone")?.value || "").trim().slice(0, 20);
+
     const duplicate = state.sales.find(
       (sale) => !sale.voided && sale.staffId === staffMember.id && String(sale.orderNumber || "") === orderNumberRaw
     );
@@ -3377,6 +3759,8 @@ function bindEvents() {
             staffId: staffMember.id,
             staffName: staffMember.name || "",
             orderNumber: orderNumberRaw,
+            customerName,
+            customerPhone,
             voided: false,
             createdAt: serverTimestamp()
           });
@@ -3414,16 +3798,34 @@ function bindEvents() {
         staffId: staffMember.id,
         staffName: staffMember.name || "",
         orderNumber: orderNumberRaw,
+        customerName,
+        customerPhone,
         voided: false,
         createdAt: new Date()
       });
       state.lastSale = { mode: "local", items: saleItems, paymentMethod, total };
     }
 
+    openReceiptDialog({
+      items: saleItems,
+      total,
+      paymentMethod,
+      cashTendered: paymentMethod === "cash" ? cashTendered : null,
+      changeDue: paymentMethod === "cash" ? changeDue : null,
+      staffName: staffMember.name || "",
+      orderNumber: orderNumberRaw,
+      customerName,
+      customerPhone,
+      storeId: state.currentStoreId,
+      createdAt: new Date()
+    });
+
     state.cart = [];
     state.cartHistory = [];
     if (qs("#cashTendered")) qs("#cashTendered").value = "";
     if (qs("#posOrderNumber")) qs("#posOrderNumber").value = "";
+    if (qs("#posCustomerName")) qs("#posCustomerName").value = "";
+    if (qs("#posCustomerPhone")) qs("#posCustomerPhone").value = "";
     renderAll();
     completeButton.disabled = false;
     showToast(changeDue > 0 ? t("toast.saleCompletedChange", { change: changeDue.toLocaleString() }) : t("toast.saleCompleted"));
@@ -3487,3 +3889,11 @@ translateStaticDom();
 renderAll();
 renderChatLog();
 initFirebase();
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch((error) => {
+      console.warn("Service worker registration failed.", error);
+    });
+  });
+}

@@ -11,6 +11,7 @@
     <link rel="icon" href="./icons/icon-192.png" />
     <link rel="apple-touch-icon" href="./icons/icon-192.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="DukaSmart" />
   </head>
@@ -97,6 +98,7 @@
                 </div>
                 <div class="alert-head-controls">
                   <label class="alert-popup-toggle"><input type="checkbox" id="stockAlertPopupToggle" checked /> <span data-i18n="dashboard.popupAlerts">Popup alerts</span></label>
+                  <button class="ghost-button compact" type="button" data-ask-ai="alerts" data-i18n="dashboard.askAiButton">Ask AI about this</button>
                   <span class="count-badge" id="alertCount">0</span>
                 </div>
               </div>
@@ -121,6 +123,7 @@
                   <p class="eyebrow" data-i18n="dashboard.aiEngineEyebrow">AI reorder engine</p>
                   <h2 data-i18n="dashboard.recommendationsTitle">Purchase recommendations</h2>
                 </div>
+                <button class="ghost-button compact" type="button" data-ask-ai="recommendations" data-i18n="dashboard.askAiButton">Ask AI about this</button>
               </div>
               <div class="recommendation-list" id="recommendationList"></div>
             </article>
@@ -178,7 +181,10 @@
             <article class="panel">
               <div class="panel-head">
                 <h2 data-i18n="pos.productSearch">Product Search</h2>
-                <input id="posSearch" type="search" placeholder="Search products" data-i18n-placeholder="pos.searchPlaceholder" />
+                <span class="scan-input-row">
+                  <input id="posSearch" type="search" placeholder="Search products" data-i18n-placeholder="pos.searchPlaceholder" />
+                  <button class="ghost-button compact" type="button" id="scanPosBarcodeButton" data-i18n="pos.scanBarcode">Scan Barcode</button>
+                </span>
               </div>
               <div class="pos-products" id="posProducts"></div>
             </article>
@@ -201,6 +207,12 @@
                 <button class="ghost-button compact" id="addStaffButton" type="button" data-i18n="pos.addStaff">+ Staff</button>
                 <button class="ghost-button compact danger" id="removeStaffButton" type="button" data-i18n="pos.removeStaff">Remove Staff</button>
               </div>
+              <label><span data-i18n="pos.customerName">Customer name (optional)</span>
+                <input id="posCustomerName" type="text" maxlength="80" placeholder="e.g. Amina" data-i18n-placeholder="pos.customerNamePlaceholder" />
+              </label>
+              <label><span data-i18n="pos.customerPhone">Customer phone (optional)</span>
+                <input id="posCustomerPhone" type="tel" maxlength="20" placeholder="e.g. 07XXXXXXXX" data-i18n-placeholder="pos.customerPhonePlaceholder" />
+              </label>
               <label><span data-i18n="pos.orderNumberLabel">Order number (from sales sheet)</span>
                 <input id="posOrderNumber" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="e.g. 8097" data-i18n-placeholder="pos.orderNumberPlaceholder" />
               </label>
@@ -276,6 +288,29 @@
                   </tr>
                 </thead>
                 <tbody id="staffBreakdownTable"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.financialEyebrow">Financial tracking</p>
+                <h2 data-i18n="reports.topCustomersTitle">Top Customers</h2>
+              </div>
+            </div>
+            <div class="table-panel" style="box-shadow:none;border:none">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="reports.colCustomerName">Customer</th>
+                    <th data-i18n="reports.colCustomerPhone">Phone</th>
+                    <th data-i18n="reports.ordersColumn">Orders</th>
+                    <th data-i18n="reports.colTotalSpent">Total Spent</th>
+                    <th data-i18n="reports.colLastVisit">Last Visit</th>
+                  </tr>
+                </thead>
+                <tbody id="topCustomersTable"></tbody>
               </table>
             </div>
           </article>
@@ -411,6 +446,12 @@
           <datalist id="categorySuggestions"></datalist>
           <label><span data-i18n="product.brandLabel">Brand</span><input name="brand" /></label>
           <label><span data-i18n="product.supplierLabel">Suppliers</span><input name="supplier" /></label>
+          <label><span data-i18n="product.barcodeLabel">Barcode</span>
+            <span class="scan-input-row">
+              <input name="barcode" />
+              <button class="ghost-button compact" type="button" id="scanProductBarcodeButton" data-i18n="product.scanButton">Scan</button>
+            </span>
+          </label>
           <label><span data-i18n="product.quantityLabel">Quantity</span><input name="quantity" type="number" min="0" required /></label>
           <label><span data-i18n="product.priceLabel">Selling price (TZS)</span> <input name="sellingPrice" type="number" min="0" step="1" required /></label>
           <label><span data-i18n="product.priceTypeLabel">Price type</span>
@@ -449,12 +490,48 @@
       </div>
     </dialog>
 
+    <dialog id="barcodeScannerDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="barcodeScanner.title">Scan Barcode</h2>
+        <button class="icon-button" type="button" id="closeBarcodeScannerDialog" aria-label="Close">&times;</button>
+      </div>
+      <p class="muted" data-i18n="barcodeScanner.hint">Point your camera at the barcode.</p>
+      <div id="barcodeReaderRegion"></div>
+      <p id="barcodeScannerStatus" class="muted"></p>
+      <div class="button-row end">
+        <button class="ghost-button" type="button" id="cancelBarcodeScannerDialog" data-i18n="barcodeScanner.cancel">Cancel</button>
+      </div>
+    </dialog>
+
+    <dialog id="receiptDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="receipt.title">Receipt</h2>
+        <button class="icon-button" type="button" id="closeReceiptDialog" aria-label="Close">&times;</button>
+      </div>
+      <div id="receiptContent" class="receipt"></div>
+      <div class="button-row end">
+        <button class="ghost-button compact" type="button" id="printReceiptButton" data-i18n="receipt.printButton">Print</button>
+        <button class="ghost-button compact" type="button" id="downloadReceiptPdfButton" data-i18n="receipt.downloadButton">Download PDF</button>
+        <button class="ghost-button compact" type="button" id="shareReceiptWhatsAppButton" data-i18n="receipt.whatsappButton">Share via WhatsApp</button>
+        <button class="primary-button compact" type="button" id="closeReceiptDialogBottom" data-i18n="receipt.close">Close</button>
+      </div>
+    </dialog>
+
     <div class="auth-gate" id="authGate" aria-live="polite">
       <form class="auth-panel" id="authForm" novalidate>
         <div>
           <p class="eyebrow" data-i18n="auth.eyebrow">Account access</p>
           <h1>DukaSmart ERP</h1>
           <p class="auth-copy" data-i18n="auth.copy">Create an account or sign in to manage your own inventory, stock levels, sales, and AI recommendations.</p>
+        </div>
+        <div class="auth-why">
+          <p class="eyebrow" data-i18n="auth.whyTitle">Why DukaSmart</p>
+          <ul class="auth-why-list">
+            <li data-i18n="auth.whyMultiStore">Track inventory across every branch from one dashboard.</li>
+            <li data-i18n="auth.whyOffline">Keep selling even when the internet drops — it syncs automatically once you're back online.</li>
+            <li data-i18n="auth.whyReceipts">Print or share receipts on WhatsApp, with cash, mobile money, and card tracking built in.</li>
+            <li data-i18n="auth.whyAi">Ask the built-in AI Advisor which products to reorder, in English or Swahili.</li>
+          </ul>
         </div>
         <label><span data-i18n="auth.businessName">Business name</span><input id="businessName" name="businessName" autocomplete="organization" /></label>
         <label><span data-i18n="auth.email">Email</span><input id="authEmail" name="email" type="email" autocomplete="email" required /><span class="field-error" id="authEmailError"></span></label>
@@ -487,6 +564,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-    <script type="module" src="./app.js?v=20260716"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script type="module" src="./app.js?v=20260725"></script>
   </body>
 </html>

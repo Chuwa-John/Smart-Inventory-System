@@ -518,6 +518,51 @@ th[data-sort] {
   width: 90px;
 }
 
+.scan-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.scan-input-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+#barcodeReaderRegion {
+  width: 100%;
+  min-height: 260px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #000;
+}
+
+.receipt {
+  font-family: "Courier New", monospace;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  background: var(--panel-soft);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  max-width: 320px;
+  margin: 0 auto;
+}
+
+.receipt-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.receipt-divider {
+  border-top: 1px dashed var(--line);
+  margin: 8px 0;
+}
+
+.receipt-center {
+  text-align: center;
+}
+
 .link-button {
   background: none;
   border: none;
@@ -757,6 +802,29 @@ dialog::backdrop {
 .auth-copy {
   color: var(--muted);
   line-height: 1.5;
+}
+
+.auth-why {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--panel-soft) 70%, transparent);
+}
+
+.auth-why-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.auth-why-list li::marker {
+  color: var(--accent);
 }
 
 .auth-consent-row {
