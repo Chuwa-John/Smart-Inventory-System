@@ -84,6 +84,7 @@ function compactProduct(product) {
 function compactSnapshot(snapshot = {}) {
   return {
     businessType: typeof snapshot.businessType === "string" ? snapshot.businessType.slice(0, 40) : "general",
+    language: snapshot.language === "sw" ? "sw" : "en",
     metrics: snapshot.metrics || {},
     products: Array.isArray(snapshot.products) ? snapshot.products.slice(0, 80).map(compactProduct) : [],
     suppliers: Array.isArray(snapshot.suppliers) ? snapshot.suppliers.slice(0, 30) : [],
@@ -141,7 +142,7 @@ app.post("/api/ai/advisor", verifyFirebaseToken, async (req, res) => {
         "If the user asks outside those areas, refuse briefly and redirect them to DukaSmart ERP tasks.",
         "Do not invent exact quantities, suppliers, revenue, or customer facts beyond the provided snapshot.",
         "Return concise, practical recommendations with bullets when useful.",
-        "The user may ask in any language, including Swahili, Sheng, or mixed English/Swahili. Always respond in the same language the question was asked in.",
+        `Respond in ${snapshot.language === "sw" ? "Swahili" : "English"} only, regardless of what language the user's question is written in \u2014 this matches the app's current display language setting.`,
         "Judge topic relevance by meaning, not by exact keywords \u2014 a question can be on-topic even if phrased in an unusual way, a different language, or with typos.",
         "This is an ongoing conversation \u2014 use earlier turns for context when relevant.",
         `Current business snapshot (JSON): ${JSON.stringify(snapshot)}`

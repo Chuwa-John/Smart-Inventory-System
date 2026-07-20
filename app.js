@@ -2015,6 +2015,7 @@ async function postToAiProxy(messages, snapshot) {
 async function callAiProxy(historyForRequest) {
   return postToAiProxy(historyForRequest, {
     businessType: currentBusinessType(),
+    language: state.language,
     products: storeProducts().map((product) => ({
       name: product.name,
       category: product.category,
