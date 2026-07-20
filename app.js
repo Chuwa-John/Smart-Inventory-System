@@ -2428,7 +2428,16 @@ async function initFirebase() {
     }
 
     state.auth = authApi.getAuth(app);
-    state.db = firestoreApi.getFirestore(app);
+    try {
+      state.db = firestoreApi.initializeFirestore(app, {
+        localCache: firestoreApi.persistentLocalCache({
+          tabManager: firestoreApi.persistentMultipleTabManager()
+        })
+      });
+    } catch (persistenceError) {
+      console.warn("Firestore offline persistence unavailable; falling back to in-memory cache.", persistenceError);
+      state.db = firestoreApi.getFirestore(app);
+    }
     state.firebaseReady = true;
     qs(".status-dot").classList.add("connected");
     qs("#connectionLabel").textContent = t("connection.firebaseConnected");
