@@ -54,6 +54,7 @@
           <div class="account-chip" id="accountChip" hidden>
             <span id="userEmail">Signed out</span>
             <button class="ghost-button compact" id="signOutButton" data-i18n="topbar.signOut">Sign out</button>
+            <button class="ghost-button compact danger" id="deleteAccountButton" type="button" data-i18n="deleteAccount.button">Delete Account</button>
           </div>
           <button class="ghost-button compact" id="langToggleButton" type="button">Kiswahili</button>
           <button class="ghost-button" id="themeButton">Light</button>
@@ -326,13 +327,17 @@
               <label><span data-i18n="pos.staffLabel">Staff member</span>
                 <select id="staffOrderLookupStaff"></select>
               </label>
-              <label><span data-i18n="reports.staffOrderLookupDateLabel">Date</span>
-                <input id="staffOrderLookupDate" type="date" />
-              </label>
               <label><span data-i18n="reports.staffOrderLookupOrderLabel">Order number</span>
                 <select id="staffOrderLookupOrderNumber"></select>
               </label>
+              <label><span data-i18n="reports.from">From</span>
+                <input id="staffOrderLookupDateFrom" type="date" />
+              </label>
+              <label><span data-i18n="reports.to">To</span>
+                <input id="staffOrderLookupDateTo" type="date" />
+              </label>
             </div>
+            <p class="muted" data-i18n="reports.staffOrderLookupDateHint">Leave both dates blank to see every order for this staff member.</p>
             <div class="button-row end">
               <button class="ghost-button compact" id="staffOrderLookupAllButton" type="button" data-i18n="reports.staffOrderLookupAllButton">Generate All Orders</button>
               <button class="primary-button compact" id="staffOrderLookupButton" type="button" data-i18n="reports.staffOrderLookupButton">Find Order</button>
@@ -517,6 +522,25 @@
       </div>
     </dialog>
 
+    <dialog id="deleteAccountDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="deleteAccount.title">Delete Account</h2>
+        <button class="icon-button" type="button" id="closeDeleteAccountDialog" aria-label="Close">&times;</button>
+      </div>
+      <p class="muted" data-i18n="deleteAccount.warning">This permanently closes your account and signs you out everywhere. You will no longer be able to log in. Your past sales and financial records are kept for accounting purposes, as described in the Terms &amp; Conditions.</p>
+      <label><span data-i18n="deleteAccount.passwordLabel">Confirm your password</span>
+        <input id="deleteAccountPassword" type="password" autocomplete="current-password" />
+      </label>
+      <label><span data-i18n="deleteAccount.typeDeleteLabel">Type DELETE to confirm</span>
+        <input id="deleteAccountConfirmText" type="text" autocomplete="off" />
+      </label>
+      <span class="field-error" id="deleteAccountError"></span>
+      <div class="button-row end">
+        <button class="ghost-button" type="button" id="cancelDeleteAccountDialog" data-i18n="product.cancel">Cancel</button>
+        <button class="ghost-button compact danger" type="button" id="confirmDeleteAccountButton" data-i18n="deleteAccount.confirmButton">Permanently Delete Account</button>
+      </div>
+    </dialog>
+
     <div class="auth-gate" id="authGate" aria-live="polite">
       <form class="auth-panel" id="authForm" novalidate>
         <div>
@@ -565,6 +589,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    <script type="module" src="./app.js?v=20260725"></script>
+    <script type="module" src="./app.js?v=20260729"></script>
   </body>
 </html>

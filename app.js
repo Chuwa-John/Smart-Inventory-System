@@ -202,7 +202,7 @@ const DICTIONARY = {
     "reports.dailyStaffReportOrderColumn": "Order #",
     "reports.dailyStaffReportGrandTotal": "Grand Total (All Staff)",
     "reports.staffOrderLookupAllButton": "Generate All Orders",
-    "reports.staffOrderLookupNoOrders": "No orders for this staff member on this date.",
+    "reports.staffOrderLookupNoOrders": "No orders found for this staff member.",
     "reports.staffOrderLookupSelectStaffDate": "Select a staff member and date first.",
     "reports.eyebrow": "Business intelligence", "reports.title": "Reports",
     "reports.financialEyebrow": "Financial tracking", "reports.salesTitle": "Sales & Payment Reports",
@@ -224,6 +224,11 @@ const DICTIONARY = {
     "auth.confirmPassword": "Confirm password",
     "auth.consentPrefix": "I agree to the", "auth.consentTerms": "Terms & Conditions",
     "auth.consentAnd": "and", "auth.consentPrivacy": "Privacy Policy", "auth.consentSuffix": ".",
+    "auth.whyTitle": "Why DukaSmart",
+    "auth.whyMultiStore": "Track inventory across every branch from one dashboard.",
+    "auth.whyOffline": "Keep selling even when the internet drops \u2014 it syncs automatically once you're back online.",
+    "auth.whyReceipts": "Print or share receipts on WhatsApp, with cash, mobile money, and card tracking built in.",
+    "auth.whyAi": "Ask the built-in AI Advisor which products to reorder, in English or Swahili.",
     "stockAlert.title": "Stock Alert", "stockAlert.ok": "OK",
     "command.placeholder": "Type a command or module name",
     "dialog.overridePasswordPrompt": "Enter the price override password:",
@@ -438,7 +443,18 @@ const DICTIONARY = {
     "reports.colLastVisit": "Last Visit",
     "dashboard.askAiButton": "Ask AI about this",
     "dashboard.askAiQuestionAlerts": "Which of my low-stock or out-of-stock products should I reorder first, and how much?",
-    "dashboard.askAiQuestionRecommendations": "Explain my current purchase recommendations and what I should order this week."
+    "dashboard.askAiQuestionRecommendations": "Explain my current purchase recommendations and what I should order this week.",
+    "deleteAccount.button": "Delete Account",
+    "deleteAccount.title": "Delete Account",
+    "deleteAccount.warning": "This permanently closes your account and signs you out everywhere. You will no longer be able to log in. Your past sales and financial records are kept for accounting purposes, as described in the Terms & Conditions.",
+    "deleteAccount.passwordLabel": "Confirm your password",
+    "deleteAccount.typeDeleteLabel": "Type DELETE to confirm",
+    "deleteAccount.confirmButton": "Permanently Delete Account",
+    "deleteAccount.confirmTextMismatch": "Type DELETE exactly to confirm.",
+    "deleteAccount.passwordRequired": "Enter your password to confirm.",
+    "deleteAccount.reauthFailed": "Incorrect password. Please try again.",
+    "toast.accountDeleted": "Your account has been deleted.",
+    "toast.accountDeleteFailed": "Could not delete your account. Please try again."
   },
   sw: {
     "nav.dashboard": "Dashibodi", "nav.inventory": "Hisa", "nav.pos": "Mauzo",
@@ -494,8 +510,9 @@ const DICTIONARY = {
     "reports.dailyStaffReportOrderColumn": "Oda #",
     "reports.dailyStaffReportGrandTotal": "Jumla Kuu (Wafanyakazi Wote)",
     "reports.staffOrderLookupAllButton": "Tengeneza Oda Zote",
-    "reports.staffOrderLookupNoOrders": "Hakuna oda za mfanyakazi huyu kwa tarehe hii.",
-    "reports.staffOrderLookupSelectStaffDate": "Chagua mfanyakazi na tarehe kwanza.",
+    "reports.staffOrderLookupNoOrders": "Hakuna oda zilizopatikana kwa mfanyakazi huyu.",
+    "reports.staffOrderLookupSelectStaffDate": "Chagua mfanyakazi kwanza.",
+    "reports.staffOrderLookupDateHint": "Acha tarehe zote wazi kuona oda zote za mfanyakazi huyu.",
     "reports.eyebrow": "Taarifa za biashara", "reports.title": "Ripoti",
     "reports.financialEyebrow": "Ufuatiliaji wa fedha", "reports.salesTitle": "Ripoti za Mauzo na Malipo",
     "reports.rangeToday": "Leo", "reports.rangeWeek": "Wiki hii", "reports.rangeMonth": "Mwezi huu",
@@ -738,7 +755,18 @@ const DICTIONARY = {
     "toast.invalidPhoneNumber": "Weka namba sahihi ya simu ya Tanzania (mfano 07XXXXXXXX).",
     "dashboard.askAiButton": "Uliza AI kuhusu hili",
     "dashboard.askAiQuestionAlerts": "Ni bidhaa zipi zenye hisa chache au zilizoisha ninazopaswa kuagiza kwanza, na kiasi gani?",
-    "dashboard.askAiQuestionRecommendations": "Eleza mapendekezo yangu ya sasa ya ununuzi na nini ninachopaswa kuagiza wiki hii."
+    "dashboard.askAiQuestionRecommendations": "Eleza mapendekezo yangu ya sasa ya ununuzi na nini ninachopaswa kuagiza wiki hii.",
+    "deleteAccount.button": "Futa Akaunti",
+    "deleteAccount.title": "Futa Akaunti",
+    "deleteAccount.warning": "Hii itafunga akaunti yako kabisa na kukutoa kila mahali. Hutaweza kuingia tena. Mauzo na kumbukumbu zako za fedha za nyuma zitabaki kwa madhumuni ya uhasibu, kama ilivyoelezwa kwenye Sheria na Masharti.",
+    "deleteAccount.passwordLabel": "Thibitisha nenosiri lako",
+    "deleteAccount.typeDeleteLabel": "Andika DELETE kuthibitisha",
+    "deleteAccount.confirmButton": "Futa Akaunti Kabisa",
+    "deleteAccount.confirmTextMismatch": "Andika DELETE sawasawa kuthibitisha.",
+    "deleteAccount.passwordRequired": "Weka nenosiri lako kuthibitisha.",
+    "deleteAccount.reauthFailed": "Nenosiri si sahihi. Tafadhali jaribu tena.",
+    "toast.accountDeleted": "Akaunti yako imefutwa.",
+    "toast.accountDeleteFailed": "Imeshindwa kufuta akaunti yako. Tafadhali jaribu tena."
   }
 };
 
@@ -1695,10 +1723,19 @@ function renderStaffOrderLookupSelect() {
   renderStaffOrderNumberOptions();
 }
 
-function findStaffSalesForDay(staffId, dateStr) {
-  if (!staffId || !dateStr) return [];
+function findStaffSalesInRange(staffId, fromStr, toStr) {
+  if (!staffId) return [];
+  const fromDate = fromStr ? new Date(fromStr) : null;
+  const toDate = toStr ? new Date(`${toStr}T23:59:59`) : null;
   return state.sales
-    .filter((sale) => !sale.voided && sale.staffId === staffId && saleMatchesDate(sale, dateStr))
+    .filter((sale) => {
+      if (sale.voided || sale.staffId !== staffId) return false;
+      const date = saleDate(sale);
+      if (!date) return false;
+      if (fromDate && date < fromDate) return false;
+      if (toDate && date > toDate) return false;
+      return true;
+    })
     .sort((a, b) => (saleDate(a)?.getTime() || 0) - (saleDate(b)?.getTime() || 0));
 }
 
@@ -1735,11 +1772,12 @@ function renderStaffOrderNumberOptions() {
   const select = qs("#staffOrderLookupOrderNumber");
   if (!select) return;
   const staffId = qs("#staffOrderLookupStaff")?.value || "";
-  const dateStr = qs("#staffOrderLookupDate")?.value || "";
-  const sales = findStaffSalesForDay(staffId, dateStr);
+  const fromStr = qs("#staffOrderLookupDateFrom")?.value || "";
+  const toStr = qs("#staffOrderLookupDateTo")?.value || "";
+  const sales = findStaffSalesInRange(staffId, fromStr, toStr);
   const previousValue = select.value;
 
-  if (!staffId || !dateStr || !sales.length) {
+  if (!staffId || !sales.length) {
     select.innerHTML = `<option value="">${t("reports.staffOrderLookupNoOrders")}</option>`;
     select.disabled = true;
     return;
@@ -1749,30 +1787,32 @@ function renderStaffOrderNumberOptions() {
   select.innerHTML = sales
     .map((sale) => {
       const date = saleDate(sale);
+      const dateLabel = date ? date.toLocaleDateString() : "";
       const timeLabel = date ? date.toLocaleTimeString() : "";
-      return `<option value="${esc(sale.orderNumber || "")}">#${esc(sale.orderNumber || "")} \u2014 TZS ${Number(sale.total || 0).toLocaleString()} (${timeLabel})</option>`;
+      return `<option value="${esc(sale.id)}">#${esc(sale.orderNumber || "")} \u2014 TZS ${Number(sale.total || 0).toLocaleString()} (${dateLabel} ${timeLabel})</option>`;
     })
     .join("");
-  if (sales.some((sale) => String(sale.orderNumber || "") === previousValue)) select.value = previousValue;
+  if (sales.some((sale) => sale.id === previousValue)) select.value = previousValue;
 }
 
 function renderStaffOrderLookupResult() {
   const container = qs("#staffOrderLookupResult");
   if (!container) return;
   const staffId = qs("#staffOrderLookupStaff")?.value || "";
-  const dateStr = qs("#staffOrderLookupDate")?.value || "";
-  const orderNumber = qs("#staffOrderLookupOrderNumber")?.value || "";
+  const fromStr = qs("#staffOrderLookupDateFrom")?.value || "";
+  const toStr = qs("#staffOrderLookupDateTo")?.value || "";
+  const saleId = qs("#staffOrderLookupOrderNumber")?.value || "";
 
-  if (!staffId || !dateStr) {
+  if (!staffId) {
     container.innerHTML = `<p class="muted">${t("reports.staffOrderLookupSelectStaffDate")}</p>`;
     return;
   }
-  if (!orderNumber) {
+  if (!saleId) {
     container.innerHTML = `<p class="muted">${t("reports.staffOrderLookupNoOrders")}</p>`;
     return;
   }
 
-  const match = findStaffSalesForDay(staffId, dateStr).find((sale) => String(sale.orderNumber || "") === orderNumber);
+  const match = findStaffSalesInRange(staffId, fromStr, toStr).find((sale) => sale.id === saleId);
   if (!match) {
     container.innerHTML = `<p class="muted">${t("reports.staffOrderLookupNotFound")}</p>`;
     return;
@@ -1785,24 +1825,25 @@ function renderStaffAllOrdersResult() {
   const container = qs("#staffOrderLookupResult");
   if (!container) return;
   const staffId = qs("#staffOrderLookupStaff")?.value || "";
-  const dateStr = qs("#staffOrderLookupDate")?.value || "";
+  const fromStr = qs("#staffOrderLookupDateFrom")?.value || "";
+  const toStr = qs("#staffOrderLookupDateTo")?.value || "";
 
-  if (!staffId || !dateStr) {
+  if (!staffId) {
     container.innerHTML = `<p class="muted">${t("reports.staffOrderLookupSelectStaffDate")}</p>`;
     return;
   }
 
-  const sales = findStaffSalesForDay(staffId, dateStr);
+  const sales = findStaffSalesInRange(staffId, fromStr, toStr);
   if (!sales.length) {
     container.innerHTML = `<p class="muted">${t("reports.staffOrderLookupNoOrders")}</p>`;
     return;
   }
 
   const staffName = sales[0].staffName || t("report.none");
-  const dayTotal = sales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
+  const rangeTotal = sales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
   const cards = sales.map((sale) => buildStaffOrderCard(sale)).join("");
 
-  container.innerHTML = `<div class="payment-summary-row"><strong>${esc(staffName)}</strong><strong>TZS ${dayTotal.toLocaleString()}</strong></div>` + cards;
+  container.innerHTML = `<div class="payment-summary-row"><strong>${esc(staffName)}</strong><strong>TZS ${rangeTotal.toLocaleString()}</strong></div>` + cards;
 }
 
 function computeDailyStaffReport(dateStr) {
@@ -2725,6 +2766,50 @@ async function deleteProduct(productId) {
   showToast(t("toast.productDeleted", { name: product.name }));
 }
 
+function openDeleteAccountDialog() {
+  if (!state.user) return;
+  qs("#deleteAccountPassword").value = "";
+  qs("#deleteAccountConfirmText").value = "";
+  setFieldError("deleteAccountError", "");
+  qs("#deleteAccountDialog").showModal();
+}
+
+async function confirmDeleteAccount() {
+  if (!state.user || !state.auth) return;
+  const password = qs("#deleteAccountPassword").value;
+  const confirmText = qs("#deleteAccountConfirmText").value.trim();
+
+  if (confirmText !== "DELETE") {
+    setFieldError("deleteAccountError", t("deleteAccount.confirmTextMismatch"));
+    return;
+  }
+  if (!password) {
+    setFieldError("deleteAccountError", t("deleteAccount.passwordRequired"));
+    return;
+  }
+
+  const confirmButton = qs("#confirmDeleteAccountButton");
+  confirmButton.disabled = true;
+
+  try {
+    const { EmailAuthProvider, reauthenticateWithCredential, deleteUser } = state.firebaseApi.auth;
+    const credential = EmailAuthProvider.credential(state.user.email, password);
+    await reauthenticateWithCredential(state.user, credential);
+    await deleteUser(state.user);
+    qs("#deleteAccountDialog").close();
+    showToast(t("toast.accountDeleted"));
+  } catch (error) {
+    console.warn(error);
+    if (error.code === "auth/invalid-credential" || error.code === "auth/wrong-password") {
+      setFieldError("deleteAccountError", t("deleteAccount.reauthFailed"));
+    } else {
+      setFieldError("deleteAccountError", t("toast.accountDeleteFailed"));
+    }
+  } finally {
+    confirmButton.disabled = false;
+  }
+}
+
 async function undoLastSale() {
   if (!state.lastSale) return showToast(t("toast.noRecentSale"));
   if (!window.confirm(t("dialog.undoSaleConfirm"))) return;
@@ -2746,8 +2831,12 @@ async function undoLastSale() {
           if (!snap.exists()) return;
           const item = sale.items[index];
           const currentQuantity = Number(snap.data().quantity || 0);
+          const currentSold30 = Number(snap.data().sold30 || 0);
+          const currentSold90 = Number(snap.data().sold90 || 0);
           transaction.update(productRefs[index], {
             quantity: currentQuantity + item.qty,
+            sold30: Math.max(0, currentSold30 - item.qty),
+            sold90: Math.max(0, currentSold90 - item.qty),
             updatedAt: serverTimestamp()
           });
         });
@@ -2762,7 +2851,11 @@ async function undoLastSale() {
   } else {
     sale.items.forEach((item) => {
       const product = state.products.find((p) => p.id === item.productId);
-      if (product) product.quantity += item.qty;
+      if (product) {
+        product.quantity += item.qty;
+        product.sold30 = Math.max(0, Number(product.sold30 || 0) - item.qty);
+        product.sold90 = Math.max(0, Number(product.sold90 || 0) - item.qty);
+      }
     });
     const localSale = [...state.sales].reverse().find((entry) => !entry.voided && entry.id?.startsWith("local-"));
     if (localSale) localSale.voided = true;
@@ -3443,7 +3536,8 @@ function bindEvents() {
   qs("#removeStaffButton")?.addEventListener("click", removeStaffMember);
   qs("#orderNumberSearch")?.addEventListener("input", debounce(searchOrderNumber, 250));
   qs("#staffOrderLookupStaff")?.addEventListener("change", renderStaffOrderNumberOptions);
-  qs("#staffOrderLookupDate")?.addEventListener("change", renderStaffOrderNumberOptions);
+  qs("#staffOrderLookupDateFrom")?.addEventListener("change", renderStaffOrderNumberOptions);
+  qs("#staffOrderLookupDateTo")?.addEventListener("change", renderStaffOrderNumberOptions);
   qs("#staffOrderLookupButton")?.addEventListener("click", renderStaffOrderLookupResult);
   qs("#staffOrderLookupAllButton")?.addEventListener("click", renderStaffAllOrdersResult);
   qs("#dailyStaffReportButton")?.addEventListener("click", renderDailyStaffReport);
@@ -3503,6 +3597,10 @@ function bindEvents() {
     await signOut(state.auth);
     showToast(t("toast.signedOut"));
   });
+  qs("#deleteAccountButton")?.addEventListener("click", openDeleteAccountDialog);
+  qs("#closeDeleteAccountDialog")?.addEventListener("click", () => qs("#deleteAccountDialog").close());
+  qs("#cancelDeleteAccountDialog")?.addEventListener("click", () => qs("#deleteAccountDialog").close());
+  qs("#confirmDeleteAccountButton")?.addEventListener("click", confirmDeleteAccount);
 
   qsa("th[data-sort]").forEach((header) => {
     header.addEventListener("click", () => {
@@ -3741,8 +3839,12 @@ function bindEvents() {
           productSnaps.forEach((snap, index) => {
             const cartItem = state.cart[index];
             const currentQuantity = Number(snap.data().quantity || 0);
+            const currentSold30 = Number(snap.data().sold30 || 0);
+            const currentSold90 = Number(snap.data().sold90 || 0);
             transaction.update(productRefs[index], {
               quantity: currentQuantity - cartItem.qty,
+              sold30: currentSold30 + cartItem.qty,
+              sold90: currentSold90 + cartItem.qty,
               updatedAt: serverTimestamp()
             });
           });
@@ -3786,7 +3888,11 @@ function bindEvents() {
     } else {
       state.cart.forEach((cartItem) => {
         const product = state.products.find((item) => item.id === cartItem.id);
-        if (product) product.quantity = Math.max(0, product.quantity - cartItem.qty);
+        if (product) {
+          product.quantity = Math.max(0, product.quantity - cartItem.qty);
+          product.sold30 = Number(product.sold30 || 0) + cartItem.qty;
+          product.sold90 = Number(product.sold90 || 0) + cartItem.qty;
+        }
       });
       state.sales.push({
         id: `local-${Date.now()}`,
