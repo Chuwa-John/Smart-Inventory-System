@@ -6,6 +6,8 @@ const state = {
   products: [],
   cart: [],
   paymentMethod: "cash",
+  discountType: "none",
+  discountValue: 0,
   sortKey: "name",
   sortDirection: 1,
   authMode: "signup",
@@ -42,7 +44,12 @@ const state = {
   openMonthlyReportId: null,
   barcodeScanTarget: null,
   barcodeScannerInstance: null,
-  lastReceiptSale: null
+  lastReceiptSale: null,
+  pendingReturnSaleId: null,
+  purchaseOrderGroups: [],
+  customers: [],
+  unsubscribeCustomers: null,
+  pendingPaymentCustomerId: null
 };
 
 const MAX_CHAT_HISTORY = 20;
@@ -120,6 +127,21 @@ function currentBusinessType() {
   return store?.businessType || "general";
 }
 
+function currentCurrencyCode() {
+  const store = state.stores.find((item) => item.id === state.currentStoreId);
+  return store?.currencyCode || "TZS";
+}
+
+function money(amount) {
+  return `${currentCurrencyCode()} ${Number(amount || 0).toLocaleString()}`;
+}
+
+function moneyForStore(amount, storeId) {
+  const store = state.stores.find((item) => item.id === storeId);
+  const code = store?.currencyCode || "TZS";
+  return `${code} ${Number(amount || 0).toLocaleString()}`;
+}
+
 function paymentMethodLabel(method) {
   return t(`pos.${method}`);
 }
@@ -180,7 +202,7 @@ const DICTIONARY = {
     "reports.staffBreakdownTitle": "Sales by Staff", "reports.staffColumn": "Staff",
     "reports.ordersColumn": "Orders", "reports.allStaffRow": "All staff",
     "reports.searchOrderPlaceholder": "Search order number", "reports.orderNotFound": "No sale found for that order number.",
-    "reports.orderFoundLabel": "Order #{orderNumber} \u2014 {name}, {date}, {method}, TZS {total}",
+    "reports.orderFoundLabel": "Order #{orderNumber} \u2014 {name}, {date}, {method}, {total}",
     "reports.staffOrderLookupTitle": "Order Lookup",
     "reports.staffOrderLookupDateLabel": "Date",
     "reports.staffOrderLookupOrderLabel": "Order number",
@@ -214,7 +236,7 @@ const DICTIONARY = {
     "ai.askButton": "Ask AI Advisor", "ai.conversation": "Conversation", "ai.clear": "Clear",
     "product.nameLabel": "Product name", "product.categoryLabel": "Category", "product.brandLabel": "Brand",
     "product.supplierLabel": "Suppliers", "product.quantityLabel": "Quantity",
-    "product.priceLabel": "Selling price (TZS)", "product.priceTypeLabel": "Price type",
+    "product.priceLabel": "Selling price", "product.priceTypeLabel": "Price type",
     "product.priceFixed": "Fixed price", "product.priceDynamic": "Flexible / dynamic price",
     "product.reorderLabel": "Low stock threshold", "product.reorderPlaceholder": "e.g. 10",
     "product.cancel": "Cancel", "product.save": "Save Product",
@@ -241,7 +263,7 @@ const DICTIONARY = {
     "dialog.transferProductLabel": "{name} \u2014 {quantity} available at {store}",
     "dialog.deleteConfirm": "Delete {name} from inventory?",
     "dialog.undoSaleConfirm": "Undo the last completed sale? This will restore stock quantities.",
-    "dialog.editPricePrompt": "Enter new price for {name} (TZS):",
+    "dialog.editPricePrompt": "Enter new price for {name} ({currency}):",
     "dialog.newStaffNamePrompt": "New staff member's name:",
     "dialog.removeStaffConfirm": "Remove \"{name}\" from staff? Past sales will keep their name on record.",
     "dialog.duplicateOrderConfirm": "Order #{orderNumber} is already recorded for {name}. Record it again anyway?",
@@ -284,7 +306,7 @@ const DICTIONARY = {
     "monthlyReport.noSalesData": "No sales recorded for this period yet.",
     "monthlyReport.failedGeneric": "Could not save the monthly report.",
     "monthlyReport.couldNotLoad": "Could not load monthly reports.",
-    "monthlyReport.revenueLine": "For {period}: TZS {revenue} in revenue across {count} transactions.",
+    "monthlyReport.revenueLine": "For {period}: {revenue} in revenue across {count} transactions.",
     "monthlyReport.topProductsLine": "Top sellers: {list}.",
     "monthlyReport.noTopProducts": "No product sales recorded this period.",
     "monthlyReport.stockLine": "{low} products are low on stock and {out} are out of stock.",
@@ -338,7 +360,7 @@ const DICTIONARY = {
     "report.topItems": "Top items", "report.none": "none", "report.combinedTotal": "Combined total",
     "report.share": "share", "report.totalTransactions": "Total transactions", "report.perStoreTotals": "Per-store totals",
     "report.colPaymentMethod": "Payment Method", "report.colTransactions": "Transactions",
-    "report.colTotalTZS": "Total (TZS)", "report.colAvgSaleTZS": "Average Sale (TZS)",
+    "report.colTotalTZS": "Total", "report.colAvgSaleTZS": "Average Sale",
     "report.colTopItems": "Top Items", "report.combined": "Combined", "report.storePrefix": "Store: {name}",
     "tutorial.pos": "How to use Point of Sale:\n1. Open the POS tab and search or browse for a product.\n2. Set the quantity, then click Add. Products flagged as flexible/dynamic price ask for a price per unit first.\n3. Adjust quantities in the cart with +/-, the qty box, or Remove. Use Undo Last Action if you make a mistake.\n4. Pick the staff member making the sale, and enter the order number from their physical sales sheet.\n5. Pick a payment method (Cash, Mobile Money, Card). For cash, enter the amount tendered to see change due.\n6. Click Complete Sale. If you need to reverse it, use Undo Last Sale right after \u2014 stock is restored automatically.",
     "tutorial.inventory": "How to manage inventory:\n1. Go to Inventory and click Add Product (or use the Dashboard button). Fill in name, category, quantity, and selling price.\n2. Set a Low stock threshold so the product shows up in Smart alerts and reorder recommendations once it dips below that number.\n3. Choose Fixed price for normal items, or Flexible/dynamic price if the price varies per sale.\n4. Use Edit on any row to update details, or Delete to remove a product. If you have 2+ stores, Transfer moves stock between them.\n5. Use the category and stock-status filters above the table, or the search bar, to find items quickly.",
@@ -412,7 +434,7 @@ const DICTIONARY = {
     "toast.selectStoreBeforeSale": "Select a specific store before completing a sale.",
     "toast.cashLessThanTotal": "Cash tendered is less than the sale total.",
     "toast.saleFailedGeneric": "Sale failed. Please recheck stock and try again.",
-    "toast.saleCompletedChange": "Sale completed. Give TZS {change} change.",
+    "toast.saleCompletedChange": "Sale completed. Give {change} change.",
     "toast.saleCompleted": "Sale completed and inventory updated.",
     "toast.quantityPriceInvalid": "Quantity and price fields must be zero or positive numbers.",
     "toast.fieldTooLong": "{field} must be {max} characters or fewer.",
@@ -454,7 +476,109 @@ const DICTIONARY = {
     "deleteAccount.passwordRequired": "Enter your password to confirm.",
     "deleteAccount.reauthFailed": "Incorrect password. Please try again.",
     "toast.accountDeleted": "Your account has been deleted.",
-    "toast.accountDeleteFailed": "Could not delete your account. Please try again."
+    "toast.accountDeleteFailed": "Could not delete your account. Please try again.",
+    "pos.discountLabel": "Discount",
+    "pos.discountNone": "No discount",
+    "pos.discountPercent": "Percentage (%)",
+    "pos.discountFixed": "Fixed amount",
+    "pos.discountValuePlaceholder": "Enter value",
+    "pos.applyDiscount": "Apply",
+    "pos.clearDiscount": "Clear",
+    "pos.subtotal": "Subtotal",
+    "pos.discountAppliedLabel": "Discount",
+    "receipt.subtotalLabel": "Subtotal",
+    "receipt.discountLabel": "Discount",
+    "toast.discountInvalidValue": "Enter a valid discount value.",
+    "toast.discountPercentTooHigh": "Percentage discount cannot exceed 100%.",
+    "toast.discountExceedsSubtotal": "Fixed discount cannot exceed the subtotal.",
+    "toast.discountApplied": "Discount applied.",
+    "toast.discountCleared": "Discount cleared.",
+    "product.expiryLabel": "Expiry date (optional)",
+    "inventory.thExpiry": "Expiry",
+    "expiry.statusExpired": "Expired",
+    "expiry.statusSoon": "Expiring soon",
+    "expiry.statusOk": "OK",
+    "expiry.none": "-",
+    "alert.expiredDetail": "Expired on {date}.",
+    "alert.expiringSoonDetail": "Expires in {days} days ({date}).",
+    "report.colExpiryDate": "Expiry Date",
+    "report.colExpiryStatus": "Expiry Status",
+    "returns.title": "Process Return / Refund",
+    "returns.processButton": "Return / Refund",
+    "returns.colItem": "Item",
+    "returns.colAvailable": "Available to return",
+    "returns.colQty": "Qty",
+    "returns.maxReturnable": "{qty} returnable",
+    "returns.confirmButton": "Process Refund",
+    "returns.noItemsSelected": "All items on this order have already been returned.",
+    "returns.refundedLabel": "Refunded",
+    "toast.returnNoSelection": "Enter a quantity to return for at least one item.",
+    "toast.returnProcessed": "Refund of {amount} processed and stock restored.",
+    "toast.returnFailed": "Could not process the return. Please try again.",
+    "inventory.generatePoButton": "Generate Purchase Orders",
+    "po.dialogTitle": "Draft Purchase Orders",
+    "po.noRecommendations": "No products currently need reordering.",
+    "po.unassignedSupplier": "Unassigned Supplier",
+    "po.colProduct": "Product",
+    "po.colCurrentStock": "Current Stock",
+    "po.colReorderQty": "Reorder Qty",
+    "po.sendWhatsApp": "Send via WhatsApp",
+    "po.downloadPdf": "Download PDF",
+    "po.excludeAll": "Exclude group",
+    "po.generatedOn": "Generated on {date}",
+    "po.messageIntro": "Purchase order request for {supplier}:",
+    "po.messageClosing": "Please confirm availability and pricing. Thank you.",
+    "toast.poAllQuantitiesZero": "All quantities for this supplier are zero. Adjust quantities before sending.",
+    "pos.credit": "Credit",
+    "pos.amountPaidNow": "Amount paid now (optional)",
+    "pos.amountPaidPlaceholder": "0 if fully on credit",
+    "pos.balanceDueLabel": "Balance due",
+    "toast.creditNeedsPhone": "Enter the customer's phone number for a credit sale.",
+    "toast.creditAmountPaidInvalid": "Amount paid cannot exceed the sale total.",
+    "receipt.amountPaidLabel": "Amount Paid",
+    "receipt.balanceDueLabel": "Balance Due",
+    "customers.sectionTitle": "Customer Accounts (Credit)",
+    "customers.sectionEyebrow": "Accounts receivable",
+    "customers.colName": "Customer",
+    "customers.colPhone": "Phone",
+    "customers.colBalance": "Balance Owed",
+    "customers.colActions": "Actions",
+    "customers.recordPayment": "Record Payment",
+    "customers.emptyState": "No customers currently owe a balance.",
+    "customers.totalOwed": "Total outstanding",
+    "payment.dialogTitle": "Record Payment",
+    "payment.currentBalanceLabel": "Current balance",
+    "payment.amountLabel": "Payment amount",
+    "payment.noteLabel": "Note (optional)",
+    "payment.confirmButton": "Record Payment",
+    "toast.paymentInvalidAmount": "Enter a valid payment amount.",
+    "toast.paymentExceedsBalance": "Payment cannot exceed the current balance.",
+    "toast.paymentRecorded": "Payment of {amount} recorded. New balance: {balance}.",
+    "toast.paymentFailed": "Could not record the payment. Please try again.",
+    "customers.colDaysOutstanding": "Days Outstanding",
+    "customers.colRemind": "Remind",
+    "customers.agingCurrent": "Current",
+    "customers.aging30": "31-60 days",
+    "customers.aging60": "61-90 days",
+    "customers.aging90": "90+ days",
+    "customers.remindButton": "Remind via WhatsApp",
+    "reminder.messageLine1": "Hello {name}, this is a friendly reminder from {business} that your account has an outstanding balance of {balance}.",
+    "reminder.messageLine2": "This balance has been outstanding for {days} days.",
+    "reminder.messageClosing": "Kindly settle at your earliest convenience. Thank you for your business!",
+    "toast.reminderNoPhone": "This customer has no phone number on file.",
+    "customers.colCreditLimit": "Credit Limit",
+    "customers.setLimitButton": "Set Limit",
+    "customers.noLimit": "No limit",
+    "dialog.creditLimitPrompt": "Enter a credit limit for {name} in {currency} (leave blank for no limit):",
+    "toast.creditLimitInvalid": "Enter a valid credit limit, or leave blank for no limit.",
+    "toast.creditLimitSet": "{name}'s credit limit set to {limit}.",
+    "toast.creditLimitCleared": "{name}'s credit limit removed.",
+    "toast.creditLimitFailed": "Could not update the credit limit. Please try again.",
+    "dialog.creditLimitExceededConfirm": "{name} already owes {currentBalance}. This sale would add {newBalanceDue}, bringing their balance to {projectedTotal}, over their {limit} limit. Proceed anyway?",
+    "dashboard.setCurrency": "Currency",
+    "dialog.currencyCodePrompt": "Enter a 3-letter currency code for this store (e.g. TZS, USD, KES, UGX):",
+    "toast.currencyInvalid": "Enter a valid 3-letter currency code (letters only).",
+    "toast.currencySet": "Store currency set to {code}."
   },
   sw: {
     "nav.dashboard": "Dashibodi", "nav.inventory": "Hisa", "nav.pos": "Mauzo",
@@ -488,7 +612,7 @@ const DICTIONARY = {
     "reports.staffBreakdownTitle": "Mauzo kwa Mfanyakazi", "reports.staffColumn": "Mfanyakazi",
     "reports.ordersColumn": "Oda", "reports.allStaffRow": "Wafanyakazi wote",
     "reports.searchOrderPlaceholder": "Tafuta nambari ya oda", "reports.orderNotFound": "Hakuna mauzo yaliyopatikana kwa nambari hiyo ya oda.",
-    "reports.orderFoundLabel": "Oda #{orderNumber} \u2014 {name}, {date}, {method}, TZS {total}",
+    "reports.orderFoundLabel": "Oda #{orderNumber} \u2014 {name}, {date}, {method}, {total}",
     "reports.staffOrderLookupTitle": "Tafuta Oda",
     "reports.staffOrderLookupDateLabel": "Tarehe",
     "reports.staffOrderLookupOrderLabel": "Nambari ya oda",
@@ -523,7 +647,7 @@ const DICTIONARY = {
     "ai.askButton": "Uliza Mshauri wa AI", "ai.conversation": "Mazungumzo", "ai.clear": "Futa",
     "product.nameLabel": "Jina la bidhaa", "product.categoryLabel": "Aina", "product.brandLabel": "Chapa",
     "product.supplierLabel": "Wasambazaji", "product.quantityLabel": "Kiasi",
-    "product.priceLabel": "Bei ya kuuza (TZS)", "product.priceTypeLabel": "Aina ya bei",
+    "product.priceLabel": "Bei ya kuuza", "product.priceTypeLabel": "Aina ya bei",
     "product.priceFixed": "Bei maalum", "product.priceDynamic": "Bei inayobadilika",
     "product.reorderLabel": "Kiwango cha chini cha hisa", "product.reorderPlaceholder": "mfano, 10",
     "product.cancel": "Ghairi", "product.save": "Hifadhi Bidhaa",
@@ -550,7 +674,7 @@ const DICTIONARY = {
     "dialog.transferProductLabel": "{name} \u2014 {quantity} zinapatikana katika {store}",
     "dialog.deleteConfirm": "Futa {name} kutoka kwenye hisa?",
     "dialog.undoSaleConfirm": "Tengua mauzo ya mwisho yaliyokamilika? Hii itarejesha kiasi cha hisa.",
-    "dialog.editPricePrompt": "Weka bei mpya ya {name} (TZS):",
+    "dialog.editPricePrompt": "Weka bei mpya ya {name} ({currency}):",
     "dialog.newStaffNamePrompt": "Jina la mfanyakazi mpya:",
     "dialog.removeStaffConfirm": "Ondoa \"{name}\" kwenye orodha ya wafanyakazi? Mauzo ya awali yatabaki na jina lake.",
     "dialog.duplicateOrderConfirm": "Oda #{orderNumber} tayari imesajiliwa kwa {name}. Uisajili tena?",
@@ -593,7 +717,7 @@ const DICTIONARY = {
     "monthlyReport.noSalesData": "Hakuna mauzo yaliyorekodiwa kwa kipindi hiki bado.",
     "monthlyReport.failedGeneric": "Imeshindwa kuhifadhi ripoti ya mwezi.",
     "monthlyReport.couldNotLoad": "Imeshindwa kupakia ripoti za mwezi.",
-    "monthlyReport.revenueLine": "Kwa {period}: TZS {revenue} mapato kutoka miamala {count}.",
+    "monthlyReport.revenueLine": "Kwa {period}: {revenue} mapato kutoka miamala {count}.",
     "monthlyReport.topProductsLine": "Bidhaa bora zilizouzwa: {list}.",
     "monthlyReport.noTopProducts": "Hakuna mauzo ya bidhaa yaliyorekodiwa kipindi hiki.",
     "monthlyReport.stockLine": "Bidhaa {low} zina hisa chache na {out} hazipo kabisa.",
@@ -647,7 +771,7 @@ const DICTIONARY = {
     "report.topItems": "Bidhaa bora", "report.none": "hakuna", "report.combinedTotal": "Jumla ya pamoja",
     "report.share": "sehemu", "report.totalTransactions": "Jumla ya miamala", "report.perStoreTotals": "Jumla za kila duka",
     "report.colPaymentMethod": "Njia ya Malipo", "report.colTransactions": "Miamala",
-    "report.colTotalTZS": "Jumla (TZS)", "report.colAvgSaleTZS": "Wastani wa Mauzo (TZS)",
+    "report.colTotalTZS": "Jumla", "report.colAvgSaleTZS": "Wastani wa Mauzo",
     "report.colTopItems": "Bidhaa Bora", "report.combined": "Jumla", "report.storePrefix": "Duka: {name}",
     "tutorial.pos": "Jinsi ya kutumia Sehemu ya Mauzo (POS):\n1. Fungua kichupo cha POS na utafute au uvinjari bidhaa.\n2. Weka kiasi, kisha bofya Ongeza. Bidhaa zenye bei inayobadilika huuliza bei kwa kila kitengo kwanza.\n3. Rekebisha kiasi kwenye kikapu kwa +/-, kisanduku cha kiasi, au Ondoa. Tumia Tengua Kitendo cha Mwisho ukikosea.\n4. Chagua mfanyakazi anayefanya mauzo, na uweke nambari ya oda kutoka kwenye karatasi yake ya mauzo.\n5. Chagua njia ya malipo (Fedha Taslimu, Pesa za Simu, Kadi). Kwa fedha taslimu, weka kiasi kilicholipwa ili kuona chenji.\n6. Bofya Kamilisha Mauzo. Ukihitaji kutengua, tumia Tengua Mauzo ya Mwisho mara moja \u2014 hisa hurejeshwa kiotomatiki.",
     "tutorial.inventory": "Jinsi ya kusimamia hisa:\n1. Nenda kwenye Hisa na bofya Ongeza Bidhaa (au tumia kitufe cha Dashibodi). Jaza jina, aina, kiasi, na bei ya kuuza.\n2. Weka Kiwango cha chini cha hisa ili bidhaa ionekane kwenye Arifa muhimu na mapendekezo ya kuagiza upya ikipungua chini ya kiwango hicho.\n3. Chagua Bei maalum kwa bidhaa za kawaida, au Bei inayobadilika ikiwa bei hubadilika kwa kila mauzo.\n4. Tumia Hariri kwenye safu yoyote kubadilisha maelezo, au Futa kuondoa bidhaa. Ukiwa na maduka 2 au zaidi, Hamisha huhamisha hisa kati yao.\n5. Tumia vichujio vya aina na hali ya hisa juu ya jedwali, au sanduku la utafutaji, kupata bidhaa haraka.",
@@ -721,7 +845,7 @@ const DICTIONARY = {
     "toast.selectStoreBeforeSale": "Chagua duka mahususi kabla ya kukamilisha mauzo.",
     "toast.cashLessThanTotal": "Fedha zilizolipwa ni chini ya jumla ya mauzo.",
     "toast.saleFailedGeneric": "Mauzo yameshindwa. Angalia hisa tena na ujaribu tena.",
-    "toast.saleCompletedChange": "Mauzo yamekamilika. Toa chenji ya TZS {change}.",
+    "toast.saleCompletedChange": "Mauzo yamekamilika. Toa chenji ya {change}.",
     "toast.saleCompleted": "Mauzo yamekamilika na hisa imesasishwa.",
     "toast.quantityPriceInvalid": "Sehemu za kiasi na bei lazima ziwe sifuri au chanya.",
     "toast.fieldTooLong": "{field} lazima iwe na herufi {max} au chache.",
@@ -766,7 +890,109 @@ const DICTIONARY = {
     "deleteAccount.passwordRequired": "Weka nenosiri lako kuthibitisha.",
     "deleteAccount.reauthFailed": "Nenosiri si sahihi. Tafadhali jaribu tena.",
     "toast.accountDeleted": "Akaunti yako imefutwa.",
-    "toast.accountDeleteFailed": "Imeshindwa kufuta akaunti yako. Tafadhali jaribu tena."
+    "toast.accountDeleteFailed": "Imeshindwa kufuta akaunti yako. Tafadhali jaribu tena.",
+    "pos.discountLabel": "Punguzo",
+    "pos.discountNone": "Hakuna punguzo",
+    "pos.discountPercent": "Asilimia (%)",
+    "pos.discountFixed": "Kiasi maalum",
+    "pos.discountValuePlaceholder": "Weka kiasi",
+    "pos.applyDiscount": "Tumia",
+    "pos.clearDiscount": "Futa",
+    "pos.subtotal": "Jumla Ndogo",
+    "pos.discountAppliedLabel": "Punguzo",
+    "receipt.subtotalLabel": "Jumla Ndogo",
+    "receipt.discountLabel": "Punguzo",
+    "toast.discountInvalidValue": "Weka kiasi sahihi cha punguzo.",
+    "toast.discountPercentTooHigh": "Punguzo la asilimia haliwezi kuzidi 100%.",
+    "toast.discountExceedsSubtotal": "Punguzo maalum haliwezi kuzidi jumla ndogo.",
+    "toast.discountApplied": "Punguzo limetumika.",
+    "toast.discountCleared": "Punguzo limefutwa.",
+    "product.expiryLabel": "Tarehe ya mwisho wa matumizi (hiari)",
+    "inventory.thExpiry": "Mwisho wa Matumizi",
+    "expiry.statusExpired": "Imeisha muda",
+    "expiry.statusSoon": "Inakaribia kuisha",
+    "expiry.statusOk": "Sawa",
+    "expiry.none": "-",
+    "alert.expiredDetail": "Imeisha muda tarehe {date}.",
+    "alert.expiringSoonDetail": "Inaisha muda baada ya siku {days} (tarehe {date}).",
+    "report.colExpiryDate": "Tarehe ya Mwisho",
+    "report.colExpiryStatus": "Hali ya Mwisho wa Matumizi",
+    "returns.title": "Fanya Marejesho / Kurejesha Fedha",
+    "returns.processButton": "Rejesha / Kurejesha Fedha",
+    "returns.colItem": "Bidhaa",
+    "returns.colAvailable": "Zinazoweza kurejeshwa",
+    "returns.colQty": "Kiasi",
+    "returns.maxReturnable": "{qty} zinaweza kurejeshwa",
+    "returns.confirmButton": "Kamilisha Kurejesha Fedha",
+    "returns.noItemsSelected": "Bidhaa zote za oda hii tayari zimerejeshwa.",
+    "returns.refundedLabel": "Fedha Iliyorejeshwa",
+    "toast.returnNoSelection": "Weka kiasi cha kurejesha kwa angalau bidhaa moja.",
+    "toast.returnProcessed": "Kurejesha fedha kwa {amount} kumekamilika na hisa imerejeshwa.",
+    "toast.returnFailed": "Imeshindwa kufanya marejesho. Tafadhali jaribu tena.",
+    "inventory.generatePoButton": "Tengeneza Oda za Ununuzi",
+    "po.dialogTitle": "Rasimu za Oda za Ununuzi",
+    "po.noRecommendations": "Hakuna bidhaa zinazohitaji kuagizwa tena kwa sasa.",
+    "po.unassignedSupplier": "Msambazaji Hajabainishwa",
+    "po.colProduct": "Bidhaa",
+    "po.colCurrentStock": "Hisa ya Sasa",
+    "po.colReorderQty": "Kiasi cha Kuagiza",
+    "po.sendWhatsApp": "Tuma kupitia WhatsApp",
+    "po.downloadPdf": "Pakua PDF",
+    "po.excludeAll": "Ondoa kikundi",
+    "po.generatedOn": "Imetengenezwa tarehe {date}",
+    "po.messageIntro": "Ombi la oda ya ununuzi kwa {supplier}:",
+    "po.messageClosing": "Tafadhali thibitisha upatikanaji na bei. Asante.",
+    "toast.poAllQuantitiesZero": "Kiasi chote kwa msambazaji huyu ni sifuri. Rekebisha kiasi kabla ya kutuma.",
+    "pos.credit": "Deni",
+    "pos.amountPaidNow": "Kiasi kilicholipwa sasa (hiari)",
+    "pos.amountPaidPlaceholder": "0 kama ni deni kamili",
+    "pos.balanceDueLabel": "Deni lililobaki",
+    "toast.creditNeedsPhone": "Weka namba ya simu ya mteja kwa mauzo ya deni.",
+    "toast.creditAmountPaidInvalid": "Kiasi kilicholipwa hakiwezi kuzidi jumla ya mauzo.",
+    "receipt.amountPaidLabel": "Kiasi Kilicholipwa",
+    "receipt.balanceDueLabel": "Deni Lililobaki",
+    "customers.sectionTitle": "Akaunti za Wateja (Deni)",
+    "customers.sectionEyebrow": "Madeni ya wateja",
+    "customers.colName": "Mteja",
+    "customers.colPhone": "Simu",
+    "customers.colBalance": "Deni Analodaiwa",
+    "customers.colActions": "Vitendo",
+    "customers.recordPayment": "Rekodi Malipo",
+    "customers.emptyState": "Hakuna mteja anayedaiwa deni kwa sasa.",
+    "customers.totalOwed": "Jumla ya deni",
+    "payment.dialogTitle": "Rekodi Malipo",
+    "payment.currentBalanceLabel": "Deni la sasa",
+    "payment.amountLabel": "Kiasi cha malipo",
+    "payment.noteLabel": "Maelezo (hiari)",
+    "payment.confirmButton": "Rekodi Malipo",
+    "toast.paymentInvalidAmount": "Weka kiasi sahihi cha malipo.",
+    "toast.paymentExceedsBalance": "Malipo hayawezi kuzidi deni la sasa.",
+    "toast.paymentRecorded": "Malipo ya {amount} yamerekodiwa. Deni jipya: {balance}.",
+    "toast.paymentFailed": "Imeshindwa kurekodi malipo. Tafadhali jaribu tena.",
+    "customers.colDaysOutstanding": "Siku za Deni",
+    "customers.colRemind": "Kumbusha",
+    "customers.agingCurrent": "Sasa hivi",
+    "customers.aging30": "Siku 31-60",
+    "customers.aging60": "Siku 61-90",
+    "customers.aging90": "Zaidi ya siku 90",
+    "customers.remindButton": "Kumbusha kupitia WhatsApp",
+    "reminder.messageLine1": "Habari {name}, hii ni kumbusho la kirafiki kutoka {business} kuwa akaunti yako ina deni la {balance}.",
+    "reminder.messageLine2": "Deni hili limekuwa wazi kwa siku {days}.",
+    "reminder.messageClosing": "Tafadhali lipa mapema iwezekanavyo. Asante kwa biashara yako!",
+    "toast.reminderNoPhone": "Mteja huyu hana namba ya simu iliyorekodiwa.",
+    "customers.colCreditLimit": "Kikomo cha Deni",
+    "customers.setLimitButton": "Weka Kikomo",
+    "customers.noLimit": "Hakuna kikomo",
+    "dialog.creditLimitPrompt": "Weka kikomo cha deni kwa {name} kwa {currency} (acha wazi kama hakuna kikomo):",
+    "toast.creditLimitInvalid": "Weka kikomo sahihi cha deni, au acha wazi kama hakuna kikomo.",
+    "toast.creditLimitSet": "Kikomo cha deni cha {name} kimewekwa kuwa {limit}.",
+    "toast.creditLimitCleared": "Kikomo cha deni cha {name} kimeondolewa.",
+    "toast.creditLimitFailed": "Imeshindwa kusasisha kikomo cha deni. Tafadhali jaribu tena.",
+    "dialog.creditLimitExceededConfirm": "{name} tayari anadaiwa {currentBalance}. Mauzo haya yataongeza {newBalanceDue}, na kufanya deni lake kuwa {projectedTotal}, zaidi ya kikomo chake cha {limit}. Uendelee?",
+    "dashboard.setCurrency": "Sarafu",
+    "dialog.currencyCodePrompt": "Weka msimbo wa herufi 3 wa sarafu ya duka hili (mfano, TZS, USD, KES, UGX):",
+    "toast.currencyInvalid": "Weka msimbo sahihi wa herufi 3 za sarafu (herufi pekee).",
+    "toast.currencySet": "Sarafu ya duka imewekwa kuwa {code}."
   }
 };
 
@@ -776,10 +1002,14 @@ function t(key, vars) {
   return Object.entries(vars).reduce((result, [name, value]) => result.replaceAll(`{${name}}`, String(value)), template);
 }
 
+const CURRENCY_SUFFIX_LABEL_KEYS = new Set(["product.priceLabel", "payment.amountLabel", "pos.discountFixed"]);
+
 function translateStaticDom() {
   document.documentElement.lang = state.language;
+  const code = currentCurrencyCode();
   qsa("[data-i18n]").forEach((el) => {
-    el.textContent = t(el.dataset.i18n);
+    const key = el.dataset.i18n;
+    el.textContent = CURRENCY_SUFFIX_LABEL_KEYS.has(key) ? `${t(key)} (${code})` : t(key);
   });
   qsa("[data-i18n-placeholder]").forEach((el) => {
     el.placeholder = t(el.dataset.i18nPlaceholder);
@@ -853,6 +1083,31 @@ function stockStatus(product) {
   if (product.quantity <= 0) return "out";
   if (product.quantity <= product.reorderLevel) return "low";
   return "healthy";
+}
+
+const EXPIRY_WARNING_DAYS = 30;
+
+function daysUntilExpiry(product) {
+  if (!product.expiryDate) return null;
+  const expiry = new Date(`${product.expiryDate}T23:59:59`);
+  if (Number.isNaN(expiry.getTime())) return null;
+  return Math.ceil((expiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+}
+
+function expiryStatus(product) {
+  const days = daysUntilExpiry(product);
+  if (days === null) return "none";
+  if (days < 0) return "expired";
+  if (days <= EXPIRY_WARNING_DAYS) return "soon";
+  return "ok";
+}
+
+function expiryBadgeHtml(product) {
+  const status = expiryStatus(product);
+  if (status === "none") return `<span class="muted">${t("expiry.none")}</span>`;
+  const label = status === "expired" ? t("expiry.statusExpired") : status === "soon" ? t("expiry.statusSoon") : t("expiry.statusOk");
+  const cls = status === "expired" ? "out" : status === "soon" ? "low" : "healthy";
+  return `<span class="status ${cls}">${label}</span> <span class="muted">${esc(product.expiryDate)}</span>`;
 }
 
 function calculateMetrics() {
@@ -1097,8 +1352,10 @@ function closeStockAlertPopup() {
 
 function renderAlertsAndRecommendations() {
   const risky = storeProducts().filter((product) => stockStatus(product) !== "healthy");
-  qs("#alertCount").textContent = risky.length;
-  qs("#alertList").innerHTML = risky
+  const expiring = storeProducts().filter((product) => ["expired", "soon"].includes(expiryStatus(product)));
+  qs("#alertCount").textContent = risky.length + expiring.length;
+
+  const stockAlertsHtml = risky
     .map((product) => {
       const status = stockStatus(product);
       return `<div class="alert-item ${status === "out" ? "red" : "amber"}">
@@ -1106,7 +1363,23 @@ function renderAlertsAndRecommendations() {
         <span class="muted">${status === "out" ? t("inventory.stockOut") : t("alert.belowMinimum", { quantity: product.quantity })}</span>
       </div>`;
     })
-    .join("") || `<div class="alert-item"><strong>${t("alert.allClearTitle")}</strong><span class="muted">${t("alert.allClearBody")}</span></div>`;
+    .join("");
+
+  const expiryAlertsHtml = expiring
+    .map((product) => {
+      const status = expiryStatus(product);
+      const days = daysUntilExpiry(product);
+      const detail = status === "expired"
+        ? t("alert.expiredDetail", { date: product.expiryDate })
+        : t("alert.expiringSoonDetail", { days, date: product.expiryDate });
+      return `<div class="alert-item ${status === "expired" ? "red" : "amber"}">
+        <strong>${esc(product.name)}</strong>
+        <span class="muted">${detail}</span>
+      </div>`;
+    })
+    .join("");
+
+  qs("#alertList").innerHTML = stockAlertsHtml + expiryAlertsHtml || `<div class="alert-item"><strong>${t("alert.allClearTitle")}</strong><span class="muted">${t("alert.allClearBody")}</span></div>`;
 
   const recs = storeProducts()
     .map((product) => ({ product, rec: reorderRecommendation(product) }))
@@ -1182,6 +1455,7 @@ function renderInventory() {
         <td>${esc(product.supplier || "-")}</td>
         <td>${product.quantity}</td>
         <td><span class="status ${status}">${label}</span></td>
+        <td>${expiryBadgeHtml(product)}</td>
         <td class="table-actions">
           <button class="ghost-button compact" data-edit-product="${product.id}">${t("inventory.edit")}</button>
           ${activeStores().length > 1 ? `<button class="ghost-button compact" data-transfer-product="${product.id}">${t("inventory.transfer")}</button>` : ""}
@@ -1189,7 +1463,7 @@ function renderInventory() {
         </td>
       </tr>`;
     })
-    .join("") || `<tr><td colspan="7" class="empty-state">${t("inventory.emptyState")}</td></tr>`;
+    .join("") || `<tr><td colspan="8" class="empty-state">${t("inventory.emptyState")}</td></tr>`;
 }
 
 function renderPosProducts() {
@@ -1199,7 +1473,7 @@ function renderPosProducts() {
     .slice(0, 8)
     .map((product) => `<div class="pos-product">
       <strong>${esc(product.name)}</strong>
-      <span class="muted">${esc(product.category)} \u2022 ${esc(product.brand || "-")} - TZS ${Number(product.sellingPrice || 0).toLocaleString()} - ${t("pos.available", { quantity: product.quantity })}</span>
+      <span class="muted">${esc(product.category)} \u2022 ${esc(product.brand || "-")} - ${money(product.sellingPrice)} - ${t("pos.available", { quantity: product.quantity })}</span>
       <div class="pos-product-controls">
         <input type="number" min="1" max="${product.quantity}" value="1" class="pos-qty-input" data-qty-input="${product.id}" aria-label="${esc(t("pos.qtyAriaLabel", { name: product.name }))}" />
         ${product.priceType === "dynamic" ? `<input type="number" min="0" step="0.01" class="pos-price-input" data-price-input="${product.id}" placeholder="${esc(t("pos.pricePerUnitPlaceholder"))}" />` : ""}
@@ -1209,9 +1483,58 @@ function renderPosProducts() {
     .join("");
 }
 
+function cartSubtotal() {
+  return state.cart.reduce((sum, item) => sum + item.qty * Number(item.sellingPrice || 0), 0);
+}
+
+function computeDiscountAmount(subtotal) {
+  if (state.discountType === "percent") {
+    return Math.min(subtotal, subtotal * (Number(state.discountValue || 0) / 100));
+  }
+  if (state.discountType === "fixed") {
+    return Math.min(subtotal, Number(state.discountValue || 0));
+  }
+  return 0;
+}
+
+function clearDiscount() {
+  state.discountType = "none";
+  state.discountValue = 0;
+}
+
+async function applyDiscount() {
+  const type = qs("#discountTypeSelect")?.value || "none";
+  if (type === "none") {
+    clearDiscountAndRender();
+    return;
+  }
+  const rawValue = Number(qs("#discountValueInput")?.value || 0);
+  if (!Number.isFinite(rawValue) || rawValue <= 0) return showToast(t("toast.discountInvalidValue"));
+  if (type === "percent" && rawValue > 100) return showToast(t("toast.discountPercentTooHigh"));
+  if (type === "fixed" && rawValue > cartSubtotal()) return showToast(t("toast.discountExceedsSubtotal"));
+
+  const authorized = await verifyOverridePassword();
+  if (!authorized) return;
+
+  state.discountType = type;
+  state.discountValue = rawValue;
+  renderCart();
+  showToast(t("toast.discountApplied"));
+}
+
+function clearDiscountAndRender() {
+  clearDiscount();
+  const discountValueInput = qs("#discountValueInput");
+  if (discountValueInput) discountValueInput.value = "";
+  renderCart();
+  showToast(t("toast.discountCleared"));
+}
+
 function renderCart() {
   const totalQty = state.cart.reduce((sum, item) => sum + item.qty, 0);
-  const totalAmount = state.cart.reduce((sum, item) => sum + item.qty * Number(item.sellingPrice || 0), 0);
+  const subtotal = cartSubtotal();
+  const discountAmount = computeDiscountAmount(subtotal);
+  const totalAmount = Math.max(0, subtotal - discountAmount);
 
   qs("#cartCount").textContent = totalQty;
   qs("#cartItems").innerHTML = state.cart
@@ -1221,7 +1544,7 @@ function renderCart() {
       return `<div class="cart-item">
         <div class="cart-item-info">
           <strong>${esc(item.name)}</strong>
-          <span class="muted">TZS ${Number(item.sellingPrice || 0).toLocaleString()} each
+          <span class="muted">${money(item.sellingPrice)} each
             ${item.priceType !== "dynamic" ? `<button class="link-button" data-edit-price="${item.id}" type="button">${t("cart.editPrice")}</button>` : ""}
           </span>
         </div>
@@ -1231,18 +1554,38 @@ function renderCart() {
           <button class="ghost-button compact" data-increase-cart="${item.id}" type="button" aria-label="${esc(t("cart.increaseAriaLabel"))}">+</button>
           <button class="ghost-button compact danger" data-remove-cart="${item.id}" type="button" aria-label="${esc(t("cart.removeAriaLabel"))}">${t("cart.removeButton")}</button>
         </div>
-        <strong class="cart-item-total">TZS ${(item.qty * Number(item.sellingPrice || 0)).toLocaleString()}</strong>
+        <strong class="cart-item-total">${money(item.qty * Number(item.sellingPrice || 0))}</strong>
       </div>`;
     })
     .join("") || `<span class="muted">${t("cart.empty")}</span>`;
 
-  qs("#cartTotal").textContent = `TZS ${totalAmount.toLocaleString()}`;
+  const subtotalRow = qs("#cartSubtotalRow");
+  if (subtotalRow) subtotalRow.hidden = state.discountType === "none";
+  const subtotalLabel = qs("#cartSubtotalValue");
+  if (subtotalLabel) subtotalLabel.textContent = money(subtotal);
+  const discountRow = qs("#cartDiscountRow");
+  if (discountRow) discountRow.hidden = state.discountType === "none";
+  const discountLabel = qs("#cartDiscountValue");
+  if (discountLabel) discountLabel.textContent = `- ${money(discountAmount)}`;
+
+  qs("#cartTotal").textContent = money(totalAmount);
+
+  const discountTypeSelect = qs("#discountTypeSelect");
+  if (discountTypeSelect) discountTypeSelect.value = state.discountType;
+  const discountValueInput = qs("#discountValueInput");
+  if (discountValueInput && document.activeElement !== discountValueInput) {
+    discountValueInput.value = state.discountValue || "";
+  }
+  const discountValueRow = qs("#discountValueRow");
+  if (discountValueRow) discountValueRow.hidden = state.discountType === "none";
+  const clearDiscountButton = qs("#clearDiscountButton");
+  if (clearDiscountButton) clearDiscountButton.hidden = state.discountType === "none";
 
   const cashTenderRow = qs("#cashTenderRow");
   cashTenderRow.hidden = state.paymentMethod !== "cash";
   const tendered = Number(qs("#cashTendered")?.value || 0);
   const change = Math.max(0, tendered - totalAmount);
-  qs("#changeDue").textContent = `TZS ${change.toLocaleString()}`;
+  qs("#changeDue").textContent = money(change);
 
   const undoCartButton = qs("#undoCartButton");
   if (undoCartButton) undoCartButton.disabled = !state.cartHistory.length;
@@ -1360,12 +1703,12 @@ function computeMonthlyMetrics(monthKey, storeId) {
   return { periodStart, periodEnd, revenue, transactionCount, avgSale, unitsSold, topProducts, lowStockCount, outOfStockCount };
 }
 
-function localMonthlyReportNarrative(monthKey, metrics) {
+function localMonthlyReportNarrative(monthKey, metrics, storeId) {
   const topLine = metrics.topProducts.length
     ? t("monthlyReport.topProductsLine", { list: metrics.topProducts.map((product) => `${product.name} (${product.qty})`).join(", ") })
     : t("monthlyReport.noTopProducts");
   const lines = [
-    t("monthlyReport.revenueLine", { period: monthKey, revenue: Math.round(metrics.revenue).toLocaleString(), count: metrics.transactionCount }),
+    t("monthlyReport.revenueLine", { period: monthKey, revenue: moneyForStore(Math.round(metrics.revenue), storeId), count: metrics.transactionCount }),
     topLine,
     t("monthlyReport.stockLine", { low: metrics.lowStockCount, out: metrics.outOfStockCount }),
     t("monthlyReport.localFallbackNote")
@@ -1373,12 +1716,12 @@ function localMonthlyReportNarrative(monthKey, metrics) {
   return lines.join("\n");
 }
 
-async function generateMonthlyReportNarrative(monthKey, metrics) {
+async function generateMonthlyReportNarrative(monthKey, metrics, storeId) {
   if (!aiConfig.proxyUrl) throw new Error(t("txerror.aiNetworkError"));
   const languageName = state.language === "sw" ? "Swahili" : "English";
   const promptLines = [
     `Write a concise monthly business performance summary in ${languageName} for the period ${monthKey}.`,
-    `Revenue: TZS ${metrics.revenue}. Transactions: ${metrics.transactionCount}. Average sale: TZS ${Math.round(metrics.avgSale)}. Units sold: ${metrics.unitsSold}.`,
+    `Revenue: ${moneyForStore(metrics.revenue, storeId)}. Transactions: ${metrics.transactionCount}. Average sale: ${moneyForStore(Math.round(metrics.avgSale), storeId)}. Units sold: ${metrics.unitsSold}.`,
     `Top products: ${metrics.topProducts.map((product) => `${product.name} (${product.qty})`).join(", ") || "none"}.`,
     `Low stock items: ${metrics.lowStockCount}. Out-of-stock items: ${metrics.outOfStockCount}.`,
     "Include 2-3 short, specific action recommendations. Keep the whole response under 150 words."
@@ -1392,7 +1735,7 @@ function renderMonthlyReportsList() {
   container.innerHTML = state.monthlyReports
     .map((report) => `<article class="report-card" data-view-monthly-report="${report.id}" style="cursor:pointer">
         <strong>${esc(report.periodLabel)}</strong>
-        <span class="muted">TZS ${Number(report.metrics?.revenue || 0).toLocaleString()} \u2014 ${Number(report.metrics?.transactionCount || 0)} ${report.metrics?.transactionCount === 1 ? t("report.transaction") : t("report.transactions")}</span>
+        <span class="muted">${money(report.metrics?.revenue || 0)} \u2014 ${Number(report.metrics?.transactionCount || 0)} ${report.metrics?.transactionCount === 1 ? t("report.transaction") : t("report.transactions")}</span>
       </article>`)
     .join("") || `<p class="muted">${t("monthlyReport.emptyState")}</p>`;
 }
@@ -1404,9 +1747,9 @@ function openMonthlyReportDetail(reportId) {
   const metrics = report.metrics || {};
   qs("#monthlyReportDialogTitle").textContent = report.periodLabel;
   qs("#monthlyReportDetailKpis").innerHTML = [
-    [t("monthlyReport.detailRevenue"), `TZS ${Number(metrics.revenue || 0).toLocaleString()}`],
+    [t("monthlyReport.detailRevenue"), moneyForStore(metrics.revenue || 0, report.storeId)],
     [t("monthlyReport.detailTransactions"), Number(metrics.transactionCount || 0)],
-    [t("monthlyReport.detailAvgSale"), `TZS ${Math.round(Number(metrics.avgSale || 0)).toLocaleString()}`],
+    [t("monthlyReport.detailAvgSale"), moneyForStore(Math.round(Number(metrics.avgSale || 0)), report.storeId)],
     [t("monthlyReport.detailUnitsSold"), Number(metrics.unitsSold || 0)],
     [t("monthlyReport.detailLowStock"), Number(metrics.lowStockCount || 0)],
     [t("monthlyReport.detailOutOfStock"), Number(metrics.outOfStockCount || 0)]
@@ -1428,9 +1771,9 @@ function exportMonthlyReportPdf() {
   doc.text(new Date().toLocaleString(), 14, 22);
 
   const kpiRows = [
-    [t("monthlyReport.detailRevenue"), `TZS ${Number(metrics.revenue || 0).toLocaleString()}`],
+    [t("monthlyReport.detailRevenue"), moneyForStore(metrics.revenue || 0, report.storeId)],
     [t("monthlyReport.detailTransactions"), String(Number(metrics.transactionCount || 0))],
-    [t("monthlyReport.detailAvgSale"), `TZS ${Math.round(Number(metrics.avgSale || 0)).toLocaleString()}`],
+    [t("monthlyReport.detailAvgSale"), moneyForStore(Math.round(Number(metrics.avgSale || 0)), report.storeId)],
     [t("monthlyReport.detailUnitsSold"), String(Number(metrics.unitsSold || 0))],
     [t("monthlyReport.detailLowStock"), String(Number(metrics.lowStockCount || 0))],
     [t("monthlyReport.detailOutOfStock"), String(Number(metrics.outOfStockCount || 0))]
@@ -1486,10 +1829,10 @@ async function generateMonthlyReport(monthKey, storeIdOverride) {
 
   let aiSummary;
   try {
-    aiSummary = await generateMonthlyReportNarrative(monthKey, metrics);
+    aiSummary = await generateMonthlyReportNarrative(monthKey, metrics, storeId);
   } catch (error) {
     console.warn(error);
-    aiSummary = localMonthlyReportNarrative(monthKey, metrics);
+    aiSummary = localMonthlyReportNarrative(monthKey, metrics, storeId);
   }
 
   try {
@@ -1533,14 +1876,14 @@ function renderPaymentReports() {
   grid.innerHTML = breakdown
     .map((entry) => `<div class="payment-method-card">
       <span class="muted">${paymentMethodLabel(entry.method)}</span>
-      <strong class="method-total">TZS ${entry.total.toLocaleString()}</strong>
-      <span class="muted">${entry.count} ${entry.count === 1 ? t("report.transaction") : t("report.transactions")} - ${t("report.avg")} TZS ${Math.round(entry.average).toLocaleString()}</span>
+      <strong class="method-total">${money(entry.total)}</strong>
+      <span class="muted">${entry.count} ${entry.count === 1 ? t("report.transaction") : t("report.transactions")} - ${t("report.avg")} ${money(Math.round(entry.average))}</span>
       <span class="muted">${t("report.topItems")}: ${entry.topItems.join(", ") || t("report.none")}</span>
     </div>`)
     .join("");
 
   summary.innerHTML = `
-    <div class="payment-summary-row"><strong>${t("report.combinedTotal")}</strong><strong>TZS ${grandTotal.toLocaleString()}</strong></div>
+    <div class="payment-summary-row"><strong>${t("report.combinedTotal")}</strong><strong>${money(grandTotal)}</strong></div>
     ${breakdown
       .map((entry) => `<div class="payment-summary-row"><span>${paymentMethodLabel(entry.method)} ${t("report.share")}</span><span>${grandTotal ? Math.round((entry.total / grandTotal) * 100) : 0}%</span></div>`)
       .join("")}
@@ -1550,6 +1893,7 @@ function renderPaymentReports() {
   renderStaffBreakdown();
   renderTopCustomers();
   renderStaffOrderLookupSelect();
+  renderCustomerAccounts();
 }
 
 function computeStoreBreakdown() {
@@ -1591,7 +1935,7 @@ function renderStoreBreakdown() {
   if (!showBreakdown) return;
   const rows = computeStoreBreakdown();
   container.innerHTML = `<strong>${t("report.perStoreTotals")}</strong>` + rows
-    .map(({ store, total, count }) => `<div class="payment-summary-row"><span>${esc(store.name || "Store")}</span><span>TZS ${total.toLocaleString()} (${count})</span></div>`)
+    .map(({ store, total, count }) => `<div class="payment-summary-row"><span>${esc(store.name || "Store")}</span><span>${moneyForStore(total, store.id)} (${count})</span></div>`)
     .join("");
 }
 
@@ -1634,10 +1978,10 @@ function renderStaffBreakdown() {
     .map(
       (row) => `<tr>
         <td>${esc(row.staffName)}</td>
-        <td>TZS ${row.cash.toLocaleString()}</td>
-        <td>TZS ${row.mobile.toLocaleString()}</td>
-        <td>TZS ${row.card.toLocaleString()}</td>
-        <td><strong>TZS ${row.total.toLocaleString()}</strong></td>
+        <td>${money(row.cash)}</td>
+        <td>${money(row.mobile)}</td>
+        <td>${money(row.card)}</td>
+        <td><strong>${money(row.total)}</strong></td>
         <td>${row.orders}</td>
       </tr>`
     )
@@ -1646,10 +1990,10 @@ function renderStaffBreakdown() {
   const totalRow = rows.length
     ? `<tr>
         <td><strong>${t("reports.allStaffRow")}</strong></td>
-        <td><strong>TZS ${totals.cash.toLocaleString()}</strong></td>
-        <td><strong>TZS ${totals.mobile.toLocaleString()}</strong></td>
-        <td><strong>TZS ${totals.card.toLocaleString()}</strong></td>
-        <td><strong>TZS ${totals.total.toLocaleString()}</strong></td>
+        <td><strong>${money(totals.cash)}</strong></td>
+        <td><strong>${money(totals.mobile)}</strong></td>
+        <td><strong>${money(totals.card)}</strong></td>
+        <td><strong>${money(totals.total)}</strong></td>
         <td><strong>${totals.orders}</strong></td>
       </tr>`
     : "";
@@ -1689,7 +2033,7 @@ function renderTopCustomers() {
         <td>${esc(row.name || t("report.none"))}</td>
         <td>${esc(row.phone || "-")}</td>
         <td>${row.orders}</td>
-        <td><strong>TZS ${row.total.toLocaleString()}</strong></td>
+        <td><strong>${money(row.total)}</strong></td>
         <td>${row.lastVisit ? row.lastVisit.toLocaleDateString() : "-"}</td>
       </tr>`
     )
@@ -1739,14 +2083,33 @@ function findStaffSalesInRange(staffId, fromStr, toStr) {
     .sort((a, b) => (saleDate(a)?.getTime() || 0) - (saleDate(b)?.getTime() || 0));
 }
 
+function saleReturnedQtyMap(sale) {
+  const map = new Map();
+  (sale.returns || []).forEach((entry) => {
+    (entry.items || []).forEach((item) => {
+      map.set(item.productId, (map.get(item.productId) || 0) + Number(item.qty || 0));
+    });
+  });
+  return map;
+}
+
+function saleReturnableItems(sale) {
+  const returnedMap = saleReturnedQtyMap(sale);
+  return (sale.items || []).map((item) => {
+    const alreadyReturned = returnedMap.get(item.productId) || 0;
+    const remaining = Math.max(0, Number(item.qty || 0) - alreadyReturned);
+    return { ...item, alreadyReturned, remaining };
+  });
+}
+
 function buildStaffOrderCard(sale) {
   const date = saleDate(sale);
   const itemRows = (sale.items || [])
     .map((item) => `<tr>
       <td>${esc(item.name)}</td>
       <td>${Number(item.qty || 0)}</td>
-      <td>TZS ${Number(item.sellingPrice || 0).toLocaleString()}</td>
-      <td>TZS ${Number(item.lineTotal || 0).toLocaleString()}</td>
+      <td>${money(item.sellingPrice)}</td>
+      <td>${money(item.lineTotal)}</td>
     </tr>`)
     .join("");
   return `<div class="staff-order-card">
@@ -1764,8 +2127,125 @@ function buildStaffOrderCard(sale) {
       </thead>
       <tbody>${itemRows}</tbody>
     </table>
-    <div class="payment-summary-row"><strong>${t("reports.staffOrderLookupTotalLabel")}</strong><strong>TZS ${Number(sale.total || 0).toLocaleString()}</strong></div>
+    ${
+      Number(sale.refundedAmount || 0) > 0
+        ? `<div class="payment-summary-row"><span>${t("returns.refundedLabel")}</span><span>- ${money(sale.refundedAmount)}</span></div>`
+        : ""
+    }
+    <div class="payment-summary-row"><strong>${t("reports.staffOrderLookupTotalLabel")}</strong><strong>${money(sale.total)}</strong></div>
+    ${
+      !sale.voided
+        ? `<div class="button-row end"><button class="ghost-button compact" type="button" data-return-sale="${esc(sale.id)}">${t("returns.processButton")}</button></div>`
+        : ""
+    }
   </div>`;
+}
+
+function openReturnDialog(saleId) {
+  const sale = state.sales.find((entry) => entry.id === saleId);
+  if (!sale) return;
+  state.pendingReturnSaleId = saleId;
+  const returnableItems = saleReturnableItems(sale);
+  qs("#returnOrderLabel").textContent = `#${sale.orderNumber || ""}`;
+  qs("#returnItemsList").innerHTML = returnableItems.length
+    ? returnableItems
+        .map(
+          (item) => `<div class="return-item-row">
+      <span>${esc(item.name)}</span>
+      <span class="muted">${t("returns.maxReturnable", { qty: item.remaining })}</span>
+      <input type="number" min="0" max="${item.remaining}" value="0" class="return-qty-input" data-return-item="${esc(item.productId)}" ${item.remaining <= 0 ? "disabled" : ""} />
+    </div>`
+        )
+        .join("")
+    : `<p class="muted">${t("returns.noItemsSelected")}</p>`;
+  qs("#returnDialog").showModal();
+}
+
+async function confirmProcessReturn() {
+  const saleId = state.pendingReturnSaleId;
+  const sale = state.sales.find((entry) => entry.id === saleId);
+  if (!sale) return qs("#returnDialog").close();
+
+  const returnableItems = saleReturnableItems(sale);
+  const selections = [];
+  qsa("[data-return-item]").forEach((input) => {
+    const qty = Math.floor(Number(input.value || 0));
+    if (qty > 0) {
+      const item = returnableItems.find((entry) => entry.productId === input.dataset.returnItem);
+      if (item && qty <= item.remaining) selections.push({ ...item, qty });
+    }
+  });
+
+  if (!selections.length) return showToast(t("toast.returnNoSelection"));
+
+  const authorized = await verifyOverridePassword();
+  if (!authorized) return;
+
+  const subtotalReturned = selections.reduce((sum, item) => sum + item.qty * Number(item.sellingPrice || 0), 0);
+  const saleDiscountAmount = Number(sale.discountAmount || 0);
+  const saleSubtotal = Number(sale.subtotal || sale.total || 0);
+  const discountShare = saleSubtotal > 0 ? Math.min(saleDiscountAmount, saleDiscountAmount * (subtotalReturned / saleSubtotal)) : 0;
+  const refundAmount = Math.max(0, Math.round(subtotalReturned - discountShare));
+
+  const returnRecord = {
+    items: selections.map((item) => ({ productId: item.productId, name: item.name, qty: item.qty, lineTotal: item.qty * Number(item.sellingPrice || 0) })),
+    subtotalReturned,
+    discountShare: Math.round(discountShare),
+    refundAmount,
+    staffId: state.selectedStaffId || "",
+    staffName: (state.staff.find((member) => member.id === state.selectedStaffId) || {}).name || "",
+    createdAt: new Date().toISOString()
+  };
+
+  const nextReturns = [...(sale.returns || []), returnRecord];
+  const nextRefundedAmount = Number(sale.refundedAmount || 0) + refundAmount;
+
+  if (state.db && state.user && !String(saleId).startsWith("local-")) {
+    try {
+      const { doc, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
+      await runTransaction(state.db, async (transaction) => {
+        const saleRef = doc(state.db, "users", state.user.uid, "sales", saleId);
+        const productRefs = selections.map((item) => doc(state.db, "users", state.user.uid, "products", item.productId));
+        const productSnaps = await Promise.all(productRefs.map((ref) => transaction.get(ref)));
+
+        transaction.update(saleRef, { returns: nextReturns, refundedAmount: nextRefundedAmount });
+
+        productSnaps.forEach((snap, index) => {
+          if (!snap.exists()) return;
+          const item = selections[index];
+          const currentQuantity = Number(snap.data().quantity || 0);
+          const currentSold30 = Number(snap.data().sold30 || 0);
+          const currentSold90 = Number(snap.data().sold90 || 0);
+          transaction.update(productRefs[index], {
+            quantity: currentQuantity + item.qty,
+            sold30: Math.max(0, currentSold30 - item.qty),
+            sold90: Math.max(0, currentSold90 - item.qty),
+            updatedAt: serverTimestamp()
+          });
+        });
+      });
+    } catch (error) {
+      console.warn(error);
+      showToast(t("toast.returnFailed"));
+      return;
+    }
+  } else {
+    sale.returns = nextReturns;
+    sale.refundedAmount = nextRefundedAmount;
+    selections.forEach((item) => {
+      const product = state.products.find((p) => p.id === item.productId);
+      if (product) {
+        product.quantity += item.qty;
+        product.sold30 = Math.max(0, Number(product.sold30 || 0) - item.qty);
+        product.sold90 = Math.max(0, Number(product.sold90 || 0) - item.qty);
+      }
+    });
+  }
+
+  qs("#returnDialog").close();
+  renderAll();
+  renderStaffOrderLookupResult();
+  showToast(t("toast.returnProcessed", { amount: money(refundAmount) }));
 }
 
 function renderStaffOrderNumberOptions() {
@@ -1789,7 +2269,7 @@ function renderStaffOrderNumberOptions() {
       const date = saleDate(sale);
       const dateLabel = date ? date.toLocaleDateString() : "";
       const timeLabel = date ? date.toLocaleTimeString() : "";
-      return `<option value="${esc(sale.id)}">#${esc(sale.orderNumber || "")} \u2014 TZS ${Number(sale.total || 0).toLocaleString()} (${dateLabel} ${timeLabel})</option>`;
+      return `<option value="${esc(sale.id)}">#${esc(sale.orderNumber || "")} \u2014 ${money(sale.total)} (${dateLabel} ${timeLabel})</option>`;
     })
     .join("");
   if (sales.some((sale) => sale.id === previousValue)) select.value = previousValue;
@@ -1843,7 +2323,7 @@ function renderStaffAllOrdersResult() {
   const rangeTotal = sales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
   const cards = sales.map((sale) => buildStaffOrderCard(sale)).join("");
 
-  container.innerHTML = `<div class="payment-summary-row"><strong>${esc(staffName)}</strong><strong>TZS ${rangeTotal.toLocaleString()}</strong></div>` + cards;
+  container.innerHTML = `<div class="payment-summary-row"><strong>${esc(staffName)}</strong><strong>${money(rangeTotal)}</strong></div>` + cards;
 }
 
 function computeDailyStaffReport(dateStr) {
@@ -1894,12 +2374,12 @@ function renderDailyStaffReport() {
             <td>${date ? date.toLocaleTimeString() : "-"}</td>
             <td>${paymentMethodLabel(sale.paymentMethod || "cash")}</td>
             <td>${esc(itemsSummary)}</td>
-            <td>TZS ${Number(sale.total || 0).toLocaleString()}</td>
+            <td>${money(sale.total)}</td>
           </tr>`;
         })
         .join("");
       return `<div class="daily-staff-card">
-        <div class="payment-summary-row"><strong>${esc(entry.staffName)}</strong><strong>TZS ${entry.total.toLocaleString()}</strong></div>
+        <div class="payment-summary-row"><strong>${esc(entry.staffName)}</strong><strong>${money(entry.total)}</strong></div>
         <table>
           <thead>
             <tr>
@@ -1914,7 +2394,7 @@ function renderDailyStaffReport() {
         </table>
       </div>`;
     })
-    .join("") + `<div class="payment-summary-row"><strong>${t("reports.dailyStaffReportGrandTotal")}</strong><strong>TZS ${grandTotal.toLocaleString()}</strong></div>`;
+    .join("") + `<div class="payment-summary-row"><strong>${t("reports.dailyStaffReportGrandTotal")}</strong><strong>${money(grandTotal)}</strong></div>`;
 }
 
 function searchOrderNumber() {
@@ -1940,7 +2420,7 @@ function searchOrderNumber() {
         name: sale.staffName || t("report.none"),
         date: date ? date.toLocaleDateString() : "-",
         method: paymentMethodLabel(sale.paymentMethod || "cash"),
-        total: Number(sale.total || 0).toLocaleString()
+        total: money(sale.total)
       });
     })
     .join("<br>");
@@ -1950,8 +2430,8 @@ function buildPaymentReportRows() {
   const { breakdown, grandTotal, transactionCount } = computePaymentReport();
   const colPaymentMethod = t("report.colPaymentMethod");
   const colTransactions = t("report.colTransactions");
-  const colTotalTZS = t("report.colTotalTZS");
-  const colAvgSaleTZS = t("report.colAvgSaleTZS");
+  const colTotalTZS = `${t("report.colTotalTZS")} (${currentCurrencyCode()})`;
+  const colAvgSaleTZS = `${t("report.colAvgSaleTZS")} (${currentCurrencyCode()})`;
   const colTopItems = t("report.colTopItems");
   const rows = breakdown.map((entry) => ({
     [colPaymentMethod]: paymentMethodLabel(entry.method),
@@ -1984,7 +2464,7 @@ function buildPaymentReportRows() {
       [colTransactions]: entry.orders,
       [colTotalTZS]: entry.total,
       [colAvgSaleTZS]: entry.orders ? Math.round(entry.total / entry.orders) : 0,
-      [colTopItems]: `${t("pos.cash")} TZS ${entry.cash} / ${t("pos.mobile")} TZS ${entry.mobile} / ${t("pos.card")} TZS ${entry.card}`
+      [colTopItems]: `${t("pos.cash")} ${money(entry.cash)} / ${t("pos.mobile")} ${money(entry.mobile)} / ${t("pos.card")} ${money(entry.card)}`
     });
   });
   return rows;
@@ -2238,6 +2718,8 @@ function buildReportRows() {
   return storeProducts().map((product) => {
     const status = stockStatus(product);
     const label = status === "out" ? t("report.statusOut") : status === "low" ? t("report.statusLow") : t("report.statusHealthy");
+    const expStatus = expiryStatus(product);
+    const expLabel = expStatus === "none" ? "-" : expStatus === "expired" ? t("expiry.statusExpired") : expStatus === "soon" ? t("expiry.statusSoon") : t("expiry.statusOk");
     return {
       [t("report.colName")]: product.name || "",
       [t("report.colCategory")]: product.category || "",
@@ -2245,7 +2727,9 @@ function buildReportRows() {
       [t("report.colSupplier")]: product.supplier || "-",
       [t("report.colQuantity")]: Number(product.quantity || 0),
       [t("report.colReorderLevel")]: Number(product.reorderLevel || 0),
-      [t("report.colStatus")]: label
+      [t("report.colStatus")]: label,
+      [t("report.colExpiryDate")]: product.expiryDate || "-",
+      [t("report.colExpiryStatus")]: expLabel
     };
   });
 }
@@ -2303,6 +2787,353 @@ function generateReport(format) {
   if (format === "csv") return generateReportCsv();
   if (format === "pdf") return generateReportPdf();
   if (format === "xlsx") return generateReportXlsx();
+}
+
+function normalizeCustomerPhoneKey(rawPhone) {
+  return normalizeTzPhoneForWhatsApp(rawPhone);
+}
+
+function findCustomerByPhone(phoneKey) {
+  return state.customers.find((customer) => customer.phone === phoneKey);
+}
+
+function renderCustomerAccounts() {
+  const container = qs("#customerAccountsTable");
+  if (!container) return;
+  const owing = state.customers.filter((customer) => Number(customer.balanceOwed || 0) > 0).sort((a, b) => Number(b.balanceOwed || 0) - Number(a.balanceOwed || 0));
+  const total = owing.reduce((sum, customer) => sum + Number(customer.balanceOwed || 0), 0);
+
+  container.innerHTML = owing
+    .map((customer) => {
+      const days = customerDaysOutstanding(customer);
+      const bucket = customerAgingBucket(days);
+      const statusClass = agingBucketStatusClass(bucket);
+      const bucketLabelKey = bucket === "current" ? "agingCurrent" : bucket;
+      const daysLabel = days === null ? "-" : `${days} \u2014 ${t(`customers.${bucketLabelKey}`)}`;
+      return `<tr>
+        <td>${esc(customer.name || "-")}</td>
+        <td>${esc(customer.phone || "-")}</td>
+        <td><strong>${money(customer.balanceOwed)}</strong></td>
+        <td><span class="status ${statusClass}">${daysLabel}</span></td>
+        <td>${customer.creditLimit != null ? money(customer.creditLimit) : t("customers.noLimit")}</td>
+        <td class="table-actions">
+          <button class="ghost-button compact" type="button" data-record-payment="${customer.id}">${t("customers.recordPayment")}</button>
+          <button class="ghost-button compact" type="button" data-remind-customer="${customer.id}">${t("customers.remindButton")}</button>
+          <button class="ghost-button compact" type="button" data-set-credit-limit="${customer.id}">${t("customers.setLimitButton")}</button>
+        </td>
+      </tr>`;
+    })
+    .join("") || `<tr><td colspan="6" class="empty-state">${t("customers.emptyState")}</td></tr>`;
+
+  const totalEl = qs("#customerAccountsTotal");
+  if (totalEl) totalEl.textContent = `${t("customers.totalOwed")}: ${money(total)}`;
+}
+
+async function subscribeToCustomers() {
+  if (!state.db || !state.user) return;
+  if (state.unsubscribeCustomers) state.unsubscribeCustomers();
+  try {
+    const { collection, onSnapshot, orderBy, query } = state.firebaseApi.firestore;
+    const customersQuery = query(collection(state.db, "users", state.user.uid, "customers"), orderBy("createdAt", "asc"));
+    state.unsubscribeCustomers = onSnapshot(customersQuery, (snapshot) => {
+      state.customers = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      renderCustomerAccounts();
+    });
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
+function openRecordPaymentDialog(customerId) {
+  const customer = state.customers.find((item) => item.id === customerId);
+  if (!customer) return;
+  state.pendingPaymentCustomerId = customerId;
+  qs("#paymentCustomerName").textContent = `${customer.name || "-"} (${customer.phone || "-"})`;
+  qs("#paymentCurrentBalance").textContent = money(customer.balanceOwed);
+  qs("#paymentAmountInput").value = "";
+  qs("#paymentNoteInput").value = "";
+  qs("#paymentDialog").showModal();
+}
+
+async function confirmRecordPayment() {
+  const customerId = state.pendingPaymentCustomerId;
+  const customer = state.customers.find((item) => item.id === customerId);
+  if (!customer) return qs("#paymentDialog").close();
+
+  const amount = Number(qs("#paymentAmountInput")?.value || 0);
+  if (!Number.isFinite(amount) || amount <= 0) return showToast(t("toast.paymentInvalidAmount"));
+  if (amount > Number(customer.balanceOwed || 0)) return showToast(t("toast.paymentExceedsBalance"));
+  const note = (qs("#paymentNoteInput")?.value || "").trim().slice(0, 200);
+
+  const newBalance = Math.max(0, Number(customer.balanceOwed || 0) - amount);
+
+  if (state.db && state.user) {
+    try {
+      const { doc, collection, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
+      const customerRef = doc(state.db, "users", state.user.uid, "customers", customerId);
+      const paymentRef = doc(collection(state.db, "users", state.user.uid, "customers", customerId, "payments"));
+      await runTransaction(state.db, async (transaction) => {
+        const snap = await transaction.get(customerRef);
+        if (!snap.exists()) throw new Error("customer gone");
+        const currentBalance = Number(snap.data().balanceOwed || 0);
+        if (amount > currentBalance) throw new Error(t("toast.paymentExceedsBalance"));
+        const nextBalance = currentBalance - amount;
+        const customerUpdate = { balanceOwed: nextBalance, updatedAt: serverTimestamp() };
+        if (nextBalance <= 0) customerUpdate.oldestUnpaidAt = null;
+        transaction.update(customerRef, customerUpdate);
+        transaction.set(paymentRef, { amount, note, createdAt: serverTimestamp() });
+      });
+    } catch (error) {
+      console.warn(error);
+      showToast(error.message || t("toast.paymentFailed"));
+      return;
+    }
+  } else {
+    customer.balanceOwed = newBalance;
+    if (newBalance <= 0) customer.oldestUnpaidAt = null;
+  }
+
+  qs("#paymentDialog").close();
+  showToast(t("toast.paymentRecorded", { amount: money(amount), balance: money(newBalance) }));
+}
+
+async function findOrCreateCustomerForCredit(name, phoneKey) {
+  const existing = findCustomerByPhone(phoneKey);
+  if (existing) return existing.id;
+
+  if (state.db && state.user) {
+    const { collection, doc, serverTimestamp, setDoc } = state.firebaseApi.firestore;
+    const customerRef = doc(collection(state.db, "users", state.user.uid, "customers"));
+    await setDoc(customerRef, { name: name || "", phone: phoneKey, balanceOwed: 0, createdAt: serverTimestamp() });
+    return customerRef.id;
+  }
+
+  const localId = `local-customer-${Date.now()}`;
+  state.customers.push({ id: localId, name: name || "", phone: phoneKey, balanceOwed: 0 });
+  return localId;
+}
+
+function customerOldestUnpaidDate(customer) {
+  if (!customer.oldestUnpaidAt) return null;
+  if (typeof customer.oldestUnpaidAt.toDate === "function") return customer.oldestUnpaidAt.toDate();
+  return new Date(customer.oldestUnpaidAt);
+}
+
+function customerDaysOutstanding(customer) {
+  const date = customerOldestUnpaidDate(customer);
+  if (!date) return null;
+  return Math.max(0, Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)));
+}
+
+function customerAgingBucket(days) {
+  if (days === null || days <= 30) return "current";
+  if (days <= 60) return "aging30";
+  if (days <= 90) return "aging60";
+  return "aging90";
+}
+
+function agingBucketStatusClass(bucket) {
+  if (bucket === "current") return "healthy";
+  if (bucket === "aging90") return "out";
+  return "low";
+}
+
+function buildReminderTextLines(customer) {
+  const days = customerDaysOutstanding(customer);
+  const businessName = state.cachedProfile?.businessName || state.user?.displayName || "DukaSmart";
+  const lines = [
+    t("reminder.messageLine1", { name: customer.name || "", business: businessName, balance: money(customer.balanceOwed) })
+  ];
+  if (days) lines.push(t("reminder.messageLine2", { days }));
+  lines.push(t("reminder.messageClosing"));
+  return lines;
+}
+
+function sendPaymentReminderWhatsApp(customerId) {
+  const customer = state.customers.find((item) => item.id === customerId);
+  if (!customer) return;
+  const normalized = normalizeTzPhoneForWhatsApp(customer.phone);
+  if (!normalized) return showToast(t("toast.reminderNoPhone"));
+  const text = buildReminderTextLines(customer).join(" ");
+  window.open(`https://wa.me/${normalized}?text=${encodeURIComponent(text)}`, "_blank");
+}
+
+async function setCustomerCreditLimit(customerId) {
+  const customer = state.customers.find((item) => item.id === customerId);
+  if (!customer) return;
+
+  const raw = window.prompt(
+    t("dialog.creditLimitPrompt", { name: customer.name || customer.phone || "", currency: currentCurrencyCode() }),
+    customer.creditLimit != null ? String(customer.creditLimit) : ""
+  );
+  if (raw === null) return;
+
+  const trimmed = raw.trim();
+  let nextLimit = null;
+  if (trimmed !== "") {
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed) || parsed < 0) return showToast(t("toast.creditLimitInvalid"));
+    nextLimit = parsed;
+  }
+
+  if (state.db && state.user) {
+    try {
+      const { doc, setDoc } = state.firebaseApi.firestore;
+      await setDoc(doc(state.db, "users", state.user.uid, "customers", customerId), { creditLimit: nextLimit }, { merge: true });
+    } catch (error) {
+      console.warn(error);
+      showToast(t("toast.creditLimitFailed"));
+      return;
+    }
+  } else {
+    customer.creditLimit = nextLimit;
+  }
+
+  showToast(nextLimit === null ? t("toast.creditLimitCleared", { name: customer.name || "" }) : t("toast.creditLimitSet", { name: customer.name || "", limit: money(nextLimit) }));
+}
+
+function checkCreditLimitBeforeSale(customerName, phoneKey, newBalanceDue) {
+  const existing = findCustomerByPhone(phoneKey);
+  const limit = existing?.creditLimit;
+  if (limit == null) return true;
+
+  const currentBalance = Number(existing.balanceOwed || 0);
+  const projectedTotal = currentBalance + newBalanceDue;
+  if (projectedTotal <= limit) return true;
+
+  return window.confirm(t("dialog.creditLimitExceededConfirm", {
+    name: existing.name || customerName || phoneKey,
+    currentBalance: money(currentBalance),
+    newBalanceDue: money(newBalanceDue),
+    projectedTotal: money(projectedTotal),
+    limit: money(limit)
+  }));
+}
+
+function buildPurchaseOrderGroups() {
+  const recs = storeProducts()
+    .map((product) => ({ product, rec: reorderRecommendation(product) }))
+    .filter(({ rec }) => rec.recommendedQty > 0);
+
+  const bySupplier = new Map();
+  recs.forEach(({ product, rec }) => {
+    const supplierName = String(product.supplier || "").trim() || t("po.unassignedSupplier");
+    if (!bySupplier.has(supplierName)) bySupplier.set(supplierName, []);
+    bySupplier.get(supplierName).push({
+      productId: product.id,
+      name: product.name,
+      quantity: Number(product.quantity || 0),
+      reorderQty: rec.recommendedQty
+    });
+  });
+
+  return [...bySupplier.entries()]
+    .map(([supplier, items]) => ({ supplier, items }))
+    .sort((a, b) => a.supplier.localeCompare(b.supplier));
+}
+
+function renderPurchaseOrderDialog() {
+  const container = qs("#purchaseOrderGroups");
+  if (!container) return;
+  if (!state.purchaseOrderGroups.length) {
+    container.innerHTML = `<p class="muted">${t("po.noRecommendations")}</p>`;
+    return;
+  }
+
+  container.innerHTML = state.purchaseOrderGroups
+    .map(
+      (group, groupIndex) => `<div class="po-supplier-group">
+      <div class="po-supplier-head">
+        <strong>${esc(group.supplier)}</strong>
+        <button class="ghost-button compact danger" type="button" data-po-exclude-group="${groupIndex}">${t("po.excludeAll")}</button>
+      </div>
+      <div class="po-item-row po-item-header">
+        <strong>${t("po.colProduct")}</strong>
+        <strong>${t("po.colCurrentStock")}</strong>
+        <strong>${t("po.colReorderQty")}</strong>
+      </div>
+      ${group.items
+        .map(
+          (item, itemIndex) => `<div class="po-item-row">
+        <span>${esc(item.name)}</span>
+        <span class="muted">${item.quantity}</span>
+        <input type="number" min="0" value="${item.reorderQty}" class="po-qty-input" data-po-qty="${groupIndex}:${itemIndex}" />
+      </div>`
+        )
+        .join("")}
+      <div class="button-row end">
+        <button class="ghost-button compact" type="button" data-po-download="${groupIndex}">${t("po.downloadPdf")}</button>
+        <button class="primary-button compact" type="button" data-po-send="${groupIndex}">${t("po.sendWhatsApp")}</button>
+      </div>
+    </div>`
+    )
+    .join("");
+}
+
+function openPurchaseOrderDialog() {
+  state.purchaseOrderGroups = buildPurchaseOrderGroups();
+  renderPurchaseOrderDialog();
+  qs("#purchaseOrderDialog").showModal();
+}
+
+function currentPoGroupQuantities(groupIndex) {
+  const group = state.purchaseOrderGroups[groupIndex];
+  if (!group) return null;
+  const items = group.items.map((item, itemIndex) => {
+    const input = qs(`[data-po-qty="${groupIndex}:${itemIndex}"]`);
+    const qty = Math.max(0, Math.floor(Number(input?.value ?? item.reorderQty)));
+    return { ...item, reorderQty: qty };
+  });
+  return { supplier: group.supplier, items: items.filter((item) => item.reorderQty > 0) };
+}
+
+function buildPurchaseOrderTextLines(group) {
+  const dateLabel = new Date().toLocaleDateString();
+  const lines = [t("po.messageIntro", { supplier: group.supplier }), t("po.generatedOn", { date: dateLabel }), ""];
+  group.items.forEach((item) => {
+    lines.push(`- ${item.name}: ${item.reorderQty}`);
+  });
+  lines.push("", t("po.messageClosing"));
+  return lines;
+}
+
+function sendPurchaseOrderWhatsApp(groupIndex) {
+  const group = currentPoGroupQuantities(groupIndex);
+  if (!group || !group.items.length) return showToast(t("toast.poAllQuantitiesZero"));
+
+  const rawPhone = window.prompt(t("dialog.customerPhonePrompt"));
+  if (rawPhone === null) return;
+  const normalized = normalizeTzPhoneForWhatsApp(rawPhone);
+  if (!normalized) return showToast(t("toast.invalidPhoneNumber"));
+
+  const text = buildPurchaseOrderTextLines(group).join("\n");
+  window.open(`https://wa.me/${normalized}?text=${encodeURIComponent(text)}`, "_blank");
+}
+
+function downloadPurchaseOrderPdf(groupIndex) {
+  const group = currentPoGroupQuantities(groupIndex);
+  if (!group || !group.items.length) return showToast(t("toast.poAllQuantitiesZero"));
+
+  const jsPdfCtor = window.jspdf && window.jspdf.jsPDF;
+  if (!jsPdfCtor) return showToast(t("toast.pdfLibraryFailed"));
+
+  const lines = buildPurchaseOrderTextLines(group);
+  const doc = new jsPdfCtor({ unit: "mm", format: [80, Math.max(120, 40 + lines.length * 5)] });
+  doc.setFont("courier", "normal");
+  doc.setFontSize(9);
+  let y = 8;
+  lines.forEach((line) => {
+    doc.splitTextToSize(line, 72).forEach((wrapped) => {
+      doc.text(wrapped, 4, y);
+      y += 4.5;
+    });
+  });
+  doc.save(`purchase-order-${group.supplier.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-${Date.now()}.pdf`);
+}
+
+function excludePurchaseOrderGroup(groupIndex) {
+  state.purchaseOrderGroups = state.purchaseOrderGroups.filter((_, index) => index !== groupIndex);
+  renderPurchaseOrderDialog();
 }
 
 function productCollectionPath() {
@@ -2628,8 +3459,8 @@ function buildReceiptHtml(sale) {
   const itemRows = (sale.items || [])
     .map(
       (item) => `
-      <div class="receipt-row"><span>${esc(item.name)}</span><span>TZS ${Number(item.lineTotal || 0).toLocaleString()}</span></div>
-      <div class="receipt-row muted"><span>${Number(item.qty || 0)} x TZS ${Number(item.sellingPrice || 0).toLocaleString()}</span><span></span></div>`
+      <div class="receipt-row"><span>${esc(item.name)}</span><span>${money(item.lineTotal)}</span></div>
+      <div class="receipt-row muted"><span>${Number(item.qty || 0)} x ${money(item.sellingPrice)}</span><span></span></div>`
     )
     .join("");
   return `
@@ -2644,11 +3475,23 @@ function buildReceiptHtml(sale) {
     <div class="receipt-divider"></div>
     ${itemRows}
     <div class="receipt-divider"></div>
-    <div class="receipt-row"><strong>${t("pos.total")}</strong><strong>TZS ${Number(sale.total || 0).toLocaleString()}</strong></div>
+    ${
+      sale.discountType && sale.discountType !== "none"
+        ? `<div class="receipt-row"><span>${t("receipt.subtotalLabel")}</span><span>${money(sale.subtotal)}</span></div>
+    <div class="receipt-row"><span>${t("receipt.discountLabel")}</span><span>- ${money(sale.discountAmount)}</span></div>`
+        : ""
+    }
+    <div class="receipt-row"><strong>${t("pos.total")}</strong><strong>${money(sale.total)}</strong></div>
     ${
       sale.paymentMethod === "cash" && sale.cashTendered != null
-        ? `<div class="receipt-row"><span>${t("pos.amountTendered")}</span><span>TZS ${Number(sale.cashTendered || 0).toLocaleString()}</span></div>
-    <div class="receipt-row"><span>${t("pos.changeDue")}</span><span>TZS ${Number(sale.changeDue || 0).toLocaleString()}</span></div>`
+        ? `<div class="receipt-row"><span>${t("pos.amountTendered")}</span><span>${money(sale.cashTendered)}</span></div>
+    <div class="receipt-row"><span>${t("pos.changeDue")}</span><span>${money(sale.changeDue)}</span></div>`
+        : ""
+    }
+    ${
+      sale.paymentMethod === "credit"
+        ? `<div class="receipt-row"><span>${t("receipt.amountPaidLabel")}</span><span>${money(sale.amountPaid)}</span></div>
+    <div class="receipt-row"><strong>${t("receipt.balanceDueLabel")}</strong><strong>${money(sale.balanceDue)}</strong></div>`
         : ""
     }
     <div class="receipt-divider"></div>
@@ -2690,12 +3533,21 @@ function buildReceiptTextLines(sale) {
   lines.push(`${t("report.colPaymentMethod")}: ${paymentMethodLabel(sale.paymentMethod || "cash")}`, "--------------------------------");
   (sale.items || []).forEach((item) => {
     lines.push(item.name);
-    lines.push(`  ${item.qty} x TZS ${Number(item.sellingPrice || 0).toLocaleString()} = TZS ${Number(item.lineTotal || 0).toLocaleString()}`);
+    lines.push(`  ${item.qty} x ${money(item.sellingPrice)} = ${money(item.lineTotal)}`);
   });
-  lines.push("--------------------------------", `${t("pos.total")}: TZS ${Number(sale.total || 0).toLocaleString()}`);
+  lines.push("--------------------------------");
+  if (sale.discountType && sale.discountType !== "none") {
+    lines.push(`${t("receipt.subtotalLabel")}: ${money(sale.subtotal)}`);
+    lines.push(`${t("receipt.discountLabel")}: - ${money(sale.discountAmount)}`);
+  }
+  lines.push(`${t("pos.total")}: ${money(sale.total)}`);
   if (sale.paymentMethod === "cash" && sale.cashTendered != null) {
-    lines.push(`${t("pos.amountTendered")}: TZS ${Number(sale.cashTendered || 0).toLocaleString()}`);
-    lines.push(`${t("pos.changeDue")}: TZS ${Number(sale.changeDue || 0).toLocaleString()}`);
+    lines.push(`${t("pos.amountTendered")}: ${money(sale.cashTendered)}`);
+    lines.push(`${t("pos.changeDue")}: ${money(sale.changeDue)}`);
+  }
+  if (sale.paymentMethod === "credit") {
+    lines.push(`${t("receipt.amountPaidLabel")}: ${money(sale.amountPaid)}`);
+    lines.push(`${t("receipt.balanceDueLabel")}: ${money(sale.balanceDue)}`);
   }
   lines.push("", t("receipt.thankYou"));
   return lines;
@@ -2822,10 +3674,16 @@ async function undoLastSale() {
         const saleRef = doc(state.db, "users", state.user.uid, "sales", sale.saleId);
         const saleSnap = await transaction.get(saleRef);
         if (!saleSnap.exists()) throw new Error(t("txerror.saleNotFound"));
-        if (saleSnap.data().voided) throw new Error(t("txerror.saleAlreadyUndone"));
+        const saleData = saleSnap.data();
+        if (saleData.voided) throw new Error(t("txerror.saleAlreadyUndone"));
 
         const productRefs = sale.items.map((item) => doc(state.db, "users", state.user.uid, "products", item.productId));
         const productSnaps = await Promise.all(productRefs.map((ref) => transaction.get(ref)));
+
+        const creditCustomerRef = saleData.paymentMethod === "credit" && saleData.customerId
+          ? doc(state.db, "users", state.user.uid, "customers", saleData.customerId)
+          : null;
+        const creditCustomerSnap = creditCustomerRef ? await transaction.get(creditCustomerRef) : null;
 
         productSnaps.forEach((snap, index) => {
           if (!snap.exists()) return;
@@ -2840,6 +3698,11 @@ async function undoLastSale() {
             updatedAt: serverTimestamp()
           });
         });
+
+        if (creditCustomerRef && creditCustomerSnap?.exists()) {
+          const currentOwed = Number(creditCustomerSnap.data().balanceOwed || 0);
+          transaction.update(creditCustomerRef, { balanceOwed: Math.max(0, currentOwed - Number(saleData.balanceDue || 0)), updatedAt: serverTimestamp() });
+        }
 
         transaction.update(saleRef, { voided: true, voidedAt: serverTimestamp() });
       });
@@ -2919,6 +3782,7 @@ async function initFirebase() {
         subscribeToStores();
         subscribeToStaff();
         subscribeToMonthlyReports();
+        subscribeToCustomers();
       } else {
         if (state.unsubscribeProducts) state.unsubscribeProducts();
         state.unsubscribeProducts = null;
@@ -2930,6 +3794,8 @@ async function initFirebase() {
         state.unsubscribeStaff = null;
         if (state.unsubscribeMonthlyReports) state.unsubscribeMonthlyReports();
         state.unsubscribeMonthlyReports = null;
+        if (state.unsubscribeCustomers) state.unsubscribeCustomers();
+        state.unsubscribeCustomers = null;
         state.products = [];
         state.cart = [];
         state.sales = [];
@@ -2937,10 +3803,12 @@ async function initFirebase() {
         state.staff = [];
         state.selectedStaffId = "";
         state.monthlyReports = [];
+        state.customers = [];
         state.currentStoreId = "";
         state.productsInitialized = false;
         state.stockAlertQueue = [];
         state.stockAlertPopupOpen = false;
+        clearDiscount();
         renderAll();
       }
     });
@@ -3014,6 +3882,7 @@ async function subscribeToStores() {
       }
       renderStoreSwitcher();
       renderAll();
+      translateStaticDom();
     });
   } catch (error) {
     console.warn(error);
@@ -3042,6 +3911,27 @@ function populateCategorySuggestions() {
   const existingCategories = [...new Set(state.products.map((product) => String(product.category || "").trim()).filter(Boolean))];
   const merged = [...new Set([...templateCategories, ...existingCategories])];
   datalist.innerHTML = merged.map((category) => `<option value="${esc(category)}"></option>`).join("");
+}
+
+async function setStoreCurrency() {
+  if (!state.currentStoreId || state.currentStoreId === "all") return showToast(t("toast.selectSpecificStore"));
+  const store = state.stores.find((item) => item.id === state.currentStoreId);
+  if (!store) return;
+  const raw = window.prompt(t("dialog.currencyCodePrompt"), store.currencyCode || "TZS");
+  if (raw === null) return;
+  const code = raw.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(code)) return showToast(t("toast.currencyInvalid"));
+  if (!state.db || !state.user) return showToast(t("toast.signInToAddStore"));
+  try {
+    const { doc, setDoc } = state.firebaseApi.firestore;
+    await setDoc(doc(state.db, "users", state.user.uid, "stores", store.id), { currencyCode: code }, { merge: true });
+    showToast(t("toast.currencySet", { code }));
+    renderAll();
+    translateStaticDom();
+  } catch (error) {
+    console.warn(error);
+    showToast(t("toast.couldNotRenameStore"));
+  }
 }
 
 async function setStoreBusinessType() {
@@ -3117,8 +4007,10 @@ function switchStore(storeId) {
   state.currentStoreId = storeId;
   state.cart = [];
   state.cartHistory = [];
+  clearDiscount();
   renderStoreSwitcher();
   renderAll();
+  translateStaticDom();
 }
 
 function renderStoreSwitcher() {
@@ -3493,7 +4385,15 @@ function bindEvents() {
     if (!state.cart.length) return;
     pushCartHistory();
     state.cart = [];
+    clearDiscount();
     renderCart();
+  });
+  qs("#applyDiscountButton")?.addEventListener("click", applyDiscount);
+  qs("#clearDiscountButton")?.addEventListener("click", clearDiscountAndRender);
+  qs("#discountTypeSelect")?.addEventListener("change", (event) => {
+    const discountValueRow = qs("#discountValueRow");
+    if (discountValueRow) discountValueRow.hidden = event.target.value === "none";
+    if (event.target.value === "none") clearDiscountAndRender();
   });
   qs("#cashTendered").addEventListener("input", renderCart);
   qs("#undoSaleButton").addEventListener("click", undoLastSale);
@@ -3529,6 +4429,7 @@ function bindEvents() {
   qs("#renameStoreButton")?.addEventListener("click", renameStore);
   qs("#archiveStoreButton")?.addEventListener("click", archiveStore);
   qs("#setBusinessTypeButton")?.addEventListener("click", setStoreBusinessType);
+  qs("#setCurrencyButton")?.addEventListener("click", setStoreCurrency);
   qs("#posStaffSelect")?.addEventListener("change", (event) => {
     state.selectedStaffId = event.target.value;
   });
@@ -3556,6 +4457,15 @@ function bindEvents() {
   qs("#closeTransferDialog")?.addEventListener("click", () => qs("#transferDialog").close());
   qs("#cancelTransferDialog")?.addEventListener("click", () => qs("#transferDialog").close());
   qs("#confirmTransferButton")?.addEventListener("click", confirmTransfer);
+  qs("#closeReturnDialog")?.addEventListener("click", () => qs("#returnDialog").close());
+  qs("#cancelReturnDialog")?.addEventListener("click", () => qs("#returnDialog").close());
+  qs("#confirmReturnButton")?.addEventListener("click", confirmProcessReturn);
+  qs("#generatePoButton")?.addEventListener("click", openPurchaseOrderDialog);
+  qs("#closePurchaseOrderDialog")?.addEventListener("click", () => qs("#purchaseOrderDialog").close());
+  qs("#donePurchaseOrderDialog")?.addEventListener("click", () => qs("#purchaseOrderDialog").close());
+  qs("#closePaymentDialog")?.addEventListener("click", () => qs("#paymentDialog").close());
+  qs("#cancelPaymentDialog")?.addEventListener("click", () => qs("#paymentDialog").close());
+  qs("#confirmPaymentButton")?.addEventListener("click", confirmRecordPayment);
   qs("#scanProductBarcodeButton")?.addEventListener("click", () => openBarcodeScanner("product"));
   qs("#scanPosBarcodeButton")?.addEventListener("click", () => openBarcodeScanner("pos"));
   qs("#closeBarcodeScannerDialog")?.addEventListener("click", closeBarcodeScanner);
@@ -3695,7 +4605,7 @@ function bindEvents() {
       if (!cartItem) return;
       const authorized = await verifyOverridePassword();
       if (!authorized) return;
-      const newPrice = Number(window.prompt(t("dialog.editPricePrompt", { name: cartItem.name }), cartItem.sellingPrice));
+      const newPrice = Number(window.prompt(t("dialog.editPricePrompt", { name: cartItem.name, currency: currentCurrencyCode() }), cartItem.sellingPrice));
       if (!Number.isFinite(newPrice) || newPrice < 0) return showToast(t("toast.invalidPrice"));
       pushCartHistory();
       cartItem.sellingPrice = newPrice;
@@ -3707,6 +4617,8 @@ function bindEvents() {
     if (paymentButton) {
       state.paymentMethod = paymentButton.dataset.payment;
       qsa("[data-payment]").forEach((button) => button.classList.toggle("active", button.dataset.payment === state.paymentMethod));
+      const creditRow = qs("#creditAmountPaidRow");
+      if (creditRow) creditRow.hidden = state.paymentMethod !== "credit";
       renderCart();
       return;
     }
@@ -3721,6 +4633,48 @@ function bindEvents() {
     const transferButton = event.target.closest("[data-transfer-product]");
     if (transferButton) {
       openTransferDialog(transferButton.dataset.transferProduct);
+      return;
+    }
+
+    const returnSaleButton = event.target.closest("[data-return-sale]");
+    if (returnSaleButton) {
+      openReturnDialog(returnSaleButton.dataset.returnSale);
+      return;
+    }
+
+    const poSendButton = event.target.closest("[data-po-send]");
+    if (poSendButton) {
+      sendPurchaseOrderWhatsApp(Number(poSendButton.dataset.poSend));
+      return;
+    }
+
+    const poDownloadButton = event.target.closest("[data-po-download]");
+    if (poDownloadButton) {
+      downloadPurchaseOrderPdf(Number(poDownloadButton.dataset.poDownload));
+      return;
+    }
+
+    const poExcludeButton = event.target.closest("[data-po-exclude-group]");
+    if (poExcludeButton) {
+      excludePurchaseOrderGroup(Number(poExcludeButton.dataset.poExcludeGroup));
+      return;
+    }
+
+    const recordPaymentButton = event.target.closest("[data-record-payment]");
+    if (recordPaymentButton) {
+      openRecordPaymentDialog(recordPaymentButton.dataset.recordPayment);
+      return;
+    }
+
+    const remindButton = event.target.closest("[data-remind-customer]");
+    if (remindButton) {
+      sendPaymentReminderWhatsApp(remindButton.dataset.remindCustomer);
+      return;
+    }
+
+    const setLimitButton = event.target.closest("[data-set-credit-limit]");
+    if (setLimitButton) {
+      setCustomerCreditLimit(setLimitButton.dataset.setCreditLimit);
       return;
     }
 
@@ -3801,7 +4755,10 @@ function bindEvents() {
       sellingPrice: Number(cartItem.sellingPrice || 0),
       lineTotal: cartItem.qty * Number(cartItem.sellingPrice || 0)
     }));
-    const total = saleItems.reduce((sum, item) => sum + item.lineTotal, 0);
+    const subtotal = saleItems.reduce((sum, item) => sum + item.lineTotal, 0);
+    const discountType = state.discountType || "none";
+    const discountAmount = computeDiscountAmount(subtotal);
+    const total = Math.max(0, subtotal - discountAmount);
     const paymentMethod = state.paymentMethod || "cash";
     const cashTendered = Number(qs("#cashTendered")?.value || 0);
 
@@ -3810,6 +4767,23 @@ function bindEvents() {
       return;
     }
     const changeDue = paymentMethod === "cash" ? Math.max(0, cashTendered - total) : 0;
+
+    let creditPhoneKey = null;
+    let creditAmountPaid = 0;
+    let creditBalanceDue = 0;
+    if (paymentMethod === "credit") {
+      creditPhoneKey = normalizeCustomerPhoneKey(customerPhone);
+      if (!creditPhoneKey) return showToast(t("toast.creditNeedsPhone"));
+      creditAmountPaid = Number(qs("#creditAmountPaidInput")?.value || 0);
+      if (!Number.isFinite(creditAmountPaid) || creditAmountPaid < 0 || creditAmountPaid > total) {
+        showToast(t("toast.creditAmountPaidInvalid"));
+        return;
+      }
+      creditBalanceDue = Math.max(0, total - creditAmountPaid);
+      if (creditBalanceDue > 0 && !checkCreditLimitBeforeSale(customerName, creditPhoneKey, creditBalanceDue)) {
+        return;
+      }
+    }
 
     if (!staffMember.id || !String(staffMember.name || "").trim() || !/^[0-9]{1,10}$/.test(orderNumberRaw)) {
       showToast(t("toast.saleFailedGeneric"));
@@ -3823,9 +4797,15 @@ function bindEvents() {
       try {
         const { collection, doc, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
         const saleRef = doc(collection(state.db, "users", state.user.uid, "sales"));
+        let creditCustomerId = null;
+        if (paymentMethod === "credit") {
+          creditCustomerId = await findOrCreateCustomerForCredit(customerName, creditPhoneKey);
+        }
+        const creditCustomerRef = creditCustomerId ? doc(state.db, "users", state.user.uid, "customers", creditCustomerId) : null;
         await runTransaction(state.db, async (transaction) => {
           const productRefs = state.cart.map((cartItem) => doc(state.db, "users", state.user.uid, "products", cartItem.id));
           const productSnaps = await Promise.all(productRefs.map((ref) => transaction.get(ref)));
+          const creditCustomerSnap = creditCustomerRef ? await transaction.get(creditCustomerRef) : null;
 
           productSnaps.forEach((snap, index) => {
             const cartItem = state.cart[index];
@@ -3851,10 +4831,17 @@ function bindEvents() {
 
           transaction.set(saleRef, {
             items: saleItems,
+            subtotal,
+            discountType,
+            discountValue: Number(state.discountValue || 0),
+            discountAmount,
             total,
             paymentMethod,
             cashTendered: paymentMethod === "cash" ? cashTendered : null,
             changeDue: paymentMethod === "cash" ? changeDue : null,
+            customerId: creditCustomerId,
+            amountPaid: paymentMethod === "credit" ? creditAmountPaid : null,
+            balanceDue: paymentMethod === "credit" ? creditBalanceDue : null,
             branchId: state.currentStoreId,
             storeId: state.currentStoreId,
             cashierUid: state.user?.uid || null,
@@ -3866,6 +4853,13 @@ function bindEvents() {
             voided: false,
             createdAt: serverTimestamp()
           });
+
+          if (creditCustomerRef && creditCustomerSnap) {
+            const currentOwed = Number(creditCustomerSnap.data()?.balanceOwed || 0);
+            const customerUpdate = { balanceOwed: currentOwed + creditBalanceDue, updatedAt: serverTimestamp() };
+            if (currentOwed <= 0 && creditBalanceDue > 0) customerUpdate.oldestUnpaidAt = serverTimestamp();
+            transaction.update(creditCustomerRef, customerUpdate);
+          }
 
           const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
           transaction.set(auditRef, {
@@ -3894,13 +4888,30 @@ function bindEvents() {
           product.sold90 = Number(product.sold90 || 0) + cartItem.qty;
         }
       });
+      let localCreditCustomerId = null;
+      if (paymentMethod === "credit") {
+        localCreditCustomerId = await findOrCreateCustomerForCredit(customerName, creditPhoneKey);
+        const localCustomer = state.customers.find((c) => c.id === localCreditCustomerId);
+        if (localCustomer) {
+          const wasZero = Number(localCustomer.balanceOwed || 0) <= 0;
+          localCustomer.balanceOwed = Number(localCustomer.balanceOwed || 0) + creditBalanceDue;
+          if (wasZero && creditBalanceDue > 0) localCustomer.oldestUnpaidAt = new Date();
+        }
+      }
       state.sales.push({
         id: `local-${Date.now()}`,
         items: saleItems,
+        subtotal,
+        discountType,
+        discountValue: Number(state.discountValue || 0),
+        discountAmount,
         total,
         paymentMethod,
         cashTendered: paymentMethod === "cash" ? cashTendered : null,
         changeDue: paymentMethod === "cash" ? changeDue : null,
+        customerId: localCreditCustomerId,
+        amountPaid: paymentMethod === "credit" ? creditAmountPaid : null,
+        balanceDue: paymentMethod === "credit" ? creditBalanceDue : null,
         staffId: staffMember.id,
         staffName: staffMember.name || "",
         orderNumber: orderNumberRaw,
@@ -3914,10 +4925,15 @@ function bindEvents() {
 
     openReceiptDialog({
       items: saleItems,
+      subtotal,
+      discountType,
+      discountAmount,
       total,
       paymentMethod,
       cashTendered: paymentMethod === "cash" ? cashTendered : null,
       changeDue: paymentMethod === "cash" ? changeDue : null,
+      amountPaid: paymentMethod === "credit" ? creditAmountPaid : null,
+      balanceDue: paymentMethod === "credit" ? creditBalanceDue : null,
       staffName: staffMember.name || "",
       orderNumber: orderNumberRaw,
       customerName,
@@ -3928,13 +4944,15 @@ function bindEvents() {
 
     state.cart = [];
     state.cartHistory = [];
+    clearDiscount();
     if (qs("#cashTendered")) qs("#cashTendered").value = "";
     if (qs("#posOrderNumber")) qs("#posOrderNumber").value = "";
     if (qs("#posCustomerName")) qs("#posCustomerName").value = "";
     if (qs("#posCustomerPhone")) qs("#posCustomerPhone").value = "";
+    if (qs("#creditAmountPaidInput")) qs("#creditAmountPaidInput").value = "";
     renderAll();
     completeButton.disabled = false;
-    showToast(changeDue > 0 ? t("toast.saleCompletedChange", { change: changeDue.toLocaleString() }) : t("toast.saleCompleted"));
+    showToast(changeDue > 0 ? t("toast.saleCompletedChange", { change: money(changeDue) }) : t("toast.saleCompleted"));
   });
 
   qs("#productForm").addEventListener("submit", (event) => {
@@ -3968,6 +4986,7 @@ function bindEvents() {
     product.description = product.description || "";
     product.warehouse = product.warehouse || "";
     product.shelf = product.shelf || "";
+    product.expiryDate = product.expiryDate || "";
     saveProduct(product);
     event.currentTarget.reset();
     qs("#productDialog").close();
@@ -4003,3 +5022,4 @@ if ("serviceWorker" in navigator) {
     });
   });
 }
+//When this code was written only God knew if it would work, but it did. I am still in shock.

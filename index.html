@@ -72,6 +72,7 @@
               <button class="ghost-button compact" id="addStoreButton" type="button" data-i18n="dashboard.addStore">+ Store</button>
                <button class="ghost-button compact" id="renameStoreButton" type="button" data-i18n="dashboard.renameStore">Rename</button>
               <button class="ghost-button compact" id="setBusinessTypeButton" type="button" data-i18n="dashboard.setBusinessType">Business Type</button>
+              <button class="ghost-button compact" id="setCurrencyButton" type="button" data-i18n="dashboard.setCurrency">Currency</button>
               <button class="ghost-button compact" id="archiveStoreButton" type="button" data-i18n="dashboard.archiveStore">Archive</button>            </div>
           </div>
 
@@ -139,6 +140,7 @@
             </div>
             <div class="button-row">
               <button class="ghost-button" id="exportInventoryButton" data-i18n="inventory.exportCsv">Export CSV</button>
+              <button class="ghost-button" id="generatePoButton" type="button" data-i18n="inventory.generatePoButton">Generate Purchase Orders</button>
               <button class="primary-button" id="inventoryAddButton" data-i18n="inventory.addProduct">Add Product</button>
             </div>
           </div>
@@ -163,6 +165,7 @@
                   <th data-sort="supplier" data-i18n="inventory.thSupplier">Supplier</th>
                   <th data-sort="quantity" data-i18n="inventory.thQty">Qty</th>
                   <th data-i18n="inventory.thStatus">Status</th>
+                  <th data-i18n="inventory.thExpiry">Expiry</th>
                   <th data-i18n="inventory.thActions">Actions</th>
                 </tr>
               </thead>
@@ -199,6 +202,28 @@
                 <button class="ghost-button compact" id="undoCartButton" type="button" disabled data-i18n="pos.undoAction">Undo Last Action</button>
                 <button class="ghost-button compact" id="clearCartButton" type="button" data-i18n="pos.clearCart">Clear Cart</button>
               </div>
+              <div class="discount-controls">
+                <label><span data-i18n="pos.discountLabel">Discount</span>
+                  <select id="discountTypeSelect">
+                    <option value="none" data-i18n="pos.discountNone">No discount</option>
+                    <option value="percent" data-i18n="pos.discountPercent">Percentage (%)</option>
+                    <option value="fixed" data-i18n="pos.discountFixed">Fixed amount (TZS)</option>
+                  </select>
+                </label>
+                <div class="discount-value-row" id="discountValueRow" hidden>
+                  <input id="discountValueInput" type="number" min="0" step="0.01" placeholder="Enter value" data-i18n-placeholder="pos.discountValuePlaceholder" />
+                  <button class="ghost-button compact" id="applyDiscountButton" type="button" data-i18n="pos.applyDiscount">Apply</button>
+                  <button class="ghost-button compact danger" id="clearDiscountButton" type="button" hidden data-i18n="pos.clearDiscount">Clear</button>
+                </div>
+              </div>
+              <div class="cart-total" id="cartSubtotalRow" hidden>
+                <span data-i18n="pos.subtotal">Subtotal</span>
+                <strong id="cartSubtotalValue">TZS 0</strong>
+              </div>
+              <div class="cart-total" id="cartDiscountRow" hidden>
+                <span data-i18n="pos.discountAppliedLabel">Discount</span>
+                <strong id="cartDiscountValue">- TZS 0</strong>
+              </div>
               <div class="cart-total">
                 <span data-i18n="pos.total">Total</span>
                 <strong id="cartTotal">TZS 0</strong>
@@ -221,10 +246,14 @@
                 <button class="ghost-button payment-option active" data-payment="cash" type="button" data-i18n="pos.cash">Cash</button>
                 <button class="ghost-button payment-option" data-payment="mobile" type="button" data-i18n="pos.mobile">Mobile Money</button>
                 <button class="ghost-button payment-option" data-payment="card" type="button" data-i18n="pos.card">Card</button>
+                <button class="ghost-button payment-option" data-payment="credit" type="button" data-i18n="pos.credit">Credit</button>
               </div>
               <div class="cash-tender-row" id="cashTenderRow">
                 <label><span data-i18n="pos.amountTendered">Amount tendered</span><input id="cashTendered" type="number" min="0" placeholder="Enter cash received" data-i18n-placeholder="pos.tenderedPlaceholder" /></label>
                 <div class="change-due"><span data-i18n="pos.changeDue">Change due</span><strong id="changeDue">TZS 0</strong></div>
+              </div>
+              <div class="cash-tender-row" id="creditAmountPaidRow" hidden>
+                <label><span data-i18n="pos.amountPaidNow">Amount paid now (optional)</span><input id="creditAmountPaidInput" type="number" min="0" placeholder="0 if fully on credit" data-i18n-placeholder="pos.amountPaidPlaceholder" /></label>
               </div>
               <button class="primary-button full-width" id="completeSaleButton" data-i18n="pos.completeSale">Complete Sale</button>
               <button class="ghost-button full-width" id="undoSaleButton" type="button" disabled data-i18n="pos.undoSale">Undo Last Sale</button>
@@ -289,6 +318,31 @@
                   </tr>
                 </thead>
                 <tbody id="staffBreakdownTable"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="customers.sectionEyebrow">Accounts receivable</p>
+                <h2 data-i18n="customers.sectionTitle">Customer Accounts (Credit)</h2>
+              </div>
+              <strong id="customerAccountsTotal"></strong>
+            </div>
+            <div class="table-panel" style="box-shadow:none;border:none">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="customers.colName">Customer</th>
+                    <th data-i18n="customers.colPhone">Phone</th>
+                    <th data-i18n="customers.colBalance">Balance Owed</th>
+                    <th data-i18n="customers.colDaysOutstanding">Days Outstanding</th>
+                    <th data-i18n="customers.colCreditLimit">Credit Limit</th>
+                    <th data-i18n="customers.colActions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="customerAccountsTable"></tbody>
               </table>
             </div>
           </article>
@@ -466,6 +520,7 @@
             </select>
           </label>
           <label><span data-i18n="product.reorderLabel">Low stock threshold</span><input name="reorderLevel" type="number" min="0" placeholder="e.g. 10" data-i18n-placeholder="product.reorderPlaceholder" /></label>
+          <label><span data-i18n="product.expiryLabel">Expiry date (optional)</span><input name="expiryDate" type="date" /></label>
         </div>
         <div class="button-row end">
           <button class="ghost-button" type="button" id="cancelProductDialog" data-i18n="product.cancel">Cancel</button>
@@ -492,6 +547,56 @@
       <div class="button-row end">
         <button class="ghost-button" type="button" id="cancelTransferDialog" data-i18n="product.cancel">Cancel</button>
         <button class="primary-button" type="button" id="confirmTransferButton" data-i18n="dialog.transferConfirm">Transfer</button>
+      </div>
+    </dialog>
+
+    <dialog id="paymentDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="payment.dialogTitle">Record Payment</h2>
+        <button class="icon-button" type="button" id="closePaymentDialog" aria-label="Close">&times;</button>
+      </div>
+      <p class="muted"><strong id="paymentCustomerName"></strong></p>
+      <p class="muted"><span data-i18n="payment.currentBalanceLabel">Current balance</span>: <strong id="paymentCurrentBalance"></strong></p>
+      <div class="form-grid">
+        <label><span data-i18n="payment.amountLabel">Payment amount (TZS)</span>
+          <input id="paymentAmountInput" type="number" min="0" step="1" />
+        </label>
+        <label><span data-i18n="payment.noteLabel">Note (optional)</span>
+          <input id="paymentNoteInput" type="text" maxlength="200" />
+        </label>
+      </div>
+      <div class="button-row end">
+        <button class="ghost-button" type="button" id="cancelPaymentDialog" data-i18n="product.cancel">Cancel</button>
+        <button class="primary-button" type="button" id="confirmPaymentButton" data-i18n="payment.confirmButton">Record Payment</button>
+      </div>
+    </dialog>
+
+    <dialog id="purchaseOrderDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="po.dialogTitle">Draft Purchase Orders</h2>
+        <button class="icon-button" type="button" id="closePurchaseOrderDialog" aria-label="Close">&times;</button>
+      </div>
+      <div id="purchaseOrderGroups"></div>
+      <div class="button-row end">
+        <button class="primary-button" type="button" id="donePurchaseOrderDialog" data-i18n="receipt.close">Close</button>
+      </div>
+    </dialog>
+
+    <dialog id="returnDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="returns.title">Process Return / Refund</h2>
+        <button class="icon-button" type="button" id="closeReturnDialog" aria-label="Close">&times;</button>
+      </div>
+      <p class="muted"><span data-i18n="reports.staffOrderLookupOrderLabel">Order number</span> <strong id="returnOrderLabel"></strong></p>
+      <div class="return-item-row return-item-header">
+        <strong data-i18n="returns.colItem">Item</strong>
+        <strong data-i18n="returns.colAvailable">Available to return</strong>
+        <strong data-i18n="returns.colQty">Qty</strong>
+      </div>
+      <div id="returnItemsList"></div>
+      <div class="button-row end">
+        <button class="ghost-button" type="button" id="cancelReturnDialog" data-i18n="product.cancel">Cancel</button>
+        <button class="primary-button" type="button" id="confirmReturnButton" data-i18n="returns.confirmButton">Process Refund</button>
       </div>
     </dialog>
 
@@ -589,6 +694,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    <script type="module" src="./app.js?v=20260729"></script>
+    <script type="module" src="./app.js?v=20260740"></script>
   </body>
 </html>

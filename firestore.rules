@@ -20,7 +20,8 @@ service cloud.firestore {
         && d.storeId is string && d.storeId.size() > 0
         && (!('costPrice' in d) || (d.costPrice is number && d.costPrice >= 0))
         && (!('sellingPrice' in d) || (d.sellingPrice is number && d.sellingPrice >= 0))
-        && (!('reorderLevel' in d) || (d.reorderLevel is number && d.reorderLevel >= 0));
+        && (!('reorderLevel' in d) || (d.reorderLevel is number && d.reorderLevel >= 0))
+        && (!('expiryDate' in d) || (d.expiryDate is string && d.expiryDate.size() <= 10));
     }
 
     function productImmutableFieldsUnchanged() {
@@ -58,12 +59,19 @@ service cloud.firestore {
       return d.items is list && d.items.size() > 0 && d.items.size() <= 40
         && d.total is number && d.total >= 0
         && d.cashierUid == request.auth.uid
-        && d.paymentMethod in ['cash', 'mobile', 'card']
         && d.voided == false
         && d.storeId is string && d.storeId.size() > 0
         && d.staffId is string && d.staffId.size() > 0
         && d.staffName is string && d.staffName.size() > 0 && d.staffName.size() <= 80
         && d.orderNumber is string && d.orderNumber.matches('^[0-9]{1,10}$')
+        && (!('subtotal' in d) || (d.subtotal is number && d.subtotal >= 0))
+        && (!('discountType' in d) || d.discountType in ['none', 'percent', 'fixed'])
+        && (!('discountValue' in d) || (d.discountValue is number && d.discountValue >= 0))
+        && (!('discountAmount' in d) || (d.discountAmount is number && d.discountAmount >= 0))
+        && d.paymentMethod in ['cash', 'mobile', 'card', 'credit']
+        && (!('customerId' in d) || d.customerId == null || (d.customerId is string && d.customerId.size() > 0))
+        && (!('amountPaid' in d) || d.amountPaid == null || (d.amountPaid is number && d.amountPaid >= 0))
+        && (!('balanceDue' in d) || d.balanceDue == null || (d.balanceDue is number && d.balanceDue >= 0))
         && allItemsValid(d.items);
     }
 
@@ -75,7 +83,8 @@ service cloud.firestore {
     function validStore() {
       let d = request.resource.data;
       return d.name is string && d.name.size() > 0 && d.name.size() <= 60
-        && (!('archived' in d) || d.archived is bool);
+        && (!('archived' in d) || d.archived is bool)
+        && (!('currencyCode' in d) || (d.currencyCode is string && d.currencyCode.matches('^[A-Z]{3}$')));
     }
 
     function validStaff() {
@@ -132,13 +141,59 @@ service cloud.firestore {
             && (!('orderNumber' in before) || after.orderNumber == before.orderNumber);
         }
 
+        function validReturnUpdate() {
+          let before = resource.data;
+          let after = request.resource.data;
+          return before.voided == false
+            && after.items == before.items
+            && after.total == before.total
+            && after.paymentMethod == before.paymentMethod
+            && after.cashTendered == before.cashTendered
+            && after.changeDue == before.changeDue
+            && after.voided == before.voided
+            && (!('branchId' in before) || after.branchId == before.branchId)
+            && (!('storeId' in before) || after.storeId == before.storeId)
+            && after.cashierUid == before.cashierUid
+            && after.createdAt == before.createdAt
+            && (!('staffId' in before) || after.staffId == before.staffId)
+            && (!('orderNumber' in before) || after.orderNumber == before.orderNumber)
+            && after.returns is list && after.returns.size() <= 20
+            && after.refundedAmount is number && after.refundedAmount >= 0 && after.refundedAmount <= after.total;
+        }
+
         allow read: if isOwner(userId);
         allow create: if isOwner(userId) && validSale();
-        allow update: if isOwner(userId) && validVoidUpdate();
+        allow update: if isOwner(userId) && (validVoidUpdate() || validReturnUpdate());
         allow delete: if false;
       }
 
-     match /auditLogs/{logId} {
+     match /customers/{customerId} {
+        function validCustomer() {
+          let d = request.resource.data;
+          return d.name is string && d.name.size() <= 80
+            && d.phone is string && d.phone.size() > 0 && d.phone.size() <= 20
+            && d.balanceOwed is number && d.balanceOwed >= 0
+            && (!('oldestUnpaidAt' in d) || d.oldestUnpaidAt == null || d.oldestUnpaidAt is timestamp)
+            && (!('creditLimit' in d) || d.creditLimit == null || (d.creditLimit is number && d.creditLimit >= 0));
+        }
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && validCustomer();
+        allow update: if isOwner(userId) && validCustomer();
+        allow delete: if false;
+
+        match /payments/{paymentId} {
+          function validPayment() {
+            let d = request.resource.data;
+            return d.amount is number && d.amount > 0
+              && (!('note' in d) || (d.note is string && d.note.size() <= 200));
+          }
+          allow read: if isOwner(userId);
+          allow create: if isOwner(userId) && validPayment();
+          allow update, delete: if false;
+        }
+      }
+
+      match /auditLogs/{logId} {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId) && validAuditLog();
         allow update, delete: if false;
