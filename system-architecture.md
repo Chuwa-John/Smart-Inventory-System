@@ -83,6 +83,14 @@ The local frontend includes deterministic recommendations. Claude can be added l
 - Writes that affect stock should also create `inventoryMovements` and `auditLogs` records.
 - Sensitive reports should be generated server-side for permission checks.
 
+## Recovery Architecture
+
+- Firestore is the authoritative live data store; its browser persistence is an offline cache, not a backup.
+- Signed-in owners can download a complete account JSON snapshot from the app. The snapshot includes the user profile, products, sales, stores, staff, customers, customer payments, transfers, audit logs, and monthly reports. It remains on the owner's device and is never uploaded to Firebase Storage or another service.
+- The snapshot encodes Firestore timestamps explicitly so that the source data can be inspected or reconstructed if a same-account recovery is required.
+- Firestore's managed service provides platform durability, but Firebase Spark does not provide this application with scheduled project exports. Owners should download and retain a backup after material changes and before account closure.
+- Restoring data into a different Firebase user ID requires a trusted administrative migration path, which is intentionally not available in this Spark-only client architecture. Do not delete an account until its backup has been retained securely.
+
 ## Deployment Notes
 
 1. Copy `firebase-config.sample.js` to `firebase-config.js`.

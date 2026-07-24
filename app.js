@@ -485,6 +485,10 @@ const DICTIONARY = {
     "deleteAccount.reauthFailed": "Incorrect password. Please try again.",
     "toast.accountDeleted": "Your account has been deleted.",
     "toast.accountDeleteFailed": "Could not delete your account. Please try again.",
+    "backup.button": "Download Backup",
+    "toast.backupPreparing": "Preparing your account backup...",
+    "toast.backupDownloaded": "Backup downloaded. Store this file securely.",
+    "toast.backupFailed": "Could not create the backup. Please try again.",
     "pos.discountLabel": "Discount",
     "pos.discountNone": "No discount",
     "pos.discountPercent": "Percentage (%)",
@@ -920,6 +924,10 @@ const DICTIONARY = {
     "deleteAccount.reauthFailed": "Nenosiri si sahihi. Tafadhali jaribu tena.",
     "toast.accountDeleted": "Akaunti yako imefutwa.",
     "toast.accountDeleteFailed": "Imeshindwa kufuta akaunti yako. Tafadhali jaribu tena.",
+    "backup.button": "Pakua Nakala",
+    "toast.backupPreparing": "Inaandaa nakala ya akaunti yako...",
+    "toast.backupDownloaded": "Nakala imepakuliwa. Hifadhi faili hili kwa usalama.",
+    "toast.backupFailed": "Imeshindwa kuunda nakala. Tafadhali jaribu tena.",
     "pos.discountLabel": "Punguzo",
     "pos.discountNone": "Hakuna punguzo",
     "pos.discountPercent": "Asilimia (%)",
@@ -2848,6 +2856,64 @@ function exportCsv() {
   URL.revokeObjectURL(url);
 }
 
+function backupSerializable(value) {
+  if (value == null || typeof value !== "object") return value;
+  if (typeof value.toDate === "function" && Number.isInteger(value.seconds)) {
+    return { __type: "firestoreTimestamp", seconds: value.seconds, nanoseconds: value.nanoseconds || 0 };
+  }
+  if (Array.isArray(value)) return value.map(backupSerializable);
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, backupSerializable(entry)]));
+}
+
+async function downloadAccountBackup() {
+  if (!state.db || !state.user) return showToast(t("toast.firebaseNotConnected"));
+  const button = qs("#downloadBackupButton");
+  if (button) button.disabled = true;
+  showToast(t("toast.backupPreparing"));
+
+  try {
+    const { collection, doc, getDoc, getDocs } = state.firebaseApi.firestore;
+    const rootCollections = ["products", "sales", "stores", "staff", "customers", "transfers", "auditLogs", "monthlyReports"];
+    const [profileSnap, ...collectionSnaps] = await Promise.all([
+      getDoc(doc(state.db, "users", state.user.uid)),
+      ...rootCollections.map((name) => getDocs(collection(state.db, "users", state.user.uid, name)))
+    ]);
+    const collections = Object.fromEntries(collectionSnaps.map((snapshot, index) => [
+      rootCollections[index],
+      snapshot.docs.map((docSnap) => ({ id: docSnap.id, data: backupSerializable(docSnap.data()) }))
+    ]));
+    const customerPayments = await Promise.all(
+      collections.customers.map(async (customer) => {
+        const payments = await getDocs(collection(state.db, "users", state.user.uid, "customers", customer.id, "payments"));
+        return [customer.id, payments.docs.map((docSnap) => ({ id: docSnap.id, data: backupSerializable(docSnap.data()) }))];
+      })
+    );
+
+    const backup = {
+      schemaVersion: 1,
+      application: "DukaSmart ERP",
+      exportedAt: new Date().toISOString(),
+      accountUid: state.user.uid,
+      profile: profileSnap.exists() ? backupSerializable(profileSnap.data()) : null,
+      collections,
+      customerPayments: Object.fromEntries(customerPayments)
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `dukasmart-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    showToast(t("toast.backupDownloaded"));
+  } catch (error) {
+    console.warn("Account backup failed:", error);
+    showToast(t("toast.backupFailed"));
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 function buildReportRows() {
   return storeProducts().map((product) => {
     const status = stockStatus(product);
@@ -4702,6 +4768,7 @@ function bindEvents() {
   qs("#cashTendered").addEventListener("input", renderCart);
   qs("#undoSaleButton").addEventListener("click", undoLastSale);
   qs("#exportInventoryButton").addEventListener("click", exportCsv);
+  qs("#downloadBackupButton")?.addEventListener("click", downloadAccountBackup);
   qs("#salesRangePreset").addEventListener("change", (event) => {
     state.salesRangePreset = event.target.value;
     qs("#salesRangeCustom").hidden = state.salesRangePreset !== "custom";
