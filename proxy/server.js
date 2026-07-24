@@ -202,8 +202,8 @@ app.get("/health", (_req, res) => {
 });
 
 const OVERRIDE_HASH = process.env.PRICE_OVERRIDE_PASSWORD_HASH;
-if (requireFirebaseAuth && !OVERRIDE_HASH) {
-  throw new Error("PRICE_OVERRIDE_PASSWORD_HASH is required.");
+if (!OVERRIDE_HASH) {
+  console.warn("PRICE_OVERRIDE_PASSWORD_HASH is not configured; price overrides are disabled.");
 }
 
 const overrideLimiter = rateLimit({
@@ -218,8 +218,11 @@ app.post("/api/ai/override-verify", overrideLimiter, async (req, res) => {
   if (requireFirebaseAuth && !req.user) {
     return res.status(401).json({ authorized: false });
   }
+  if (!OVERRIDE_HASH) {
+    return res.status(503).json({ authorized: false, error: "Price overrides are not configured." });
+  }
   const code = String(req.body?.code || "");
-  if (!code || code.length > 64 || !OVERRIDE_HASH) {
+  if (!code || code.length > 64) {
     return res.status(400).json({ authorized: false });
   }
   try {
