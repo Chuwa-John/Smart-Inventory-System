@@ -193,6 +193,23 @@ service cloud.firestore {
         }
       }
 
+      match /transfers/{transferId} {
+        function validTransfer() {
+          let d = request.resource.data;
+          return d.productId is string && d.productId.size() > 0
+            && d.productName is string
+            && d.quantity is number && d.quantity > 0
+            && d.sourceStoreId is string && d.sourceStoreId.size() > 0
+            && d.destinationStoreId is string && d.destinationStoreId.size() > 0
+            && d.staffName is string && d.staffName.size() > 0 && d.staffName.size() <= 80
+            && (!('destinationProductId' in d) || (d.destinationProductId is string && d.destinationProductId.size() > 0))
+            && d.performedByUid == request.auth.uid;
+        }
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && validTransfer();
+        allow update, delete: if false;
+      }
+
       match /auditLogs/{logId} {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId) && validAuditLog();

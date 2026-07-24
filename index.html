@@ -547,8 +547,9 @@
         <label><span data-i18n="dialog.transferDestinationLabel">Destination store</span>
           <select id="transferDestinationSelect"></select>
         </label>
-        <label><span data-i18n="dialog.transferStaffLabel">Staff member making this transfer</span>
-          <select id="transferStaffSelect"></select>
+        <label><span data-i18n="dialog.transferStaffLabel">Name of the person making this transfer</span>
+          <input id="transferStaffNameInput" type="text" list="transferStaffSuggestions" maxlength="80" placeholder="e.g. Juma Ally" data-i18n-placeholder="dialog.transferStaffPlaceholder" />
+          <datalist id="transferStaffSuggestions"></datalist>
         </label>
         <label><span data-i18n="dialog.transferQuantityLabel">Quantity to transfer</span>
           <input id="transferQuantityInput" type="number" min="1" step="1" />
@@ -715,6 +716,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    <script type="module" src="./app.js?v=20260742"></script>
+    <script type="module" src="./app.js?v=20260743"></script>
   </body>
 </html>

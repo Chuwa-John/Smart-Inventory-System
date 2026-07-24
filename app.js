@@ -583,8 +583,9 @@ const DICTIONARY = {
     "dialog.currencyCodePrompt": "Enter a 3-letter currency code for this store (e.g. TZS, USD, KES, UGX):",
     "toast.currencyInvalid": "Enter a valid 3-letter currency code (letters only).",
     "toast.currencySet": "Store currency set to {code}.",
-    "dialog.transferStaffLabel": "Staff member making this transfer",
-    "toast.transferStaffRequired": "Select which staff member is making this transfer.",
+    "dialog.transferStaffLabel": "Name of the person making this transfer",
+    "dialog.transferStaffPlaceholder": "e.g. Juma Ally",
+    "toast.transferStaffRequired": "Enter the name of the person making this transfer.",
     "movement.title": "Product Movement",
     "movement.subtitle": "Sales and transfer history for {name}",
     "movement.salesSectionTitle": "Sales History",
@@ -1015,8 +1016,9 @@ const DICTIONARY = {
     "dialog.currencyCodePrompt": "Weka msimbo wa herufi 3 wa sarafu ya duka hili (mfano, TZS, USD, KES, UGX):",
     "toast.currencyInvalid": "Weka msimbo sahihi wa herufi 3 za sarafu (herufi pekee).",
     "toast.currencySet": "Sarafu ya duka imewekwa kuwa {code}.",
-    "dialog.transferStaffLabel": "Mfanyakazi anayefanya uhamishaji huu",
-    "toast.transferStaffRequired": "Chagua mfanyakazi anayefanya uhamishaji huu.",
+    "dialog.transferStaffLabel": "Jina la mtu anayefanya uhamishaji huu",
+    "dialog.transferStaffPlaceholder": "mfano, Juma Ally",
+    "toast.transferStaffRequired": "Weka jina la mtu anayefanya uhamishaji huu.",
     "movement.title": "Mwendo wa Bidhaa",
     "movement.subtitle": "Historia ya mauzo na uhamishaji wa {name}",
     "movement.salesSectionTitle": "Historia ya Mauzo",
@@ -1147,6 +1149,11 @@ function expiryBadgeHtml(product) {
   const label = status === "expired" ? t("expiry.statusExpired") : status === "soon" ? t("expiry.statusSoon") : t("expiry.statusOk");
   const cls = status === "expired" ? "out" : status === "soon" ? "low" : "healthy";
   return `<span class="status ${cls}">${label}</span> <span class="muted">${esc(product.expiryDate)}</span>`;
+}
+
+function productDisplayLabel(product) {
+  const parts = [product.category, product.brand].filter(Boolean);
+  return parts.length ? `${product.name} (${parts.join(" \u2022 ")})` : product.name;
 }
 
 function calculateMetrics() {
@@ -1398,7 +1405,7 @@ function renderAlertsAndRecommendations() {
     .map((product) => {
       const status = stockStatus(product);
       return `<div class="alert-item ${status === "out" ? "red" : "amber"}" data-view-movement="${product.id}" style="cursor:pointer">
-        <strong>${esc(product.name)}</strong>
+        <strong>${esc(productDisplayLabel(product))}</strong>
         <span class="muted">${status === "out" ? t("inventory.stockOut") : t("alert.belowMinimum", { quantity: product.quantity })}</span>
         <span class="muted">${t("movement.viewButton")}</span>
       </div>`;
@@ -1412,9 +1419,10 @@ function renderAlertsAndRecommendations() {
       const detail = status === "expired"
         ? t("alert.expiredDetail", { date: product.expiryDate })
         : t("alert.expiringSoonDetail", { days, date: product.expiryDate });
-      return `<div class="alert-item ${status === "expired" ? "red" : "amber"}">
-        <strong>${esc(product.name)}</strong>
+      return `<div class="alert-item ${status === "expired" ? "red" : "amber"}" data-view-movement="${product.id}" style="cursor:pointer">
+        <strong>${esc(productDisplayLabel(product))}</strong>
         <span class="muted">${detail}</span>
+        <span class="muted">${t("movement.viewButton")}</span>
       </div>`;
     })
     .join("");
@@ -1429,7 +1437,7 @@ function renderAlertsAndRecommendations() {
 
   qs("#recommendationList").innerHTML = recs
     .map(({ product, rec }) => `<div class="recommendation">
-      <strong>${esc(product.name)}</strong>
+      <strong>${esc(productDisplayLabel(product))}</strong>
       <span>${t("rec.reorderNow", { qty: rec.recommendedQty })}</span>
       <small class="muted">${t("rec.estimatedStockout", { days: rec.daysUntilStockout })}</small>
     </div>`)
@@ -1489,7 +1497,7 @@ function renderInventory() {
       const status = stockStatus(product);
       const label = status === "out" ? t("inventory.stockOut") : status === "low" ? t("inventory.stockLow") : t("inventory.stockHealthy");
       return `<tr>
-        <td><button class="link-button" type="button" data-view-movement="${product.id}">${esc(product.name)}</button></td>
+        <td><button class="link-button" type="button" data-view-movement="${product.id}">${esc(productDisplayLabel(product))}</button></td>
         <td>${esc(product.category)}</td>
         <td>${esc(product.brand || "-")}</td>
         <td>${esc(product.supplier || "-")}</td>
@@ -3113,7 +3121,7 @@ function productSalesEntries(productId) {
 
 function productTransferEntries(productId) {
   return state.transfers
-    .filter((transfer) => transfer.productId === productId)
+    .filter((transfer) => transfer.productId === productId || transfer.destinationProductId === productId)
     .map((transfer) => ({
       date: transferDate(transfer),
       staffName: transfer.staffName || t("report.none"),
@@ -3126,7 +3134,7 @@ function productTransferEntries(productId) {
 
 function buildProductMovementHtml(productId) {
   const product = state.products.find((item) => item.id === productId);
-  const productName = product?.name || "";
+  const productName = product ? productDisplayLabel(product) : "";
   const sales = productSalesEntries(productId);
   const transfers = productTransferEntries(productId);
 
@@ -3187,7 +3195,7 @@ function buildProductMovementHtml(productId) {
 
 function renderProductMovementDialog(productId) {
   const product = state.products.find((item) => item.id === productId);
-  qs("#productMovementDialogTitle").textContent = product ? `${t("movement.title")} \u2014 ${product.name}` : t("movement.title");
+  qs("#productMovementDialogTitle").textContent = product ? `${t("movement.title")} \u2014 ${productDisplayLabel(product)}` : t("movement.title");
   qs("#productMovementContent").innerHTML = buildProductMovementHtml(productId);
 }
 
@@ -3437,11 +3445,13 @@ function openTransferDialog(productId) {
   qs("#transferDestinationSelect").innerHTML = otherStores
     .map((store) => `<option value="${store.id}">${esc(store.name || t("storeSwitcher.fallbackName"))}</option>`)
     .join("");
-  const transferStaffSelect = qs("#transferStaffSelect");
-  if (transferStaffSelect) {
-    const staffOptions = activeStaff().map((member) => `<option value="${member.id}">${esc(member.name || "")}</option>`).join("");
-    transferStaffSelect.innerHTML = staffOptions || `<option value="">${t("pos.selectStaffPlaceholder")}</option>`;
-    transferStaffSelect.value = state.selectedStaffId || "";
+  const transferStaffNameInput = qs("#transferStaffNameInput");
+  if (transferStaffNameInput) {
+    transferStaffNameInput.value = state.staff.find((member) => member.id === state.selectedStaffId)?.name || "";
+  }
+  const transferStaffSuggestions = qs("#transferStaffSuggestions");
+  if (transferStaffSuggestions) {
+    transferStaffSuggestions.innerHTML = activeStaff().map((member) => `<option value="${esc(member.name || "")}"></option>`).join("");
   }
   const qtyInput = qs("#transferQuantityInput");
   qtyInput.max = product.quantity;
@@ -3458,9 +3468,8 @@ async function confirmTransfer() {
   const destinationStore = state.stores.find((store) => store.id === destinationStoreId);
   if (!destinationStore) return showToast(t("toast.invalidStoreSelection"));
 
-  const transferStaffId = qs("#transferStaffSelect")?.value || "";
-  const transferStaffMember = state.staff.find((member) => member.id === transferStaffId);
-  if (!transferStaffMember) return showToast(t("toast.transferStaffRequired"));
+  const transferStaffName = (qs("#transferStaffNameInput")?.value || "").trim().slice(0, 80);
+  if (!transferStaffName) return showToast(t("toast.transferStaffRequired"));
 
   const qty = Math.floor(Number(qs("#transferQuantityInput").value));
   if (!Number.isFinite(qty) || qty <= 0 || qty > product.quantity) return showToast(t("toast.invalidTransferQuantity"));
@@ -3508,14 +3517,14 @@ async function confirmTransfer() {
 
       transaction.set(transferRef, {
         productId: product.id,
+        destinationProductId: destinationRef.id,
         productName: product.name,
         quantity: qty,
         sourceStoreId: productStoreId(product),
         sourceStoreName: sourceStore?.name || t("storeSwitcher.fallbackName"),
         destinationStoreId: destinationStore.id,
         destinationStoreName: destinationStore.name || t("storeSwitcher.fallbackName"),
-        staffId: transferStaffMember.id,
-        staffName: transferStaffMember.name || "",
+        staffName: transferStaffName,
         performedByUid: state.user.uid,
         createdAt: serverTimestamp()
       });
