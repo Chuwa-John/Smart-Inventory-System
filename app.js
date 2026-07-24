@@ -49,7 +49,10 @@ const state = {
   purchaseOrderGroups: [],
   customers: [],
   unsubscribeCustomers: null,
-  pendingPaymentCustomerId: null
+  pendingPaymentCustomerId: null,
+  transfers: [],
+  unsubscribeTransfers: null,
+  productMovementProductId: null
 };
 
 const MAX_CHAT_HISTORY = 20;
@@ -532,6 +535,7 @@ const DICTIONARY = {
     "pos.credit": "Credit",
     "pos.amountPaidNow": "Amount paid now (optional)",
     "pos.amountPaidPlaceholder": "0 if fully on credit",
+    "pos.amountPaidMethod": "Method for amount paid now",
     "pos.balanceDueLabel": "Balance due",
     "toast.creditNeedsPhone": "Enter the customer's phone number for a credit sale.",
     "toast.creditAmountPaidInvalid": "Amount paid cannot exceed the sale total.",
@@ -578,7 +582,24 @@ const DICTIONARY = {
     "dashboard.setCurrency": "Currency",
     "dialog.currencyCodePrompt": "Enter a 3-letter currency code for this store (e.g. TZS, USD, KES, UGX):",
     "toast.currencyInvalid": "Enter a valid 3-letter currency code (letters only).",
-    "toast.currencySet": "Store currency set to {code}."
+    "toast.currencySet": "Store currency set to {code}.",
+    "dialog.transferStaffLabel": "Staff member making this transfer",
+    "toast.transferStaffRequired": "Select which staff member is making this transfer.",
+    "movement.title": "Product Movement",
+    "movement.subtitle": "Sales and transfer history for {name}",
+    "movement.salesSectionTitle": "Sales History",
+    "movement.transfersSectionTitle": "Transfer History",
+    "movement.noSales": "No sales recorded for this product yet.",
+    "movement.noTransfers": "No transfers recorded for this product yet.",
+    "movement.colDate": "Date",
+    "movement.colStaff": "Staff",
+    "movement.colQty": "Qty",
+    "movement.colOrder": "Order #",
+    "movement.colFrom": "From",
+    "movement.colTo": "To",
+    "movement.colTransferBy": "Transferred by",
+    "movement.viewButton": "View Movement",
+    "movement.close": "Close"
   },
   sw: {
     "nav.dashboard": "Dashibodi", "nav.inventory": "Hisa", "nav.pos": "Mauzo",
@@ -946,6 +967,7 @@ const DICTIONARY = {
     "pos.credit": "Deni",
     "pos.amountPaidNow": "Kiasi kilicholipwa sasa (hiari)",
     "pos.amountPaidPlaceholder": "0 kama ni deni kamili",
+    "pos.amountPaidMethod": "Njia ya kiasi kilicholipwa sasa",
     "pos.balanceDueLabel": "Deni lililobaki",
     "toast.creditNeedsPhone": "Weka namba ya simu ya mteja kwa mauzo ya deni.",
     "toast.creditAmountPaidInvalid": "Kiasi kilicholipwa hakiwezi kuzidi jumla ya mauzo.",
@@ -992,7 +1014,24 @@ const DICTIONARY = {
     "dashboard.setCurrency": "Sarafu",
     "dialog.currencyCodePrompt": "Weka msimbo wa herufi 3 wa sarafu ya duka hili (mfano, TZS, USD, KES, UGX):",
     "toast.currencyInvalid": "Weka msimbo sahihi wa herufi 3 za sarafu (herufi pekee).",
-    "toast.currencySet": "Sarafu ya duka imewekwa kuwa {code}."
+    "toast.currencySet": "Sarafu ya duka imewekwa kuwa {code}.",
+    "dialog.transferStaffLabel": "Mfanyakazi anayefanya uhamishaji huu",
+    "toast.transferStaffRequired": "Chagua mfanyakazi anayefanya uhamishaji huu.",
+    "movement.title": "Mwendo wa Bidhaa",
+    "movement.subtitle": "Historia ya mauzo na uhamishaji wa {name}",
+    "movement.salesSectionTitle": "Historia ya Mauzo",
+    "movement.transfersSectionTitle": "Historia ya Uhamishaji",
+    "movement.noSales": "Hakuna mauzo yaliyorekodiwa kwa bidhaa hii bado.",
+    "movement.noTransfers": "Hakuna uhamishaji uliorekodiwa kwa bidhaa hii bado.",
+    "movement.colDate": "Tarehe",
+    "movement.colStaff": "Mfanyakazi",
+    "movement.colQty": "Kiasi",
+    "movement.colOrder": "Oda #",
+    "movement.colFrom": "Kutoka",
+    "movement.colTo": "Kwenda",
+    "movement.colTransferBy": "Alihamisha",
+    "movement.viewButton": "Ona Mwendo",
+    "movement.close": "Funga"
   }
 };
 
@@ -1358,9 +1397,10 @@ function renderAlertsAndRecommendations() {
   const stockAlertsHtml = risky
     .map((product) => {
       const status = stockStatus(product);
-      return `<div class="alert-item ${status === "out" ? "red" : "amber"}">
+      return `<div class="alert-item ${status === "out" ? "red" : "amber"}" data-view-movement="${product.id}" style="cursor:pointer">
         <strong>${esc(product.name)}</strong>
         <span class="muted">${status === "out" ? t("inventory.stockOut") : t("alert.belowMinimum", { quantity: product.quantity })}</span>
+        <span class="muted">${t("movement.viewButton")}</span>
       </div>`;
     })
     .join("");
@@ -1449,7 +1489,7 @@ function renderInventory() {
       const status = stockStatus(product);
       const label = status === "out" ? t("inventory.stockOut") : status === "low" ? t("inventory.stockLow") : t("inventory.stockHealthy");
       return `<tr>
-        <td><strong>${esc(product.name)}</strong></td>
+        <td><button class="link-button" type="button" data-view-movement="${product.id}">${esc(product.name)}</button></td>
         <td>${esc(product.category)}</td>
         <td>${esc(product.brand || "-")}</td>
         <td>${esc(product.supplier || "-")}</td>
@@ -1638,14 +1678,28 @@ function filteredSales() {
   });
 }
 
+function saleAmountForMethod(sale, method) {
+  const paymentMethod = sale.paymentMethod || "cash";
+  if (paymentMethod === "credit") {
+    // Only the portion actually received (amountPaid) counts toward a
+    // cash/mobile/card bucket; the remaining balanceDue is a receivable,
+    // tracked separately in Customer Accounts, not "revenue by method".
+    const paidMethod = sale.amountPaidMethod || "cash";
+    return paidMethod === method ? Number(sale.amountPaid || 0) : 0;
+  }
+  return paymentMethod === method ? Number(sale.total || 0) : 0;
+}
+
 function computeMethodBreakdown(sales, method) {
-  const methodSales = sales.filter((sale) => (sale.paymentMethod || "cash") === method);
-  const total = methodSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
-  const count = methodSales.length;
+  const contributing = sales
+    .map((sale) => ({ sale, amount: saleAmountForMethod(sale, method) }))
+    .filter((entry) => entry.amount > 0);
+  const total = contributing.reduce((sum, entry) => sum + entry.amount, 0);
+  const count = contributing.length;
   const average = count ? total / count : 0;
 
   const itemTotals = new Map();
-  methodSales.forEach((sale) => {
+  contributing.forEach(({ sale }) => {
     (sale.items || []).forEach((item) => {
       const key = item.name || "Unknown";
       itemTotals.set(key, (itemTotals.get(key) || 0) + Number(item.qty || 0));
@@ -1949,11 +2003,19 @@ function computeStaffBreakdown() {
     }
     const entry = byStaff.get(key);
     const method = sale.paymentMethod || "cash";
-    const amount = Number(sale.total || 0);
-    if (method === "cash") entry.cash += amount;
-    else if (method === "mobile") entry.mobile += amount;
-    else if (method === "card") entry.card += amount;
-    entry.total += amount;
+    if (method === "credit") {
+      const paidAmount = Number(sale.amountPaid || 0);
+      const paidMethod = sale.amountPaidMethod || "cash";
+      if (paidMethod === "cash") entry.cash += paidAmount;
+      else if (paidMethod === "mobile") entry.mobile += paidAmount;
+      else if (paidMethod === "card") entry.card += paidAmount;
+    } else {
+      const amount = Number(sale.total || 0);
+      if (method === "cash") entry.cash += amount;
+      else if (method === "mobile") entry.mobile += amount;
+      else if (method === "card") entry.card += amount;
+    }
+    entry.total += Number(sale.total || 0);
     entry.orders += 1;
   });
   return [...byStaff.values()].sort((a, b) => b.total - a.total);
@@ -2844,6 +2906,21 @@ async function subscribeToCustomers() {
   }
 }
 
+async function subscribeToTransfers() {
+  if (!state.db || !state.user) return;
+  if (state.unsubscribeTransfers) state.unsubscribeTransfers();
+  try {
+    const { collection, onSnapshot, orderBy, query, limit } = state.firebaseApi.firestore;
+    const transfersQuery = query(collection(state.db, "users", state.user.uid, "transfers"), orderBy("createdAt", "desc"), limit(2000));
+    state.unsubscribeTransfers = onSnapshot(transfersQuery, (snapshot) => {
+      state.transfers = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      if (state.productMovementProductId) renderProductMovementDialog(state.productMovementProductId);
+    });
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
 function openRecordPaymentDialog(customerId) {
   const customer = state.customers.find((item) => item.id === customerId);
   if (!customer) return;
@@ -3008,6 +3085,116 @@ function checkCreditLimitBeforeSale(customerName, phoneKey, newBalanceDue) {
     projectedTotal: money(projectedTotal),
     limit: money(limit)
   }));
+}
+
+function transferDate(transfer) {
+  if (!transfer.createdAt) return null;
+  if (typeof transfer.createdAt.toDate === "function") return transfer.createdAt.toDate();
+  return new Date(transfer.createdAt);
+}
+
+function productSalesEntries(productId) {
+  const entries = [];
+  state.sales.forEach((sale) => {
+    if (sale.voided) return;
+    (sale.items || []).forEach((item) => {
+      if (item.productId !== productId) return;
+      entries.push({
+        date: saleDate(sale),
+        staffName: sale.staffName || t("report.none"),
+        qty: Number(item.qty || 0),
+        orderNumber: sale.orderNumber || "",
+        paymentMethod: sale.paymentMethod || "cash"
+      });
+    });
+  });
+  return entries.sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
+}
+
+function productTransferEntries(productId) {
+  return state.transfers
+    .filter((transfer) => transfer.productId === productId)
+    .map((transfer) => ({
+      date: transferDate(transfer),
+      staffName: transfer.staffName || t("report.none"),
+      qty: Number(transfer.quantity || 0),
+      sourceStoreName: transfer.sourceStoreName || t("storeSwitcher.fallbackName"),
+      destinationStoreName: transfer.destinationStoreName || t("storeSwitcher.fallbackName")
+    }))
+    .sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
+}
+
+function buildProductMovementHtml(productId) {
+  const product = state.products.find((item) => item.id === productId);
+  const productName = product?.name || "";
+  const sales = productSalesEntries(productId);
+  const transfers = productTransferEntries(productId);
+
+  const salesRows = sales
+    .map(
+      (entry) => `<tr>
+        <td>${entry.date ? entry.date.toLocaleString() : "-"}</td>
+        <td>${esc(entry.staffName)}</td>
+        <td>${entry.qty}</td>
+        <td>#${esc(entry.orderNumber)}</td>
+        <td>${paymentMethodLabel(entry.paymentMethod)}</td>
+      </tr>`
+    )
+    .join("");
+
+  const transferRows = transfers
+    .map(
+      (entry) => `<tr>
+        <td>${entry.date ? entry.date.toLocaleString() : "-"}</td>
+        <td>${esc(entry.sourceStoreName)}</td>
+        <td>${esc(entry.destinationStoreName)}</td>
+        <td>${entry.qty}</td>
+        <td>${esc(entry.staffName)}</td>
+      </tr>`
+    )
+    .join("");
+
+  return `
+    <p class="muted">${t("movement.subtitle", { name: productName })}</p>
+    <h3>${t("movement.salesSectionTitle")}</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>${t("movement.colDate")}</th>
+          <th>${t("movement.colStaff")}</th>
+          <th>${t("movement.colQty")}</th>
+          <th>${t("movement.colOrder")}</th>
+          <th>${t("report.colPaymentMethod")}</th>
+        </tr>
+      </thead>
+      <tbody>${salesRows || `<tr><td colspan="5" class="empty-state">${t("movement.noSales")}</td></tr>`}</tbody>
+    </table>
+    <h3>${t("movement.transfersSectionTitle")}</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>${t("movement.colDate")}</th>
+          <th>${t("movement.colFrom")}</th>
+          <th>${t("movement.colTo")}</th>
+          <th>${t("movement.colQty")}</th>
+          <th>${t("movement.colTransferBy")}</th>
+        </tr>
+      </thead>
+      <tbody>${transferRows || `<tr><td colspan="5" class="empty-state">${t("movement.noTransfers")}</td></tr>`}</tbody>
+    </table>
+  `;
+}
+
+function renderProductMovementDialog(productId) {
+  const product = state.products.find((item) => item.id === productId);
+  qs("#productMovementDialogTitle").textContent = product ? `${t("movement.title")} \u2014 ${product.name}` : t("movement.title");
+  qs("#productMovementContent").innerHTML = buildProductMovementHtml(productId);
+}
+
+function openProductMovementDialog(productId) {
+  state.productMovementProductId = productId;
+  renderProductMovementDialog(productId);
+  qs("#productMovementDialog").showModal();
 }
 
 function buildPurchaseOrderGroups() {
@@ -3250,6 +3437,12 @@ function openTransferDialog(productId) {
   qs("#transferDestinationSelect").innerHTML = otherStores
     .map((store) => `<option value="${store.id}">${esc(store.name || t("storeSwitcher.fallbackName"))}</option>`)
     .join("");
+  const transferStaffSelect = qs("#transferStaffSelect");
+  if (transferStaffSelect) {
+    const staffOptions = activeStaff().map((member) => `<option value="${member.id}">${esc(member.name || "")}</option>`).join("");
+    transferStaffSelect.innerHTML = staffOptions || `<option value="">${t("pos.selectStaffPlaceholder")}</option>`;
+    transferStaffSelect.value = state.selectedStaffId || "";
+  }
   const qtyInput = qs("#transferQuantityInput");
   qtyInput.max = product.quantity;
   qtyInput.value = Math.min(1, product.quantity);
@@ -3265,8 +3458,14 @@ async function confirmTransfer() {
   const destinationStore = state.stores.find((store) => store.id === destinationStoreId);
   if (!destinationStore) return showToast(t("toast.invalidStoreSelection"));
 
+  const transferStaffId = qs("#transferStaffSelect")?.value || "";
+  const transferStaffMember = state.staff.find((member) => member.id === transferStaffId);
+  if (!transferStaffMember) return showToast(t("toast.transferStaffRequired"));
+
   const qty = Math.floor(Number(qs("#transferQuantityInput").value));
   if (!Number.isFinite(qty) || qty <= 0 || qty > product.quantity) return showToast(t("toast.invalidTransferQuantity"));
+
+  const sourceStore = state.stores.find((store) => store.id === productStoreId(product));
 
   try {
     const { collection, doc, runTransaction, serverTimestamp, query, where, getDocs } = state.firebaseApi.firestore;
@@ -3277,6 +3476,7 @@ async function confirmTransfer() {
     const matchSnapOutsideTx = await getDocs(matchQuery);
     const destinationRef = matchSnapOutsideTx.empty ? doc(productsRef) : matchSnapOutsideTx.docs[0].ref;
     const destinationExisted = !matchSnapOutsideTx.empty;
+    const transferRef = doc(collection(state.db, "users", state.user.uid, "transfers"));
 
     await runTransaction(state.db, async (transaction) => {
       const sourceSnap = await transaction.get(sourceRef);
@@ -3305,6 +3505,20 @@ async function confirmTransfer() {
           updatedAt: serverTimestamp()
         });
       }
+
+      transaction.set(transferRef, {
+        productId: product.id,
+        productName: product.name,
+        quantity: qty,
+        sourceStoreId: productStoreId(product),
+        sourceStoreName: sourceStore?.name || t("storeSwitcher.fallbackName"),
+        destinationStoreId: destinationStore.id,
+        destinationStoreName: destinationStore.name || t("storeSwitcher.fallbackName"),
+        staffId: transferStaffMember.id,
+        staffName: transferStaffMember.name || "",
+        performedByUid: state.user.uid,
+        createdAt: serverTimestamp()
+      });
     });
 
     showToast(t("toast.transferred", { qty, unit: qty === 1 ? t("toast.unitSingular") : t("toast.unitPlural"), name: product.name, store: destinationStore.name }));
@@ -3783,6 +3997,7 @@ async function initFirebase() {
         subscribeToStaff();
         subscribeToMonthlyReports();
         subscribeToCustomers();
+        subscribeToTransfers();
       } else {
         if (state.unsubscribeProducts) state.unsubscribeProducts();
         state.unsubscribeProducts = null;
@@ -3796,6 +4011,8 @@ async function initFirebase() {
         state.unsubscribeMonthlyReports = null;
         if (state.unsubscribeCustomers) state.unsubscribeCustomers();
         state.unsubscribeCustomers = null;
+        if (state.unsubscribeTransfers) state.unsubscribeTransfers();
+        state.unsubscribeTransfers = null;
         state.products = [];
         state.cart = [];
         state.sales = [];
@@ -3804,6 +4021,7 @@ async function initFirebase() {
         state.selectedStaffId = "";
         state.monthlyReports = [];
         state.customers = [];
+        state.transfers = [];
         state.currentStoreId = "";
         state.productsInitialized = false;
         state.stockAlertQueue = [];
@@ -4460,6 +4678,8 @@ function bindEvents() {
   qs("#closeReturnDialog")?.addEventListener("click", () => qs("#returnDialog").close());
   qs("#cancelReturnDialog")?.addEventListener("click", () => qs("#returnDialog").close());
   qs("#confirmReturnButton")?.addEventListener("click", confirmProcessReturn);
+  qs("#closeProductMovementDialog")?.addEventListener("click", () => qs("#productMovementDialog").close());
+  qs("#doneProductMovementDialog")?.addEventListener("click", () => qs("#productMovementDialog").close());
   qs("#generatePoButton")?.addEventListener("click", openPurchaseOrderDialog);
   qs("#closePurchaseOrderDialog")?.addEventListener("click", () => qs("#purchaseOrderDialog").close());
   qs("#donePurchaseOrderDialog")?.addEventListener("click", () => qs("#purchaseOrderDialog").close());
@@ -4623,6 +4843,12 @@ function bindEvents() {
       return;
     }
 
+    const movementTrigger = event.target.closest("[data-view-movement]");
+    if (movementTrigger) {
+      openProductMovementDialog(movementTrigger.dataset.viewMovement);
+      return;
+    }
+
     const editButton = event.target.closest("[data-edit-product]");
     if (editButton) {
       const product = state.products.find((item) => item.id === editButton.dataset.editProduct);
@@ -4770,6 +4996,7 @@ function bindEvents() {
 
     let creditPhoneKey = null;
     let creditAmountPaid = 0;
+    let creditAmountPaidMethod = "cash";
     let creditBalanceDue = 0;
     if (paymentMethod === "credit") {
       creditPhoneKey = normalizeCustomerPhoneKey(customerPhone);
@@ -4779,6 +5006,7 @@ function bindEvents() {
         showToast(t("toast.creditAmountPaidInvalid"));
         return;
       }
+      creditAmountPaidMethod = qs("#creditAmountPaidMethod")?.value || "cash";
       creditBalanceDue = Math.max(0, total - creditAmountPaid);
       if (creditBalanceDue > 0 && !checkCreditLimitBeforeSale(customerName, creditPhoneKey, creditBalanceDue)) {
         return;
@@ -4841,6 +5069,7 @@ function bindEvents() {
             changeDue: paymentMethod === "cash" ? changeDue : null,
             customerId: creditCustomerId,
             amountPaid: paymentMethod === "credit" ? creditAmountPaid : null,
+            amountPaidMethod: paymentMethod === "credit" ? creditAmountPaidMethod : null,
             balanceDue: paymentMethod === "credit" ? creditBalanceDue : null,
             branchId: state.currentStoreId,
             storeId: state.currentStoreId,
@@ -4911,6 +5140,7 @@ function bindEvents() {
         changeDue: paymentMethod === "cash" ? changeDue : null,
         customerId: localCreditCustomerId,
         amountPaid: paymentMethod === "credit" ? creditAmountPaid : null,
+        amountPaidMethod: paymentMethod === "credit" ? creditAmountPaidMethod : null,
         balanceDue: paymentMethod === "credit" ? creditBalanceDue : null,
         staffId: staffMember.id,
         staffName: staffMember.name || "",
@@ -4950,6 +5180,7 @@ function bindEvents() {
     if (qs("#posCustomerName")) qs("#posCustomerName").value = "";
     if (qs("#posCustomerPhone")) qs("#posCustomerPhone").value = "";
     if (qs("#creditAmountPaidInput")) qs("#creditAmountPaidInput").value = "";
+    if (qs("#creditAmountPaidMethod")) qs("#creditAmountPaidMethod").value = "cash";
     renderAll();
     completeButton.disabled = false;
     showToast(changeDue > 0 ? t("toast.saleCompletedChange", { change: money(changeDue) }) : t("toast.saleCompleted"));

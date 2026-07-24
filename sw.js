@@ -3,7 +3,7 @@
 // instantly on repeat visits. This does NOT cache Firestore/Firebase
 // traffic or any cross-origin requests \u2014 those always go to the network.
 // Bump this on every deploy so old clients pick up new files.
-const CACHE_NAME = "dukasmart-shell-v1";
+const CACHE_NAME = "dukasmart-shell-v4";
 
 const APP_SHELL = [
   "./",
@@ -57,19 +57,19 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Static app-shell assets: cache-first, refresh cache in the background.
+  // Static app-shell assets: network-first, so a fresh deploy is always
+  // visible on the very next load while online. The cache is only used
+  // as an offline fallback, not as a first-choice source \u2014 the browser's
+  // own HTTP cache already keeps repeat loads fast when nothing changed.
   event.respondWith(
-    caches.match(request).then((cached) => {
-      const networkFetch = fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-          }
-          return response;
-        })
-        .catch(() => cached);
-      return cached || networkFetch;
-    })
+    fetch(request)
+      .then((response) => {
+        if (response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+        }
+        return response;
+      })
+      .catch(() => caches.match(request))
   );
 });

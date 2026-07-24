@@ -254,6 +254,13 @@
               </div>
               <div class="cash-tender-row" id="creditAmountPaidRow" hidden>
                 <label><span data-i18n="pos.amountPaidNow">Amount paid now (optional)</span><input id="creditAmountPaidInput" type="number" min="0" placeholder="0 if fully on credit" data-i18n-placeholder="pos.amountPaidPlaceholder" /></label>
+                <label><span data-i18n="pos.amountPaidMethod">Method for amount paid now</span>
+                  <select id="creditAmountPaidMethod">
+                    <option value="cash" data-i18n="pos.cash">Cash</option>
+                    <option value="mobile" data-i18n="pos.mobile">Mobile Money</option>
+                    <option value="card" data-i18n="pos.card">Card</option>
+                  </select>
+                </label>
               </div>
               <button class="primary-button full-width" id="completeSaleButton" data-i18n="pos.completeSale">Complete Sale</button>
               <button class="ghost-button full-width" id="undoSaleButton" type="button" disabled data-i18n="pos.undoSale">Undo Last Sale</button>
@@ -540,6 +547,9 @@
         <label><span data-i18n="dialog.transferDestinationLabel">Destination store</span>
           <select id="transferDestinationSelect"></select>
         </label>
+        <label><span data-i18n="dialog.transferStaffLabel">Staff member making this transfer</span>
+          <select id="transferStaffSelect"></select>
+        </label>
         <label><span data-i18n="dialog.transferQuantityLabel">Quantity to transfer</span>
           <input id="transferQuantityInput" type="number" min="1" step="1" />
         </label>
@@ -547,6 +557,17 @@
       <div class="button-row end">
         <button class="ghost-button" type="button" id="cancelTransferDialog" data-i18n="product.cancel">Cancel</button>
         <button class="primary-button" type="button" id="confirmTransferButton" data-i18n="dialog.transferConfirm">Transfer</button>
+      </div>
+    </dialog>
+
+    <dialog id="productMovementDialog" style="max-width:640px">
+      <div class="dialog-head">
+        <h2 id="productMovementDialogTitle" data-i18n="movement.title">Product Movement</h2>
+        <button class="icon-button" type="button" id="closeProductMovementDialog" aria-label="Close">&times;</button>
+      </div>
+      <div id="productMovementContent"></div>
+      <div class="button-row end">
+        <button class="primary-button" type="button" id="doneProductMovementDialog" data-i18n="movement.close">Close</button>
       </div>
     </dialog>
 
@@ -694,6 +715,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    <script type="module" src="./app.js?v=20260740"></script>
+    <script type="module" src="./app.js?v=20260742"></script>
   </body>
 </html>
