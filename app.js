@@ -1,6 +1,5 @@
 import { firebaseConfig } from "./firebase-config.js";
 import { aiConfig } from "./ai-config.js";
-import { priceConfig } from "./price-config.js";
 
 const state = {
   products: [],
@@ -245,7 +244,7 @@ const DICTIONARY = {
     "product.cancel": "Cancel", "product.save": "Save Product",
     "auth.eyebrow": "Account access",
     "auth.copy": "Create an account or sign in to manage your own inventory, stock levels, sales, and AI recommendations.",
-    "auth.businessName": "Business name", "auth.email": "Email", "auth.password": "Password",
+    "auth.businessName": "Business name", "auth.email": "Email", "auth.password": "Password", "auth.forgotPassword": "Forgot password?",
     "auth.confirmPassword": "Confirm password",
     "auth.consentPrefix": "I agree to the", "auth.consentTerms": "Terms & Conditions",
     "auth.consentAnd": "and", "auth.consentPrivacy": "Privacy Policy", "auth.consentSuffix": ".",
@@ -423,6 +422,8 @@ const DICTIONARY = {
     "toast.authInvalidCredential": "Email or password is incorrect.",
     "toast.authWeakPassword": "Use a password with at least 6 characters.",
     "toast.authOperationNotAllowed": "Enable Email/Password sign-in in Firebase Auth.",
+    "toast.passwordResetSent": "If an account exists for that email, a password reset link has been sent.",
+    "toast.authTooManyRequests": "Too many attempts. Please wait a while and try again.",
     "toast.consentRequired": "Please accept the Terms & Conditions and Privacy Policy to create an account.",
     "toast.passwordMismatch": "Passwords do not match.",
     "toast.outOfStock": "This product is out of stock.",
@@ -675,7 +676,7 @@ const DICTIONARY = {
     "product.cancel": "Ghairi", "product.save": "Hifadhi Bidhaa",
     "auth.eyebrow": "Ufikiaji wa akaunti",
     "auth.copy": "Fungua akaunti au ingia ili kusimamia hisa yako, viwango vya bidhaa, mauzo, na mapendekezo ya AI.",
-    "auth.businessName": "Jina la biashara", "auth.email": "Barua pepe", "auth.password": "Nenosiri",
+    "auth.businessName": "Jina la biashara", "auth.email": "Barua pepe", "auth.password": "Nenosiri", "auth.forgotPassword": "Umesahau nenosiri?",
     "auth.confirmPassword": "Thibitisha nenosiri",
     "auth.consentPrefix": "Nakubali", "auth.consentTerms": "Sheria na Masharti",
     "auth.consentAnd": "na", "auth.consentPrivacy": "Sera ya Faragha", "auth.consentSuffix": ".",
@@ -853,6 +854,8 @@ const DICTIONARY = {
     "toast.authInvalidCredential": "Barua pepe au nenosiri si sahihi.",
     "toast.authWeakPassword": "Tumia nenosiri lenye angalau herufi 6.",
     "toast.authOperationNotAllowed": "Wezesha kuingia kwa Barua pepe/Nenosiri kwenye Firebase Auth.",
+    "toast.passwordResetSent": "Kama akaunti ipo kwa barua pepe hiyo, kiungo cha kubadilisha nenosiri kimetumwa.",
+    "toast.authTooManyRequests": "Majaribio mengi sana. Tafadhali subiri kidogo kisha ujaribu tena.",
     "toast.consentRequired": "Tafadhali kubali Sheria na Masharti na Sera ya Faragha kabla ya kufungua akaunti.",
     "toast.passwordMismatch": "Manenosiri hayafanani.",
     "toast.outOfStock": "Bidhaa hii haipo kwenye hisa.",
@@ -1078,15 +1081,43 @@ async function sha256Hex(text) {
   return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+// Client-side hash comparison is not authorization — priceConfig.overridePasswordHash
+// ships in the JS bundle and can be extracted and brute-forced offline (unsalted SHA-256,
+// short PINs crack in seconds). It also does nothing to stop someone calling
+// applyDiscount()/confirmProcessReturn()/saveProduct() directly from devtools, since the
+// actual Firestore writes never check for authorization server-side.
+//
+// Replace with a server-verified action: call a Cloud Function that checks the
+// override code (stored server-side only, bcrypt/argon2 hashed, rate-limited) and
+// returns a short-lived custom claim or signed token permitting the specific
+// discount/refund/price-edit operation. Firestore rules must then require that
+// token/claim before allowing the write (see Firestore rules fix below).
+
 async function verifyOverridePassword() {
   const input = window.prompt(t("dialog.overridePasswordPrompt"));
   if (input === null) return false;
-  const hash = await sha256Hex(input);
-  if (hash !== priceConfig.overridePasswordHash) {
+  try {
+    const token = await state.user.getIdToken(/* forceRefresh */ true);
+    const response = await fetch(aiConfig.overrideVerifyUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ code: input })
+    });
+    if (!response.ok) {
+      showToast(t("toast.incorrectPassword"));
+      return false;
+    }
+    const { authorized } = await response.json();
+    if (!authorized) {
+      showToast(t("toast.incorrectPassword"));
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.warn(error);
     showToast(t("toast.incorrectPassword"));
     return false;
   }
-  return true;
 }
 
 function pushCartHistory() {
@@ -2672,19 +2703,39 @@ function renderChatLog() {
 
 const AI_PROXY_TIMEOUT_MS = 60000;
 
+const AI_QUESTION_MAX_CHARS = 2000;
+const AI_SNAPSHOT_MAX_PRODUCTS = 500;
+
+function sanitizeAiMessages(messages) {
+  return messages
+    .filter((m) => typeof m.content === "string")
+    .map((m) => ({
+      role: m.role === "assistant" ? "assistant" : "user",
+      content: m.content.slice(0, AI_QUESTION_MAX_CHARS)
+    }));
+}
+
+function sanitizeAiSnapshot(snapshot) {
+  return {
+    ...snapshot,
+    products: Array.isArray(snapshot.products) ? snapshot.products.slice(0, AI_SNAPSHOT_MAX_PRODUCTS) : []
+  };
+}
+
 async function postToAiProxy(messages, snapshot) {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), AI_PROXY_TIMEOUT_MS);
   let response;
   try {
-    const token = state.user ? await state.user.getIdToken() : null;
+    if (!state.user) throw new Error(t("txerror.aiNetworkError"));
+    const token = await state.user.getIdToken(/* forceRefresh */ true);
     response = await fetch(aiConfig.proxyUrl, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        ...(token ? { authorization: `Bearer ${token}` } : {})
+        authorization: `Bearer ${token}`
       },
-      body: JSON.stringify({ messages, snapshot }),
+      body: JSON.stringify({ messages: sanitizeAiMessages(messages), snapshot: sanitizeAiSnapshot(snapshot) }),
       signal: controller.signal
     });
   } catch (networkError) {
@@ -2949,6 +3000,7 @@ async function confirmRecordPayment() {
   if (!Number.isFinite(amount) || amount <= 0) return showToast(t("toast.paymentInvalidAmount"));
   if (amount > Number(customer.balanceOwed || 0)) return showToast(t("toast.paymentExceedsBalance"));
   const note = (qs("#paymentNoteInput")?.value || "").trim().slice(0, 200);
+  if (note.length > 200) return showToast(t("toast.fieldTooLong", { field: t("payment.noteLabel"), max: 200 }));
 
   const newBalance = Math.max(0, Number(customer.balanceOwed || 0) - amount);
 
@@ -3134,7 +3186,7 @@ function productTransferEntries(productId) {
 
 function buildProductMovementHtml(productId) {
   const product = state.products.find((item) => item.id === productId);
-  const productName = product ? productDisplayLabel(product) : "";
+  const productName = product ? esc(productDisplayLabel(product)) : "";
   const sales = productSalesEntries(productId);
   const transfers = productTransferEntries(productId);
 
@@ -4400,40 +4452,24 @@ function setAuthMode(mode) {
   clearAuthFieldErrors();
 }
 
-const AUTH_MAX_ATTEMPTS = 5;
-const AUTH_WINDOW_MS = 15 * 60 * 1000;
 const LEGAL_DOC_VERSION = "2026-07-15";
 
-function authFailureKey(email) {
-  return `authFailures:${email.toLowerCase()}`;
-}
+async function checkAuthAttemptLimit(email) {
+  const response = await fetch(new URL("/api/auth/check-limit", aiConfig.proxyUrl), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email })
+  });
 
-function getAuthFailures(email) {
-  try {
-    const raw = sessionStorage.getItem(authFailureKey(email));
-    const attempts = raw ? JSON.parse(raw) : [];
-    const cutoff = Date.now() - AUTH_WINDOW_MS;
-    return attempts.filter((timestamp) => timestamp > cutoff);
-  } catch (error) {
-    return [];
+  if (response.status === 429) {
+    const error = new Error("Too many authentication attempts.");
+    error.code = "auth/too-many-requests";
+    throw error;
   }
-}
-
-function recordAuthFailure(email) {
-  try {
-    const attempts = getAuthFailures(email);
-    attempts.push(Date.now());
-    sessionStorage.setItem(authFailureKey(email), JSON.stringify(attempts));
-  } catch (error) {
-    console.warn(error);
-  }
-}
-
-function clearAuthFailures(email) {
-  try {
-    sessionStorage.removeItem(authFailureKey(email));
-  } catch (error) {
-    console.warn(error);
+  if (!response.ok) {
+    const error = new Error("Authentication protection is unavailable.");
+    error.code = "auth/network-request-failed";
+    throw error;
   }
 }
 
@@ -4507,6 +4543,28 @@ function validateAuthForm() {
   return validEmail && validPassword && validConfirm && validConsent;
 }
 
+async function handleForgotPassword() {
+  if (!state.auth) return showToast(t("toast.firebaseNotConnected"));
+  if (!validateAuthEmail()) return;
+  const email = qs("#authEmail").value.trim();
+  const button = qs("#authForgotPasswordButton");
+  button.disabled = true;
+  try {
+    await state.firebaseApi.auth.sendPasswordResetEmail(state.auth, email);
+  } catch (error) {
+    console.warn(error);
+    // Deliberately do not reveal whether the account exists (prevents
+    // account enumeration) — only surface genuine client-side problems.
+    if (error.code === "auth/too-many-requests") {
+      showToast(t("toast.authTooManyRequests"));
+      button.disabled = false;
+      return;
+    }
+  }
+  showToast(t("toast.passwordResetSent"));
+  button.disabled = false;
+}
+
 async function handleAuthSubmit(event) {
   event.preventDefault();
   if (!state.auth) return showToast(t("toast.firebaseNotConnected"));
@@ -4518,38 +4576,33 @@ async function handleAuthSubmit(event) {
   const password = String(form.get("password") || "");
   const businessName = String(form.get("businessName") || "").trim();
 
-  if (email && getAuthFailures(email).length >= AUTH_MAX_ATTEMPTS) {
-    setFieldError("authEmailError", t("toast.tooManyFailedAttempts"));
-    return;
-  }
-
   const submitButton = qs("#authSubmitButton");
   submitButton.disabled = true;
 
   try {
+    await checkAuthAttemptLimit(email);
     const authApi = state.firebaseApi.auth;
     if (state.authMode === "signup") {
       state.pendingBusinessName = businessName;
       state.pendingConsent = { accepted: true, version: LEGAL_DOC_VERSION, acceptedAt: new Date().toISOString() };
       const credential = await authApi.createUserWithEmailAndPassword(state.auth, email, password);
       if (businessName) await authApi.updateProfile(credential.user, { displayName: businessName });
-      clearAuthFailures(email);
       showToast(t("toast.accountCreated"));
     } else {
       state.pendingBusinessName = "";
       await authApi.signInWithEmailAndPassword(state.auth, email, password);
-      clearAuthFailures(email);
       showToast(t("toast.signedIn"));
     }
   } catch (error) {
     console.warn(error);
-    recordAuthFailure(email);
     const fieldErrorKeys = {
       "auth/email-already-in-use": "toast.authEmailInUse",
       "auth/invalid-credential": "toast.authInvalidCredential",
       "auth/weak-password": "toast.authWeakPassword"
     };
-    if (fieldErrorKeys[error.code]) {
+    if (error.code === "auth/too-many-requests") {
+      showToast(t("toast.authTooManyRequests"));
+    } else if (fieldErrorKeys[error.code]) {
       setFieldError("authEmailError", t(fieldErrorKeys[error.code]));
     } else {
       showToast(t(error.code === "auth/operation-not-allowed" ? "toast.authOperationNotAllowed" : "toast.authFailedGeneric"));
@@ -4730,6 +4783,7 @@ function bindEvents() {
   qs("#authConfirmPassword").addEventListener("input", validateAuthConfirmPassword);
   qs("#authConsent").addEventListener("change", validateAuthConsent);
   qs("#authModeButton").addEventListener("click", () => setAuthMode(state.authMode === "signup" ? "signin" : "signup"));
+  qs("#authForgotPasswordButton").addEventListener("click", handleForgotPassword);
   qs("#signOutButton").addEventListener("click", async () => {
     if (!state.auth) return;
     const { signOut } = state.firebaseApi.auth;

@@ -16,7 +16,7 @@ Open `http://localhost:5173`.
 
 1. Copy `firebase-config.sample.js` to `firebase-config.js`.
 2. Replace the placeholder values with your Firebase web app config.
-3. Enable Firebase Auth, Firestore, Hosting, and optionally Storage.
+3. Enable Firebase Auth, Firestore, and Hosting. Do not enable Cloud Storage or Cloud Functions; this Spark-plan version stores operational data in Firestore and creates report exports in the browser.
 4. In Firebase Auth, enable the Email/Password sign-in provider.
 5. Deploy the Firestore rules in `firestore.rules`.
 

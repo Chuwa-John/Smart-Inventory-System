@@ -9,11 +9,15 @@ services:
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: PRICE_OVERRIDE_PASSWORD_HASH
+        sync: false
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-4-6
       - key: CORS_ORIGINS
-        value: https://sanitaryflow-erp.web.app,https://sanitaryflow-erp.firebaseapp.com,http://localhost:5173,http://localhost:5500,http://127.0.0.1:5500
+        value: https://sanitaryflow-erp.web.app,https://sanitaryflow-erp.firebaseapp.com
       - key: REQUIRE_FIREBASE_AUTH
         value: "true"
+      - key: NODE_ENV
+        value: production
       - key: FIREBASE_PROJECT_ID
         value: sanitaryflow-erp

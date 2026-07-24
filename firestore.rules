@@ -18,6 +18,11 @@ service cloud.firestore {
         && d.supplier is string && d.supplier.size() <= 60
         && d.quantity is number && d.quantity >= 0
         && d.storeId is string && d.storeId.size() > 0
+        && (!('barcode' in d) || (d.barcode is string && d.barcode.size() <= 64))
+        && (!('description' in d) || (d.description is string && d.description.size() <= 500))
+        && (!('warehouse' in d) || (d.warehouse is string && d.warehouse.size() <= 60))
+        && (!('shelf' in d) || (d.shelf is string && d.shelf.size() <= 60))
+        && (!('sku' in d) || (d.sku is string && d.sku.size() <= 40))
         && (!('costPrice' in d) || (d.costPrice is number && d.costPrice >= 0))
         && (!('sellingPrice' in d) || (d.sellingPrice is number && d.sellingPrice >= 0))
         && (!('reorderLevel' in d) || (d.reorderLevel is number && d.reorderLevel >= 0))
@@ -31,10 +36,14 @@ service cloud.firestore {
     }
 
     function validSaleItem(item) {
-      return item.productId is string
-        && item.name is string && item.name.size() > 0
-        && item.qty is number && item.qty > 0
-        && item.lineTotal is number && item.lineTotal >= 0;
+      return item.productId is string && item.productId.size() <= 128
+        && item.name is string && item.name.size() > 0 && item.name.size() <= 120
+        && item.qty is number && item.qty > 0 && item.qty <= 100000
+        && item.lineTotal is number && item.lineTotal >= 0
+        && (!('category' in item) || (item.category is string && item.category.size() <= 60))
+        && (!('brand' in item) || (item.brand is string && item.brand.size() <= 60))
+        && (!('supplier' in item) || (item.supplier is string && item.supplier.size() <= 60))
+        && (!('sellingPrice' in item) || (item.sellingPrice is number && item.sellingPrice >= 0));
     }
 
     function itemValidAt(items, i) {
@@ -97,7 +106,8 @@ service cloud.firestore {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId);
       allow update: if isOwner(userId)
-        && request.resource.data.uid == userId;
+        && request.resource.data.uid == userId
+        && request.resource.data.role == resource.data.role;
       allow delete: if false;
 
       match /products/{productId} {
@@ -197,12 +207,14 @@ service cloud.firestore {
         function validTransfer() {
           let d = request.resource.data;
           return d.productId is string && d.productId.size() > 0
-            && d.productName is string
-            && d.quantity is number && d.quantity > 0
+            && d.productName is string && d.productName.size() <= 120
+            && d.quantity is number && d.quantity > 0 && d.quantity <= 1000000
             && d.sourceStoreId is string && d.sourceStoreId.size() > 0
             && d.destinationStoreId is string && d.destinationStoreId.size() > 0
             && d.staffName is string && d.staffName.size() > 0 && d.staffName.size() <= 80
             && (!('destinationProductId' in d) || (d.destinationProductId is string && d.destinationProductId.size() > 0))
+            && (!('sourceStoreName' in d) || (d.sourceStoreName is string && d.sourceStoreName.size() <= 60))
+            && (!('destinationStoreName' in d) || (d.destinationStoreName is string && d.destinationStoreName.size() <= 60))
             && d.performedByUid == request.auth.uid;
         }
         allow read: if isOwner(userId);

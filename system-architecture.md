@@ -7,7 +7,7 @@
 - Authentication: Firebase Authentication with role documents in `users/{uid}`.
 - AI: External Node proxy for Anthropic plus local browser fallback. Firebase Functions are not required, so Firebase can stay on Spark.
 - Hosting: Firebase Hosting.
-- Storage: Firebase Storage for product images, receipts, purchase documents, and report exports.
+- Files: No Firebase Storage. Product images and purchase-document uploads are intentionally unavailable on Spark; receipts and report exports are created locally in the browser.
 
 ## Core Firestore Collections
 
