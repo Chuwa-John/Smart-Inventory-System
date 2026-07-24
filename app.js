@@ -55,6 +55,10 @@ const state = {
 };
 
 const MAX_CHAT_HISTORY = 20;
+let cachedStoreProducts = null;
+let cachedStoreProductsSource = null;
+let cachedStoreProductsStoreId = null;
+let scheduledRenderFrame = null;
 
 const BUSINESS_TYPE_OPTIONS = [
   { key: "duka", en: "Duka / General store", sw: "Duka la Jumla" },
@@ -1148,7 +1152,13 @@ function storeProducts() {
   if (!state.db) return state.products;
   if (!state.currentStoreId) return [];
   if (state.currentStoreId === "all") return state.products;
-  return state.products.filter((product) => productStoreId(product) === state.currentStoreId);
+  if (cachedStoreProductsSource === state.products && cachedStoreProductsStoreId === state.currentStoreId) {
+    return cachedStoreProducts;
+  }
+  cachedStoreProducts = state.products.filter((product) => productStoreId(product) === state.currentStoreId);
+  cachedStoreProductsSource = state.products;
+  cachedStoreProductsStoreId = state.currentStoreId;
+  return cachedStoreProducts;
 }
 
 function stockStatus(product) {
@@ -2728,7 +2738,10 @@ async function postToAiProxy(messages, snapshot) {
   let response;
   try {
     if (!state.user) throw new Error(t("txerror.aiNetworkError"));
-    const token = await state.user.getIdToken(/* forceRefresh */ true);
+    // Firebase returns a cached, still-valid token here and refreshes it only
+    // when needed. Forcing a refresh for every question adds a network round
+    // trip and makes the advisor less resilient on weak connections.
+    const token = await state.user.getIdToken();
     response = await fetch(aiConfig.proxyUrl, {
       method: "POST",
       headers: {
@@ -4108,7 +4121,7 @@ async function subscribeToProducts() {
       detectStockAlertCrossings(state.products, nextProducts);
       state.products = nextProducts;
       state.productsInitialized = true;
-      renderAll();
+      scheduleRenderAll();
     });
   } catch (error) {
     console.warn(error);
@@ -4160,7 +4173,7 @@ async function subscribeToStores() {
         state.currentStoreId = activeStores()[0]?.id || state.stores[0].id;
       }
       renderStoreSwitcher();
-      renderAll();
+      scheduleRenderAll();
       translateStaticDom();
     });
   } catch (error) {
@@ -4643,6 +4656,17 @@ function renderAll() {
   renderCards();
   renderPaymentReports();
   renderAiQuestionSuggestions();
+}
+
+// Firestore may deliver several initial snapshots in the same event loop.
+// Rendering once per frame keeps large inventories responsive while preserving
+// the immediate rendering used by direct user interactions.
+function scheduleRenderAll() {
+  if (scheduledRenderFrame !== null) return;
+  scheduledRenderFrame = window.requestAnimationFrame(() => {
+    scheduledRenderFrame = null;
+    renderAll();
+  });
 }
 
 function bindEvents() {
