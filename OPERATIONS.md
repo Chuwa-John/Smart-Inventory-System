@@ -55,3 +55,28 @@ Do not enable Firebase Functions, Firebase Storage, or a Firebase billing upgrad
 - Never commit `.env`, Firebase service-account files, API keys, or credentials.
 - Use least-privilege repository access, require MFA for production owners, and rotate Render/GitHub/Firebase credentials after suspected exposure or personnel changes.
 - Keep production deployment access limited to designated maintainers; CI is verification-only.
+
+## Firebase App Check verification
+
+The web client initializes Firebase App Check with reCAPTCHA v3 and automatic token
+refresh. Do not remove this initialization merely to hide an App Check warning.
+
+If `appCheck/throttled` or a 403 appears in a browser console:
+
+1. Re-test in a new browser profile/session after the throttle period; a throttled
+   App Check session can retain its failed state even after the underlying problem
+   is corrected.
+2. In Firebase Console, verify that web app
+   `1:1051743582406:web:cc1b04fe2e308894c03fc7` has the intended reCAPTCHA v3
+   provider registered and that its site key matches `app.js`.
+3. In Google reCAPTCHA administration, allow both
+   `sanitaryflow-erp.web.app` and `sanitaryflow-erp.firebaseapp.com` for that key.
+4. Check App Check enforcement for Authentication and the Firebase products in use;
+   record any intended enforcement change in the release notes.
+
+On 2026-07-25, a fresh in-app browser session loaded
+`https://sanitaryflow-erp.web.app/` and remained free of App Check warnings after
+initialization. The earlier throttle warning was therefore not reproducible in a
+fresh production session. Firebase Console configuration still requires review by
+an authenticated project owner before treating this as an unconditional App Check
+configuration sign-off.
