@@ -20,6 +20,7 @@ const firebaseIssuer = firebaseProjectId ? `https://securetoken.google.com/${fir
 const firebaseJwks = createRemoteJWKSet(
   new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com")
 );
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 if (!process.env.ANTHROPIC_API_KEY) {
   throw new Error("ANTHROPIC_API_KEY is required.");
@@ -55,7 +56,19 @@ app.use(
     }
   })
 );
-app.use(express.json({ limit: "120kb" }));
+app.use(express.json({ limit: "64kb", strict: true, type: "application/json" }));
+
+// Apply a ceiling to every route, including health checks and the pre-auth
+// throttle endpoint. Authenticated API routes receive an additional per-user
+// limiter below once the Firebase token has been verified.
+app.use(
+  rateLimit({
+    windowMs: 60 * 1000,
+    limit: 60,
+    standardHeaders: "draft-7",
+    legacyHeaders: false
+  })
+);
 
 // Auth attempt rate limiting (Spark-plan compatible).
 //
@@ -88,7 +101,9 @@ const authAttemptLimiter = rateLimit({
 
 app.post("/api/auth/check-limit", authAttemptLimiter, (req, res) => {
   const email = String(req.body?.email || "").trim();
-  if (!email) return res.status(400).json({ allowed: false, error: "Email is required." });
+  if (!EMAIL_PATTERN.test(email) || email.length > 254) {
+    return res.status(400).json({ allowed: false, error: "A valid email is required." });
+  }
   res.json({ allowed: true });
 });
 
@@ -105,7 +120,7 @@ app.use(
 );
 
 const MAX_HISTORY_MESSAGES = 20;
-const MAX_MESSAGE_LENGTH = 4000;
+const MAX_MESSAGE_LENGTH = 700;
 
 function sanitizeConversation(messages) {
   const list = Array.isArray(messages) ? messages : [];
@@ -116,19 +131,43 @@ function sanitizeConversation(messages) {
     .slice(-MAX_HISTORY_MESSAGES);
 }
 
+function isFiniteNumber(value, max = 1000000000) {
+  return typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= max;
+}
+
+function validateAdvisorRequest(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return "Invalid request body.";
+  if (!Array.isArray(body.messages) || body.messages.length < 1 || body.messages.length > MAX_HISTORY_MESSAGES) {
+    return "Messages must contain between 1 and 20 entries.";
+  }
+  for (const message of body.messages) {
+    if (!message || typeof message !== "object" || Array.isArray(message)
+      || !(message.role === "user" || message.role === "assistant")
+      || typeof message.content !== "string"
+      || !message.content.trim()
+      || message.content.length > MAX_MESSAGE_LENGTH) {
+      return "Each message must have a supported role and contain at most 700 characters.";
+    }
+  }
+  if (body.snapshot !== undefined && (!body.snapshot || typeof body.snapshot !== "object" || Array.isArray(body.snapshot))) {
+    return "Snapshot must be an object.";
+  }
+  return null;
+}
+
 function compactProduct(product) {
   return {
     name: clampString(product.name, 120),
     sku: clampString(product.sku, 40),
     category: clampString(product.category, 60),
     supplier: clampString(product.supplier, 60),
-    costPrice: Number(product.costPrice || 0),
-    sellingPrice: Number(product.sellingPrice || 0),
-    quantity: Number(product.quantity || 0),
-    reorderLevel: Number(product.reorderLevel || 0),
-    sold30: Number(product.sold30 || 0),
-    sold90: Number(product.sold90 || 0),
-    leadTimeDays: Number(product.leadTimeDays || 0)
+    costPrice: isFiniteNumber(product.costPrice) ? product.costPrice : 0,
+    sellingPrice: isFiniteNumber(product.sellingPrice) ? product.sellingPrice : 0,
+    quantity: isFiniteNumber(product.quantity) ? product.quantity : 0,
+    reorderLevel: isFiniteNumber(product.reorderLevel) ? product.reorderLevel : 0,
+    sold30: isFiniteNumber(product.sold30) ? product.sold30 : 0,
+    sold90: isFiniteNumber(product.sold90) ? product.sold90 : 0,
+    leadTimeDays: isFiniteNumber(product.leadTimeDays, 36500) ? product.leadTimeDays : 0
   };
 }
 
@@ -140,8 +179,8 @@ function compactSupplier(supplier = {}) {
   return {
     name: clampString(supplier.name, 120),
     contact: clampString(supplier.contact, 120),
-    leadTimeDays: Number(supplier.leadTimeDays || 0),
-    reliabilityScore: Number(supplier.reliabilityScore || 0)
+    leadTimeDays: isFiniteNumber(supplier.leadTimeDays, 36500) ? supplier.leadTimeDays : 0,
+    reliabilityScore: isFiniteNumber(supplier.reliabilityScore) ? supplier.reliabilityScore : 0
   };
 }
 
@@ -149,8 +188,8 @@ function compactPurchase(purchase = {}) {
   return {
     supplier: clampString(purchase.supplier, 120),
     sku: clampString(purchase.sku, 60),
-    quantity: Number(purchase.quantity || 0),
-    unitCost: Number(purchase.unitCost || 0),
+    quantity: isFiniteNumber(purchase.quantity) ? purchase.quantity : 0,
+    unitCost: isFiniteNumber(purchase.unitCost) ? purchase.unitCost : 0,
     date: clampString(purchase.date, 40)
   };
 }
@@ -158,7 +197,7 @@ function compactPurchase(purchase = {}) {
 function compactMetrics(metrics = {}) {
   const safe = {};
   for (const [key, value] of Object.entries(metrics || {})) {
-    if (typeof value === "number") safe[clampString(key, 40)] = value;
+    if (isFiniteNumber(value)) safe[clampString(key, 40)] = value;
     else if (typeof value === "string") safe[clampString(key, 40)] = clampString(value, 200);
   }
   return safe;
@@ -238,6 +277,8 @@ app.post("/api/ai/override-verify", overrideLimiter, async (req, res) => {
 });
 
 app.post("/api/ai/advisor", async (req, res) => {
+  const validationError = validateAdvisorRequest(req.body);
+  if (validationError) return res.status(400).json({ error: validationError });
   const conversation = sanitizeConversation(req.body?.messages);
   const lastMessage = conversation[conversation.length - 1];
 

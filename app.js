@@ -51,7 +51,9 @@ const state = {
   pendingPaymentCustomerId: null,
   transfers: [],
   unsubscribeTransfers: null,
-  productMovementProductId: null
+  productMovementProductId: null,
+  lastActivityAt: Date.now(),
+  idleCheckIntervalId: null
 };
 
 const MAX_CHAT_HISTORY = 20;
@@ -277,6 +279,8 @@ const DICTIONARY = {
     "connection.createAccountToBegin": "Create an account to begin",
     "connection.inventorySyncing": "Your inventory is syncing",
     "connection.signedInFallback": "Signed in",
+    "verifyEmail.bannerText": "Please verify your email address to keep full access to your account.",
+    "verifyEmail.resendButton": "Resend verification email",
     "txerror.sourceProductGone": "Source product no longer exists.",
     "txerror.notEnoughStockTransfer": "Not enough stock to transfer.",
     "txerror.saleNotFound": "Sale record not found; it may already be voided.",
@@ -427,6 +431,9 @@ const DICTIONARY = {
     "toast.authWeakPassword": "Use a password with at least 6 characters.",
     "toast.authOperationNotAllowed": "Enable Email/Password sign-in in Firebase Auth.",
     "toast.passwordResetSent": "If an account exists for that email, a password reset link has been sent.",
+    "toast.verificationEmailSent": "Verification email sent. Please check your inbox.",
+    "toast.verificationEmailFailed": "Could not send the verification email. Please try again shortly.",
+    "toast.idleSignOut": "You were signed out after a period of inactivity.",
     "toast.authTooManyRequests": "Too many attempts. Please wait a while and try again.",
     "toast.consentRequired": "Please accept the Terms & Conditions and Privacy Policy to create an account.",
     "toast.passwordMismatch": "Passwords do not match.",
@@ -713,6 +720,8 @@ const DICTIONARY = {
     "connection.createAccountToBegin": "Fungua akaunti kuanza",
     "connection.inventorySyncing": "Hisa yako inasawazishwa",
     "connection.signedInFallback": "Umeingia",
+    "verifyEmail.bannerText": "Tafadhali thibitisha barua pepe yako ili kuendelea kutumia akaunti yako kikamilifu.",
+    "verifyEmail.resendButton": "Tuma tena barua pepe ya uthibitisho",
     "txerror.sourceProductGone": "Bidhaa chanzi haipo tena.",
     "txerror.notEnoughStockTransfer": "Hisa haitoshi kuhamisha.",
     "txerror.saleNotFound": "Rekodi ya mauzo haikupatikana; huenda tayari imetenguliwa.",
@@ -863,6 +872,9 @@ const DICTIONARY = {
     "toast.authWeakPassword": "Tumia nenosiri lenye angalau herufi 6.",
     "toast.authOperationNotAllowed": "Wezesha kuingia kwa Barua pepe/Nenosiri kwenye Firebase Auth.",
     "toast.passwordResetSent": "Kama akaunti ipo kwa barua pepe hiyo, kiungo cha kubadilisha nenosiri kimetumwa.",
+    "toast.verificationEmailSent": "Barua pepe ya uthibitisho imetumwa. Tafadhali angalia kikasha chako.",
+    "toast.verificationEmailFailed": "Imeshindwa kutuma barua pepe ya uthibitisho. Tafadhali jaribu tena baadaye.",
+    "toast.idleSignOut": "Umetolewa nje baada ya muda wa kutotumika.",
     "toast.authTooManyRequests": "Majaribio mengi sana. Tafadhali subiri kidogo kisha ujaribu tena.",
     "toast.consentRequired": "Tafadhali kubali Sheria na Masharti na Sera ya Faragha kabla ya kufungua akaunti.",
     "toast.passwordMismatch": "Manenosiri hayafanani.",
@@ -4083,6 +4095,44 @@ async function undoLastSale() {
   showToast(t("toast.saleUndone"));
 }
 
+// Idle/session timeout: signs the user out after a period of no interaction
+// so an unattended device (e.g. a shared POS terminal) doesn't stay logged
+// into a live account indefinitely. Pure client-side, Spark-plan compatible.
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+const IDLE_CHECK_INTERVAL_MS = 60 * 1000;
+const IDLE_ACTIVITY_EVENTS = ["mousemove", "mousedown", "keydown", "touchstart", "scroll"];
+
+function markActivity() {
+  state.lastActivityAt = Date.now();
+}
+
+function initIdleActivityTracking() {
+  IDLE_ACTIVITY_EVENTS.forEach((eventName) => {
+    document.addEventListener(eventName, markActivity, { passive: true });
+  });
+}
+
+async function checkIdleTimeout() {
+  if (!state.user || !state.auth) return;
+  if (Date.now() - state.lastActivityAt < IDLE_TIMEOUT_MS) return;
+  const { signOut } = state.firebaseApi.auth;
+  await signOut(state.auth);
+  showToast(t("toast.idleSignOut"));
+}
+
+function startIdleWatcher() {
+  markActivity();
+  if (state.idleCheckIntervalId) return;
+  state.idleCheckIntervalId = window.setInterval(checkIdleTimeout, IDLE_CHECK_INTERVAL_MS);
+}
+
+function stopIdleWatcher() {
+  if (state.idleCheckIntervalId) {
+    window.clearInterval(state.idleCheckIntervalId);
+    state.idleCheckIntervalId = null;
+  }
+}
+
 async function initFirebase() {
   const hasConfig = firebaseConfig && !String(firebaseConfig.apiKey || "").startsWith("YOUR_");
   if (!hasConfig) return;
@@ -4126,8 +4176,16 @@ async function initFirebase() {
 
     authApi.onAuthStateChanged(state.auth, async (user) => {
       state.user = user;
+      if (user) {
+        try {
+          await user.reload();
+        } catch (reloadError) {
+          console.warn("Could not refresh email verification status:", reloadError);
+        }
+      }
       updateAuthUi();
       if (user) {
+        startIdleWatcher();
         await ensureUserProfile(user);
         await loadUserSettings(user);
         state.pendingBusinessName = "";
@@ -4139,6 +4197,7 @@ async function initFirebase() {
         subscribeToCustomers();
         subscribeToTransfers();
       } else {
+        stopIdleWatcher();
         if (state.unsubscribeProducts) state.unsubscribeProducts();
         state.unsubscribeProducts = null;
         if (state.unsubscribeSales) state.unsubscribeSales();
@@ -4508,6 +4567,7 @@ function updateAuthUi() {
   qs("#accountChip").hidden = !signedIn;
   qs("#userEmail").textContent = state.user?.email || t("connection.signedInFallback");
   qs("#connectionHint").textContent = signedIn ? t("connection.inventorySyncing") : t("sidebar.connectionHintSignedOut");
+  qs("#verifyBanner").hidden = !signedIn || Boolean(state.user?.emailVerified);
 }
 
 function setAuthMode(mode) {
@@ -4644,6 +4704,21 @@ async function handleForgotPassword() {
   button.disabled = false;
 }
 
+async function handleResendVerification() {
+  if (!state.auth || !state.user) return;
+  const button = qs("#resendVerificationButton");
+  button.disabled = true;
+  try {
+    await state.firebaseApi.auth.sendEmailVerification(state.user);
+    showToast(t("toast.verificationEmailSent"));
+  } catch (error) {
+    console.warn(error);
+    showToast(error.code === "auth/too-many-requests" ? t("toast.authTooManyRequests") : t("toast.verificationEmailFailed"));
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function handleAuthSubmit(event) {
   event.preventDefault();
   if (!state.auth) return showToast(t("toast.firebaseNotConnected"));
@@ -4666,6 +4741,11 @@ async function handleAuthSubmit(event) {
       state.pendingConsent = { accepted: true, version: LEGAL_DOC_VERSION, acceptedAt: new Date().toISOString() };
       const credential = await authApi.createUserWithEmailAndPassword(state.auth, email, password);
       if (businessName) await authApi.updateProfile(credential.user, { displayName: businessName });
+      try {
+        await authApi.sendEmailVerification(credential.user);
+      } catch (verificationError) {
+        console.warn("Could not send verification email:", verificationError);
+      }
       showToast(t("toast.accountCreated"));
     } else {
       state.pendingBusinessName = "";
@@ -4881,6 +4961,7 @@ function bindEvents() {
     await signOut(state.auth);
     showToast(t("toast.signedOut"));
   });
+  qs("#resendVerificationButton")?.addEventListener("click", handleResendVerification);
   qs("#deleteAccountButton")?.addEventListener("click", openDeleteAccountDialog);
   qs("#closeDeleteAccountDialog")?.addEventListener("click", () => qs("#deleteAccountDialog").close());
   qs("#cancelDeleteAccountDialog")?.addEventListener("click", () => qs("#deleteAccountDialog").close());
@@ -5395,6 +5476,7 @@ function bindEvents() {
 
 setAuthMode("signup");
 bindEvents();
+initIdleActivityTracking();
 translateStaticDom();
 renderAll();
 renderChatLog();
