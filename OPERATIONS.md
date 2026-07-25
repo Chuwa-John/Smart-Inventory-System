@@ -74,9 +74,9 @@ If `appCheck/throttled` or a 403 appears in a browser console:
 4. Check App Check enforcement for Authentication and the Firebase products in use;
    record any intended enforcement change in the release notes.
 
-On 2026-07-25, a fresh in-app browser session loaded
-`https://sanitaryflow-erp.web.app/` and remained free of App Check warnings after
-initialization. The earlier throttle warning was therefore not reproducible in a
-fresh production session. Firebase Console configuration still requires review by
-an authenticated project owner before treating this as an unconditional App Check
-configuration sign-off.
+On 2026-07-25, Firebase Console confirmed that the production web app is
+registered with the standard reCAPTCHA v3 provider. Cloud Firestore and
+Authentication App Check are in monitoring mode. The matching reCAPTCHA key allows
+both `sanitaryflow-erp.web.app` and `sanitaryflow-erp.firebaseapp.com` (the latter
+was added during this review). Fresh sessions on both Hosting domains produced no
+App Check warning or throttling error in the browser console.
