@@ -268,11 +268,17 @@ const DICTIONARY = {
     "settings.overridePasswordOpenButton": "Discount Password",
     "settings.overridePasswordTitle": "Discount Override Password",
     "settings.overridePasswordDescription": "Set a password staff must enter to apply discounts or price overrides. Only you can see or change it.",
+    "settings.overridePasswordCurrentLabel": "Current discount password",
     "settings.overridePasswordNewLabel": "New password",
     "settings.overridePasswordConfirmLabel": "Confirm password",
+    "settings.overridePasswordReauthLabel": "Your account password",
     "settings.overridePasswordSaveButton": "Save Password",
     "settings.overridePasswordMismatch": "Passwords don't match.",
     "settings.overridePasswordTooShort": "Password must be at least 4 characters.",
+    "settings.overridePasswordCurrentRequired": "Enter your current discount password.",
+    "settings.overridePasswordCurrentIncorrect": "Current discount password is incorrect.",
+    "settings.overridePasswordReauthRequired": "Enter your account password to confirm it's you.",
+    "settings.overridePasswordReauthFailed": "Incorrect account password. Please try again.",
     "nudge.overridePasswordText": "Set a password for price discounts and overrides so only trusted staff can use them.",
     "nudge.overridePasswordSetButton": "Set it now",
     "nudge.overridePasswordDismissButton": "Dismiss",
@@ -724,11 +730,17 @@ const DICTIONARY = {
     "settings.overridePasswordOpenButton": "Nenosiri la Punguzo",
     "settings.overridePasswordTitle": "Nenosiri la Kubadilisha Bei",
     "settings.overridePasswordDescription": "Weka nenosiri ambalo wafanyakazi watalitumia kutoa punguzo au kubadilisha bei. Wewe pekee unaweza kuliona au kulibadilisha.",
+    "settings.overridePasswordCurrentLabel": "Nenosiri la sasa la punguzo",
     "settings.overridePasswordNewLabel": "Nenosiri jipya",
     "settings.overridePasswordConfirmLabel": "Thibitisha nenosiri",
+    "settings.overridePasswordReauthLabel": "Nenosiri lako la akaunti",
     "settings.overridePasswordSaveButton": "Hifadhi Nenosiri",
     "settings.overridePasswordMismatch": "Manenosiri hayafanani.",
     "settings.overridePasswordTooShort": "Nenosiri linapaswa kuwa na angalau herufi 4.",
+    "settings.overridePasswordCurrentRequired": "Weka nenosiri lako la sasa la punguzo.",
+    "settings.overridePasswordCurrentIncorrect": "Nenosiri la sasa la punguzo si sahihi.",
+    "settings.overridePasswordReauthRequired": "Weka nenosiri lako la akaunti kuthibitisha ni wewe.",
+    "settings.overridePasswordReauthFailed": "Nenosiri la akaunti si sahihi. Tafadhali jaribu tena.",
     "nudge.overridePasswordText": "Weka nenosiri la punguzo na kubadilisha bei ili wafanyakazi wanaoaminika pekee waweze kulitumia.",
     "nudge.overridePasswordSetButton": "Weka sasa",
     "nudge.overridePasswordDismissButton": "Ondoa",
@@ -4722,8 +4734,12 @@ function dismissOverridePasswordNudge() {
 
 function openOverridePasswordDialog() {
   if (!state.user) return;
+  qs("#overridePasswordCurrentInput").value = "";
   qs("#overridePasswordNewInput").value = "";
   qs("#overridePasswordConfirmInput").value = "";
+  qs("#overridePasswordReauthInput").value = "";
+  const currentRow = qs("#overridePasswordCurrentRow");
+  if (currentRow) currentRow.hidden = !state.overridePasswordSet;
   setFieldError("overridePasswordError", "");
   qs("#overridePasswordDialog").showModal();
 }
@@ -4732,11 +4748,27 @@ function openOverridePasswordDialog() {
 // which bcrypt-hashes the password and stores it at this business's own
 // users/{uid}/private/security doc via the Admin SDK -- a path
 // firestore.rules denies to every client SDK request. See server.js.
+//
+// Two independent checks gate a discount-password change, since one signed-in
+// session isn't proof enough for either "this is the account owner" or "this
+// person is authorized to change the discount password specifically":
+//   1. Current discount password (server-side, required only if one is
+//      already set) -- proves the caller is authorized to change it.
+//   2. Firebase re-authentication with the account's login password, same
+//      pattern as confirmDeleteAccount() -- proves the account owner is
+//      physically present right now, independent of whether their session
+//      token is still valid on an unattended device.
 async function saveOverridePassword() {
-  if (!state.user) return;
+  if (!state.user || !state.auth) return;
+  const currentPassword = qs("#overridePasswordCurrentInput").value;
   const password = qs("#overridePasswordNewInput").value;
   const confirmPassword = qs("#overridePasswordConfirmInput").value;
+  const accountPassword = qs("#overridePasswordReauthInput").value;
 
+  if (state.overridePasswordSet && !currentPassword) {
+    setFieldError("overridePasswordError", t("settings.overridePasswordCurrentRequired"));
+    return;
+  }
   if (password.length < 4 || password.length > 64) {
     setFieldError("overridePasswordError", t("settings.overridePasswordTooShort"));
     return;
@@ -4745,17 +4777,31 @@ async function saveOverridePassword() {
     setFieldError("overridePasswordError", t("settings.overridePasswordMismatch"));
     return;
   }
+  if (!accountPassword) {
+    setFieldError("overridePasswordError", t("settings.overridePasswordReauthRequired"));
+    return;
+  }
   setFieldError("overridePasswordError", "");
 
   const saveButton = qs("#saveOverridePasswordButton");
   saveButton.disabled = true;
   try {
+    const { EmailAuthProvider, reauthenticateWithCredential } = state.firebaseApi.auth;
+    const credential = EmailAuthProvider.credential(state.user.email, accountPassword);
+    await reauthenticateWithCredential(state.user, credential);
+
     const token = await state.user.getIdToken(/* forceRefresh */ true);
     const response = await fetch(aiConfig.overridePasswordUrl, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({ password })
+      body: JSON.stringify({ password, oldPassword: currentPassword })
     });
+    if (response.status === 401) {
+      // The account owner is confirmed (reauth above succeeded) but the
+      // current discount password didn't match what's on file.
+      setFieldError("overridePasswordError", t("settings.overridePasswordCurrentIncorrect"));
+      return;
+    }
     if (response.status === 503) {
       // Mirrors verifyOverridePassword()'s 503 handling: distinguishes "not
       // configured" (FIREBASE_SERVICE_ACCOUNT_KEY_BASE64 missing on the
@@ -4775,7 +4821,11 @@ async function saveOverridePassword() {
     showToast(t("toast.overridePasswordSaved"));
   } catch (error) {
     console.warn(error);
-    showToast(t("toast.overrideNetworkError"));
+    if (error.code === "auth/invalid-credential" || error.code === "auth/wrong-password") {
+      setFieldError("overridePasswordError", t("settings.overridePasswordReauthFailed"));
+    } else {
+      showToast(t("toast.overrideNetworkError"));
+    }
   } finally {
     saveButton.disabled = false;
   }

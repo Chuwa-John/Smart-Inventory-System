@@ -668,11 +668,17 @@
         <button class="icon-button" type="button" id="closeOverridePasswordDialog" aria-label="Close">&times;</button>
       </div>
       <p class="muted" data-i18n="settings.overridePasswordDescription">Set a password staff must enter to apply discounts or price overrides. Only you can see or change it.</p>
+      <label id="overridePasswordCurrentRow" hidden><span data-i18n="settings.overridePasswordCurrentLabel">Current discount password</span>
+        <input id="overridePasswordCurrentInput" type="password" autocomplete="off" minlength="4" maxlength="64" />
+      </label>
       <label><span data-i18n="settings.overridePasswordNewLabel">New password</span>
         <input id="overridePasswordNewInput" type="password" autocomplete="new-password" minlength="4" maxlength="64" />
       </label>
       <label><span data-i18n="settings.overridePasswordConfirmLabel">Confirm password</span>
         <input id="overridePasswordConfirmInput" type="password" autocomplete="new-password" minlength="4" maxlength="64" />
+      </label>
+      <label><span data-i18n="settings.overridePasswordReauthLabel">Your account password</span>
+        <input id="overridePasswordReauthInput" type="password" autocomplete="current-password" />
       </label>
       <span class="field-error" id="overridePasswordError"></span>
       <div class="button-row end">

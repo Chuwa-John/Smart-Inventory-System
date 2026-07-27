@@ -350,7 +350,22 @@ app.post("/api/settings/override-password", passwordChangeLimiter, async (req, r
   if (password.length < 4 || password.length > 64) {
     return res.status(400).json({ ok: false, error: "Password must be 4-64 characters." });
   }
+  const oldPassword = String(req.body?.oldPassword || "");
   try {
+    // Require the current discount password before allowing it to be overwritten,
+    // whenever this business already has one set -- otherwise anyone with an
+    // active session (e.g. an unattended, already-logged-in POS station) could
+    // silently take over discount authorization without ever knowing the current
+    // password. Enforced here, not just in the dialog: a client-side-only gate
+    // is trivially bypassed by anyone calling this endpoint directly with a
+    // valid Firebase token. Skipped entirely for first-time setup (no hash yet).
+    const existingHash = await getTenantOverrideHash(req.user.uid);
+    if (existingHash) {
+      const oldPasswordValid = Boolean(oldPassword) && (await bcrypt.compare(oldPassword, existingHash));
+      if (!oldPasswordValid) {
+        return res.status(401).json({ ok: false, error: "Current discount password is incorrect." });
+      }
+    }
     const hash = await bcrypt.hash(password, 10);
     await firestoreDb
       .collection("users")
