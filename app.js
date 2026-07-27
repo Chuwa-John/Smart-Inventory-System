@@ -307,6 +307,7 @@ const DICTIONARY = {
     "txerror.saleAlreadyUndone": "This sale was already undone.",
     "txerror.itemGone": "{name} no longer exists.",
     "txerror.notEnoughStockItem": "Not enough stock for {name}. Only {quantity} left.",
+    "txerror.duplicateOrderSubmission": "Order #{orderNumber} was already recorded. Check Reports before submitting again.",
     "chart.emptyPrompt": "Add products to see stock levels here.",
     "stockAlert.outOfStockDetail": "This product is out of stock (reorder level: {reorderLevel}).",
     "stockAlert.remainingDetail": "Remaining quantity: {quantity} (reorder level: {reorderLevel}).",
@@ -769,6 +770,7 @@ const DICTIONARY = {
     "txerror.saleAlreadyUndone": "Mauzo haya tayari yametenguliwa.",
     "txerror.itemGone": "{name} haipo tena.",
     "txerror.notEnoughStockItem": "Hisa haitoshi kwa {name}. {quantity} tu zimebaki.",
+    "txerror.duplicateOrderSubmission": "Oda #{orderNumber} tayari imesajiliwa. Angalia Ripoti kabla ya kutuma tena.",
     "chart.emptyPrompt": "Ongeza bidhaa ili kuona kiwango cha hisa hapa.",
     "stockAlert.outOfStockDetail": "Bidhaa hii haipo kwenye hisa (kiwango cha chini: {reorderLevel}).",
     "stockAlert.remainingDetail": "Kiasi kilichobaki: {quantity} (kiwango cha chini: {reorderLevel}).",
@@ -5590,13 +5592,28 @@ function bindEvents() {
     if (state.db && state.user) {
       try {
         const { collection, doc, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
-        const saleRef = doc(collection(state.db, "users", state.user.uid, "sales"));
+        // Idempotency: key the sale document deterministically on staffId + the
+        // staff-entered order number instead of a random auto-id. A retried
+        // submission (flaky network, double-tap after a hang, etc.) for the same
+        // order number now resolves to the SAME document path, so Firestore's
+        // create-vs-update rule semantics reject the retry instead of silently
+        // creating a second sale and double-decrementing stock. If the cashier
+        // already confirmed "record again anyway" above (duplicate === true),
+        // give that deliberate re-entry its own distinct id so it isn't blocked.
+        const dedupeSaleId = `ord_${staffMember.id}_${orderNumberRaw}`;
+        const saleId = duplicate ? `${dedupeSaleId}_dup${Date.now()}` : dedupeSaleId;
+        const saleRef = doc(state.db, "users", state.user.uid, "sales", saleId);
         let creditCustomerId = null;
         if (paymentMethod === "credit") {
           creditCustomerId = await findOrCreateCustomerForCredit(customerName, creditPhoneKey);
         }
         const creditCustomerRef = creditCustomerId ? doc(state.db, "users", state.user.uid, "customers", creditCustomerId) : null;
         await runTransaction(state.db, async (transaction) => {
+          const existingSaleSnap = await transaction.get(saleRef);
+          if (existingSaleSnap.exists()) {
+            throw new Error(t("txerror.duplicateOrderSubmission", { orderNumber: orderNumberRaw }));
+          }
+
           const productRefs = state.cart.map((cartItem) => doc(state.db, "users", state.user.uid, "products", cartItem.id));
           const productSnaps = await Promise.all(productRefs.map((ref) => transaction.get(ref)));
           const creditCustomerSnap = creditCustomerRef ? await transaction.get(creditCustomerRef) : null;
