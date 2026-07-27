@@ -4,6 +4,8 @@ import bcrypt from "bcryptjs";
 import cors from "cors";
 import express from "express";
 import rateLimit from "express-rate-limit";
+import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import helmet from "helmet";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
@@ -37,6 +39,30 @@ if (process.env.NODE_ENV === "production" && !requireFirebaseAuth) {
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
 });
+
+// Firebase Admin SDK (Phase 9): only used to read/write each business's own
+// private/security doc, which firestore.rules denies to every client SDK
+// request. Base64 avoids Render's env var UI mangling the private key's
+// embedded newlines -- decode, don't paste raw JSON in.
+const serviceAccountKeyBase64 = process.env.FIREBASE_SERVICE_ACCOUNT_KEY_BASE64 || "";
+let firestoreDb = null;
+if (serviceAccountKeyBase64) {
+  try {
+    const serviceAccount = JSON.parse(Buffer.from(serviceAccountKeyBase64, "base64").toString("utf8"));
+    if (!getApps().length) {
+      initializeApp({ credential: cert(serviceAccount) });
+    }
+    firestoreDb = getFirestore();
+  } catch (error) {
+    console.error("Failed to initialize Firebase Admin SDK from FIREBASE_SERVICE_ACCOUNT_KEY_BASE64:", error);
+  }
+} else {
+  console.warn(
+    "FIREBASE_SERVICE_ACCOUNT_KEY_BASE64 is not configured; per-business override passwords are disabled " +
+    "(POST /api/settings/override-password will 503) and /api/ai/override-verify runs on the legacy shared " +
+    "PRICE_OVERRIDE_PASSWORD_HASH only, for every business."
+  );
+}
 
 app.set("trust proxy", 1);
 app.use(
@@ -242,7 +268,7 @@ app.get("/health", (_req, res) => {
 
 const OVERRIDE_HASH = process.env.PRICE_OVERRIDE_PASSWORD_HASH;
 if (!OVERRIDE_HASH) {
-  console.warn("PRICE_OVERRIDE_PASSWORD_HASH is not configured; price overrides are disabled.");
+  console.warn("PRICE_OVERRIDE_PASSWORD_HASH is not configured; there is no legacy fallback override password.");
 }
 
 const overrideLimiter = rateLimit({
@@ -253,26 +279,90 @@ const overrideLimiter = rateLimit({
   keyGenerator: (req) => req.user?.uid || req.ip
 });
 
+const passwordChangeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.uid || req.ip
+});
+
+// Looks up this business's own override-password hash from
+// users/{uid}/private/security, a path firestore.rules denies to every
+// client SDK request -- only this Admin SDK connection can read it. Returns
+// null if Firestore isn't configured, the business hasn't set one yet, or
+// the read fails.
+async function getTenantOverrideHash(uid) {
+  if (!firestoreDb || !uid) return null;
+  try {
+    const snap = await firestoreDb.collection("users").doc(uid).collection("private").doc("security").get();
+    const hash = snap.exists ? snap.get("overridePasswordHash") : null;
+    return typeof hash === "string" && hash ? hash : null;
+  } catch (error) {
+    console.error(`Firestore override-hash lookup failed for uid=${uid}:`, error);
+    return null;
+  }
+}
+
 app.post("/api/ai/override-verify", overrideLimiter, async (req, res) => {
   if (requireFirebaseAuth && !req.user) {
     return res.status(401).json({ authorized: false });
-  }
-  if (!OVERRIDE_HASH) {
-    return res.status(503).json({ authorized: false, error: "Price overrides are not configured." });
   }
   const code = String(req.body?.code || "");
   if (!code || code.length > 64) {
     return res.status(400).json({ authorized: false });
   }
+
+  const tenantHash = await getTenantOverrideHash(req.user?.uid);
+  const usingLegacyFallback = !tenantHash && Boolean(OVERRIDE_HASH);
+  const hashToCheck = tenantHash || OVERRIDE_HASH;
+
+  if (!hashToCheck) {
+    return res.status(503).json({ authorized: false, error: "Price overrides are not configured." });
+  }
+
   try {
-    const ok = await bcrypt.compare(code, OVERRIDE_HASH);
+    const ok = await bcrypt.compare(code, hashToCheck);
     if (ok) {
       console.log(`Override authorized for uid=${req.user?.uid || "unknown"} at ${new Date().toISOString()}`);
+    }
+    if (usingLegacyFallback) {
+      // Remove PRICE_OVERRIDE_PASSWORD_HASH from Render once this stops
+      // appearing in the logs for every business you care about migrating --
+      // that means everyone who needs it has set their own password.
+      console.warn(`uid=${req.user?.uid || "unknown"} has no per-business override password yet; used legacy shared fallback.`);
     }
     return res.status(ok ? 200 : 401).json({ authorized: ok });
   } catch (error) {
     console.error("Override verify failed:", error);
     return res.status(500).json({ authorized: false });
+  }
+});
+
+app.post("/api/settings/override-password", passwordChangeLimiter, async (req, res) => {
+  if (!req.user?.uid) {
+    return res.status(401).json({ ok: false, error: "Authentication required." });
+  }
+  if (!firestoreDb) {
+    return res.status(503).json({ ok: false, error: "Override-password storage is not configured." });
+  }
+  const password = String(req.body?.password || "");
+  if (password.length < 4 || password.length > 64) {
+    return res.status(400).json({ ok: false, error: "Password must be 4-64 characters." });
+  }
+  try {
+    const hash = await bcrypt.hash(password, 10);
+    await firestoreDb
+      .collection("users")
+      .doc(req.user.uid)
+      .collection("private")
+      .doc("security")
+      .set({ overridePasswordHash: hash, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    console.log(`Override password set for uid=${req.user.uid} at ${new Date().toISOString()}`);
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error("Override password change failed:", error);
+    return res.status(500).json({ ok: false });
   }
 });
 

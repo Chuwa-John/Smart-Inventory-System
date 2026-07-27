@@ -11,6 +11,8 @@ services:
         sync: false
       - key: PRICE_OVERRIDE_PASSWORD_HASH
         sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_KEY_BASE64
+        sync: false
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-4-6
       - key: CORS_ORIGINS
