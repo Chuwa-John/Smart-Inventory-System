@@ -33,6 +33,8 @@ const state = {
   selectedStaffId: "",
   pendingTransferProductId: null,
   stockAlertPopupEnabled: true,
+  overridePasswordSet: false,
+  overridePasswordNudgeDismissed: false,
   productsInitialized: false,
   stockAlertQueue: [],
   stockAlertPopupOpen: false,
@@ -61,6 +63,7 @@ let cachedStoreProducts = null;
 let cachedStoreProductsSource = null;
 let cachedStoreProductsStoreId = null;
 let scheduledRenderFrame = null;
+let aiProxyWarmupTriggered = false;
 
 const BUSINESS_TYPE_OPTIONS = [
   { key: "duka", en: "Duka / General store", sw: "Duka la Jumla" },
@@ -262,6 +265,17 @@ const DICTIONARY = {
     "stockAlert.title": "Stock Alert", "stockAlert.ok": "OK",
     "command.placeholder": "Type a command or module name",
     "dialog.overridePasswordPrompt": "Enter the price override password:",
+    "settings.overridePasswordOpenButton": "Discount Password",
+    "settings.overridePasswordTitle": "Discount Override Password",
+    "settings.overridePasswordDescription": "Set a password staff must enter to apply discounts or price overrides. Only you can see or change it.",
+    "settings.overridePasswordNewLabel": "New password",
+    "settings.overridePasswordConfirmLabel": "Confirm password",
+    "settings.overridePasswordSaveButton": "Save Password",
+    "settings.overridePasswordMismatch": "Passwords don't match.",
+    "settings.overridePasswordTooShort": "Password must be at least 4 characters.",
+    "nudge.overridePasswordText": "Set a password for price discounts and overrides so only trusted staff can use them.",
+    "nudge.overridePasswordSetButton": "Set it now",
+    "nudge.overridePasswordDismissButton": "Dismiss",
     "dialog.newStoreNamePrompt": "New store name (e.g. Mombasa Road Branch):",
     "dialog.businessTypePrompt": "Choose a business type for this store:\n{list}\n\nEnter the number:",
     "dialog.transferDestinationPrompt": "Transfer \"{name}\" to which store?\n{list}\n\nEnter the number:",
@@ -389,6 +403,10 @@ const DICTIONARY = {
     "inventory.edit": "Edit", "inventory.transfer": "Transfer", "inventory.delete": "Delete",
     "inventory.emptyState": "No inventory yet. Add your first material or product to start tracking stock.",
     "toast.incorrectPassword": "Incorrect password. Price change cancelled.",
+    "toast.overrideNotConfigured": "Price overrides aren't set up yet. Ask your admin to configure them.",
+    "toast.overrideNetworkError": "Couldn't reach the override service. Check your connection and try again.",
+    "toast.overridePasswordSaved": "Discount password saved.",
+    "toast.overridePasswordSaveFailed": "Couldn't save the password. Try again.",
     "toast.nothingToUndo": "Nothing to undo.", "toast.lastCartActionUndone": "Last cart action undone.",
     "toast.pdfLibraryFailed": "PDF library did not load. Check your connection and try again.",
     "toast.excelLibraryFailed": "Excel library did not load. Check your connection and try again.",
@@ -703,6 +721,17 @@ const DICTIONARY = {
     "stockAlert.title": "Arifa ya Hisa", "stockAlert.ok": "Sawa",
     "command.placeholder": "Andika amri au jina la sehemu",
     "dialog.overridePasswordPrompt": "Weka nenosiri la kubadilisha bei:",
+    "settings.overridePasswordOpenButton": "Nenosiri la Punguzo",
+    "settings.overridePasswordTitle": "Nenosiri la Kubadilisha Bei",
+    "settings.overridePasswordDescription": "Weka nenosiri ambalo wafanyakazi watalitumia kutoa punguzo au kubadilisha bei. Wewe pekee unaweza kuliona au kulibadilisha.",
+    "settings.overridePasswordNewLabel": "Nenosiri jipya",
+    "settings.overridePasswordConfirmLabel": "Thibitisha nenosiri",
+    "settings.overridePasswordSaveButton": "Hifadhi Nenosiri",
+    "settings.overridePasswordMismatch": "Manenosiri hayafanani.",
+    "settings.overridePasswordTooShort": "Nenosiri linapaswa kuwa na angalau herufi 4.",
+    "nudge.overridePasswordText": "Weka nenosiri la punguzo na kubadilisha bei ili wafanyakazi wanaoaminika pekee waweze kulitumia.",
+    "nudge.overridePasswordSetButton": "Weka sasa",
+    "nudge.overridePasswordDismissButton": "Ondoa",
     "dialog.newStoreNamePrompt": "Jina la duka jipya (mfano, Tawi la Mombasa Road):",
     "dialog.businessTypePrompt": "Chagua aina ya biashara kwa duka hili:\n{list}\n\nWeka nambari:",
     "dialog.transferDestinationPrompt": "Hamisha \"{name}\" kwenda duka gani?\n{list}\n\nWeka nambari:",
@@ -830,6 +859,10 @@ const DICTIONARY = {
     "inventory.edit": "Hariri", "inventory.transfer": "Hamisha", "inventory.delete": "Futa",
     "inventory.emptyState": "Hakuna hisa bado. Ongeza bidhaa yako ya kwanza kuanza kufuatilia hisa.",
     "toast.incorrectPassword": "Nenosiri si sahihi. Mabadiliko ya bei yamesitishwa.",
+    "toast.overrideNotConfigured": "Mabadiliko ya bei ya ziada bado hayajawekwa. Muulize msimamizi wako ayaweke.",
+    "toast.overrideNetworkError": "Imeshindwa kufikia huduma ya ruhusa. Angalia muunganisho wako na ujaribu tena.",
+    "toast.overridePasswordSaved": "Nenosiri la punguzo limehifadhiwa.",
+    "toast.overridePasswordSaveFailed": "Imeshindwa kuhifadhi nenosiri. Jaribu tena.",
     "toast.nothingToUndo": "Hakuna cha kutengua.", "toast.lastCartActionUndone": "Kitendo cha mwisho cha kikapu kimetenguliwa.",
     "toast.pdfLibraryFailed": "Maktaba ya PDF haikupakia. Angalia muunganisho wako na ujaribu tena.",
     "toast.excelLibraryFailed": "Maktaba ya Excel haikupakia. Angalia muunganisho wako na ujaribu tena.",
@@ -1100,22 +1133,14 @@ function setLanguage(nextLanguage) {
   renderMonthlyReportsList();
 }
 
-async function sha256Hex(text) {
-  const buffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-// Client-side hash comparison is not authorization — priceConfig.overridePasswordHash
-// ships in the JS bundle and can be extracted and brute-forced offline (unsalted SHA-256,
-// short PINs crack in seconds). It also does nothing to stop someone calling
-// applyDiscount()/confirmProcessReturn()/saveProduct() directly from devtools, since the
-// actual Firestore writes never check for authorization server-side.
-//
-// Replace with a server-verified action: call a Cloud Function that checks the
-// override code (stored server-side only, bcrypt/argon2 hashed, rate-limited) and
-// returns a short-lived custom claim or signed token permitting the specific
-// discount/refund/price-edit operation. Firestore rules must then require that
-// token/claim before allowing the write (see Firestore rules fix below).
+// NOTE: price overrides are authorized server-side only. verifyOverridePassword()
+// below calls the Render proxy's /api/ai/override-verify endpoint, which checks the
+// code against a bcrypt hash stored in Render's environment variables (never shipped
+// in this bundle). Do not reintroduce a client-side password/hash check here — any
+// value shipped in app.js is readable in DevTools and can be brute-forced offline
+// instantly. (An earlier version of this file had exactly that: a sha256Hex() helper
+// compared against priceConfig.overridePasswordHash from price-config.js. Both are
+// gone; price-config.js is now a deprecated stub excluded from Hosting deploys.)
 
 async function verifyOverridePassword() {
   const input = window.prompt(t("dialog.overridePasswordPrompt"));
@@ -1127,6 +1152,13 @@ async function verifyOverridePassword() {
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
       body: JSON.stringify({ code: input })
     });
+    if (response.status === 503) {
+      // Distinguish "not configured" from "wrong password" so admins don't chase
+      // a typo that isn't the real problem — see PRICE_OVERRIDE_PASSWORD_HASH in
+      // proxy/.env.example. The proxy itself returns 503 specifically for this case.
+      showToast(t("toast.overrideNotConfigured"));
+      return false;
+    }
     if (!response.ok) {
       showToast(t("toast.incorrectPassword"));
       return false;
@@ -1139,7 +1171,7 @@ async function verifyOverridePassword() {
     return true;
   } catch (error) {
     console.warn(error);
-    showToast(t("toast.incorrectPassword"));
+    showToast(t("toast.overrideNetworkError"));
     return false;
   }
 }
@@ -1948,42 +1980,59 @@ async function generateMonthlyReport(monthKey, storeIdOverride) {
   const metrics = computeMonthlyMetrics(monthKey, storeId);
   if (metrics.transactionCount === 0) return showToast(t("monthlyReport.noSalesData"));
 
+  // Keep the button showing progress for the whole async chain, not just the
+  // 2.6s toast — report generation calls the AI proxy, which can take up to a
+  // minute on a cold start (see AI_PROXY_TIMEOUT_MS / warmUpAiProxy). Without
+  // this the button looked idle/broken for the entire wait.
+  const generateButton = qs("#generateMonthlyReportButton");
+  const originalButtonLabel = generateButton ? generateButton.textContent : "";
+  if (generateButton) {
+    generateButton.disabled = true;
+    generateButton.textContent = t("monthlyReport.generating");
+  }
   showToast(t("monthlyReport.generating"));
 
-  let aiSummary;
   try {
-    aiSummary = await generateMonthlyReportNarrative(monthKey, metrics, storeId);
-  } catch (error) {
-    console.warn(error);
-    aiSummary = localMonthlyReportNarrative(monthKey, metrics, storeId);
-  }
+    let aiSummary;
+    try {
+      aiSummary = await generateMonthlyReportNarrative(monthKey, metrics, storeId);
+    } catch (error) {
+      console.warn(error);
+      aiSummary = localMonthlyReportNarrative(monthKey, metrics, storeId);
+    }
 
-  try {
-    const { doc, serverTimestamp, Timestamp, setDoc } = state.firebaseApi.firestore;
-    const docId = `${storeId}_${monthKey}`;
-    const reportRef = doc(state.db, "users", state.user.uid, "monthlyReports", docId);
-    await setDoc(reportRef, {
-      storeId,
-      periodLabel: monthKey,
-      periodStart: Timestamp.fromDate(metrics.periodStart),
-      periodEnd: Timestamp.fromDate(metrics.periodEnd),
-      generatedBy: state.user.uid,
-      metrics: {
-        revenue: metrics.revenue,
-        transactionCount: metrics.transactionCount,
-        avgSale: metrics.avgSale,
-        unitsSold: metrics.unitsSold,
-        topProducts: metrics.topProducts,
-        lowStockCount: metrics.lowStockCount,
-        outOfStockCount: metrics.outOfStockCount
-      },
-      aiSummary,
-      generatedAt: serverTimestamp()
-    });
-    showToast(t("monthlyReport.generated"));
-  } catch (error) {
-    console.warn(error);
-    showToast(t("monthlyReport.failedGeneric"));
+    try {
+      const { doc, serverTimestamp, Timestamp, setDoc } = state.firebaseApi.firestore;
+      const docId = `${storeId}_${monthKey}`;
+      const reportRef = doc(state.db, "users", state.user.uid, "monthlyReports", docId);
+      await setDoc(reportRef, {
+        storeId,
+        periodLabel: monthKey,
+        periodStart: Timestamp.fromDate(metrics.periodStart),
+        periodEnd: Timestamp.fromDate(metrics.periodEnd),
+        generatedBy: state.user.uid,
+        metrics: {
+          revenue: metrics.revenue,
+          transactionCount: metrics.transactionCount,
+          avgSale: metrics.avgSale,
+          unitsSold: metrics.unitsSold,
+          topProducts: metrics.topProducts,
+          lowStockCount: metrics.lowStockCount,
+          outOfStockCount: metrics.outOfStockCount
+        },
+        aiSummary,
+        generatedAt: serverTimestamp()
+      });
+      showToast(t("monthlyReport.generated"));
+    } catch (error) {
+      console.warn(error);
+      showToast(t("monthlyReport.failedGeneric"));
+    }
+  } finally {
+    if (generateButton) {
+      generateButton.disabled = false;
+      generateButton.textContent = originalButtonLabel;
+    }
   }
 }
 
@@ -2333,7 +2382,7 @@ async function confirmProcessReturn() {
 
   if (state.db && state.user && !String(saleId).startsWith("local-")) {
     try {
-      const { doc, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
+      const { doc, collection, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
       await runTransaction(state.db, async (transaction) => {
         const saleRef = doc(state.db, "users", state.user.uid, "sales", saleId);
         const productRefs = selections.map((item) => doc(state.db, "users", state.user.uid, "products", item.productId));
@@ -2353,6 +2402,16 @@ async function confirmProcessReturn() {
             sold90: Math.max(0, currentSold90 - item.qty),
             updatedAt: serverTimestamp()
           });
+        });
+
+        const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
+        transaction.set(auditRef, {
+          action: "RETURN_PROCESSED",
+          saleId,
+          refundAmount,
+          itemCount: selections.length,
+          uid: state.user?.uid || null,
+          createdAt: serverTimestamp()
         });
       });
     } catch (error) {
@@ -3110,6 +3169,15 @@ async function confirmRecordPayment() {
         if (nextBalance <= 0) customerUpdate.oldestUnpaidAt = null;
         transaction.update(customerRef, customerUpdate);
         transaction.set(paymentRef, { amount, note, createdAt: serverTimestamp() });
+
+        const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
+        transaction.set(auditRef, {
+          action: "PAYMENT_RECORDED",
+          customerId,
+          amount,
+          uid: state.user?.uid || null,
+          createdAt: serverTimestamp()
+        });
       });
     } catch (error) {
       console.warn(error);
@@ -3206,8 +3274,22 @@ async function setCustomerCreditLimit(customerId) {
 
   if (state.db && state.user) {
     try {
-      const { doc, setDoc } = state.firebaseApi.firestore;
+      const { doc, setDoc, collection, serverTimestamp } = state.firebaseApi.firestore;
+      const previousLimit = customer.creditLimit ?? null;
       await setDoc(doc(state.db, "users", state.user.uid, "customers", customerId), { creditLimit: nextLimit }, { merge: true });
+      try {
+        const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
+        await setDoc(auditRef, {
+          action: "CREDIT_LIMIT_CHANGED",
+          customerId,
+          previousLimit,
+          newLimit: nextLimit,
+          uid: state.user?.uid || null,
+          createdAt: serverTimestamp()
+        });
+      } catch (auditError) {
+        console.warn(auditError);
+      }
     } catch (error) {
       console.warn(error);
       showToast(t("toast.creditLimitFailed"));
@@ -3556,6 +3638,19 @@ async function saveProduct(product) {
         },
         { merge: true }
       );
+      try {
+        const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
+        await setDoc(auditRef, {
+          action: existing ? "PRODUCT_EDITED" : "PRODUCT_CREATED",
+          productId: product.id,
+          name: product.name || "",
+          sellingPrice: Number(product.sellingPrice || 0),
+          uid: state.user?.uid || null,
+          createdAt: serverTimestamp()
+        });
+      } catch (auditError) {
+        console.warn(auditError);
+      }
     } catch (error) {
       console.warn(error);
       showToast(t("toast.savedLocallyFirestoreFailed"));
@@ -3973,8 +4068,20 @@ async function deleteProduct(productId) {
   state.cart = state.cart.filter((item) => item.id !== productId);
   if (state.db && state.user) {
     try {
-      const { deleteDoc, doc } = state.firebaseApi.firestore;
+      const { deleteDoc, doc, collection, setDoc, serverTimestamp } = state.firebaseApi.firestore;
       await deleteDoc(doc(state.db, "users", state.user.uid, "products", productId));
+      try {
+        const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
+        await setDoc(auditRef, {
+          action: "PRODUCT_DELETED",
+          productId,
+          name: product.name || "",
+          uid: state.user?.uid || null,
+          createdAt: serverTimestamp()
+        });
+      } catch (auditError) {
+        console.warn(auditError);
+      }
     } catch (error) {
       console.warn(error);
       showToast(t("toast.deletedLocallyFirestoreFailed"));
@@ -4013,6 +4120,19 @@ async function confirmDeleteAccount() {
     const { EmailAuthProvider, reauthenticateWithCredential, deleteUser } = state.firebaseApi.auth;
     const credential = EmailAuthProvider.credential(state.user.email, password);
     await reauthenticateWithCredential(state.user, credential);
+    if (state.db) {
+      try {
+        const { doc, collection, setDoc, serverTimestamp } = state.firebaseApi.firestore;
+        const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
+        await setDoc(auditRef, {
+          action: "ACCOUNT_DELETION_INITIATED",
+          uid: state.user.uid,
+          createdAt: serverTimestamp()
+        });
+      } catch (auditError) {
+        console.warn(auditError);
+      }
+    }
     await deleteUser(state.user);
     qs("#deleteAccountDialog").close();
     showToast(t("toast.accountDeleted"));
@@ -4035,7 +4155,7 @@ async function undoLastSale() {
   const sale = state.lastSale;
   if (sale.mode === "firestore" && state.db && state.user) {
     try {
-      const { doc, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
+      const { doc, collection, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
       await runTransaction(state.db, async (transaction) => {
         const saleRef = doc(state.db, "users", state.user.uid, "sales", sale.saleId);
         const saleSnap = await transaction.get(saleRef);
@@ -4071,6 +4191,15 @@ async function undoLastSale() {
         }
 
         transaction.update(saleRef, { voided: true, voidedAt: serverTimestamp() });
+
+        const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
+        transaction.set(auditRef, {
+          action: "SALE_VOIDED",
+          saleId: sale.saleId,
+          total: saleData.total,
+          uid: state.user?.uid || null,
+          createdAt: serverTimestamp()
+        });
       });
     } catch (error) {
       console.warn(error);
@@ -4225,6 +4354,9 @@ async function initFirebase() {
         state.productsInitialized = false;
         state.stockAlertQueue = [];
         state.stockAlertPopupOpen = false;
+        state.overridePasswordSet = false;
+        state.overridePasswordNudgeDismissed = false;
+        updateOverridePasswordNudgeVisibility();
         clearDiscount();
         renderAll();
       }
@@ -4340,8 +4472,22 @@ async function setStoreCurrency() {
   if (!/^[A-Z]{3}$/.test(code)) return showToast(t("toast.currencyInvalid"));
   if (!state.db || !state.user) return showToast(t("toast.signInToAddStore"));
   try {
-    const { doc, setDoc } = state.firebaseApi.firestore;
+    const { doc, collection, setDoc, serverTimestamp } = state.firebaseApi.firestore;
+    const previousCode = store.currencyCode || "";
     await setDoc(doc(state.db, "users", state.user.uid, "stores", store.id), { currencyCode: code }, { merge: true });
+    try {
+      const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
+      await setDoc(auditRef, {
+        action: "STORE_CURRENCY_CHANGED",
+        storeId: store.id,
+        previousCode,
+        newCode: code,
+        uid: state.user?.uid || null,
+        createdAt: serverTimestamp()
+      });
+    } catch (auditError) {
+      console.warn(auditError);
+    }
     showToast(t("toast.currencySet", { code }));
     renderAll();
     translateStaticDom();
@@ -4408,8 +4554,20 @@ async function archiveStore() {
   if (!window.confirm(t("dialog.archiveStoreConfirm", { name: store.name || "" }))) return;
   if (!state.db || !state.user) return showToast(t("toast.signInToAddStore"));
   try {
-    const { doc, setDoc } = state.firebaseApi.firestore;
+    const { doc, collection, setDoc, serverTimestamp } = state.firebaseApi.firestore;
     await setDoc(doc(state.db, "users", state.user.uid, "stores", store.id), { archived: true }, { merge: true });
+    try {
+      const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
+      await setDoc(auditRef, {
+        action: "STORE_ARCHIVED",
+        storeId: store.id,
+        name: store.name || "",
+        uid: state.user?.uid || null,
+        createdAt: serverTimestamp()
+      });
+    } catch (auditError) {
+      console.warn(auditError);
+    }
     const nextStore = activeStores().find((item) => item.id !== store.id);
     if (nextStore) switchStore(nextStore.id);
     showToast(t("toast.storeArchived", { name: store.name || "" }));
@@ -4486,8 +4644,20 @@ async function removeStaffMember() {
   if (!window.confirm(t("dialog.removeStaffConfirm", { name: member.name || "" }))) return;
   if (!state.db || !state.user) return showToast(t("toast.signInToAddStaff"));
   try {
-    const { doc, deleteDoc } = state.firebaseApi.firestore;
+    const { doc, deleteDoc, collection, setDoc, serverTimestamp } = state.firebaseApi.firestore;
     await deleteDoc(doc(state.db, "users", state.user.uid, "staff", member.id));
+    try {
+      const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
+      await setDoc(auditRef, {
+        action: "STAFF_REMOVED",
+        staffId: member.id,
+        name: member.name || "",
+        uid: state.user?.uid || null,
+        createdAt: serverTimestamp()
+      });
+    } catch (auditError) {
+      console.warn(auditError);
+    }
     state.selectedStaffId = "";
     showToast(t("toast.staffRemoved", { name: member.name || "" }));
   } catch (error) {
@@ -4511,12 +4681,104 @@ async function loadUserSettings(user) {
     const snap = await getDoc(doc(state.db, "users", user.uid));
     const data = snap.exists() ? snap.data() : null;
     state.stockAlertPopupEnabled = data && typeof data.stockAlertPopupEnabled === "boolean" ? data.stockAlertPopupEnabled : true;
+    state.overridePasswordSet = Boolean(data && data.overridePasswordSet === true);
+    state.overridePasswordNudgeDismissed = Boolean(data && data.overridePasswordNudgeDismissed === true);
   } catch (error) {
     console.warn(error);
     state.stockAlertPopupEnabled = true;
+    state.overridePasswordSet = false;
+    state.overridePasswordNudgeDismissed = false;
   }
   const toggle = qs("#stockAlertPopupToggle");
   if (toggle) toggle.checked = state.stockAlertPopupEnabled;
+  updateOverridePasswordNudgeVisibility();
+}
+
+// Shows a dismissible nudge (below the verify-email banner) prompting the
+// business owner to set their own per-account discount/override password
+// (Phase 9). Hidden once they've set one, or once they explicitly dismiss it.
+function updateOverridePasswordNudgeVisibility() {
+  const banner = qs("#overridePasswordNudgeBanner");
+  if (!banner) return;
+  const shouldShow = Boolean(state.user) && !state.overridePasswordSet && !state.overridePasswordNudgeDismissed;
+  banner.hidden = !shouldShow;
+}
+
+async function persistOverridePasswordFlags(patch) {
+  if (!state.db || !state.user) return;
+  try {
+    const { doc, setDoc } = state.firebaseApi.firestore;
+    await setDoc(doc(state.db, "users", state.user.uid), patch, { merge: true });
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
+function dismissOverridePasswordNudge() {
+  state.overridePasswordNudgeDismissed = true;
+  updateOverridePasswordNudgeVisibility();
+  persistOverridePasswordFlags({ overridePasswordNudgeDismissed: true });
+}
+
+function openOverridePasswordDialog() {
+  if (!state.user) return;
+  qs("#overridePasswordNewInput").value = "";
+  qs("#overridePasswordConfirmInput").value = "";
+  setFieldError("overridePasswordError", "");
+  qs("#overridePasswordDialog").showModal();
+}
+
+// Calls the Render proxy's POST /api/settings/override-password (Phase 9),
+// which bcrypt-hashes the password and stores it at this business's own
+// users/{uid}/private/security doc via the Admin SDK -- a path
+// firestore.rules denies to every client SDK request. See server.js.
+async function saveOverridePassword() {
+  if (!state.user) return;
+  const password = qs("#overridePasswordNewInput").value;
+  const confirmPassword = qs("#overridePasswordConfirmInput").value;
+
+  if (password.length < 4 || password.length > 64) {
+    setFieldError("overridePasswordError", t("settings.overridePasswordTooShort"));
+    return;
+  }
+  if (password !== confirmPassword) {
+    setFieldError("overridePasswordError", t("settings.overridePasswordMismatch"));
+    return;
+  }
+  setFieldError("overridePasswordError", "");
+
+  const saveButton = qs("#saveOverridePasswordButton");
+  saveButton.disabled = true;
+  try {
+    const token = await state.user.getIdToken(/* forceRefresh */ true);
+    const response = await fetch(aiConfig.overridePasswordUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ password })
+    });
+    if (response.status === 503) {
+      // Mirrors verifyOverridePassword()'s 503 handling: distinguishes "not
+      // configured" (FIREBASE_SERVICE_ACCOUNT_KEY_BASE64 missing on the
+      // proxy) from a real save failure.
+      showToast(t("toast.overrideNotConfigured"));
+      return;
+    }
+    if (!response.ok) {
+      showToast(t("toast.overridePasswordSaveFailed"));
+      return;
+    }
+    state.overridePasswordSet = true;
+    state.overridePasswordNudgeDismissed = true;
+    updateOverridePasswordNudgeVisibility();
+    persistOverridePasswordFlags({ overridePasswordSet: true, overridePasswordNudgeDismissed: true });
+    qs("#overridePasswordDialog").close();
+    showToast(t("toast.overridePasswordSaved"));
+  } catch (error) {
+    console.warn(error);
+    showToast(t("toast.overrideNetworkError"));
+  } finally {
+    saveButton.disabled = false;
+  }
 }
 
 async function setStockAlertPopupEnabled(enabled) {
@@ -4771,10 +5033,23 @@ async function handleAuthSubmit(event) {
   }
 }
 
+// Render's free-tier proxy spins down after ~15 min idle and can take up to a
+// minute to wake on the next request (this is what AI_PROXY_TIMEOUT_MS=60000
+// above is sized for). Firing a harmless /health ping the moment the user opens
+// Reports or AI Advisor gives the proxy a head start before they actually click
+// Generate Report / Ask AI, instead of the full cold-start delay landing on
+// that click. Best-effort only — failures are ignored, this never blocks the UI.
+function warmUpAiProxy() {
+  if (aiProxyWarmupTriggered || !aiConfig.proxyUrl) return;
+  aiProxyWarmupTriggered = true;
+  fetch(new URL("/health", aiConfig.proxyUrl)).catch(() => {});
+}
+
 function openView(viewId) {
   qsa(".view").forEach((view) => view.classList.toggle("active", view.id === viewId));
   qsa(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === viewId));
   qs(".sidebar").classList.remove("open");
+  if (viewId === "reports" || viewId === "ai") warmUpAiProxy();
 }
 
 function renderCommands(term = "") {
@@ -4962,6 +5237,12 @@ function bindEvents() {
     showToast(t("toast.signedOut"));
   });
   qs("#resendVerificationButton")?.addEventListener("click", handleResendVerification);
+  qs("#overridePasswordSettingsButton")?.addEventListener("click", openOverridePasswordDialog);
+  qs("#overridePasswordNudgeSetButton")?.addEventListener("click", openOverridePasswordDialog);
+  qs("#overridePasswordNudgeDismissButton")?.addEventListener("click", dismissOverridePasswordNudge);
+  qs("#closeOverridePasswordDialog")?.addEventListener("click", () => qs("#overridePasswordDialog").close());
+  qs("#cancelOverridePasswordDialog")?.addEventListener("click", () => qs("#overridePasswordDialog").close());
+  qs("#saveOverridePasswordButton")?.addEventListener("click", saveOverridePassword);
   qs("#deleteAccountButton")?.addEventListener("click", openDeleteAccountDialog);
   qs("#closeDeleteAccountDialog")?.addEventListener("click", () => qs("#deleteAccountDialog").close());
   qs("#cancelDeleteAccountDialog")?.addEventListener("click", () => qs("#deleteAccountDialog").close());
@@ -5331,6 +5612,8 @@ function bindEvents() {
             total,
             paymentMethod,
             itemCount: saleItems.length,
+            discountType,
+            discountAmount,
             uid: state.user?.uid || null,
             createdAt: serverTimestamp()
           });

@@ -54,6 +54,7 @@
           <div class="account-chip" id="accountChip" hidden>
             <span id="userEmail">Signed out</span>
             <button class="ghost-button compact" id="downloadBackupButton" type="button" data-i18n="backup.button">Download Backup</button>
+            <button class="ghost-button compact" id="overridePasswordSettingsButton" type="button" data-i18n="settings.overridePasswordOpenButton">Discount Password</button>
             <button class="ghost-button compact" id="signOutButton" data-i18n="topbar.signOut">Sign out</button>
             <button class="ghost-button compact danger" id="deleteAccountButton" type="button" data-i18n="deleteAccount.button">Delete Account</button>
           </div>
@@ -65,6 +66,12 @@
         <div class="verify-banner" id="verifyBanner" hidden role="status">
           <span data-i18n="verifyEmail.bannerText">Please verify your email address to keep full access to your account.</span>
           <button class="ghost-button compact" id="resendVerificationButton" type="button" data-i18n="verifyEmail.resendButton">Resend verification email</button>
+        </div>
+
+        <div class="verify-banner" id="overridePasswordNudgeBanner" hidden role="status">
+          <span data-i18n="nudge.overridePasswordText">Set a password for price discounts and overrides so only trusted staff can use them.</span>
+          <button class="ghost-button compact" id="overridePasswordNudgeSetButton" type="button" data-i18n="nudge.overridePasswordSetButton">Set it now</button>
+          <button class="ghost-button compact" id="overridePasswordNudgeDismissButton" type="button" data-i18n="nudge.overridePasswordDismissButton">Dismiss</button>
         </div>
 
         <section class="view active" id="dashboard">
@@ -655,6 +662,25 @@
       </div>
     </dialog>
 
+    <dialog id="overridePasswordDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="settings.overridePasswordTitle">Discount Override Password</h2>
+        <button class="icon-button" type="button" id="closeOverridePasswordDialog" aria-label="Close">&times;</button>
+      </div>
+      <p class="muted" data-i18n="settings.overridePasswordDescription">Set a password staff must enter to apply discounts or price overrides. Only you can see or change it.</p>
+      <label><span data-i18n="settings.overridePasswordNewLabel">New password</span>
+        <input id="overridePasswordNewInput" type="password" autocomplete="new-password" minlength="4" maxlength="64" />
+      </label>
+      <label><span data-i18n="settings.overridePasswordConfirmLabel">Confirm password</span>
+        <input id="overridePasswordConfirmInput" type="password" autocomplete="new-password" minlength="4" maxlength="64" />
+      </label>
+      <span class="field-error" id="overridePasswordError"></span>
+      <div class="button-row end">
+        <button class="ghost-button" type="button" id="cancelOverridePasswordDialog" data-i18n="product.cancel">Cancel</button>
+        <button class="primary-button" type="button" id="saveOverridePasswordButton" data-i18n="settings.overridePasswordSaveButton">Save Password</button>
+      </div>
+    </dialog>
+
     <dialog id="deleteAccountDialog">
       <div class="dialog-head">
         <h2 data-i18n="deleteAccount.title">Delete Account</h2>
@@ -719,10 +745,10 @@
       </div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    <script type="module" src="./app.js?v=20260746"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js" integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script type="module" src="./app.js?v=20260751"></script>
   </body>
 </html>

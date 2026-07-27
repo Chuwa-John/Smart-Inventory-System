@@ -244,6 +244,17 @@ service cloud.firestore {
         allow update: if isOwner(userId) && validMonthlyReport();
         allow delete: if false;
       }
+
+      // Per-business override-password hash (Phase 9). No client may read or
+      // write this directly, not even the doc's own owner -- if it were
+      // readable, the owner's own browser could fetch the hash and brute-
+      // force it offline, defeating server-side verification entirely. Only
+      // the proxy's Firebase Admin SDK (which bypasses these rules) may
+      // touch it, via POST /api/settings/override-password and
+      // POST /api/ai/override-verify in proxy/server.js.
+      match /private/security {
+        allow read, write: if false;
+      }
     }
   }
 }
