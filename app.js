@@ -32,6 +32,7 @@ const state = {
   unsubscribeStaff: null,
   selectedStaffId: "",
   pendingTransferProductId: null,
+  pendingRestockProductId: null,
   stockAlertPopupEnabled: true,
   overridePasswordSet: false,
   overridePasswordNudgeDismissed: false,
@@ -289,6 +290,11 @@ const DICTIONARY = {
     "dialog.transferTitle": "Transfer Stock", "dialog.transferDestinationLabel": "Destination store",
     "dialog.transferQuantityLabel": "Quantity to transfer", "dialog.transferConfirm": "Transfer",
     "dialog.transferProductLabel": "{name} \u2014 {quantity} available at {store}",
+    "restock.dialogTitle": "Restock Product",
+    "restock.productLabel": "{name} \u2014 current stock: {quantity}",
+    "restock.qtyLabel": "Quantity received",
+    "restock.qtyPlaceholder": "e.g. 20",
+    "restock.confirmButton": "Add to Stock",
     "dialog.deleteConfirm": "Delete {name} from inventory?",
     "dialog.undoSaleConfirm": "Undo the last completed sale? This will restore stock quantities.",
     "dialog.editPricePrompt": "Enter new price for {name} ({currency}):",
@@ -407,7 +413,7 @@ const DICTIONARY = {
     "auth.errorConsentRequired": "Please accept the Terms & Conditions and Privacy Policy.",
     "theme.light": "Light", "theme.dark": "Dark",
     "product.editTitle": "Edit Inventory Product", "product.addTitle": "Add Inventory Product",
-    "inventory.edit": "Edit", "inventory.transfer": "Transfer", "inventory.delete": "Delete",
+    "inventory.edit": "Edit", "inventory.transfer": "Transfer", "inventory.restock": "Restock", "inventory.delete": "Delete",
     "inventory.emptyState": "No inventory yet. Add your first material or product to start tracking stock.",
     "toast.incorrectPassword": "Incorrect password. Price change cancelled.",
     "toast.overrideNotConfigured": "Price overrides aren't set up yet. Ask your admin to configure them.",
@@ -430,6 +436,9 @@ const DICTIONARY = {
     "toast.transferred": "Transferred {qty} {unit} of {name} to {store}.",
     "toast.unitSingular": "unit", "toast.unitPlural": "units",
     "toast.transferFailed": "Transfer failed.",
+    "toast.restockInvalidQuantity": "Enter a valid quantity to add.",
+    "toast.restocked": "Added {qty} units of {name}. New stock: {quantity}.",
+    "toast.restockFailed": "Could not update stock. Please try again.",
     "toast.deletedLocallyFirestoreFailed": "Deleted locally. Firestore delete failed.",
     "toast.productDeleted": "{name} deleted.",
     "toast.noRecentSale": "No recent sale to undo.", "toast.couldNotUndoSale": "Could not undo sale.",
@@ -752,6 +761,11 @@ const DICTIONARY = {
     "dialog.transferTitle": "Hamisha Hisa", "dialog.transferDestinationLabel": "Duka la kupokea",
     "dialog.transferQuantityLabel": "Kiasi cha kuhamisha", "dialog.transferConfirm": "Hamisha",
     "dialog.transferProductLabel": "{name} \u2014 {quantity} zinapatikana katika {store}",
+    "restock.dialogTitle": "Ongeza Hisa ya Bidhaa",
+    "restock.productLabel": "{name} \u2014 hisa ya sasa: {quantity}",
+    "restock.qtyLabel": "Kiasi kilichopokelewa",
+    "restock.qtyPlaceholder": "mfano, 20",
+    "restock.confirmButton": "Ongeza kwenye Hisa",
     "dialog.deleteConfirm": "Futa {name} kutoka kwenye hisa?",
     "dialog.undoSaleConfirm": "Tengua mauzo ya mwisho yaliyokamilika? Hii itarejesha kiasi cha hisa.",
     "dialog.editPricePrompt": "Weka bei mpya ya {name} ({currency}):",
@@ -870,7 +884,7 @@ const DICTIONARY = {
     "auth.errorConsentRequired": "Tafadhali kubali Sheria na Masharti na Sera ya Faragha.",
     "theme.light": "Mwanga", "theme.dark": "Giza",
     "product.editTitle": "Hariri Bidhaa ya Hisa", "product.addTitle": "Ongeza Bidhaa ya Hisa",
-    "inventory.edit": "Hariri", "inventory.transfer": "Hamisha", "inventory.delete": "Futa",
+    "inventory.edit": "Hariri", "inventory.transfer": "Hamisha", "inventory.restock": "Ongeza Hisa", "inventory.delete": "Futa",
     "inventory.emptyState": "Hakuna hisa bado. Ongeza bidhaa yako ya kwanza kuanza kufuatilia hisa.",
     "toast.incorrectPassword": "Nenosiri si sahihi. Mabadiliko ya bei yamesitishwa.",
     "toast.overrideNotConfigured": "Mabadiliko ya bei ya ziada bado hayajawekwa. Muulize msimamizi wako ayaweke.",
@@ -893,6 +907,9 @@ const DICTIONARY = {
     "toast.transferred": "Vitengo {qty} vya {name} vimehamishwa kwenda {store}.",
     "toast.unitSingular": "kitengo", "toast.unitPlural": "vitengo",
     "toast.transferFailed": "Uhamishaji umeshindwa.",
+    "toast.restockInvalidQuantity": "Weka kiasi sahihi cha kuongeza.",
+    "toast.restocked": "Vitengo {qty} vya {name} vimeongezwa. Hisa mpya: {quantity}.",
+    "toast.restockFailed": "Imeshindwa kusasisha hisa. Tafadhali jaribu tena.",
     "toast.deletedLocallyFirestoreFailed": "Imefutwa kwa ndani. Ufutaji wa Firestore umeshindwa.",
     "toast.productDeleted": "{name} imefutwa.",
     "toast.noRecentSale": "Hakuna mauzo ya karibuni ya kutengua.", "toast.couldNotUndoSale": "Imeshindwa kutengua mauzo.",
@@ -1613,6 +1630,7 @@ function renderInventory() {
         <td>${expiryBadgeHtml(product)}</td>
         <td class="table-actions">
           <button class="ghost-button compact" data-edit-product="${product.id}">${t("inventory.edit")}</button>
+          <button class="ghost-button compact" data-restock-product="${product.id}">${t("inventory.restock")}</button>
           ${activeStores().length > 1 ? `<button class="ghost-button compact" data-transfer-product="${product.id}">${t("inventory.transfer")}</button>` : ""}
           <button class="ghost-button compact danger" data-delete-product="${product.id}">${t("inventory.delete")}</button>
         </td>
@@ -3790,6 +3808,59 @@ async function confirmTransfer() {
   }
 }
 
+function openRestockDialog(productId) {
+  const product = state.products.find((item) => item.id === productId);
+  if (!product) return;
+  state.pendingRestockProductId = productId;
+  qs("#restockProductLabel").textContent = t("restock.productLabel", { name: product.name, quantity: product.quantity });
+  qs("#restockQuantityInput").value = "";
+  qs("#restockDialog").showModal();
+}
+
+async function confirmRestock() {
+  const productId = state.pendingRestockProductId;
+  const product = state.products.find((item) => item.id === productId);
+  if (!product) return qs("#restockDialog").close();
+
+  const qty = Math.floor(Number(qs("#restockQuantityInput").value));
+  if (!Number.isFinite(qty) || qty <= 0) return showToast(t("toast.restockInvalidQuantity"));
+
+  const newQuantityDisplay = Number(product.quantity || 0) + qty;
+
+  if (state.db && state.user) {
+    try {
+      const { doc, collection, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
+      const productRef = doc(state.db, "users", state.user.uid, "products", productId);
+      await runTransaction(state.db, async (transaction) => {
+        const snap = await transaction.get(productRef);
+        if (!snap.exists()) throw new Error(t("txerror.itemGone", { name: product.name }));
+        const currentQuantity = Number(snap.data().quantity || 0);
+        transaction.update(productRef, { quantity: currentQuantity + qty, updatedAt: serverTimestamp() });
+
+        const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
+        transaction.set(auditRef, {
+          action: "PRODUCT_RESTOCKED",
+          productId,
+          name: product.name || "",
+          qtyAdded: qty,
+          uid: state.user?.uid || null,
+          createdAt: serverTimestamp()
+        });
+      });
+    } catch (error) {
+      console.warn(error);
+      showToast(error.message || t("toast.restockFailed"));
+      return;
+    }
+  } else {
+    product.quantity = newQuantityDisplay;
+  }
+
+  qs("#restockDialog").close();
+  renderAll();
+  showToast(t("toast.restocked", { qty, name: product.name, quantity: newQuantityDisplay }));
+}
+
 function findProductByBarcode(code) {
   const trimmed = String(code || "").trim();
   if (!trimmed) return null;
@@ -5235,6 +5306,9 @@ function bindEvents() {
   qs("#closeTransferDialog")?.addEventListener("click", () => qs("#transferDialog").close());
   qs("#cancelTransferDialog")?.addEventListener("click", () => qs("#transferDialog").close());
   qs("#confirmTransferButton")?.addEventListener("click", confirmTransfer);
+  qs("#closeRestockDialog")?.addEventListener("click", () => qs("#restockDialog").close());
+  qs("#cancelRestockDialog")?.addEventListener("click", () => qs("#restockDialog").close());
+  qs("#confirmRestockButton")?.addEventListener("click", confirmRestock);
   qs("#closeReturnDialog")?.addEventListener("click", () => qs("#returnDialog").close());
   qs("#cancelReturnDialog")?.addEventListener("click", () => qs("#returnDialog").close());
   qs("#confirmReturnButton")?.addEventListener("click", confirmProcessReturn);
@@ -5427,6 +5501,12 @@ function bindEvents() {
     const transferButton = event.target.closest("[data-transfer-product]");
     if (transferButton) {
       openTransferDialog(transferButton.dataset.transferProduct);
+      return;
+    }
+
+    const restockButton = event.target.closest("[data-restock-product]");
+    if (restockButton) {
+      openRestockDialog(restockButton.dataset.restockProduct);
       return;
     }
 
