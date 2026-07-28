@@ -35,6 +35,7 @@ const state = {
   unsubscribeMembers: null,
   pendingInviteLinkToken: "",
   pendingInviteRoleLabel: "",
+  businessOwnerUid: "",
   pendingTransferProductId: null,
   pendingRestockProductId: null,
   stockAlertPopupEnabled: true,
@@ -4428,6 +4429,28 @@ function stopIdleWatcher() {
   }
 }
 
+// Phase 3: businessOwnerUid is the routing hint set at accept-invite time
+// (see proxy/server.js) -- it is NEVER checked for authorization, only used
+// to decide which owner's data tree ("users/{businessOwnerUid}/...") this
+// signed-in user should read/write. Absence of the claim means this account
+// IS the owner, so it routes to its own uid.
+//
+// forceRefresh matters here: the claim is set server-side via Admin SDK
+// after accept-invite's transaction completes, not through anything the
+// client's already-cached ID token knows about. A staff member who just
+// accepted an invite and lands on index.html in the same session would
+// otherwise read a stale token with no claim yet.
+async function resolveBusinessOwnerUid(user) {
+  try {
+    const tokenResult = await user.getIdTokenResult(/* forceRefresh */ true);
+    const claimOwnerUid = tokenResult.claims?.businessOwnerUid;
+    return typeof claimOwnerUid === "string" && claimOwnerUid ? claimOwnerUid : user.uid;
+  } catch (error) {
+    console.warn("Could not resolve business owner uid; defaulting to own uid.", error);
+    return user.uid;
+  }
+}
+
 async function initFirebase() {
   const hasConfig = firebaseConfig && !String(firebaseConfig.apiKey || "").startsWith("YOUR_");
   if (!hasConfig) return;
@@ -4480,6 +4503,7 @@ async function initFirebase() {
       }
       updateAuthUi();
       if (user) {
+        state.businessOwnerUid = await resolveBusinessOwnerUid(user);
         startIdleWatcher();
         await ensureUserProfile(user);
         await loadUserSettings(user);
@@ -4521,6 +4545,7 @@ async function initFirebase() {
         state.customers = [];
         state.transfers = [];
         state.currentStoreId = "";
+        state.businessOwnerUid = "";
         state.productsInitialized = false;
         state.stockAlertQueue = [];
         state.stockAlertPopupOpen = false;
