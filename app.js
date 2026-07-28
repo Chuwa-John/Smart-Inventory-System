@@ -4440,6 +4440,33 @@ function stopIdleWatcher() {
 // client's already-cached ID token knows about. A staff member who just
 // accepted an invite and lands on index.html in the same session would
 // otherwise read a stale token with no claim yet.
+// Phase 3: for staff accounts, list queries against products/sales/
+// customers/transfers must carry an explicit where("storeId","in",[...])
+// clause, because Firestore rejects (not silently filters) any list query
+// whose security rule can't be proven for every possible result doc --
+// and memberCanAccessStore() is data-dependent (resource.data.storeId), so
+// it doesn't qualify for the path-based exemption stores/{storeId} gets.
+// Returns null for the owner (no filter -- full unfiltered access is
+// correct), or a concrete array of real store IDs for staff, expanding
+// the "all" roaming sentinel via a stores-collection read.
+async function resolveQueryStoreIds() {
+  if (state.user.uid === state.businessOwnerUid) return null;
+  try {
+    const memberSnap = await state.firebaseApi.firestore.getDoc(
+      state.firebaseApi.firestore.doc(state.db, "users", state.businessOwnerUid, "members", state.user.uid)
+    );
+    const memberStoreIdsList = memberSnap.exists() ? (memberSnap.data().storeIds || []) : [];
+    if (!memberStoreIdsList.includes("all")) return memberStoreIdsList;
+
+    const { collection, getDocs } = state.firebaseApi.firestore;
+    const storesSnap = await getDocs(collection(state.db, "users", state.businessOwnerUid, "stores"));
+    return storesSnap.docs.map((docSnap) => docSnap.id);
+  } catch (error) {
+    console.warn("Could not resolve staff store access; defaulting to no access.", error);
+    return [];
+  }
+}
+
 async function resolveBusinessOwnerUid(user) {
   try {
     const tokenResult = await user.getIdTokenResult(/* forceRefresh */ true);
@@ -4563,12 +4590,24 @@ async function initFirebase() {
 }
 
 async function subscribeToProducts() {
-  if (!state.db || !state.user) return;
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
   if (state.unsubscribeProducts) state.unsubscribeProducts();
   state.productsInitialized = false;
   try {
-    const { collection, onSnapshot } = state.firebaseApi.firestore;
-    state.unsubscribeProducts = onSnapshot(collection(state.db, "users", state.user.uid, "products"), (snapshot) => {
+    const { collection, onSnapshot, query, where } = state.firebaseApi.firestore;
+    const productsRef = collection(state.db, "users", state.businessOwnerUid, "products");
+    const queryStoreIds = await resolveQueryStoreIds();
+    // null = owner, unfiltered access is correct. Empty array = staff with
+    // no resolvable store access -- subscribe to nothing rather than send
+    // an invalid empty `in` filter (Firestore rejects in:[] outright).
+    if (queryStoreIds !== null && queryStoreIds.length === 0) {
+      state.products = [];
+      state.productsInitialized = true;
+      scheduleRenderAll();
+      return;
+    }
+    const productsQuery = queryStoreIds === null ? productsRef : query(productsRef, where("storeId", "in", queryStoreIds));
+    state.unsubscribeProducts = onSnapshot(productsQuery, (snapshot) => {
       const nextProducts = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
       detectStockAlertCrossings(state.products, nextProducts);
       state.products = nextProducts;

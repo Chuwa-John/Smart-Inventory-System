@@ -153,7 +153,13 @@ service cloud.firestore {
       }
 
       match /stores/{storeId} {
-        allow read: if isOwner(userId);
+        // storeId here comes from the document path itself, not
+        // resource.data -- Firestore can prove this rule per-document
+        // using each doc's own ID, so no `where` clause is required for
+        // this collection's list queries (unlike products/sales/etc.,
+        // whose storeId lives in the document body -- see the query-side
+        // filtering added around resolveQueryStoreIds() in app.js).
+        allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, storeId));
         allow create: if isOwner(userId) && validStore();
         allow update: if isOwner(userId) && validStore();
         allow delete: if false;
