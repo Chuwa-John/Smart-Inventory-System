@@ -10,6 +10,41 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == userId;
     }
 
+    // RBAC (Phase 1): members/{staffUid} docs live under the owner's own
+    // users/{ownerUid} tree -- no data restructuring needed. A get() lookup
+    // (not a custom claim) is the source of truth for role/store access so
+    // that disabling a staff member takes effect on their very next request,
+    // not after their ID token happens to expire.
+    function memberDocPath(ownerUid) {
+      return /databases/$(database)/documents/users/$(ownerUid)/members/$(request.auth.uid);
+    }
+
+    function isActiveMember(ownerUid) {
+      return signedIn()
+        && exists(memberDocPath(ownerUid))
+        && get(memberDocPath(ownerUid)).data.status == "active";
+    }
+
+    function memberRole(ownerUid) {
+      return isActiveMember(ownerUid) ? get(memberDocPath(ownerUid)).data.role : null;
+    }
+
+    function memberStoreIds(ownerUid) {
+      return isActiveMember(ownerUid) ? get(memberDocPath(ownerUid)).data.storeIds : [];
+    }
+
+    // "all" is an explicit opt-in for a member who should see every branch
+    // (e.g. a roaming manager) -- absent that, a member only reaches the
+    // specific storeIds assigned to them.
+    function memberCanAccessStore(ownerUid, storeId) {
+      let ids = memberStoreIds(ownerUid);
+      return ("all" in ids) || (storeId in ids);
+    }
+
+    function isOwnerOrRole(ownerUid, roles) {
+      return isOwner(ownerUid) || memberRole(ownerUid) in roles;
+    }
+
     function validProduct() {
       let d = request.resource.data;
       return d.name is string && d.name.size() > 0 && d.name.size() <= 120
@@ -111,7 +146,7 @@ service cloud.firestore {
       allow delete: if false;
 
       match /products/{productId} {
-        allow read: if isOwner(userId);
+        allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId));
         allow create: if isOwner(userId) && validProduct();
         allow update: if isOwner(userId) && validProduct() && productImmutableFieldsUnchanged();
         allow delete: if isOwner(userId);
@@ -129,6 +164,20 @@ service cloud.firestore {
         allow create: if isOwner(userId) && validStaff();
         allow update: if isOwner(userId) && validStaff();
         allow delete: if isOwner(userId);
+      }
+
+      // RBAC (Phase 2): members/{staffUid} docs are the source of truth for
+      // role/store access (see memberDocPath() etc. above). Only the owner
+      // may write these directly. A staff member may read their OWN doc
+      // (needed so the client can show them their own role/store scope in
+      // the UI), but never another member's doc, and never write to any
+      // member doc themselves -- role/store escalation must only ever
+      // happen through the proxy's accept-invite endpoint (Admin SDK),
+      // never via a direct client write, even by the staff member it
+      // concerns.
+      match /members/{staffUid} {
+        allow read: if isOwner(userId) || (signedIn() && request.auth.uid == staffUid);
+        allow write: if isOwner(userId);
       }
 
       match /sales/{saleId} {
@@ -171,7 +220,7 @@ service cloud.firestore {
             && after.refundedAmount is number && after.refundedAmount >= 0 && after.refundedAmount <= after.total;
         }
 
-        allow read: if isOwner(userId);
+        allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId));
         allow create: if isOwner(userId) && validSale();
         allow update: if isOwner(userId) && (validVoidUpdate() || validReturnUpdate());
         allow delete: if false;
@@ -183,10 +232,11 @@ service cloud.firestore {
           return d.name is string && d.name.size() <= 80
             && d.phone is string && d.phone.size() > 0 && d.phone.size() <= 20
             && d.balanceOwed is number && d.balanceOwed >= 0
+            && d.storeId is string && d.storeId.size() > 0
             && (!('oldestUnpaidAt' in d) || d.oldestUnpaidAt == null || d.oldestUnpaidAt is timestamp)
             && (!('creditLimit' in d) || d.creditLimit == null || (d.creditLimit is number && d.creditLimit >= 0));
         }
-        allow read: if isOwner(userId);
+        allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId));
         allow create: if isOwner(userId) && validCustomer();
         allow update: if isOwner(userId) && validCustomer();
         allow delete: if false;
@@ -197,7 +247,7 @@ service cloud.firestore {
             return d.amount is number && d.amount > 0
               && (!('note' in d) || (d.note is string && d.note.size() <= 200));
           }
-          allow read: if isOwner(userId);
+          allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, get(/databases/$(database)/documents/users/$(userId)/customers/$(customerId)).data.storeId));
           allow create: if isOwner(userId) && validPayment();
           allow update, delete: if false;
         }
@@ -217,7 +267,7 @@ service cloud.firestore {
             && (!('destinationStoreName' in d) || (d.destinationStoreName is string && d.destinationStoreName.size() <= 60))
             && d.performedByUid == request.auth.uid;
         }
-        allow read: if isOwner(userId);
+        allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && (memberCanAccessStore(userId, resource.data.sourceStoreId) || memberCanAccessStore(userId, resource.data.destinationStoreId)));
         allow create: if isOwner(userId) && validTransfer();
         allow update, delete: if false;
       }

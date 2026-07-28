@@ -8,6 +8,7 @@ import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import helmet from "helmet";
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import { randomBytes, createHash } from "crypto";
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
@@ -378,6 +379,167 @@ app.post("/api/settings/override-password", passwordChangeLimiter, async (req, r
   } catch (error) {
     console.error("Override password change failed:", error);
     return res.status(500).json({ ok: false });
+  }
+});
+
+const STAFF_ROLES = ["manager", "cashier"];
+const INVITE_TOKEN_BYTES = 32;
+const INVITE_EXPIRY_MS = 48 * 60 * 60 * 1000;
+const INVITE_MAX_STORE_IDS = 20;
+
+const inviteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.uid || req.ip
+});
+
+function hashInviteToken(token) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+// Validates storeIds against this owner's actual stores collection so an
+// invite can never reference a branch that doesn't exist (or one that was
+// later archived/deleted) -- "all" is the one exception, matching
+// memberCanAccessStore()'s roaming-access sentinel in firestore.rules.
+async function validateStoreIds(ownerUid, storeIds) {
+  if (!Array.isArray(storeIds) || storeIds.length === 0 || storeIds.length > INVITE_MAX_STORE_IDS) {
+    return false;
+  }
+  if (storeIds.length === 1 && storeIds[0] === "all") return true;
+  if (storeIds.some((id) => typeof id !== "string" || !id || id === "all")) return false;
+
+  const storesSnap = await firestoreDb.collection("users").doc(ownerUid).collection("stores").get();
+  const validIds = new Set(storesSnap.docs.map((doc) => doc.id));
+  return storeIds.every((id) => validIds.has(id));
+}
+
+app.post("/api/staff/invite", inviteLimiter, async (req, res) => {
+  if (!req.user?.uid) {
+    return res.status(401).json({ ok: false, error: "Authentication required." });
+  }
+  if (!firestoreDb) {
+    return res.status(503).json({ ok: false, error: "Staff invites are not configured." });
+  }
+
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const role = String(req.body?.role || "");
+  const storeIds = req.body?.storeIds;
+
+  if (!EMAIL_PATTERN.test(email) || email.length > 254) {
+    return res.status(400).json({ ok: false, error: "A valid email is required." });
+  }
+  if (!STAFF_ROLES.includes(role)) {
+    return res.status(400).json({ ok: false, error: "Role must be manager or cashier." });
+  }
+  const storeIdsValid = await validateStoreIds(req.user.uid, storeIds);
+  if (!storeIdsValid) {
+    return res.status(400).json({ ok: false, error: "storeIds must reference real stores, or be [\"all\"]." });
+  }
+
+  try {
+    const token = randomBytes(INVITE_TOKEN_BYTES).toString("hex");
+    const inviteRef = firestoreDb.collection("users").doc(req.user.uid).collection("invites").doc();
+    await inviteRef.set({
+      email,
+      role,
+      storeIds,
+      tokenHash: hashInviteToken(token),
+      ownerUid: req.user.uid,
+      used: false,
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + INVITE_EXPIRY_MS)
+    });
+    // Combine ownerUid + inviteId + token into a single opaque, URL-safe
+    // value so the invite link carries one param instead of three -- this
+    // also prevents mixing pieces from two different invites together,
+    // since accept-invite decodes and verifies all three as one unit.
+    const linkToken = Buffer.from(`${req.user.uid}:${inviteRef.id}:${token}`, "utf8").toString("base64url");
+    console.log(`Staff invite created for ownerUid=${req.user.uid}, inviteId=${inviteRef.id} at ${new Date().toISOString()}`);
+    return res.json({ ok: true, linkToken, expiresAt: Date.now() + INVITE_EXPIRY_MS });
+  } catch (error) {
+    console.error("Staff invite creation failed:", error);
+    return res.status(500).json({ ok: false, error: "Could not create invite." });
+  }
+});
+
+const acceptInviteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.uid || req.ip
+});
+
+// Called after the invitee has already created their own Firebase Auth
+// account client-side (createUserWithEmailAndPassword) and is holding a
+// valid ID token for that new account -- this endpoint's only job is to
+// verify the invite is real/unused/unexpired/for-this-email, then write the
+// members/{staffUid} doc via the Admin SDK (a path firestore.rules denies
+// to every client SDK write, staff included -- see the members match block).
+app.post("/api/staff/accept-invite", acceptInviteLimiter, async (req, res) => {
+  if (!req.user?.uid || !req.user?.email) {
+    return res.status(401).json({ ok: false, error: "Authentication required." });
+  }
+  if (!firestoreDb) {
+    return res.status(503).json({ ok: false, error: "Staff invites are not configured." });
+  }
+
+  const linkToken = String(req.body?.linkToken || "");
+  let ownerUid;
+  let inviteId;
+  let token;
+  try {
+    const decoded = Buffer.from(linkToken, "base64url").toString("utf8");
+    [ownerUid, inviteId, token] = decoded.split(":");
+    if (!ownerUid || !inviteId || !token) throw new Error("malformed");
+  } catch {
+    return res.status(400).json({ ok: false, error: "Invalid invite link." });
+  }
+
+  try {
+    const inviteRef = firestoreDb.collection("users").doc(ownerUid).collection("invites").doc(inviteId);
+
+    const result = await firestoreDb.runTransaction(async (transaction) => {
+      const inviteSnap = await transaction.get(inviteRef);
+      if (!inviteSnap.exists) return { error: "This invite link is no longer valid." };
+
+      const invite = inviteSnap.data();
+      if (invite.used) return { error: "This invite has already been used." };
+      if (invite.expiresAt.toDate().getTime() < Date.now()) return { error: "This invite link has expired." };
+      if (invite.tokenHash !== hashInviteToken(token)) return { error: "Invalid invite link." };
+      if (invite.email !== req.user.email.toLowerCase()) {
+        return { error: "This invite was issued for a different email address." };
+      }
+
+      const memberRef = firestoreDb.collection("users").doc(ownerUid).collection("members").doc(req.user.uid);
+      transaction.set(memberRef, {
+        role: invite.role,
+        storeIds: invite.storeIds,
+        status: "active",
+        email: invite.email,
+        createdAt: FieldValue.serverTimestamp()
+      });
+      transaction.update(inviteRef, { used: true, usedAt: FieldValue.serverTimestamp(), usedByUid: req.user.uid });
+
+      return { ok: true, role: invite.role };
+    });
+
+    if (result.error) return res.status(400).json({ ok: false, error: result.error });
+
+    // businessOwnerUid is purely a client routing hint (which owner's tree
+    // to read from) -- never checked for authorization. Every actual access
+    // decision goes through the members/{staffUid} doc lookup in
+    // firestore.rules, not this claim. See memberDocPath() etc.
+    const { getAuth } = await import("firebase-admin/auth");
+    await getAuth().setCustomUserClaims(req.user.uid, { businessOwnerUid: ownerUid });
+
+    console.log(`Invite accepted: staffUid=${req.user.uid}, ownerUid=${ownerUid}, role=${result.role} at ${new Date().toISOString()}`);
+    return res.json({ ok: true, role: result.role, businessOwnerUid: ownerUid });
+  } catch (error) {
+    console.error("Accept-invite failed:", error);
+    return res.status(500).json({ ok: false, error: "Could not accept invite." });
   }
 });
 

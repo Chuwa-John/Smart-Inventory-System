@@ -31,6 +31,10 @@ const state = {
   staff: [],
   unsubscribeStaff: null,
   selectedStaffId: "",
+  members: [],
+  unsubscribeMembers: null,
+  pendingInviteLinkToken: "",
+  pendingInviteRoleLabel: "",
   pendingTransferProductId: null,
   pendingRestockProductId: null,
   stockAlertPopupEnabled: true,
@@ -650,7 +654,36 @@ const DICTIONARY = {
     "movement.colTo": "To",
     "movement.colTransferBy": "Transferred by",
     "movement.viewButton": "View Movement",
-    "movement.close": "Close"
+    "movement.close": "Close",
+    "staff.rosterButton": "Staff Roster",
+    "staff.rosterTitle": "Staff Roster",
+    "staff.inviteButton": "Invite Staff",
+    "staff.inviteDialogTitle": "Invite Staff Member",
+    "staff.inviteEmailLabel": "Staff email",
+    "staff.roleCashier": "Cashier",
+    "staff.roleManager": "Manager",
+    "staff.inviteStoresLabel": "Store access",
+    "staff.inviteAllStores": "All stores (roaming access)",
+    "staff.sendInviteButton": "Send Invite",
+    "staff.inviteEmailInvalid": "Enter a valid staff email address.",
+    "staff.inviteStoresRequired": "Select at least one store, or All stores.",
+    "staff.inviteFailed": "Could not create the invite. Please try again.",
+    "staff.inviteNetworkError": "Could not reach the invite service. Check your connection and try again.",
+    "staff.inviteResultText": "Invite created for {email} as {role}. Share the link below \u2014 it expires in 48 hours and can only be used once.",
+    "staff.copyLinkButton": "Copy Link",
+    "staff.sendWhatsAppButton": "Send via WhatsApp",
+    "staff.linkCopied": "Invite link copied.",
+    "staff.copyFailed": "Could not copy the link. Please try again.",
+    "staff.colEmail": "Email",
+    "staff.colRole": "Role",
+    "staff.colStores": "Stores",
+    "staff.colActions": "Actions",
+    "staff.revokeButton": "Revoke",
+    "staff.rosterEmpty": "No staff members have accepted an invite yet.",
+    "staff.allStoresLabel": "All stores",
+    "staff.revokeConfirm": "Revoke access for {email}? They will be immediately signed out of this business's data.",
+    "staff.revokeSuccess": "Access revoked for {email}.",
+    "staff.revokeFailed": "Could not revoke access. Please try again."
   },
   sw: {
     "nav.dashboard": "Dashibodi", "nav.inventory": "Hisa", "nav.pos": "Mauzo",
@@ -1124,7 +1157,36 @@ const DICTIONARY = {
     "movement.colTo": "Kwenda",
     "movement.colTransferBy": "Alihamisha",
     "movement.viewButton": "Ona Mwendo",
-    "movement.close": "Funga"
+    "movement.close": "Funga",
+    "staff.rosterButton": "Orodha ya Wafanyakazi",
+    "staff.rosterTitle": "Orodha ya Wafanyakazi",
+    "staff.inviteButton": "Alika Mfanyakazi",
+    "staff.inviteDialogTitle": "Alika Mfanyakazi",
+    "staff.inviteEmailLabel": "Barua pepe ya mfanyakazi",
+    "staff.roleCashier": "Mfanya Mauzo",
+    "staff.roleManager": "Meneja",
+    "staff.inviteStoresLabel": "Ufikiaji wa maduka",
+    "staff.inviteAllStores": "Maduka yote (ufikiaji wa kuzunguka)",
+    "staff.sendInviteButton": "Tuma Mwaliko",
+    "staff.inviteEmailInvalid": "Weka barua pepe sahihi ya mfanyakazi.",
+    "staff.inviteStoresRequired": "Chagua duka moja angalau, au Maduka yote.",
+    "staff.inviteFailed": "Imeshindwa kuunda mwaliko. Tafadhali jaribu tena.",
+    "staff.inviteNetworkError": "Imeshindwa kufikia huduma ya mwaliko. Angalia muunganisho wako na ujaribu tena.",
+    "staff.inviteResultText": "Mwaliko umeundwa kwa {email} kama {role}. Shiriki kiungo hapa chini \u2014 kinaisha baada ya masaa 48 na kinaweza kutumika mara moja tu.",
+    "staff.copyLinkButton": "Nakili Kiungo",
+    "staff.sendWhatsAppButton": "Tuma kupitia WhatsApp",
+    "staff.linkCopied": "Kiungo cha mwaliko kimenakiliwa.",
+    "staff.copyFailed": "Imeshindwa kunakili kiungo. Tafadhali jaribu tena.",
+    "staff.colEmail": "Barua Pepe",
+    "staff.colRole": "Wadhifa",
+    "staff.colStores": "Maduka",
+    "staff.colActions": "Vitendo",
+    "staff.revokeButton": "Ondoa",
+    "staff.rosterEmpty": "Hakuna mfanyakazi aliyekubali mwaliko bado.",
+    "staff.allStoresLabel": "Maduka yote",
+    "staff.revokeConfirm": "Ondoa ufikiaji wa {email}? Watatolewa mara moja kwenye data ya biashara hii.",
+    "staff.revokeSuccess": "Ufikiaji umeondolewa kwa {email}.",
+    "staff.revokeFailed": "Imeshindwa kuondoa ufikiaji. Tafadhali jaribu tena."
   }
 };
 
@@ -3226,18 +3288,18 @@ async function confirmRecordPayment() {
 }
 
 async function findOrCreateCustomerForCredit(name, phoneKey) {
-  const existing = findCustomerByPhone(phoneKey);
+  const existing = findCustomerByPhone(phoneKey, state.currentStoreId);
   if (existing) return existing.id;
 
   if (state.db && state.user) {
     const { collection, doc, serverTimestamp, setDoc } = state.firebaseApi.firestore;
     const customerRef = doc(collection(state.db, "users", state.user.uid, "customers"));
-    await setDoc(customerRef, { name: name || "", phone: phoneKey, balanceOwed: 0, createdAt: serverTimestamp() });
+    await setDoc(customerRef, { name: name || "", phone: phoneKey, balanceOwed: 0, storeId: state.currentStoreId, createdAt: serverTimestamp() });
     return customerRef.id;
   }
 
   const localId = `local-customer-${Date.now()}`;
-  state.customers.push({ id: localId, name: name || "", phone: phoneKey, balanceOwed: 0 });
+  state.customers.push({ id: localId, name: name || "", phone: phoneKey, balanceOwed: 0, storeId: state.currentStoreId });
   return localId;
 }
 
@@ -3335,7 +3397,7 @@ async function setCustomerCreditLimit(customerId) {
 }
 
 function checkCreditLimitBeforeSale(customerName, phoneKey, newBalanceDue) {
-  const existing = findCustomerByPhone(phoneKey);
+  const existing = findCustomerByPhone(phoneKey, state.currentStoreId);
   const limit = existing?.creditLimit;
   if (limit == null) return true;
 
@@ -3586,6 +3648,25 @@ function downloadPurchaseOrderPdf(groupIndex) {
 function excludePurchaseOrderGroup(groupIndex) {
   state.purchaseOrderGroups = state.purchaseOrderGroups.filter((_, index) => index !== groupIndex);
   renderPurchaseOrderDialog();
+}
+
+// Builds the WhatsApp text for a staff invite. Explicitly names DukaSmart
+// and the inviting business by name in the message itself -- an invite
+// link with no context is indistinguishable from a phishing link, and
+// staff have no other way to verify who sent it before they've even
+// opened the app.
+function buildStaffInviteTextLines(linkToken, roleLabel) {
+  const businessName = state.cachedProfile?.businessName || state.user?.displayName || "your employer";
+  const acceptUrl = `${window.location.origin}${window.location.pathname.replace(/[^/]*$/, "")}accept-invite.html?accept-invite=${encodeURIComponent(linkToken)}`;
+  return [
+    `This is an official DukaSmart ERP invitation from ${businessName}.`,
+    `You've been invited to join as a ${roleLabel} on DukaSmart, the inventory and sales system used by ${businessName}.`,
+    "",
+    `Tap this link to accept and set up your account: ${acceptUrl}`,
+    "",
+    "This link is valid for 48 hours and can only be used once.",
+    "If you weren't expecting this message, you can safely ignore it."
+  ];
 }
 
 function productCollectionPath() {
@@ -4407,6 +4488,7 @@ async function initFirebase() {
         subscribeToSales();
         subscribeToStores();
         subscribeToStaff();
+        subscribeToMembers();
         subscribeToMonthlyReports();
         subscribeToCustomers();
         subscribeToTransfers();
@@ -4420,6 +4502,8 @@ async function initFirebase() {
         state.unsubscribeStores = null;
         if (state.unsubscribeStaff) state.unsubscribeStaff();
         state.unsubscribeStaff = null;
+        if (state.unsubscribeMembers) state.unsubscribeMembers();
+        state.unsubscribeMembers = null;
         if (state.unsubscribeMonthlyReports) state.unsubscribeMonthlyReports();
         state.unsubscribeMonthlyReports = null;
         if (state.unsubscribeCustomers) state.unsubscribeCustomers();
@@ -4431,6 +4515,7 @@ async function initFirebase() {
         state.sales = [];
         state.stores = [];
         state.staff = [];
+        state.members = [];
         state.selectedStaffId = "";
         state.monthlyReports = [];
         state.customers = [];
@@ -4705,6 +4790,137 @@ async function subscribeToStaff() {
     console.warn(error);
     showToast(t("toast.couldNotLoadStores"));
   }
+}
+
+// RBAC roster (Phase 2): reads users/{ownerUid}/members, which is the
+// authorization source of truth (see memberDocPath() etc. in
+// firestore.rules) -- distinct from the legacy `staff` collection above,
+// which is only cashier display names for sale attribution.
+async function subscribeToMembers() {
+  if (!state.db || !state.user) return;
+  if (state.unsubscribeMembers) state.unsubscribeMembers();
+  try {
+    const { collection, onSnapshot } = state.firebaseApi.firestore;
+    state.unsubscribeMembers = onSnapshot(collection(state.db, "users", state.user.uid, "members"), (snapshot) => {
+      state.members = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      renderStaffRoster();
+    });
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
+function renderStaffRoster() {
+  const tbody = qs("#staffRosterTable");
+  if (!tbody) return;
+  tbody.innerHTML = state.members
+    .map((member) => {
+      const storesLabel = (member.storeIds || []).includes("all")
+        ? t("staff.allStoresLabel")
+        : (member.storeIds || []).map((id) => state.stores.find((s) => s.id === id)?.name || id).join(", ");
+      return `<tr>
+        <td>${esc(member.email || "-")}</td>
+        <td>${esc(member.role || "-")}</td>
+        <td>${esc(storesLabel)}</td>
+        <td class="table-actions">
+          <button class="ghost-button compact danger" type="button" data-revoke-member="${member.id}">${t("staff.revokeButton")}</button>
+        </td>
+      </tr>`;
+    })
+    .join("") || `<tr><td colspan="4" class="empty-state">${t("staff.rosterEmpty")}</td></tr>`;
+}
+
+// Hard delete, matching the "revocation = hard delete" decision -- no
+// proxy call needed since firestore.rules already lets isOwner(userId)
+// write/delete any members/{staffUid} doc directly.
+async function revokeStaffMember(memberId) {
+  const member = state.members.find((item) => item.id === memberId);
+  if (!member) return;
+  if (!window.confirm(t("staff.revokeConfirm", { email: member.email || "" }))) return;
+  try {
+    const { doc, deleteDoc } = state.firebaseApi.firestore;
+    await deleteDoc(doc(state.db, "users", state.user.uid, "members", memberId));
+    showToast(t("staff.revokeSuccess", { email: member.email || "" }));
+  } catch (error) {
+    console.warn(error);
+    showToast(t("staff.revokeFailed"));
+  }
+}
+
+function openInviteStaffDialog() {
+  qs("#inviteStaffEmail").value = "";
+  qs("#inviteStaffRole").value = "cashier";
+  qs("#inviteStaffAllStores").checked = false;
+  const storeList = qs("#inviteStaffStoreList");
+  storeList.innerHTML = activeStores()
+    .map((store) => `<label class="alert-popup-toggle"><input type="checkbox" class="invite-store-checkbox" value="${store.id}" /> <span>${esc(store.name || t("storeSwitcher.fallbackName"))}</span></label>`)
+    .join("");
+  qsa(".invite-store-checkbox").forEach((cb) => { cb.disabled = false; });
+  setFieldError("inviteStaffError", "");
+  qs("#inviteStaffFormSection").hidden = false;
+  qs("#inviteStaffResultSection").hidden = true;
+  qs("#inviteStaffDialog").showModal();
+}
+
+// Calls the proxy's owner-only /api/staff/invite (Phase 2). The proxy
+// re-validates storeIds against this owner's real stores collection
+// server-side regardless of what this form sends -- this client-side
+// check is only for a fast, friendly error, not the actual boundary.
+async function sendStaffInvite() {
+  const email = qs("#inviteStaffEmail").value.trim().toLowerCase();
+  const role = qs("#inviteStaffRole").value;
+  const allStores = qs("#inviteStaffAllStores").checked;
+  const selectedStoreIds = allStores
+    ? ["all"]
+    : qsa(".invite-store-checkbox:checked").map((cb) => cb.value);
+
+  setFieldError("inviteStaffError", "");
+  if (!AUTH_EMAIL_PATTERN.test(email)) return setFieldError("inviteStaffError", t("staff.inviteEmailInvalid"));
+  if (!selectedStoreIds.length) return setFieldError("inviteStaffError", t("staff.inviteStoresRequired"));
+
+  const button = qs("#sendInviteStaffButton");
+  button.disabled = true;
+  try {
+    const token = await state.user.getIdToken();
+    const response = await fetch(new URL("/api/staff/invite", aiConfig.proxyUrl), {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ email, role, storeIds: selectedStoreIds })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) {
+      setFieldError("inviteStaffError", payload.error || t("staff.inviteFailed"));
+      return;
+    }
+    const roleLabel = role === "manager" ? t("staff.roleManager") : t("staff.roleCashier");
+    state.pendingInviteLinkToken = payload.linkToken;
+    state.pendingInviteRoleLabel = roleLabel;
+    qs("#inviteStaffFormSection").hidden = true;
+    qs("#inviteStaffResultSection").hidden = false;
+    qs("#inviteStaffResultText").textContent = t("staff.inviteResultText", { email, role: roleLabel });
+  } catch (error) {
+    console.warn(error);
+    setFieldError("inviteStaffError", t("staff.inviteNetworkError"));
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function copyInviteLink() {
+  const lines = buildStaffInviteTextLines(state.pendingInviteLinkToken, state.pendingInviteRoleLabel);
+  const acceptUrlLine = lines.find((line) => line.includes("http")) || lines.join("\n");
+  navigator.clipboard.writeText(acceptUrlLine)
+    .then(() => showToast(t("staff.linkCopied")))
+    .catch(() => showToast(t("staff.copyFailed")));
+}
+
+// No destination phone number is known at invite time -- wa.me/?text=...
+// with no number opens WhatsApp's own contact picker so the owner chooses
+// who to send it to, same idea as the purchase-order and payment-reminder
+// WhatsApp flows but without a pre-filled recipient.
+function sendInviteWhatsApp() {
+  const text = buildStaffInviteTextLines(state.pendingInviteLinkToken, state.pendingInviteRoleLabel).join("\n");
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
 }
 
 async function addStaffMember() {
@@ -5284,6 +5500,18 @@ function bindEvents() {
   });
   qs("#addStaffButton")?.addEventListener("click", addStaffMember);
   qs("#removeStaffButton")?.addEventListener("click", removeStaffMember);
+  qs("#staffRosterButton")?.addEventListener("click", () => { renderStaffRoster(); qs("#staffRosterDialog").showModal(); });
+  qs("#closeStaffRosterDialog")?.addEventListener("click", () => qs("#staffRosterDialog").close());
+  qs("#openInviteStaffButton")?.addEventListener("click", openInviteStaffDialog);
+  qs("#closeInviteStaffDialog")?.addEventListener("click", () => qs("#inviteStaffDialog").close());
+  qs("#cancelInviteStaffDialog")?.addEventListener("click", () => qs("#inviteStaffDialog").close());
+  qs("#sendInviteStaffButton")?.addEventListener("click", sendStaffInvite);
+  qs("#doneInviteStaffDialog")?.addEventListener("click", () => qs("#inviteStaffDialog").close());
+  qs("#copyInviteLinkButton")?.addEventListener("click", copyInviteLink);
+  qs("#sendInviteWhatsAppButton")?.addEventListener("click", sendInviteWhatsApp);
+  qs("#inviteStaffAllStores")?.addEventListener("change", (event) => {
+    qsa(".invite-store-checkbox").forEach((cb) => { cb.disabled = event.target.checked; });
+  });
   qs("#orderNumberSearch")?.addEventListener("input", debounce(searchOrderNumber, 250));
   qs("#staffOrderLookupStaff")?.addEventListener("change", renderStaffOrderNumberOptions);
   qs("#staffOrderLookupDateFrom")?.addEventListener("change", renderStaffOrderNumberOptions);
@@ -5549,6 +5777,12 @@ function bindEvents() {
     const setLimitButton = event.target.closest("[data-set-credit-limit]");
     if (setLimitButton) {
       setCustomerCreditLimit(setLimitButton.dataset.setCreditLimit);
+      return;
+    }
+
+    const revokeMemberButton = event.target.closest("[data-revoke-member]");
+    if (revokeMemberButton) {
+      revokeStaffMember(revokeMemberButton.dataset.revokeMember);
       return;
     }
 

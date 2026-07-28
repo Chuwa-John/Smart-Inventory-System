@@ -245,6 +245,7 @@
                 <select id="posStaffSelect" aria-label="Staff member"></select>
                 <button class="ghost-button compact" id="addStaffButton" type="button" data-i18n="pos.addStaff">+ Staff</button>
                 <button class="ghost-button compact danger" id="removeStaffButton" type="button" data-i18n="pos.removeStaff">Remove Staff</button>
+                <button class="ghost-button compact" id="staffRosterButton" type="button" data-i18n="staff.rosterButton">Staff Roster</button>
               </div>
               <label><span data-i18n="pos.customerName">Customer name (optional)</span>
                 <input id="posCustomerName" type="text" maxlength="80" placeholder="e.g. Amina" data-i18n-placeholder="pos.customerNamePlaceholder" />
@@ -704,6 +705,65 @@
       </div>
     </dialog>
 
+    <dialog id="staffRosterDialog" style="max-width:640px">
+      <div class="dialog-head">
+        <h2 data-i18n="staff.rosterTitle">Staff Roster</h2>
+        <button class="icon-button" type="button" id="closeStaffRosterDialog" aria-label="Close">&times;</button>
+      </div>
+      <div class="button-row end">
+        <button class="primary-button compact" type="button" id="openInviteStaffButton" data-i18n="staff.inviteButton">Invite Staff</button>
+      </div>
+      <div class="table-panel" style="box-shadow:none;border:none">
+        <table>
+          <thead>
+            <tr>
+              <th data-i18n="staff.colEmail">Email</th>
+              <th data-i18n="staff.colRole">Role</th>
+              <th data-i18n="staff.colStores">Stores</th>
+              <th data-i18n="staff.colActions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="staffRosterTable"></tbody>
+        </table>
+      </div>
+    </dialog>
+
+    <dialog id="inviteStaffDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="staff.inviteDialogTitle">Invite Staff Member</h2>
+        <button class="icon-button" type="button" id="closeInviteStaffDialog" aria-label="Close">&times;</button>
+      </div>
+      <div id="inviteStaffFormSection">
+        <div class="form-grid">
+          <label><span data-i18n="staff.inviteEmailLabel">Staff email</span>
+            <input id="inviteStaffEmail" type="email" autocomplete="off" />
+          </label>
+          <label><span data-i18n="pos.staffLabel">Staff member</span>
+            <select id="inviteStaffRole">
+              <option value="cashier" data-i18n="staff.roleCashier">Cashier</option>
+              <option value="manager" data-i18n="staff.roleManager">Manager</option>
+            </select>
+          </label>
+        </div>
+        <p class="muted" data-i18n="staff.inviteStoresLabel">Store access</p>
+        <label class="alert-popup-toggle"><input type="checkbox" id="inviteStaffAllStores" /> <span data-i18n="staff.inviteAllStores">All stores (roaming access)</span></label>
+        <div id="inviteStaffStoreList" class="store-checkbox-list"></div>
+        <span class="field-error" id="inviteStaffError"></span>
+        <div class="button-row end">
+          <button class="ghost-button" type="button" id="cancelInviteStaffDialog" data-i18n="product.cancel">Cancel</button>
+          <button class="primary-button" type="button" id="sendInviteStaffButton" data-i18n="staff.sendInviteButton">Send Invite</button>
+        </div>
+      </div>
+      <div id="inviteStaffResultSection" hidden>
+        <p class="muted" id="inviteStaffResultText"></p>
+        <div class="button-row end">
+          <button class="ghost-button compact" type="button" id="copyInviteLinkButton" data-i18n="staff.copyLinkButton">Copy Link</button>
+          <button class="primary-button compact" type="button" id="sendInviteWhatsAppButton" data-i18n="staff.sendWhatsAppButton">Send via WhatsApp</button>
+          <button class="ghost-button" type="button" id="doneInviteStaffDialog" data-i18n="receipt.close">Close</button>
+        </div>
+      </div>
+    </dialog>
+
     <dialog id="deleteAccountDialog">
       <div class="dialog-head">
         <h2 data-i18n="deleteAccount.title">Delete Account</h2>
@@ -772,6 +832,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js" integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script type="module" src="./app.js?v=20260754"></script>
+    <script type="module" src="./app.js?v=20260728b"></script>
   </body>
 </html>

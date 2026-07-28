@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Accept Staff Invite - DukaSmart ERP</title>
+    <link rel="preconnect" href="https://www.gstatic.com" />
+    <link rel="stylesheet" href="./styles.css" />
+    <meta name="theme-color" content="#101114" />
+  </head>
+  <body>
+    <div class="auth-gate" style="position:static; min-height:100vh;">
+      <form class="auth-panel" id="acceptInviteForm" novalidate>
+        <div>
+          <p class="eyebrow">Staff invitation</p>
+          <h1>DukaSmart ERP</h1>
+          <p class="auth-copy" id="acceptInviteIntro">Loading invite&hellip;</p>
+        </div>
+
+        <div id="acceptInviteFormFields" hidden>
+          <label>
+            <span>Email</span>
+            <input id="inviteEmail" type="email" autocomplete="email" required />
+            <span class="field-error" id="inviteEmailError"></span>
+          </label>
+          <label>
+            <span>Password</span>
+            <input id="invitePassword" type="password" autocomplete="new-password" minlength="6" required />
+            <span class="field-error" id="invitePasswordError"></span>
+          </label>
+          <label id="inviteConfirmPasswordRow">
+            <span>Confirm password</span>
+            <input id="inviteConfirmPassword" type="password" autocomplete="new-password" minlength="6" />
+            <span class="field-error" id="inviteConfirmPasswordError"></span>
+          </label>
+          <span class="field-error" id="acceptInviteError"></span>
+          <button class="primary-button full-width" id="acceptInviteSubmitButton" type="submit">Accept Invite</button>
+        </div>
+      </form>
+    </div>
+    <script type="module" src="./accept-invite.js?v=20260728b"></script>
+  </body>
+</html>
