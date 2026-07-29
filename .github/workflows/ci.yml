@@ -12,23 +12,72 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: proxy/package-lock.json
+
       - name: Check frontend syntax
         run: |
           node --check app.js
           node --check sw.js
+          node --check accept-invite.js
+
+      - name: Validate JSON config
+        run: |
+          for f in firebase.json firestore.indexes.json manifest.json; do
+            node -e "JSON.parse(require('fs').readFileSync('$f','utf8'))" || exit 1
+            echo "ok: $f"
+          done
+
+      # A stale service worker can serve an old app.js to a device that has not
+      # picked up the new shell -- for a role-gating change that silently
+      # un-gates controls for a staff member. These two values must therefore
+      # always move together, which has been missed by hand before.
+      - name: Enforce cache-version bump discipline
+        if: github.event_name == 'pull_request'
+        run: |
+          BASE="origin/${{ github.base_ref }}"
+          if git diff --quiet "$BASE"...HEAD -- app.js index.html; then
+            echo "No app.js/index.html change; version bump not required."
+            exit 0
+          fi
+          echo "app.js or index.html changed; both versions must be bumped."
+          git diff "$BASE"...HEAD -- index.html | grep -q '^+.*app\.js?v=' \
+            || { echo "::error::index.html changed app.js but the ?v= query string was not bumped."; exit 1; }
+          git diff "$BASE"...HEAD -- sw.js | grep -q '^+const CACHE_NAME' \
+            || { echo "::error::app.js/index.html changed but sw.js CACHE_NAME was not bumped."; exit 1; }
+          echo "Both app.js?v= and sw.js CACHE_NAME were bumped."
+
       - name: Install locked proxy dependencies
         working-directory: proxy
         run: npm ci
-      - name: Check proxy syntax and high-severity dependencies
+
+      - name: Check proxy syntax
         working-directory: proxy
-        run: |
-          node --check server.js
-          npm audit --audit-level=high
+        run: node --check server.js
+
+      - name: Fail on known-vulnerable dependencies
+        working-directory: proxy
+        run: npm audit --audit-level=high
+
+      - name: Proxy security tests
+        run: node tests/proxy-security.test.mjs
+
+      # The Firestore emulator is a JVM binary.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install rules test dependencies
+        working-directory: tests
+        run: npm ci
+
+      - name: Firestore security rules tests
+        working-directory: tests
+        run: npm test

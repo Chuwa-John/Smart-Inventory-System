@@ -25,6 +25,15 @@ const firebaseJwks = createRemoteJWKSet(
 );
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Every request field is read through this instead of String(body.x || "").
+// String() coerces rather than validates: String(["a@b.com"]) is "a@b.com",
+// so an array payload passed an email check that a plain string would have
+// had to earn. Objects, numbers, arrays and null are now rejected as the
+// wrong type instead of being silently flattened into a plausible string.
+function readString(value) {
+  return typeof value === "string" ? value : "";
+}
+
 if (!process.env.ANTHROPIC_API_KEY) {
   throw new Error("ANTHROPIC_API_KEY is required.");
 }
@@ -120,14 +129,14 @@ const authAttemptLimiter = rateLimit({
   limit: 5,
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  keyGenerator: (req) => String(req.body?.email || "").trim().toLowerCase() || req.ip,
+  keyGenerator: (req) => readString(req.body?.email).trim().toLowerCase() || req.ip,
   handler: (_req, res) => {
     res.status(429).json({ allowed: false, error: "Too many attempts. Please wait 15 minutes and try again." });
   }
 });
 
 app.post("/api/auth/check-limit", authAttemptLimiter, (req, res) => {
-  const email = String(req.body?.email || "").trim();
+  const email = readString(req.body?.email).trim();
   if (!EMAIL_PATTERN.test(email) || email.length > 254) {
     return res.status(400).json({ allowed: false, error: "A valid email is required." });
   }
@@ -320,7 +329,7 @@ app.post("/api/ai/override-verify", overrideLimiter, async (req, res) => {
   if (requireFirebaseAuth && !req.user) {
     return res.status(401).json({ authorized: false });
   }
-  const code = String(req.body?.code || "");
+  const code = readString(req.body?.code);
   if (!code || code.length > 64) {
     return res.status(400).json({ authorized: false });
   }
@@ -365,11 +374,11 @@ app.post("/api/settings/override-password", passwordChangeLimiter, async (req, r
   if (!firestoreDb) {
     return res.status(503).json({ ok: false, error: "Override-password storage is not configured." });
   }
-  const password = String(req.body?.password || "");
+  const password = readString(req.body?.password);
   if (password.length < 4 || password.length > 64) {
     return res.status(400).json({ ok: false, error: "Password must be 4-64 characters." });
   }
-  const oldPassword = String(req.body?.oldPassword || "");
+  const oldPassword = readString(req.body?.oldPassword);
   try {
     // Require the current discount password before allowing it to be overwritten,
     // whenever this business already has one set -- otherwise anyone with an
@@ -437,12 +446,22 @@ app.post("/api/staff/invite", inviteLimiter, async (req, res) => {
   if (!req.user?.uid) {
     return res.status(401).json({ ok: false, error: "Authentication required." });
   }
+  // Only a business owner may issue invites. An invited staff member carries a
+  // businessOwnerUid claim pointing at someone else's tree; an owner has none,
+  // because their own uid is the tenant root. Without this check a cashier
+  // could still only ever create invites under their OWN uid (every path below
+  // is keyed on req.user.uid, never on a client-supplied owner id), so this is
+  // not closing an escalation -- it stops a confusing no-op that would silently
+  // build a second, empty business under a staff account.
+  if (req.user.uid !== getBusinessOwnerUid(req.user)) {
+    return res.status(403).json({ ok: false, error: "Only the business owner can invite staff." });
+  }
   if (!firestoreDb) {
     return res.status(503).json({ ok: false, error: "Staff invites are not configured." });
   }
 
-  const email = String(req.body?.email || "").trim().toLowerCase();
-  const role = String(req.body?.role || "");
+  const email = readString(req.body?.email).trim().toLowerCase();
+  const role = readString(req.body?.role);
   const storeIds = req.body?.storeIds;
 
   if (!EMAIL_PATTERN.test(email) || email.length > 254) {
@@ -482,12 +501,19 @@ app.post("/api/staff/invite", inviteLimiter, async (req, res) => {
   }
 });
 
+// Redeeming an invite is a credential-bearing operation (it grants a role in
+// someone else's business), so it sits at the same 5-per-15-minutes ceiling as
+// the other authentication routes rather than a looser one. Keyed on uid where
+// available so one abusive account cannot exhaust an entire IP's budget.
 const acceptInviteLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 10,
+  limit: 5,
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  keyGenerator: (req) => req.user?.uid || req.ip
+  keyGenerator: (req) => req.user?.uid || req.ip,
+  handler: (_req, res) => {
+    res.status(429).json({ ok: false, error: "Too many attempts. Please wait 15 minutes and try again." });
+  }
 });
 
 // Called after the invitee has already created their own Firebase Auth
@@ -504,7 +530,7 @@ app.post("/api/staff/accept-invite", acceptInviteLimiter, async (req, res) => {
     return res.status(503).json({ ok: false, error: "Staff invites are not configured." });
   }
 
-  const linkToken = String(req.body?.linkToken || "");
+  const linkToken = readString(req.body?.linkToken);
   let ownerUid;
   let inviteId;
   let token;
@@ -561,7 +587,23 @@ app.post("/api/staff/accept-invite", acceptInviteLimiter, async (req, res) => {
   }
 });
 
-app.post("/api/ai/advisor", async (req, res) => {
+// The advisor and report endpoints are the only ones that cost real money per
+// call (Anthropic tokens). The generic 20/min per-user limiter is about
+// protecting the process; this one is about protecting the bill. A single
+// compromised or careless account could otherwise issue 20 completions a
+// minute indefinitely.
+const aiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 8,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.uid || req.ip,
+  handler: (_req, res) => {
+    res.status(429).json({ error: "Too many AI requests. Please wait a moment and try again." });
+  }
+});
+
+app.post("/api/ai/advisor", aiLimiter, async (req, res) => {
   const validationError = validateAdvisorRequest(req.body);
   if (validationError) return res.status(400).json({ error: validationError });
   const conversation = sanitizeConversation(req.body?.messages);
