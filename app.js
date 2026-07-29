@@ -1828,7 +1828,7 @@ function renderCart() {
   if (undoCartButton) undoCartButton.disabled = !state.cartHistory.length;
   const undoSaleButton = qs("#undoSaleButton");
   if (undoSaleButton) {
-    undoSaleButton.hidden = !isOwnerRole();
+    undoSaleButton.hidden = !isManagerOrOwnerRole();
     undoSaleButton.disabled = !state.lastSale;
   }
 }
@@ -4366,21 +4366,21 @@ async function undoLastSale() {
   if (!window.confirm(t("dialog.undoSaleConfirm"))) return;
 
   const sale = state.lastSale;
-  if (sale.mode === "firestore" && state.db && state.user) {
+  if (sale.mode === "firestore" && state.db && state.user && state.businessOwnerUid) {
     try {
       const { doc, collection, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
       await runTransaction(state.db, async (transaction) => {
-        const saleRef = doc(state.db, "users", state.user.uid, "sales", sale.saleId);
+        const saleRef = doc(state.db, "users", state.businessOwnerUid, "sales", sale.saleId);
         const saleSnap = await transaction.get(saleRef);
         if (!saleSnap.exists()) throw new Error(t("txerror.saleNotFound"));
         const saleData = saleSnap.data();
         if (saleData.voided) throw new Error(t("txerror.saleAlreadyUndone"));
 
-        const productRefs = sale.items.map((item) => doc(state.db, "users", state.user.uid, "products", item.productId));
+        const productRefs = sale.items.map((item) => doc(state.db, "users", state.businessOwnerUid, "products", item.productId));
         const productSnaps = await Promise.all(productRefs.map((ref) => transaction.get(ref)));
 
         const creditCustomerRef = saleData.paymentMethod === "credit" && saleData.customerId
-          ? doc(state.db, "users", state.user.uid, "customers", saleData.customerId)
+          ? doc(state.db, "users", state.businessOwnerUid, "customers", saleData.customerId)
           : null;
         const creditCustomerSnap = creditCustomerRef ? await transaction.get(creditCustomerRef) : null;
 
@@ -4405,7 +4405,7 @@ async function undoLastSale() {
 
         transaction.update(saleRef, { voided: true, voidedAt: serverTimestamp() });
 
-        const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
+        const auditRef = doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs"));
         transaction.set(auditRef, {
           action: "SALE_VOIDED",
           saleId: sale.saleId,

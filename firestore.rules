@@ -243,12 +243,17 @@ service cloud.firestore {
         allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId));
         allow create: if isOwnerOrRole(userId, ["manager", "cashier"]) && validSale()
           && (isOwner(userId) || memberCanAccessStore(userId, request.resource.data.storeId));
-        // Only owners may void a full sale. Managers may process itemized
-        // returns, but only for a store assigned to them.
+        // Managers may void a full sale or process an itemized return, but
+        // only for a store assigned to them -- owner reasoning revisited:
+        // the owner isn't always on-site, and a manager already holds the
+        // same trust level for returns. A void still has no itemized trail
+        // (unlike a return, which is capped at the sale total and logged
+        // per item), so this remains the single highest-trust write in the
+        // schema; it's opened to managers only, never cashiers.
         allow update: if (isOwner(userId) && (validVoidUpdate() || validReturnUpdate()))
           || (isOwnerOrRole(userId, ["manager"])
             && memberCanAccessStore(userId, resource.data.storeId)
-            && validReturnUpdate());
+            && (validVoidUpdate() || validReturnUpdate()));
         allow delete: if false;
       }
 
