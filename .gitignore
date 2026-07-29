@@ -7,3 +7,6 @@ firebase-debug.*.log
 proxy/.env
 work/
 outputs/
+tests/firestore-debug.log
+firestore-debug.log
+ui-debug.log
