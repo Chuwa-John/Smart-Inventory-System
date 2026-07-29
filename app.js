@@ -4703,13 +4703,20 @@ async function subscribeToProducts() {
       return;
     }
     const productsQuery = queryStoreIds === null ? productsRef : query(productsRef, where("storeId", "in", queryStoreIds));
-    state.unsubscribeProducts = onSnapshot(productsQuery, (snapshot) => {
-      const nextProducts = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-      detectStockAlertCrossings(state.products, nextProducts);
-      state.products = nextProducts;
-      state.productsInitialized = true;
-      scheduleRenderAll();
-    });
+    state.unsubscribeProducts = onSnapshot(
+      productsQuery,
+      (snapshot) => {
+        const nextProducts = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        detectStockAlertCrossings(state.products, nextProducts);
+        state.products = nextProducts;
+        state.productsInitialized = true;
+        scheduleRenderAll();
+      },
+      (error) => {
+        console.error("[products listener]", error.code || error, "queryStoreIds=", queryStoreIds);
+        showToast(t("toast.couldNotLoadInventory"));
+      }
+    );
   } catch (error) {
     console.warn(error);
     showToast(t("toast.couldNotLoadInventory"));
@@ -4735,10 +4742,14 @@ async function subscribeToSales() {
     const salesQuery = queryStoreIds === null
       ? query(salesRef, orderBy("createdAt", "desc"), limit(1000))
       : query(salesRef, where("storeId", "in", queryStoreIds), orderBy("createdAt", "desc"), limit(1000));
-    state.unsubscribeSales = onSnapshot(salesQuery, (snapshot) => {
-      state.sales = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-      renderPaymentReports();
-    });
+    state.unsubscribeSales = onSnapshot(
+      salesQuery,
+      (snapshot) => {
+        state.sales = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        renderPaymentReports();
+      },
+      (error) => console.error("[sales listener]", error.code || error, "queryStoreIds=", queryStoreIds)
+    );
   } catch (error) {
     console.warn(error);
     showToast(t("toast.couldNotLoadSales"));
@@ -4771,19 +4782,24 @@ async function subscribeToStores() {
     // rule comment in firestore.rules) -- so this stays a plain collection
     // query for both owner and staff, unlike products/sales/etc.
     const storesQuery = query(collection(state.db, "users", state.businessOwnerUid, "stores"), orderBy("createdAt", "asc"));
-    state.unsubscribeStores = onSnapshot(storesQuery, async (snapshot) => {
-      state.stores = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-      if (!state.stores.length) {
-        await ensureDefaultStore();
-        return;
-      }
-      if (!state.currentStoreId || (state.currentStoreId !== "all" && !state.stores.some((store) => store.id === state.currentStoreId))) {
-        state.currentStoreId = activeStores()[0]?.id || state.stores[0].id;
-      }
-      renderStoreSwitcher();
-      scheduleRenderAll();
-      translateStaticDom();
-    });
+    state.unsubscribeStores = onSnapshot(
+      storesQuery,
+      async (snapshot) => {
+        state.stores = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        if (!state.stores.length) {
+          console.warn("[stores listener] snapshot returned 0 stores for uid=", state.user?.uid, "businessOwnerUid=", state.businessOwnerUid);
+          await ensureDefaultStore();
+          return;
+        }
+        if (!state.currentStoreId || (state.currentStoreId !== "all" && !state.stores.some((store) => store.id === state.currentStoreId))) {
+          state.currentStoreId = activeStores()[0]?.id || state.stores[0].id;
+        }
+        renderStoreSwitcher();
+        scheduleRenderAll();
+        translateStaticDom();
+      },
+      (error) => console.error("[stores listener]", error.code || error)
+    );
   } catch (error) {
     console.warn(error);
     showToast(t("toast.couldNotLoadStores"));
