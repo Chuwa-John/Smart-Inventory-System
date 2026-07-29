@@ -118,6 +118,17 @@ console.log("\n=== monthlyReports owner-only ===");
 await check("cashier CANNOT list monthlyReports", false,
   () => getDocs(collection(cashierDb, "users", OWNER, "monthlyReports")));
 
+
+console.log("\n=== roaming member: can it skip the where() filter? ===");
+await check("roaming member CAN list products unfiltered", true,
+  () => getDocs(collection(roamerDb, "users", OWNER, "products")));
+await check("roaming member CAN list sales unfiltered", true,
+  () => getDocs(query(collection(roamerDb, "users", OWNER, "sales"), orderBy("createdAt", "desc"))));
+await check("roaming member CAN list customers unfiltered", true,
+  () => getDocs(collection(roamerDb, "users", OWNER, "customers")));
+await check("roaming member CAN list transfers unfiltered", true,
+  () => getDocs(collection(roamerDb, "users", OWNER, "transfers")));
+
 await testEnv.cleanup();
 
 const failed = results.filter((r) => !r.pass);

@@ -16,7 +16,14 @@
       "**/node_modules/**",
       "proxy/**",
       "work/**",
-      "outputs/**"
+      "outputs/**",
+      "tests",
+      "tests/**",
+      "functions/**",
+      "*.md",
+      "gen-sri.mjs",
+      "firestore.rules",
+      "firestore.indexes.json"
     ],
     "headers": [
       {

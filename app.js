@@ -4495,6 +4495,39 @@ function stopIdleWatcher() {
 // Returns null for the owner (no filter -- full unfiltered access is
 // correct), or a concrete array of real store IDs for staff, expanding
 // the "all" roaming sentinel via a stores-collection read.
+// Session cache for the signed-in user's own member doc. Sign-in fans out into
+// six-plus resolver calls (role, stores, products, sales, customers,
+// transfers), each of which otherwise re-reads the SAME document -- wasteful
+// against Spark-plan quota, slower to first paint, and a source of skew if the
+// doc changed mid-fan-out. Cleared on sign-out and whenever the uid/owner pair
+// changes. This is a read cache only: it never influences authorization, which
+// is always re-evaluated server-side by firestore.rules on every request, so a
+// revoked member is still cut off immediately regardless of what's cached here.
+let memberDocCache = { key: "", promise: null };
+
+function memberCacheKey() {
+  return `${state.user?.uid || ""}|${state.businessOwnerUid || ""}`;
+}
+
+function clearMemberDocCache() {
+  memberDocCache = { key: "", promise: null };
+}
+
+function readOwnMemberDoc() {
+  const key = memberCacheKey();
+  if (memberDocCache.key === key && memberDocCache.promise) return memberDocCache.promise;
+  const promise = state.firebaseApi.firestore
+    .getDoc(state.firebaseApi.firestore.doc(state.db, "users", state.businessOwnerUid, "members", state.user.uid))
+    .catch((error) => {
+      // Don't cache a failure -- a transient network error shouldn't pin this
+      // account to "no access" for the rest of the session.
+      if (memberDocCache.key === key) clearMemberDocCache();
+      throw error;
+    });
+  memberDocCache = { key, promise };
+  return promise;
+}
+
 // Raw storeIds straight off the member doc: null for the owner (unrestricted),
 // otherwise the array as stored, which MAY still contain the "all" sentinel.
 // Callers that need real store IDs should use resolveQueryStoreIds(); callers
@@ -4502,9 +4535,7 @@ function stopIdleWatcher() {
 async function resolveMemberStoreIds() {
   if (state.user.uid === state.businessOwnerUid) return null;
   try {
-    const memberSnap = await state.firebaseApi.firestore.getDoc(
-      state.firebaseApi.firestore.doc(state.db, "users", state.businessOwnerUid, "members", state.user.uid)
-    );
+    const memberSnap = await readOwnMemberDoc();
     return memberSnap.exists() ? (memberSnap.data().storeIds || []) : [];
   } catch (error) {
     console.warn("Could not resolve staff store access; defaulting to no access.", error);
@@ -4512,24 +4543,33 @@ async function resolveMemberStoreIds() {
   }
 }
 
+// Firestore caps the `in` operator at 30 values.
+const FIRESTORE_IN_LIMIT = 30;
+
 async function resolveQueryStoreIds() {
   const memberStoreIdsList = await resolveMemberStoreIds();
   if (memberStoreIdsList === null) return null;
-  if (!memberStoreIdsList.includes("all")) return memberStoreIdsList;
 
-  try {
-    // Safe for a roaming member specifically: with "all" present,
-    // memberCanAccessStore() short-circuits to true on ("all" in ids), so the
-    // stores rule is provable WITHOUT the storeId wildcard and the list is
-    // permitted. A branch-scoped member cannot run this query -- see
-    // subscribeToStores() for why.
-    const { collection, getDocs } = state.firebaseApi.firestore;
-    const storesSnap = await getDocs(collection(state.db, "users", state.businessOwnerUid, "stores"));
-    return storesSnap.docs.map((docSnap) => docSnap.id);
-  } catch (error) {
-    console.warn("Could not expand roaming store access; defaulting to no access.", error);
-    return [];
+  // A roaming member needs no filter at all. memberCanAccessStore()
+  // short-circuits to true on ("all" in ids) without ever reading storeId, so
+  // the rule is provable for an unfiltered list and Firestore permits it
+  // (covered by the roaming cases in tests/rules-access.test.mjs). Returning
+  // null here rather than expanding "all" into every store id also avoids a
+  // stores-collection read per subscription, and sidesteps the 30-value `in`
+  // limit that would have broken any business with more than 30 branches.
+  if (memberStoreIdsList.includes("all")) return null;
+
+  if (memberStoreIdsList.length > FIRESTORE_IN_LIMIT) {
+    // Not silently truncated into a wrong-looking-but-plausible result: the
+    // member sees their first 30 branches and the console says why. The fix
+    // is to give a member this broad "all" instead of enumerating branches.
+    console.warn(
+      `Member is assigned ${memberStoreIdsList.length} stores but Firestore only allows ${FIRESTORE_IN_LIMIT} in an "in" query; ` +
+      `only the first ${FIRESTORE_IN_LIMIT} will load. Assign the "all" store scope instead.`
+    );
+    return memberStoreIdsList.slice(0, FIRESTORE_IN_LIMIT);
   }
+  return memberStoreIdsList;
 }
 
 async function resolveBusinessOwnerUid(user) {
@@ -4551,9 +4591,7 @@ async function resolveBusinessOwnerUid(user) {
 async function resolveCurrentUserRole(user, ownerUid) {
   if (user.uid === ownerUid) return "owner";
   try {
-    const memberSnap = await state.firebaseApi.firestore.getDoc(
-      state.firebaseApi.firestore.doc(state.db, "users", ownerUid, "members", user.uid)
-    );
+    const memberSnap = await readOwnMemberDoc();
     return memberSnap.exists() ? (memberSnap.data().role || "cashier") : "cashier";
   } catch (error) {
     console.warn("Could not resolve current user role; defaulting to cashier.", error);
@@ -4641,6 +4679,7 @@ async function initFirebase() {
       }
       updateAuthUi();
       if (user) {
+        clearMemberDocCache();
         state.businessOwnerUid = await resolveBusinessOwnerUid(user);
         state.currentUserRole = await resolveCurrentUserRole(user, state.businessOwnerUid);
         updateAuthUi();
@@ -4688,6 +4727,7 @@ async function initFirebase() {
         state.currentStoreId = "";
         state.businessOwnerUid = "";
         state.currentUserRole = null;
+        clearMemberDocCache();
         state.productsInitialized = false;
         state.stockAlertQueue = [];
         state.stockAlertPopupOpen = false;
