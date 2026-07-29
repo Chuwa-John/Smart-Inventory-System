@@ -255,6 +255,10 @@ async function verifyFirebaseToken(req, res, next) {
     req.user = {
       uid: payload.sub,
       email: payload.email || null,
+      // businessOwnerUid is a signed custom claim set after accepting an
+      // invite. It is routing data only; Firestore remains the authorization
+      // boundary for client access.
+      businessOwnerUid: typeof payload.businessOwnerUid === "string" ? payload.businessOwnerUid : null,
       firebase: payload.firebase || null
     };
     return next();
@@ -305,6 +309,13 @@ async function getTenantOverrideHash(uid) {
   }
 }
 
+// Owners have no businessOwnerUid claim because their uid is already the
+// tenant root. Invited staff carry the owner uid as a signed custom claim.
+// Never accept a client-supplied tenant id for this lookup.
+function getBusinessOwnerUid(user) {
+  return user?.businessOwnerUid || user?.uid || null;
+}
+
 app.post("/api/ai/override-verify", overrideLimiter, async (req, res) => {
   if (requireFirebaseAuth && !req.user) {
     return res.status(401).json({ authorized: false });
@@ -314,7 +325,8 @@ app.post("/api/ai/override-verify", overrideLimiter, async (req, res) => {
     return res.status(400).json({ authorized: false });
   }
 
-  const tenantHash = await getTenantOverrideHash(req.user?.uid);
+  const businessOwnerUid = getBusinessOwnerUid(req.user);
+  const tenantHash = await getTenantOverrideHash(businessOwnerUid);
   const usingLegacyFallback = !tenantHash && Boolean(OVERRIDE_HASH);
   const hashToCheck = tenantHash || OVERRIDE_HASH;
 
@@ -331,7 +343,7 @@ app.post("/api/ai/override-verify", overrideLimiter, async (req, res) => {
       // Remove PRICE_OVERRIDE_PASSWORD_HASH from Render once this stops
       // appearing in the logs for every business you care about migrating --
       // that means everyone who needs it has set their own password.
-      console.warn(`uid=${req.user?.uid || "unknown"} has no per-business override password yet; used legacy shared fallback.`);
+      console.warn(`businessOwnerUid=${businessOwnerUid || "unknown"} has no per-business override password yet; used legacy shared fallback.`);
     }
     return res.status(ok ? 200 : 401).json({ authorized: ok });
   } catch (error) {
@@ -343,6 +355,12 @@ app.post("/api/ai/override-verify", overrideLimiter, async (req, res) => {
 app.post("/api/settings/override-password", passwordChangeLimiter, async (req, res) => {
   if (!req.user?.uid) {
     return res.status(401).json({ ok: false, error: "Authentication required." });
+  }
+  const businessOwnerUid = getBusinessOwnerUid(req.user);
+  // Only the tenant owner may create or replace the shared discount password.
+  // A manager/cashier may verify it for a sale, but must never change it.
+  if (req.user.uid !== businessOwnerUid) {
+    return res.status(403).json({ ok: false, error: "Only the business owner can change the discount password." });
   }
   if (!firestoreDb) {
     return res.status(503).json({ ok: false, error: "Override-password storage is not configured." });
@@ -360,7 +378,7 @@ app.post("/api/settings/override-password", passwordChangeLimiter, async (req, r
     // password. Enforced here, not just in the dialog: a client-side-only gate
     // is trivially bypassed by anyone calling this endpoint directly with a
     // valid Firebase token. Skipped entirely for first-time setup (no hash yet).
-    const existingHash = await getTenantOverrideHash(req.user.uid);
+    const existingHash = await getTenantOverrideHash(businessOwnerUid);
     if (existingHash) {
       const oldPasswordValid = Boolean(oldPassword) && (await bcrypt.compare(oldPassword, existingHash));
       if (!oldPasswordValid) {
@@ -370,11 +388,11 @@ app.post("/api/settings/override-password", passwordChangeLimiter, async (req, r
     const hash = await bcrypt.hash(password, 10);
     await firestoreDb
       .collection("users")
-      .doc(req.user.uid)
+      .doc(businessOwnerUid)
       .collection("private")
       .doc("security")
       .set({ overridePasswordHash: hash, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-    console.log(`Override password set for uid=${req.user.uid} at ${new Date().toISOString()}`);
+    console.log(`Override password set for businessOwnerUid=${businessOwnerUid} at ${new Date().toISOString()}`);
     return res.json({ ok: true });
   } catch (error) {
     console.error("Override password change failed:", error);
