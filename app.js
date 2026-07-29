@@ -36,6 +36,7 @@ const state = {
   pendingInviteLinkToken: "",
   pendingInviteRoleLabel: "",
   businessOwnerUid: "",
+  currentUserRole: null,
   pendingTransferProductId: null,
   pendingRestockProductId: null,
   stockAlertPopupEnabled: true,
@@ -1692,10 +1693,10 @@ function renderInventory() {
         <td><span class="status ${status}">${label}</span></td>
         <td>${expiryBadgeHtml(product)}</td>
         <td class="table-actions">
-          <button class="ghost-button compact" data-edit-product="${product.id}">${t("inventory.edit")}</button>
+          ${isOwnerRole() ? `<button class="ghost-button compact" data-edit-product="${product.id}">${t("inventory.edit")}</button>` : ""}
           <button class="ghost-button compact" data-restock-product="${product.id}">${t("inventory.restock")}</button>
-          ${activeStores().length > 1 ? `<button class="ghost-button compact" data-transfer-product="${product.id}">${t("inventory.transfer")}</button>` : ""}
-          <button class="ghost-button compact danger" data-delete-product="${product.id}">${t("inventory.delete")}</button>
+          ${activeStores().length > 1 && isManagerOrOwnerRole() ? `<button class="ghost-button compact" data-transfer-product="${product.id}">${t("inventory.transfer")}</button>` : ""}
+          ${isOwnerRole() ? `<button class="ghost-button compact danger" data-delete-product="${product.id}">${t("inventory.delete")}</button>` : ""}
         </td>
       </tr>`;
     })
@@ -1826,7 +1827,10 @@ function renderCart() {
   const undoCartButton = qs("#undoCartButton");
   if (undoCartButton) undoCartButton.disabled = !state.cartHistory.length;
   const undoSaleButton = qs("#undoSaleButton");
-  if (undoSaleButton) undoSaleButton.disabled = !state.lastSale;
+  if (undoSaleButton) {
+    undoSaleButton.hidden = !isOwnerRole();
+    undoSaleButton.disabled = !state.lastSale;
+  }
 }
 
 function renderPos() {
@@ -2052,11 +2056,14 @@ function exportMonthlyReportPdf() {
 }
 
 async function subscribeToMonthlyReports() {
-  if (!state.db || !state.user) return;
+  // Owner-only: firestore.rules grants monthlyReports read to isOwner(userId)
+  // only, no manager/cashier branch -- these are business-performance
+  // summaries, not something day-to-day staff need or should see.
+  if (!state.db || !state.user || state.user.uid !== state.businessOwnerUid) return;
   if (state.unsubscribeMonthlyReports) state.unsubscribeMonthlyReports();
   try {
     const { collection, onSnapshot, orderBy, query } = state.firebaseApi.firestore;
-    const reportsQuery = query(collection(state.db, "users", state.user.uid, "monthlyReports"), orderBy("periodLabel", "desc"));
+    const reportsQuery = query(collection(state.db, "users", state.businessOwnerUid, "monthlyReports"), orderBy("periodLabel", "desc"));
     state.unsubscribeMonthlyReports = onSnapshot(reportsQuery, (snapshot) => {
       state.monthlyReports = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
       renderMonthlyReportsList();
@@ -2409,7 +2416,7 @@ function buildStaffOrderCard(sale) {
     }
     <div class="payment-summary-row"><strong>${t("reports.staffOrderLookupTotalLabel")}</strong><strong>${money(sale.total)}</strong></div>
     ${
-      !sale.voided
+      !sale.voided && isManagerOrOwnerRole()
         ? `<div class="button-row end"><button class="ghost-button compact" type="button" data-return-sale="${esc(sale.id)}">${t("returns.processButton")}</button></div>`
         : ""
     }
@@ -2479,8 +2486,8 @@ async function confirmProcessReturn() {
     try {
       const { doc, collection, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
       await runTransaction(state.db, async (transaction) => {
-        const saleRef = doc(state.db, "users", state.user.uid, "sales", saleId);
-        const productRefs = selections.map((item) => doc(state.db, "users", state.user.uid, "products", item.productId));
+        const saleRef = doc(state.db, "users", state.businessOwnerUid, "sales", saleId);
+        const productRefs = selections.map((item) => doc(state.db, "users", state.businessOwnerUid, "products", item.productId));
         const productSnaps = await Promise.all(productRefs.map((ref) => transaction.get(ref)));
 
         transaction.update(saleRef, { returns: nextReturns, refundedAmount: nextRefundedAmount });
@@ -2499,7 +2506,7 @@ async function confirmProcessReturn() {
           });
         });
 
-        const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
+        const auditRef = doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs"));
         transaction.set(auditRef, {
           action: "RETURN_PROCESSED",
           saleId,
@@ -3185,7 +3192,7 @@ function renderCustomerAccounts() {
         <td class="table-actions">
           <button class="ghost-button compact" type="button" data-record-payment="${customer.id}">${t("customers.recordPayment")}</button>
           <button class="ghost-button compact" type="button" data-remind-customer="${customer.id}">${t("customers.remindButton")}</button>
-          <button class="ghost-button compact" type="button" data-set-credit-limit="${customer.id}">${t("customers.setLimitButton")}</button>
+          ${isManagerOrOwnerRole() ? `<button class="ghost-button compact" type="button" data-set-credit-limit="${customer.id}">${t("customers.setLimitButton")}</button>` : ""}
         </td>
       </tr>`;
     })
@@ -3196,11 +3203,20 @@ function renderCustomerAccounts() {
 }
 
 async function subscribeToCustomers() {
-  if (!state.db || !state.user) return;
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
   if (state.unsubscribeCustomers) state.unsubscribeCustomers();
   try {
-    const { collection, onSnapshot, orderBy, query } = state.firebaseApi.firestore;
-    const customersQuery = query(collection(state.db, "users", state.user.uid, "customers"), orderBy("createdAt", "asc"));
+    const { collection, onSnapshot, orderBy, query, where } = state.firebaseApi.firestore;
+    const customersRef = collection(state.db, "users", state.businessOwnerUid, "customers");
+    const queryStoreIds = await resolveQueryStoreIds();
+    if (queryStoreIds !== null && queryStoreIds.length === 0) {
+      state.customers = [];
+      renderCustomerAccounts();
+      return;
+    }
+    const customersQuery = queryStoreIds === null
+      ? query(customersRef, orderBy("createdAt", "asc"))
+      : query(customersRef, where("storeId", "in", queryStoreIds), orderBy("createdAt", "asc"));
     state.unsubscribeCustomers = onSnapshot(customersQuery, (snapshot) => {
       state.customers = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
       renderCustomerAccounts();
@@ -3211,15 +3227,45 @@ async function subscribeToCustomers() {
 }
 
 async function subscribeToTransfers() {
-  if (!state.db || !state.user) return;
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
   if (state.unsubscribeTransfers) state.unsubscribeTransfers();
   try {
-    const { collection, onSnapshot, orderBy, query, limit } = state.firebaseApi.firestore;
-    const transfersQuery = query(collection(state.db, "users", state.user.uid, "transfers"), orderBy("createdAt", "desc"), limit(2000));
-    state.unsubscribeTransfers = onSnapshot(transfersQuery, (snapshot) => {
-      state.transfers = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+    const { collection, onSnapshot, orderBy, query, limit, where } = state.firebaseApi.firestore;
+    const transfersRef = collection(state.db, "users", state.businessOwnerUid, "transfers");
+    const queryStoreIds = await resolveQueryStoreIds();
+
+    if (queryStoreIds === null) {
+      const transfersQuery = query(transfersRef, orderBy("createdAt", "desc"), limit(2000));
+      state.unsubscribeTransfers = onSnapshot(transfersQuery, (snapshot) => {
+        state.transfers = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        if (state.productMovementProductId) renderProductMovementDialog(state.productMovementProductId);
+      });
+      return;
+    }
+    if (queryStoreIds.length === 0) {
+      state.transfers = [];
       if (state.productMovementProductId) renderProductMovementDialog(state.productMovementProductId);
-    });
+      return;
+    }
+
+    // firestore.rules grants a transfer if the staff can reach EITHER the
+    // source OR the destination store -- Firestore can't OR across two
+    // fields in one query, so run both filtered queries and merge by id,
+    // deduped (a same-branch transfer would otherwise appear in both).
+    let sourceDocs = [];
+    let destDocs = [];
+    const mergeAndSet = () => {
+      const merged = new Map();
+      [...sourceDocs, ...destDocs].forEach((docSnap) => merged.set(docSnap.id, { id: docSnap.id, ...docSnap.data() }));
+      state.transfers = [...merged.values()].sort((a, b) => (transferDate(b)?.getTime() || 0) - (transferDate(a)?.getTime() || 0));
+      if (state.productMovementProductId) renderProductMovementDialog(state.productMovementProductId);
+    };
+
+    const sourceQuery = query(transfersRef, where("sourceStoreId", "in", queryStoreIds), orderBy("createdAt", "desc"), limit(2000));
+    const destQuery = query(transfersRef, where("destinationStoreId", "in", queryStoreIds), orderBy("createdAt", "desc"), limit(2000));
+    const unsubSource = onSnapshot(sourceQuery, (snapshot) => { sourceDocs = snapshot.docs; mergeAndSet(); });
+    const unsubDest = onSnapshot(destQuery, (snapshot) => { destDocs = snapshot.docs; mergeAndSet(); });
+    state.unsubscribeTransfers = () => { unsubSource(); unsubDest(); };
   } catch (error) {
     console.warn(error);
   }
@@ -3249,11 +3295,11 @@ async function confirmRecordPayment() {
 
   const newBalance = Math.max(0, Number(customer.balanceOwed || 0) - amount);
 
-  if (state.db && state.user) {
+  if (state.db && state.user && state.businessOwnerUid) {
     try {
       const { doc, collection, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
-      const customerRef = doc(state.db, "users", state.user.uid, "customers", customerId);
-      const paymentRef = doc(collection(state.db, "users", state.user.uid, "customers", customerId, "payments"));
+      const customerRef = doc(state.db, "users", state.businessOwnerUid, "customers", customerId);
+      const paymentRef = doc(collection(state.db, "users", state.businessOwnerUid, "customers", customerId, "payments"));
       await runTransaction(state.db, async (transaction) => {
         const snap = await transaction.get(customerRef);
         if (!snap.exists()) throw new Error("customer gone");
@@ -3265,7 +3311,7 @@ async function confirmRecordPayment() {
         transaction.update(customerRef, customerUpdate);
         transaction.set(paymentRef, { amount, note, createdAt: serverTimestamp() });
 
-        const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
+        const auditRef = doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs"));
         transaction.set(auditRef, {
           action: "PAYMENT_RECORDED",
           customerId,
@@ -3292,9 +3338,9 @@ async function findOrCreateCustomerForCredit(name, phoneKey) {
   const existing = findCustomerByPhone(phoneKey, state.currentStoreId);
   if (existing) return existing.id;
 
-  if (state.db && state.user) {
+  if (state.db && state.user && state.businessOwnerUid) {
     const { collection, doc, serverTimestamp, setDoc } = state.firebaseApi.firestore;
-    const customerRef = doc(collection(state.db, "users", state.user.uid, "customers"));
+    const customerRef = doc(collection(state.db, "users", state.businessOwnerUid, "customers"));
     await setDoc(customerRef, { name: name || "", phone: phoneKey, balanceOwed: 0, storeId: state.currentStoreId, createdAt: serverTimestamp() });
     return customerRef.id;
   }
@@ -3367,13 +3413,13 @@ async function setCustomerCreditLimit(customerId) {
     nextLimit = parsed;
   }
 
-  if (state.db && state.user) {
+  if (state.db && state.user && state.businessOwnerUid) {
     try {
       const { doc, setDoc, collection, serverTimestamp } = state.firebaseApi.firestore;
       const previousLimit = customer.creditLimit ?? null;
-      await setDoc(doc(state.db, "users", state.user.uid, "customers", customerId), { creditLimit: nextLimit }, { merge: true });
+      await setDoc(doc(state.db, "users", state.businessOwnerUid, "customers", customerId), { creditLimit: nextLimit }, { merge: true });
       try {
-        const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
+        const auditRef = doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs"));
         await setDoc(auditRef, {
           action: "CREDIT_LIMIT_CHANGED",
           customerId,
@@ -3671,8 +3717,8 @@ function buildStaffInviteTextLines(linkToken, roleLabel) {
 }
 
 function productCollectionPath() {
-  if (!state.db || !state.user) return null;
-  return ["users", state.user.uid, "products"];
+  if (!state.db || !state.user || !state.businessOwnerUid) return null;
+  return ["users", state.businessOwnerUid, "products"];
 }
 
 function openProductDialog(product = null) {
@@ -3753,7 +3799,7 @@ async function saveProduct(product) {
         { merge: true }
       );
       try {
-        const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
+        const auditRef = doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs"));
         await setDoc(auditRef, {
           action: existing ? "PRODUCT_EDITED" : "PRODUCT_CREATED",
           productId: product.id,
@@ -3830,14 +3876,14 @@ async function confirmTransfer() {
 
   try {
     const { collection, doc, runTransaction, serverTimestamp, query, where, getDocs } = state.firebaseApi.firestore;
-    const productsRef = collection(state.db, "users", state.user.uid, "products");
+    const productsRef = collection(state.db, "users", state.businessOwnerUid, "products");
     const sourceRef = doc(productsRef, product.id);
 
     const matchQuery = query(productsRef, where("storeId", "==", destinationStore.id), where("sku", "==", product.sku));
     const matchSnapOutsideTx = await getDocs(matchQuery);
     const destinationRef = matchSnapOutsideTx.empty ? doc(productsRef) : matchSnapOutsideTx.docs[0].ref;
     const destinationExisted = !matchSnapOutsideTx.empty;
-    const transferRef = doc(collection(state.db, "users", state.user.uid, "transfers"));
+    const transferRef = doc(collection(state.db, "users", state.businessOwnerUid, "transfers"));
 
     await runTransaction(state.db, async (transaction) => {
       const sourceSnap = await transaction.get(sourceRef);
@@ -3909,17 +3955,17 @@ async function confirmRestock() {
 
   const newQuantityDisplay = Number(product.quantity || 0) + qty;
 
-  if (state.db && state.user) {
+  if (state.db && state.user && state.businessOwnerUid) {
     try {
       const { doc, collection, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
-      const productRef = doc(state.db, "users", state.user.uid, "products", productId);
+      const productRef = doc(state.db, "users", state.businessOwnerUid, "products", productId);
       await runTransaction(state.db, async (transaction) => {
         const snap = await transaction.get(productRef);
         if (!snap.exists()) throw new Error(t("txerror.itemGone", { name: product.name }));
         const currentQuantity = Number(snap.data().quantity || 0);
         transaction.update(productRef, { quantity: currentQuantity + qty, updatedAt: serverTimestamp() });
 
-        const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
+        const auditRef = doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs"));
         transaction.set(auditRef, {
           action: "PRODUCT_RESTOCKED",
           productId,
@@ -4233,12 +4279,12 @@ async function deleteProduct(productId) {
 
   state.products = state.products.filter((item) => item.id !== productId);
   state.cart = state.cart.filter((item) => item.id !== productId);
-  if (state.db && state.user) {
+  if (state.db && state.user && state.businessOwnerUid) {
     try {
       const { deleteDoc, doc, collection, setDoc, serverTimestamp } = state.firebaseApi.firestore;
-      await deleteDoc(doc(state.db, "users", state.user.uid, "products", productId));
+      await deleteDoc(doc(state.db, "users", state.businessOwnerUid, "products", productId));
       try {
-        const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
+        const auditRef = doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs"));
         await setDoc(auditRef, {
           action: "PRODUCT_DELETED",
           productId,
@@ -4478,6 +4524,52 @@ async function resolveBusinessOwnerUid(user) {
   }
 }
 
+// Phase 4: role-aware UI gating needs the CURRENT user's role, not just the
+// owner uid. Defaults to "cashier" (most restrictive) on any lookup failure
+// or missing doc -- fails closed in the UI. The real boundary is still
+// firestore.rules regardless of what this returns; hiding a button here is
+// UX only, per the "hide, don't disable" decision.
+async function resolveCurrentUserRole(user, ownerUid) {
+  if (user.uid === ownerUid) return "owner";
+  try {
+    const memberSnap = await state.firebaseApi.firestore.getDoc(
+      state.firebaseApi.firestore.doc(state.db, "users", ownerUid, "members", user.uid)
+    );
+    return memberSnap.exists() ? (memberSnap.data().role || "cashier") : "cashier";
+  } catch (error) {
+    console.warn("Could not resolve current user role; defaulting to cashier.", error);
+    return "cashier";
+  }
+}
+
+function isOwnerRole() {
+  return state.currentUserRole === "owner";
+}
+
+function isManagerOrOwnerRole() {
+  return state.currentUserRole === "owner" || state.currentUserRole === "manager";
+}
+
+// Static, owner-only store controls (rules: stores update = isOwner only,
+// no manager/cashier branch) -- these aren't re-rendered per snapshot like
+// table rows, so they need their own visibility pass, called from renderAll().
+function applyStoreOwnerControlsVisibility() {
+  const ownerOnly = isOwnerRole();
+  [
+    "renameStoreButton", "setBusinessTypeButton", "setCurrencyButton", "archiveStoreButton", "overridePasswordSettingsButton",
+    // Whole-business data export (downloadBackupButton), legacy cashier-name
+    // list writes (add/removeStaffButton -- reads stay open to manager/
+    // cashier per the staff/{staffId} rule, only writes are owner-only), and
+    // monthlyReports generation (no manager/cashier branch in the rules at
+    // all, and a non-owner click would still trigger a billed AI proxy call
+    // before Firestore ever rejected the write).
+    "downloadBackupButton", "addStaffButton", "removeStaffButton", "generateMonthlyReportButton"
+  ].forEach((id) => {
+    const el = qs(`#${id}`);
+    if (el) el.hidden = !ownerOnly;
+  });
+}
+
 async function initFirebase() {
   const hasConfig = firebaseConfig && !String(firebaseConfig.apiKey || "").startsWith("YOUR_");
   if (!hasConfig) return;
@@ -4531,6 +4623,9 @@ async function initFirebase() {
       updateAuthUi();
       if (user) {
         state.businessOwnerUid = await resolveBusinessOwnerUid(user);
+        state.currentUserRole = await resolveCurrentUserRole(user, state.businessOwnerUid);
+        updateAuthUi();
+        renderAll();
         startIdleWatcher();
         await ensureUserProfile(user);
         await loadUserSettings(user);
@@ -4573,6 +4668,7 @@ async function initFirebase() {
         state.transfers = [];
         state.currentStoreId = "";
         state.businessOwnerUid = "";
+        state.currentUserRole = null;
         state.productsInitialized = false;
         state.stockAlertQueue = [];
         state.stockAlertPopupOpen = false;
@@ -4621,11 +4717,24 @@ async function subscribeToProducts() {
 }
 
 async function subscribeToSales() {
-  if (!state.db || !state.user) return;
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
   if (state.unsubscribeSales) state.unsubscribeSales();
   try {
-    const { collection, onSnapshot, orderBy, query, limit } = state.firebaseApi.firestore;
-    const salesQuery = query(collection(state.db, "users", state.user.uid, "sales"), orderBy("createdAt", "desc"), limit(1000));
+    const { collection, onSnapshot, orderBy, query, limit, where } = state.firebaseApi.firestore;
+    const salesRef = collection(state.db, "users", state.businessOwnerUid, "sales");
+    const queryStoreIds = await resolveQueryStoreIds();
+    if (queryStoreIds !== null && queryStoreIds.length === 0) {
+      state.sales = [];
+      renderPaymentReports();
+      return;
+    }
+    // orderBy + where("in") together need a composite index on
+    // (storeId asc, createdAt desc) -- Firestore's console error, if it
+    // appears the first time a staff account runs this, includes a direct
+    // link to create it; click it once and the query works from then on.
+    const salesQuery = queryStoreIds === null
+      ? query(salesRef, orderBy("createdAt", "desc"), limit(1000))
+      : query(salesRef, where("storeId", "in", queryStoreIds), orderBy("createdAt", "desc"), limit(1000));
     state.unsubscribeSales = onSnapshot(salesQuery, (snapshot) => {
       state.sales = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
       renderPaymentReports();
@@ -4637,7 +4746,11 @@ async function subscribeToSales() {
 }
 
 async function ensureDefaultStore() {
-  if (!state.db || !state.user) return;
+  // Owner-only: a staff account seeing zero stores means their storeIds
+  // haven't resolved yet or the owner hasn't created any -- either way,
+  // a staff account must never create the owner's first store under its
+  // own uid (this created a phantom, invisible store during testing).
+  if (!state.db || !state.user || state.user.uid !== state.businessOwnerUid) return;
   try {
     const { collection, doc, serverTimestamp, setDoc } = state.firebaseApi.firestore;
     const storeRef = doc(collection(state.db, "users", state.user.uid, "stores"));
@@ -4649,11 +4762,15 @@ async function ensureDefaultStore() {
 }
 
 async function subscribeToStores() {
-  if (!state.db || !state.user) return;
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
   if (state.unsubscribeStores) state.unsubscribeStores();
   try {
     const { collection, onSnapshot, orderBy, query } = state.firebaseApi.firestore;
-    const storesQuery = query(collection(state.db, "users", state.user.uid, "stores"), orderBy("createdAt", "asc"));
+    // stores/{storeId} is keyed on the document's own path segment, which
+    // Firestore can prove per-document without a where() clause (see the
+    // rule comment in firestore.rules) -- so this stays a plain collection
+    // query for both owner and staff, unlike products/sales/etc.
+    const storesQuery = query(collection(state.db, "users", state.businessOwnerUid, "stores"), orderBy("createdAt", "asc"));
     state.unsubscribeStores = onSnapshot(storesQuery, async (snapshot) => {
       state.stores = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
       if (!state.stores.length) {
@@ -4837,11 +4954,11 @@ function activeStaff() {
 }
 
 async function subscribeToStaff() {
-  if (!state.db || !state.user) return;
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
   if (state.unsubscribeStaff) state.unsubscribeStaff();
   try {
     const { collection, onSnapshot, orderBy, query } = state.firebaseApi.firestore;
-    const staffQuery = query(collection(state.db, "users", state.user.uid, "staff"), orderBy("createdAt", "asc"));
+    const staffQuery = query(collection(state.db, "users", state.businessOwnerUid, "staff"), orderBy("createdAt", "asc"));
     state.unsubscribeStaff = onSnapshot(staffQuery, (snapshot) => {
       state.staff = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
       if (!state.selectedStaffId || !activeStaff().some((member) => member.id === state.selectedStaffId)) {
@@ -4861,11 +4978,11 @@ async function subscribeToStaff() {
 // firestore.rules) -- distinct from the legacy `staff` collection above,
 // which is only cashier display names for sale attribution.
 async function subscribeToMembers() {
-  if (!state.db || !state.user) return;
+  if (!state.db || !state.user || state.user.uid !== state.businessOwnerUid) return;
   if (state.unsubscribeMembers) state.unsubscribeMembers();
   try {
     const { collection, onSnapshot } = state.firebaseApi.firestore;
-    state.unsubscribeMembers = onSnapshot(collection(state.db, "users", state.user.uid, "members"), (snapshot) => {
+    state.unsubscribeMembers = onSnapshot(collection(state.db, "users", state.businessOwnerUid, "members"), (snapshot) => {
       state.members = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
       renderStaffRoster();
     });
@@ -5065,7 +5182,10 @@ async function loadUserSettings(user) {
 function updateOverridePasswordNudgeVisibility() {
   const banner = qs("#overridePasswordNudgeBanner");
   if (!banner) return;
-  const shouldShow = Boolean(state.user) && !state.overridePasswordSet && !state.overridePasswordNudgeDismissed;
+  // Owner-only: staff never own the discount password, and showing this to
+  // them (as happened during testing) reads as "set up your own account".
+  const isOwner = Boolean(state.user) && state.user.uid === state.businessOwnerUid;
+  const shouldShow = isOwner && !state.overridePasswordSet && !state.overridePasswordNudgeDismissed;
   banner.hidden = !shouldShow;
 }
 
@@ -5233,6 +5353,13 @@ function updateAuthUi() {
   qs("#userEmail").textContent = state.user?.email || t("connection.signedInFallback");
   qs("#connectionHint").textContent = signedIn ? t("connection.inventorySyncing") : t("sidebar.connectionHintSignedOut");
   qs("#verifyBanner").hidden = !signedIn || Boolean(state.user?.emailVerified);
+  // Staff invites/roster are owner-only actions -- the members collection
+  // read is owner-only in firestore.rules (a collection-level query can't
+  // be scoped to "just my own doc" the way a single get() can), so showing
+  // this button to staff would both mislead them and hit a denied query.
+  const isOwner = signedIn && state.user.uid === state.businessOwnerUid;
+  const rosterButton = qs("#staffRosterButton");
+  if (rosterButton) rosterButton.hidden = !isOwner;
 }
 
 function setAuthMode(mode) {
@@ -5470,6 +5597,7 @@ function renderCommands(term = "") {
 }
 
 function renderAll() {
+  applyStoreOwnerControlsVisibility();
   renderFilters();
   renderKpis();
   renderChart();
@@ -5967,7 +6095,7 @@ function bindEvents() {
     const completeButton = qs("#completeSaleButton");
     completeButton.disabled = true;
 
-    if (state.db && state.user) {
+    if (state.db && state.user && state.businessOwnerUid) {
       try {
         const { collection, doc, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
         // Idempotency: key the sale document deterministically on staffId + the
@@ -5980,19 +6108,19 @@ function bindEvents() {
         // give that deliberate re-entry its own distinct id so it isn't blocked.
         const dedupeSaleId = `ord_${staffMember.id}_${orderNumberRaw}`;
         const saleId = duplicate ? `${dedupeSaleId}_dup${Date.now()}` : dedupeSaleId;
-        const saleRef = doc(state.db, "users", state.user.uid, "sales", saleId);
+        const saleRef = doc(state.db, "users", state.businessOwnerUid, "sales", saleId);
         let creditCustomerId = null;
         if (paymentMethod === "credit") {
           creditCustomerId = await findOrCreateCustomerForCredit(customerName, creditPhoneKey);
         }
-        const creditCustomerRef = creditCustomerId ? doc(state.db, "users", state.user.uid, "customers", creditCustomerId) : null;
+        const creditCustomerRef = creditCustomerId ? doc(state.db, "users", state.businessOwnerUid, "customers", creditCustomerId) : null;
         await runTransaction(state.db, async (transaction) => {
           const existingSaleSnap = await transaction.get(saleRef);
           if (existingSaleSnap.exists()) {
             throw new Error(t("txerror.duplicateOrderSubmission", { orderNumber: orderNumberRaw }));
           }
 
-          const productRefs = state.cart.map((cartItem) => doc(state.db, "users", state.user.uid, "products", cartItem.id));
+          const productRefs = state.cart.map((cartItem) => doc(state.db, "users", state.businessOwnerUid, "products", cartItem.id));
           const productSnaps = await Promise.all(productRefs.map((ref) => transaction.get(ref)));
           const creditCustomerSnap = creditCustomerRef ? await transaction.get(creditCustomerRef) : null;
 
@@ -6051,7 +6179,7 @@ function bindEvents() {
             transaction.update(creditCustomerRef, customerUpdate);
           }
 
-          const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
+          const auditRef = doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs"));
           transaction.set(auditRef, {
             action: "SALE_COMPLETED",
             total,

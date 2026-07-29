@@ -70,6 +70,16 @@ service cloud.firestore {
         && (!('storeId' in resource.data) || request.resource.data.storeId == resource.data.storeId);
     }
 
+    // Cashier-safe restock (agreed in Phase 1): staff may raise quantity but
+    // touch nothing else on the product doc -- name/price/category/etc. stay
+    // owner-only edits. diff().affectedKeys() proves exactly which fields
+    // changed, so this can't be widened into a general product edit.
+    function validRestockUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['quantity', 'updatedAt'])
+        && request.resource.data.quantity is number
+        && request.resource.data.quantity >= resource.data.quantity;
+    }
+
     function validSaleItem(item) {
       return item.productId is string && item.productId.size() <= 128
         && item.name is string && item.name.size() > 0 && item.name.size() <= 120
@@ -148,7 +158,8 @@ service cloud.firestore {
       match /products/{productId} {
         allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId));
         allow create: if isOwner(userId) && validProduct();
-        allow update: if isOwner(userId) && validProduct() && productImmutableFieldsUnchanged();
+        allow update: if (isOwner(userId) && validProduct() && productImmutableFieldsUnchanged())
+          || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId) && validRestockUpdate());
         allow delete: if isOwner(userId);
       }
 
@@ -166,7 +177,10 @@ service cloud.firestore {
       }
 
       match /staff/{staffId} {
-        allow read: if isOwner(userId);
+        // Read opened to manager/cashier (Phase 3): staff need this list to
+        // select their own name in POS. Write stays owner-only -- adding or
+        // removing a cashier-name entry is still an owner action.
+        allow read: if isOwner(userId) || isOwnerOrRole(userId, ["manager", "cashier"]);
         allow create: if isOwner(userId) && validStaff();
         allow update: if isOwner(userId) && validStaff();
         allow delete: if isOwner(userId);
@@ -227,8 +241,14 @@ service cloud.firestore {
         }
 
         allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId));
-        allow create: if isOwner(userId) && validSale();
-        allow update: if isOwner(userId) && (validVoidUpdate() || validReturnUpdate());
+        allow create: if isOwnerOrRole(userId, ["manager", "cashier"]) && validSale()
+          && (isOwner(userId) || memberCanAccessStore(userId, request.resource.data.storeId));
+        // Only owners may void a full sale. Managers may process itemized
+        // returns, but only for a store assigned to them.
+        allow update: if (isOwner(userId) && (validVoidUpdate() || validReturnUpdate()))
+          || (isOwnerOrRole(userId, ["manager"])
+            && memberCanAccessStore(userId, resource.data.storeId)
+            && validReturnUpdate());
         allow delete: if false;
       }
 
@@ -242,9 +262,23 @@ service cloud.firestore {
             && (!('oldestUnpaidAt' in d) || d.oldestUnpaidAt == null || d.oldestUnpaidAt is timestamp)
             && (!('creditLimit' in d) || d.creditLimit == null || (d.creditLimit is number && d.creditLimit >= 0));
         }
+        // Cashier-safe: a credit sale (or recording a payment) only ever
+        // touches balanceOwed/oldestUnpaidAt -- diff-checked so a cashier
+        // write can't sneak in a creditLimit or name change alongside it.
+        function validCustomerBalanceUpdate() {
+          return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['balanceOwed', 'oldestUnpaidAt', 'updatedAt'])
+            && request.resource.data.balanceOwed is number && request.resource.data.balanceOwed >= 0;
+        }
+        // Credit limit is a manager/owner judgment call, not a cashier one.
+        function validCustomerLimitUpdate() {
+          return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['creditLimit']);
+        }
         allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId));
-        allow create: if isOwner(userId) && validCustomer();
-        allow update: if isOwner(userId) && validCustomer();
+        allow create: if (isOwner(userId) && validCustomer())
+          || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, request.resource.data.storeId) && validCustomer());
+        allow update: if (isOwner(userId) && validCustomer())
+          || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId) && validCustomerBalanceUpdate())
+          || (isOwnerOrRole(userId, ["manager"]) && memberCanAccessStore(userId, resource.data.storeId) && validCustomerLimitUpdate());
         allow delete: if false;
 
         match /payments/{paymentId} {
@@ -254,7 +288,8 @@ service cloud.firestore {
               && (!('note' in d) || (d.note is string && d.note.size() <= 200));
           }
           allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, get(/databases/$(database)/documents/users/$(userId)/customers/$(customerId)).data.storeId));
-          allow create: if isOwner(userId) && validPayment();
+          allow create: if (isOwner(userId) && validPayment())
+            || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, get(/databases/$(database)/documents/users/$(userId)/customers/$(customerId)).data.storeId) && validPayment());
           allow update, delete: if false;
         }
       }
@@ -274,13 +309,16 @@ service cloud.firestore {
             && d.performedByUid == request.auth.uid;
         }
         allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && (memberCanAccessStore(userId, resource.data.sourceStoreId) || memberCanAccessStore(userId, resource.data.destinationStoreId)));
-        allow create: if isOwner(userId) && validTransfer();
+        allow create: if (isOwner(userId) && validTransfer())
+          || (isOwnerOrRole(userId, ["manager"]) && validTransfer()
+              && memberCanAccessStore(userId, request.resource.data.sourceStoreId)
+              && memberCanAccessStore(userId, request.resource.data.destinationStoreId));
         allow update, delete: if false;
       }
 
       match /auditLogs/{logId} {
         allow read: if isOwner(userId);
-        allow create: if isOwner(userId) && validAuditLog();
+        allow create: if isOwnerOrRole(userId, ["manager", "cashier"]) && validAuditLog();
         allow update, delete: if false;
       }
 
