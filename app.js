@@ -4495,20 +4495,39 @@ function stopIdleWatcher() {
 // Returns null for the owner (no filter -- full unfiltered access is
 // correct), or a concrete array of real store IDs for staff, expanding
 // the "all" roaming sentinel via a stores-collection read.
-async function resolveQueryStoreIds() {
+// Raw storeIds straight off the member doc: null for the owner (unrestricted),
+// otherwise the array as stored, which MAY still contain the "all" sentinel.
+// Callers that need real store IDs should use resolveQueryStoreIds(); callers
+// that need to know whether the member is roaming should check for "all" here.
+async function resolveMemberStoreIds() {
   if (state.user.uid === state.businessOwnerUid) return null;
   try {
     const memberSnap = await state.firebaseApi.firestore.getDoc(
       state.firebaseApi.firestore.doc(state.db, "users", state.businessOwnerUid, "members", state.user.uid)
     );
-    const memberStoreIdsList = memberSnap.exists() ? (memberSnap.data().storeIds || []) : [];
-    if (!memberStoreIdsList.includes("all")) return memberStoreIdsList;
+    return memberSnap.exists() ? (memberSnap.data().storeIds || []) : [];
+  } catch (error) {
+    console.warn("Could not resolve staff store access; defaulting to no access.", error);
+    return [];
+  }
+}
 
+async function resolveQueryStoreIds() {
+  const memberStoreIdsList = await resolveMemberStoreIds();
+  if (memberStoreIdsList === null) return null;
+  if (!memberStoreIdsList.includes("all")) return memberStoreIdsList;
+
+  try {
+    // Safe for a roaming member specifically: with "all" present,
+    // memberCanAccessStore() short-circuits to true on ("all" in ids), so the
+    // stores rule is provable WITHOUT the storeId wildcard and the list is
+    // permitted. A branch-scoped member cannot run this query -- see
+    // subscribeToStores() for why.
     const { collection, getDocs } = state.firebaseApi.firestore;
     const storesSnap = await getDocs(collection(state.db, "users", state.businessOwnerUid, "stores"));
     return storesSnap.docs.map((docSnap) => docSnap.id);
   } catch (error) {
-    console.warn("Could not resolve staff store access; defaulting to no access.", error);
+    console.warn("Could not expand roaming store access; defaulting to no access.", error);
     return [];
   }
 }
@@ -4772,34 +4791,99 @@ async function ensureDefaultStore() {
   }
 }
 
+function storeSortKey(store) {
+  const createdAt = store?.createdAt;
+  if (!createdAt) return 0;
+  if (typeof createdAt.toMillis === "function") return createdAt.toMillis();
+  if (Number.isFinite(createdAt.seconds)) return createdAt.seconds * 1000;
+  const parsed = new Date(createdAt).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+// Shared post-processing for both the owner/roaming list path and the
+// branch-scoped per-document path below.
+async function applyStoresSnapshot(nextStores, { canCreateDefault }) {
+  state.stores = [...nextStores].sort((a, b) => storeSortKey(a) - storeSortKey(b));
+  if (!state.stores.length && canCreateDefault) {
+    await ensureDefaultStore();
+    return;
+  }
+  if (!state.currentStoreId || (state.currentStoreId !== "all" && !state.stores.some((store) => store.id === state.currentStoreId))) {
+    state.currentStoreId = activeStores()[0]?.id || state.stores[0]?.id || "";
+  }
+  renderStoreSwitcher();
+  scheduleRenderAll();
+  translateStaticDom();
+}
+
 async function subscribeToStores() {
   if (!state.db || !state.user || !state.businessOwnerUid) return;
   if (state.unsubscribeStores) state.unsubscribeStores();
   try {
-    const { collection, onSnapshot, orderBy, query } = state.firebaseApi.firestore;
-    // stores/{storeId} is keyed on the document's own path segment, which
-    // Firestore can prove per-document without a where() clause (see the
-    // rule comment in firestore.rules) -- so this stays a plain collection
-    // query for both owner and staff, unlike products/sales/etc.
-    const storesQuery = query(collection(state.db, "users", state.businessOwnerUid, "stores"), orderBy("createdAt", "asc"));
-    state.unsubscribeStores = onSnapshot(
-      storesQuery,
-      async (snapshot) => {
-        state.stores = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-        if (!state.stores.length) {
-          console.warn("[stores listener] snapshot returned 0 stores for uid=", state.user?.uid, "businessOwnerUid=", state.businessOwnerUid);
-          await ensureDefaultStore();
-          return;
+    const { collection, doc, onSnapshot, orderBy, query } = state.firebaseApi.firestore;
+    const storesRef = collection(state.db, "users", state.businessOwnerUid, "stores");
+    const memberStoreIds = await resolveMemberStoreIds();
+    const isOwnerAccount = memberStoreIds === null;
+    const isRoamingMember = !isOwnerAccount && memberStoreIds.includes("all");
+
+    // A LIST query cannot bind the {storeId} path wildcard -- Firestore has to
+    // prove the rule for every document the query could return, and
+    // memberCanAccessStore(userId, storeId) is unprovable with storeId
+    // unbound, so a branch-scoped member gets permission-denied on the whole
+    // collection (which cascaded into an empty store switcher, an empty POS
+    // and "can't see my own branch"). The owner is allowed by isOwner(), and a
+    // roaming member is allowed because ("all" in ids) short-circuits true
+    // without ever touching storeId -- so only those two may list.
+    if (isOwnerAccount || isRoamingMember) {
+      const storesQuery = query(storesRef, orderBy("createdAt", "asc"));
+      state.unsubscribeStores = onSnapshot(
+        storesQuery,
+        (snapshot) => {
+          applyStoresSnapshot(
+            snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })),
+            { canCreateDefault: isOwnerAccount }
+          );
+        },
+        (error) => console.error("[stores listener]", error.code || error)
+      );
+      return;
+    }
+
+    const scopedIds = memberStoreIds.filter((id) => typeof id === "string" && id);
+    if (!scopedIds.length) {
+      console.warn("[stores] member has no assigned storeIds; nothing to show.");
+      await applyStoresSnapshot([], { canCreateDefault: false });
+      return;
+    }
+
+    // Branch-scoped: one get()-style listener per assigned store. A single-doc
+    // read DOES bind {storeId}, so memberCanAccessStore() evaluates concretely
+    // and the rule is enforced per document exactly as intended.
+    const storeById = new Map();
+    const seen = new Set();
+    const unsubscribers = scopedIds.map((storeId) =>
+      onSnapshot(
+        doc(storesRef, storeId),
+        (docSnap) => {
+          if (docSnap.exists()) storeById.set(storeId, { id: docSnap.id, ...docSnap.data() });
+          else storeById.delete(storeId);
+          seen.add(storeId);
+          // Wait for first response from every assigned store before the first
+          // render, so the switcher doesn't flicker through partial states.
+          if (seen.size === scopedIds.length) {
+            applyStoresSnapshot([...storeById.values()], { canCreateDefault: false });
+          }
+        },
+        (error) => {
+          console.error("[stores listener]", storeId, error.code || error);
+          seen.add(storeId);
+          if (seen.size === scopedIds.length) {
+            applyStoresSnapshot([...storeById.values()], { canCreateDefault: false });
+          }
         }
-        if (!state.currentStoreId || (state.currentStoreId !== "all" && !state.stores.some((store) => store.id === state.currentStoreId))) {
-          state.currentStoreId = activeStores()[0]?.id || state.stores[0].id;
-        }
-        renderStoreSwitcher();
-        scheduleRenderAll();
-        translateStaticDom();
-      },
-      (error) => console.error("[stores listener]", error.code || error)
+      )
     );
+    state.unsubscribeStores = () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   } catch (error) {
     console.warn(error);
     showToast(t("toast.couldNotLoadStores"));
@@ -5591,7 +5675,34 @@ function warmUpAiProxy() {
   fetch(new URL("/health", aiConfig.proxyUrl)).catch(() => {});
 }
 
+// A cashier works the till: POS to sell, Inventory to restock -- the two
+// surfaces whose writes the rules actually permit them. Dashboard, Reports and
+// AI Advisor are whole-business performance views (revenue, per-staff sales
+// breakdowns, advisory analysis); a till operator has no operational need for
+// them and shouldn't see other staff members' numbers, so they're hidden
+// rather than shown-and-denied.
+const CASHIER_ALLOWED_VIEWS = ["inventory", "pos"];
+
+function canOpenView(viewId) {
+  return isManagerOrOwnerRole() || CASHIER_ALLOWED_VIEWS.includes(viewId);
+}
+
+function applyRoleViewVisibility() {
+  qsa(".nav-item").forEach((item) => {
+    item.hidden = !canOpenView(item.dataset.view);
+  });
+  // Only redirect once the role has actually resolved. While it's still null
+  // the nav stays hidden (fail closed, harmless), but redirecting here would
+  // strand an owner on the POS tab after their real role arrives.
+  if (!state.currentUserRole) return;
+  const activeView = qs(".view.active");
+  if (activeView && !canOpenView(activeView.id)) openView("pos");
+}
+
 function openView(viewId) {
+  // Guarded, not just hidden: the command palette and any stale click handler
+  // route through here too, so this is the single choke point.
+  if (!canOpenView(viewId)) return;
   qsa(".view").forEach((view) => view.classList.toggle("active", view.id === viewId));
   qsa(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === viewId));
   qs(".sidebar").classList.remove("open");
@@ -5605,7 +5716,9 @@ function renderCommands(term = "") {
     ["pos", t("command.openPos")],
     ["reports", t("command.openReports")],
     ["ai", t("command.openAi")]
-  ].filter(([, label]) => label.toLowerCase().includes(term.toLowerCase()));
+  ]
+    .filter(([view]) => canOpenView(view))
+    .filter(([, label]) => label.toLowerCase().includes(term.toLowerCase()));
 
   qs("#commandResults").innerHTML = commands
     .map(([view, label]) => `<div class="command-result" data-command-view="${view}">${label}</div>`)
@@ -5614,6 +5727,7 @@ function renderCommands(term = "") {
 
 function renderAll() {
   applyStoreOwnerControlsVisibility();
+  applyRoleViewVisibility();
   renderFilters();
   renderKpis();
   renderChart();

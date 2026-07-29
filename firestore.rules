@@ -70,14 +70,33 @@ service cloud.firestore {
         && (!('storeId' in resource.data) || request.resource.data.storeId == resource.data.storeId);
     }
 
-    // Cashier-safe restock (agreed in Phase 1): staff may raise quantity but
-    // touch nothing else on the product doc -- name/price/category/etc. stay
+    // Cashier-safe stock movement: staff may move stock levels but touch
+    // nothing else on the product doc -- name/price/category/etc. stay
     // owner-only edits. diff().affectedKeys() proves exactly which fields
     // changed, so this can't be widened into a general product edit.
-    function validRestockUpdate() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['quantity', 'updatedAt'])
+    //
+    // Covers all four client stock paths, which each write exactly this field
+    // set: a sale decrements quantity and raises sold30/sold90; a restock
+    // raises quantity alone; a return or void does the reverse of a sale.
+    //
+    // Deliberately NOT increase-only. An earlier version required
+    // quantity >= resource.data.quantity, which blocked the sale path
+    // outright -- the stock decrement was denied inside the same transaction
+    // that created the sale, so the transaction rolled back and no cashier or
+    // manager could complete a sale at all.
+    //
+    // Note the real limit here: rules authorize each write independently, so
+    // this cannot verify that a matching sale document was created in the
+    // same transaction. A cashier could therefore write down stock without a
+    // corresponding sale. The compensating controls are the sale record and
+    // the auditLogs entry (both required and both owner-readable), plus
+    // physical stock reconciliation -- not this rule.
+    function validStockMovementUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['quantity', 'sold30', 'sold90', 'updatedAt'])
         && request.resource.data.quantity is number
-        && request.resource.data.quantity >= resource.data.quantity;
+        && request.resource.data.quantity >= 0
+        && (!('sold30' in request.resource.data) || (request.resource.data.sold30 is number && request.resource.data.sold30 >= 0))
+        && (!('sold90' in request.resource.data) || (request.resource.data.sold90 is number && request.resource.data.sold90 >= 0));
     }
 
     function validSaleItem(item) {
@@ -159,7 +178,7 @@ service cloud.firestore {
         allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId));
         allow create: if isOwner(userId) && validProduct();
         allow update: if (isOwner(userId) && validProduct() && productImmutableFieldsUnchanged())
-          || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId) && validRestockUpdate());
+          || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId) && validStockMovementUpdate());
         allow delete: if isOwner(userId);
       }
 
