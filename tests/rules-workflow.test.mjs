@@ -146,6 +146,16 @@ await check("outsider CANNOT read another business's stores", false,
 await check("outsider CANNOT create a sale in another business", false,
   () => setDoc(doc(outsider, "users", OWNER, "sales", "evil"), saleFor("random_outsider", STORE_A, "1")));
 
+console.log("\n=== user profile doc (own settings, not authz) ===");
+await check("staff CAN create their own profile doc", true,
+  () => setDoc(doc(cashier, "users", CASHIER), { uid: CASHIER, email: "c@x.com", businessName: "", role: "Staff" }));
+await check("staff CANNOT change role on their own profile afterwards", false,
+  () => setDoc(doc(cashier, "users", CASHIER), { uid: CASHIER, role: "Owner" }, { merge: true }));
+await check("staff CAN update other profile fields without resending role", true,
+  () => setDoc(doc(cashier, "users", CASHIER), { businessName: "Updated" }, { merge: true }));
+await check("staff CANNOT write another user's profile", false,
+  () => setDoc(doc(cashier, "users", OWNER), { uid: OWNER, role: "Owner" }, { merge: true }));
+
 await testEnv.cleanup();
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);

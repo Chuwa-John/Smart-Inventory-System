@@ -5466,15 +5466,33 @@ async function ensureUserProfile(user) {
   if (unchanged) return;
 
   try {
-    const { doc, serverTimestamp, setDoc } = state.firebaseApi.firestore;
+    const { doc, getDoc, serverTimestamp, setDoc } = state.firebaseApi.firestore;
     const consentPayload = state.pendingConsent
       ? { legalConsent: { ...state.pendingConsent, acceptedAt: serverTimestamp() } }
       : {};
-    await setDoc(doc(state.db, "users", user.uid), {
+
+    // This doc is the user's OWN profile (settings, consent record) and is
+    // never an authorization source -- role and store access live in
+    // users/{ownerUid}/members/{staffUid} and are resolved server-side by
+    // firestore.rules. It used to hardcode role:"Owner" for everyone, so every
+    // cashier and manager carried a profile claiming ownership. Nothing reads
+    // it for access decisions today, but it is exactly the sort of stale field
+    // a later change would trust by mistake.
+    //
+    // role is written ONLY on first creation: the users/{userId} update rule
+    // requires request.resource.data.role == resource.data.role, so sending a
+    // corrected role for an existing profile would be denied and would take
+    // the rest of this write (including the consent record) down with it.
+    const profileRef = doc(state.db, "users", user.uid);
+    const existing = await getDoc(profileRef).catch(() => null);
+    const isBusinessOwner = !state.businessOwnerUid || user.uid === state.businessOwnerUid;
+    const rolePayload = existing?.exists() ? {} : { role: isBusinessOwner ? "Owner" : "Staff" };
+
+    await setDoc(profileRef, {
       uid: user.uid,
       email: user.email || "",
       businessName,
-      role: "Owner",
+      ...rolePayload,
       authProvider: "password",
       updatedAt: serverTimestamp(),
       ...consentPayload
