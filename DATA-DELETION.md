@@ -134,6 +134,16 @@ and 2 still work — accounts freeze and can be restored — but data would be
 retained past the grace period, which is itself a compliance failure. Verify
 after setup by checking the workflow's run log.
 
+**Also required: the `users` composite index** (`status` ASC +
+`deletionScheduledFor` ASC), in `firestore.indexes.json`. The due-tenant query
+combines an equality with a range across two fields, which Firestore cannot serve
+without it. Its absence was the first live failure of this job — a `500` that,
+because the endpoint originally returned a generic message, was indistinguishable
+from a credentials problem. The endpoint now returns the underlying Firestore
+error, and the workflow prints it.
+
+**Verified end-to-end 2026-07-29:** HTTP 200, 0 tenants due, 0 retention-expired.
+
 The job is idempotent and batched (10 tenants per run), so a missed day is
 harmless.
 
