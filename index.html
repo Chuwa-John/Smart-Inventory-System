@@ -687,10 +687,14 @@
 
     <dialog id="overridePasswordDialog">
       <div class="dialog-head">
-        <h2 data-i18n="settings.overridePasswordTitle">Discount Override Password</h2>
+        <!-- Title, description and the save button have no data-i18n: their text
+             is set by applyOverridePasswordDialogMode() so it can differ between
+             first-time creation and changing an existing password. A data-i18n
+             attribute here would let translateStaticDom() overwrite that. -->
+        <h2 id="overridePasswordDialogTitle">Create Discount Password</h2>
         <button class="icon-button" type="button" id="closeOverridePasswordDialog" aria-label="Close">&times;</button>
       </div>
-      <p class="muted" data-i18n="settings.overridePasswordDescription">Set a password staff must enter to apply discounts or price overrides. Only you can see or change it.</p>
+      <p class="muted" id="overridePasswordDescription">Choose a password your staff must enter to apply a discount or price override. Only you can change it.</p>
       <label id="overridePasswordCurrentRow" hidden><span data-i18n="settings.overridePasswordCurrentLabel">Current discount password</span>
         <input id="overridePasswordCurrentInput" type="password" autocomplete="off" minlength="4" maxlength="64" />
       </label>
@@ -706,7 +710,7 @@
       <span class="field-error" id="overridePasswordError"></span>
       <div class="button-row end">
         <button class="ghost-button" type="button" id="cancelOverridePasswordDialog" data-i18n="product.cancel">Cancel</button>
-        <button class="primary-button" type="button" id="saveOverridePasswordButton" data-i18n="settings.overridePasswordSaveButton">Save Password</button>
+        <button class="primary-button" type="button" id="saveOverridePasswordButton">Create Password</button>
       </div>
     </dialog>
 
@@ -837,6 +841,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js" integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script type="module" src="./app.js?v=20260729g"></script>
+    <script type="module" src="./app.js?v=20260729h"></script>
   </body>
 </html>

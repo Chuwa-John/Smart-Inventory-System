@@ -364,6 +364,33 @@ app.post("/api/ai/override-verify", overrideLimiter, async (req, res) => {
   }
 });
 
+// Whether this business has a discount password yet. The client used to infer
+// this from a flag it wrote on its own profile document
+// (users/{uid}.overridePasswordSet), but the real hash lives in
+// private/security, which no client can read -- so the two could drift. When
+// the flag said "set" and no hash existed, the dialog demanded a current
+// password that had never existed and blocked submission client-side, leaving a
+// first-time owner unable to create one at all.
+//
+// Returns a boolean only, never the hash, and only to the tenant owner.
+app.get("/api/settings/override-password/status", async (req, res) => {
+  if (!req.user?.uid) return res.status(401).json({ ok: false, error: "Authentication required." });
+  const businessOwnerUid = getBusinessOwnerUid(req.user);
+  if (req.user.uid !== businessOwnerUid) {
+    return res.status(403).json({ ok: false, error: "Only the business owner can manage the discount password." });
+  }
+  if (!firestoreDb) {
+    return res.status(503).json({ ok: false, error: "Override-password storage is not configured." });
+  }
+  try {
+    const hash = await getTenantOverrideHash(businessOwnerUid);
+    return res.json({ ok: true, isSet: Boolean(hash) });
+  } catch (error) {
+    console.error("Override-password status lookup failed:", error);
+    return res.status(500).json({ ok: false, error: "Could not read discount password status." });
+  }
+});
+
 app.post("/api/settings/override-password", passwordChangeLimiter, async (req, res) => {
   if (!req.user?.uid) {
     return res.status(401).json({ ok: false, error: "Authentication required." });

@@ -278,6 +278,12 @@ const DICTIONARY = {
     "settings.overridePasswordOpenButton": "Discount Password",
     "settings.overridePasswordTitle": "Discount Override Password",
     "settings.overridePasswordDescription": "Set a password staff must enter to apply discounts or price overrides. Only you can see or change it.",
+    "settings.overridePasswordTitleCreate": "Create Discount Password",
+    "settings.overridePasswordTitleChange": "Change Discount Password",
+    "settings.overridePasswordDescriptionCreate": "Choose a password your staff must enter to apply a discount or price override. You have not set one yet, so just pick a new password below. Only you can change it later.",
+    "settings.overridePasswordDescriptionChange": "Enter your current discount password, then choose a new one. Only you can change it.",
+    "settings.overridePasswordCreateButton": "Create Password",
+    "settings.overridePasswordCurrentNowRequired": "This account already has a discount password. Enter the current one to change it.",
     "settings.overridePasswordCurrentLabel": "Current discount password",
     "settings.overridePasswordNewLabel": "New password",
     "settings.overridePasswordConfirmLabel": "Confirm password",
@@ -787,6 +793,12 @@ const DICTIONARY = {
     "settings.overridePasswordOpenButton": "Nenosiri la Punguzo",
     "settings.overridePasswordTitle": "Nenosiri la Kubadilisha Bei",
     "settings.overridePasswordDescription": "Weka nenosiri ambalo wafanyakazi watalitumia kutoa punguzo au kubadilisha bei. Wewe pekee unaweza kuliona au kulibadilisha.",
+    "settings.overridePasswordTitleCreate": "Weka Nenosiri la Punguzo",
+    "settings.overridePasswordTitleChange": "Badilisha Nenosiri la Punguzo",
+    "settings.overridePasswordDescriptionCreate": "Chagua nenosiri ambalo wafanyakazi wako watalitumia kutoa punguzo au kubadilisha bei. Bado hujaweka nenosiri, kwa hiyo chagua nenosiri jipya hapa chini. Wewe pekee unaweza kulibadilisha baadaye.",
+    "settings.overridePasswordDescriptionChange": "Weka nenosiri lako la sasa la punguzo, kisha chagua jipya. Wewe pekee unaweza kulibadilisha.",
+    "settings.overridePasswordCreateButton": "Weka Nenosiri",
+    "settings.overridePasswordCurrentNowRequired": "Akaunti hii ina nenosiri la punguzo tayari. Weka nenosiri la sasa ili kulibadilisha.",
     "settings.overridePasswordCurrentLabel": "Nenosiri la sasa la punguzo",
     "settings.overridePasswordNewLabel": "Nenosiri jipya",
     "settings.overridePasswordConfirmLabel": "Thibitisha nenosiri",
@@ -5446,16 +5458,59 @@ function dismissOverridePasswordNudge() {
   persistOverridePasswordFlags({ overridePasswordNudgeDismissed: true });
 }
 
-function openOverridePasswordDialog() {
+// Reflects first-time creation vs. changing an existing password. A first-time
+// owner should be told to create one, not asked to confirm a password they have
+// never had.
+function applyOverridePasswordDialogMode(isSet) {
+  const currentRow = qs("#overridePasswordCurrentRow");
+  if (currentRow) currentRow.hidden = !isSet;
+  const title = qs("#overridePasswordDialogTitle");
+  if (title) title.textContent = t(isSet ? "settings.overridePasswordTitleChange" : "settings.overridePasswordTitleCreate");
+  const description = qs("#overridePasswordDescription");
+  if (description) description.textContent = t(isSet ? "settings.overridePasswordDescriptionChange" : "settings.overridePasswordDescriptionCreate");
+  const saveButton = qs("#saveOverridePasswordButton");
+  if (saveButton) saveButton.textContent = t(isSet ? "settings.overridePasswordSaveButton" : "settings.overridePasswordCreateButton");
+}
+
+async function openOverridePasswordDialog() {
   if (!state.user) return;
   qs("#overridePasswordCurrentInput").value = "";
   qs("#overridePasswordNewInput").value = "";
   qs("#overridePasswordConfirmInput").value = "";
   qs("#overridePasswordReauthInput").value = "";
-  const currentRow = qs("#overridePasswordCurrentRow");
-  if (currentRow) currentRow.hidden = !state.overridePasswordSet;
   setFieldError("overridePasswordError", "");
+
+  // Open immediately on the locally-known value so the dialog never appears to
+  // hang on a cold Render instance, then correct it from the server.
+  applyOverridePasswordDialogMode(state.overridePasswordSet);
   qs("#overridePasswordDialog").showModal();
+
+  // The server is the only thing that actually knows whether a hash exists.
+  // users/{uid}.overridePasswordSet is a client-written mirror and can drift
+  // from private/security -- when it wrongly said "set", the current-password
+  // field appeared and its client-side required-check blocked submission
+  // outright, so a first-time owner could never create a password.
+  try {
+    const token = await state.user.getIdToken();
+    const response = await fetch(aiConfig.overridePasswordStatusUrl, {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    if (!response.ok) return;
+    const payload = await response.json();
+    if (typeof payload?.isSet !== "boolean") return;
+    if (payload.isSet !== state.overridePasswordSet) {
+      // Re-sync the local mirror so the nudge banner agrees with reality too.
+      state.overridePasswordSet = payload.isSet;
+      persistOverridePasswordFlags({ overridePasswordSet: payload.isSet });
+      updateOverridePasswordNudgeVisibility();
+    }
+    applyOverridePasswordDialogMode(payload.isSet);
+  } catch (error) {
+    // Offline or proxy cold-start: leave the optimistic mode in place. The
+    // server still enforces the real rule, and the 401 handler in
+    // saveOverridePassword() recovers if we guessed wrong.
+    console.warn("Could not confirm discount-password status; using local state.", error);
+  }
 }
 
 // Calls the Render proxy's POST /api/settings/override-password (Phase 9),
@@ -5479,7 +5534,16 @@ async function saveOverridePassword() {
   const confirmPassword = qs("#overridePasswordConfirmInput").value;
   const accountPassword = qs("#overridePasswordReauthInput").value;
 
-  if (state.overridePasswordSet && !currentPassword) {
+  // Gate on what the user can actually see, not on state.overridePasswordSet.
+  // Keying this off the flag meant that if the flag was wrong -- it is a
+  // client-written mirror of private/security, which no client can read -- a
+  // first-time owner was told to enter a current discount password while the
+  // field for it was hidden, and could never submit. Requiring only a visible,
+  // empty field makes that failure mode impossible; the server still enforces
+  // the real rule, and the 401 handler below recovers if the field was wrongly
+  // hidden.
+  const currentPasswordVisible = qs("#overridePasswordCurrentRow")?.hidden === false;
+  if (currentPasswordVisible && !currentPassword) {
     setFieldError("overridePasswordError", t("settings.overridePasswordCurrentRequired"));
     return;
   }
@@ -5513,6 +5577,18 @@ async function saveOverridePassword() {
     if (response.status === 401) {
       // The account owner is confirmed (reauth above succeeded) but the
       // current discount password didn't match what's on file.
+      //
+      // If the current-password field was hidden, our status check was wrong
+      // (offline, or a cold proxy) and a hash does exist after all. Reveal the
+      // field and re-sync rather than leaving a 401 the user cannot act on.
+      const currentRow = qs("#overridePasswordCurrentRow");
+      if (currentRow?.hidden) {
+        state.overridePasswordSet = true;
+        persistOverridePasswordFlags({ overridePasswordSet: true });
+        applyOverridePasswordDialogMode(true);
+        setFieldError("overridePasswordError", t("settings.overridePasswordCurrentNowRequired"));
+        return;
+      }
       setFieldError("overridePasswordError", t("settings.overridePasswordCurrentIncorrect"));
       return;
     }
