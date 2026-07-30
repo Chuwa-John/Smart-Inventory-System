@@ -302,12 +302,24 @@ restore drill from a downloaded backup.
 
 ### Accessibility — **PARTIAL**
 Fixed this session: visible keyboard focus on all controls (WCAG 2.4.7);
-44px touch targets (Material 48dp guidance for a finger-operated till);
-`prefers-reduced-motion` honoured; tabular numerals so figures align.
+44px minimum touch targets, 52px on payment methods (Material 48dp guidance for
+a finger-operated till); `prefers-reduced-motion` honoured; tabular numerals so
+figures align; stock status conveyed by a pill and dot rather than colour alone
+(WCAG 1.4.1).
 Pre-existing: semantic landmarks, `aria-label`s on icon controls, real `<button>`
 and `<table>` elements, both themes shipped.
-**Not verified:** colour-contrast ratios have not been measured against WCAG AA,
-and there has been no screen-reader pass.
+
+**Colour contrast — measured and fixed.** The light theme failed AA for normal
+text in five places, the worst being white button text on the accent at 3.34:1
+— the label on the primary action in the app. Semantic hues were darkened until
+every pair cleared 4.5:1 on white: accent 5.36, red 6.54, amber 5.93,
+green 5.49, blue 5.72. Dark theme passed everywhere already (6.25–17.79) and is
+unchanged. Verified against the deployed stylesheet in both themes: zero AA
+normal-text failures.
+
+**Still not verified:** no screen-reader pass, and no keyboard-only walkthrough
+of the dialog flows (focus trapping in `<dialog>` is native, but tab order
+through the POS has not been checked).
 
 ### Code review process — **GAP**
 No branch protection, no required reviewers, no CODEOWNERS. Everything is
