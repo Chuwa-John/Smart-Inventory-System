@@ -935,7 +935,18 @@ app.post("/jobs/process-deletions", async (req, res) => {
     return res.json({ ok: true, processed, retentionPurged });
   } catch (error) {
     console.error("Deletion job failed:", error);
-    return res.status(500).json({ ok: false, error: "Deletion job failed." });
+    // This endpoint is reached only with the shared secret and is called by a
+    // scheduler, never a browser, so the real reason is returned rather than a
+    // generic message. A compliance job that fails opaquely is a job nobody
+    // notices is broken -- the first failure here was a missing Firestore
+    // composite index (status ASC + deletionScheduledFor ASC on `users`), and
+    // the generic response gave no way to tell that from a credentials problem.
+    return res.status(500).json({
+      ok: false,
+      error: "Deletion job failed.",
+      reason: String(error?.message || error).slice(0, 500),
+      code: error?.code || null
+    });
   }
 });
 

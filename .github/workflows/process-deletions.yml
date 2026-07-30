@@ -52,7 +52,14 @@ jobs:
           echo "$BODY"
 
           if [ "$CODE" != "200" ]; then
-            echo "::error::Deletion job failed with HTTP $CODE."
+            # Surface the server's own reason so a failure is diagnosable from
+            # the run log alone, without shell access to the Render instance.
+            REASON=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('reason') or d.get('error') or '')" 2>/dev/null || echo "")
+            case "$CODE" in
+              401) echo "::error::Unauthorized. The GitHub secret does not match DELETION_JOB_SECRET on Render." ;;
+              503) echo "::error::Not configured. Set DELETION_JOB_SECRET (and the service account key) on Render." ;;
+              *)   echo "::error::Deletion job failed with HTTP $CODE. Reason: $REASON" ;;
+            esac
             exit 1
           fi
 
