@@ -5281,7 +5281,7 @@ function openInviteStaffDialog() {
   qs("#inviteStaffAllStores").checked = false;
   const storeList = qs("#inviteStaffStoreList");
   storeList.innerHTML = activeStores()
-    .map((store) => `<label class="alert-popup-toggle"><input type="checkbox" class="invite-store-checkbox" value="${store.id}" /> <span>${esc(store.name || t("storeSwitcher.fallbackName"))}</span></label>`)
+    .map((store) => `<label class="checkbox-row"><input type="checkbox" class="invite-store-checkbox" value="${store.id}" /> <span>${esc(store.name || t("storeSwitcher.fallbackName"))}</span></label>`)
     .join("");
   qsa(".invite-store-checkbox").forEach((cb) => { cb.disabled = false; });
   setFieldError("inviteStaffError", "");

@@ -1339,7 +1339,9 @@ dialog::backdrop {
   line-height: 1.4;
 }
 
-.auth-consent-row input {
+/* Kept more specific than the checkbox reset below so the nudge survives: this
+   caption wraps to two lines, so the box aligns to the first line, not centre. */
+.auth-consent-row input[type="checkbox"] {
   width: auto;
   margin-top: 3px;
   flex: 0 0 auto;
@@ -1348,6 +1350,49 @@ dialog::backdrop {
 .auth-consent-row > span {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/* A checkbox is not a text field: the generic `label input` rule above stretches
+   it to full width with a 40px field box, and the `label` grid drops it onto its
+   own row under the caption. Both get undone here. */
+label input[type="checkbox"],
+label input[type="radio"] {
+  width: auto;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  flex: 0 0 auto;
+  accent-color: var(--accent);
+}
+
+/* Checkbox and its caption sit on one centred row. */
+.checkbox-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.4;
+}
+
+.checkbox-row > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Ticking "All stores" disables the per-branch boxes (see the change handler in
+   app.js). Say so visually, matching the disabled-button treatment above --
+   otherwise the rows read as clickable and just silently do nothing. */
+.checkbox-row:has(input:disabled) {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.store-checkbox-list {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 
 .field-error {
