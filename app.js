@@ -690,9 +690,9 @@ const DICTIONARY = {
     "staff.inviteFailed": "Could not create the invite. Please try again.",
     "staff.inviteNetworkError": "Could not reach the invite service. Check your connection and try again.",
     "staff.inviteResultText": "Invite created for {email} as {role}. Share the link below \u2014 it expires in 48 hours and can only be used once.",
-    "staff.copyLinkButton": "Copy Link",
+    "staff.copyLinkButton": "Copy Invite Message",
     "staff.sendWhatsAppButton": "Send via WhatsApp",
-    "staff.linkCopied": "Invite link copied.",
+    "staff.linkCopied": "Invite message copied.",
     "staff.copyFailed": "Could not copy the link. Please try again.",
     "staff.colEmail": "Email",
     "staff.colRole": "Role",
@@ -1208,9 +1208,9 @@ const DICTIONARY = {
     "staff.inviteFailed": "Imeshindwa kuunda mwaliko. Tafadhali jaribu tena.",
     "staff.inviteNetworkError": "Imeshindwa kufikia huduma ya mwaliko. Angalia muunganisho wako na ujaribu tena.",
     "staff.inviteResultText": "Mwaliko umeundwa kwa {email} kama {role}. Shiriki kiungo hapa chini \u2014 kinaisha baada ya masaa 48 na kinaweza kutumika mara moja tu.",
-    "staff.copyLinkButton": "Nakili Kiungo",
+    "staff.copyLinkButton": "Nakili Ujumbe wa Mwaliko",
     "staff.sendWhatsAppButton": "Tuma kupitia WhatsApp",
-    "staff.linkCopied": "Kiungo cha mwaliko kimenakiliwa.",
+    "staff.linkCopied": "Ujumbe wa mwaliko umenakiliwa.",
     "staff.copyFailed": "Imeshindwa kunakili kiungo. Tafadhali jaribu tena.",
     "staff.colEmail": "Barua Pepe",
     "staff.colRole": "Wadhifa",
@@ -5334,10 +5334,14 @@ async function sendStaffInvite() {
   }
 }
 
+// Copies the WHOLE invitation, not just the URL. It used to pick out only the
+// line containing "http", so anyone using this button (rather than the WhatsApp
+// one) pasted a bare link that read like an ordinary sign-up prompt -- none of
+// the business name, role, or expiry that makes an invite trustworthy survived,
+// which is exactly what makes a link look like phishing.
 function copyInviteLink() {
-  const lines = buildStaffInviteTextLines(state.pendingInviteLinkToken, state.pendingInviteRoleLabel);
-  const acceptUrlLine = lines.find((line) => line.includes("http")) || lines.join("\n");
-  navigator.clipboard.writeText(acceptUrlLine)
+  const message = buildStaffInviteTextLines(state.pendingInviteLinkToken, state.pendingInviteRoleLabel).join("\n");
+  navigator.clipboard.writeText(message)
     .then(() => showToast(t("staff.linkCopied")))
     .catch(() => showToast(t("staff.copyFailed")));
 }

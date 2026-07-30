@@ -17,6 +17,15 @@
           <p class="auth-copy" id="acceptInviteIntro">Loading invite&hellip;</p>
         </div>
 
+        <!-- Filled from /api/staff/invite-preview. Without it this page is a
+             bare email+password form, which reads as ordinary self-signup and
+             gives a staff member no way to tell who invited them or in what
+             role. Stays hidden if the preview is unreachable. -->
+        <div class="auth-why" id="inviteContextBox" hidden>
+          <strong id="inviteContextHeading"></strong>
+          <p class="auth-copy" id="inviteContextText"></p>
+        </div>
+
         <div id="acceptInviteFormFields" hidden>
           <label>
             <span>Email</span>
@@ -58,6 +67,6 @@
         </div>
       </form>
     </div>
-    <script type="module" src="./accept-invite.js?v=20260729a"></script>
+    <script type="module" src="./accept-invite.js?v=20260730a"></script>
   </body>
 </html>

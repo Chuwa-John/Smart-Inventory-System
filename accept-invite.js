@@ -18,10 +18,79 @@ function showIntro(text) {
   qs("#acceptInviteIntro").textContent = text;
 }
 
+// Asks the proxy who issued this invite and for what role. Returns the payload
+// on success, {ok:false,...} for a link the server positively rejects (used,
+// expired, unknown), or null when the service simply cannot be reached.
+//
+// Null is deliberately distinct from ok:false: the Render free tier sleeps, and
+// a spun-down instance must not be allowed to present a valid invitation as a
+// dead one. On null the page falls back to generic wording and still lets the
+// invitee proceed -- accept-invite re-validates everything server-side anyway.
+async function loadInvitePreview() {
+  let response;
+  try {
+    response = await fetch(new URL("/api/staff/invite-preview", aiConfig.proxyUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ linkToken }),
+      signal: AbortSignal.timeout(8000)
+    });
+  } catch (error) {
+    console.warn("Invite preview unreachable; continuing without it.", error);
+    return null;
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  if (response.ok && payload.ok) return payload;
+
+  // ONLY a recognised verdict is allowed to close the door. Everything else --
+  // a 5xx, an HTML error page, or the 404 served by a proxy older than this
+  // page -- means "preview unavailable", not "bad invite". Hosting and Render
+  // deploy independently, so a frontend that shipped first would otherwise tell
+  // every invitee their valid link was dead. Failing open costs nothing:
+  // accept-invite re-validates the token server-side regardless.
+  if (PREVIEW_VERDICTS.has(payload.code)) {
+    return { ok: false, code: payload.code, error: payload.error || "" };
+  }
+  console.warn(`Invite preview returned ${response.status} with no verdict; continuing without it.`);
+  return null;
+}
+
+function renderInviteContext(preview) {
+  const roleLabel = ROLE_LABELS[preview?.role] || "staff member";
+  const businessName = preview?.businessName || "";
+
+  if (!preview) {
+    showIntro("Set a password below to accept this staff invitation and join your employer's business.");
+    return;
+  }
+
+  const box = qs("#inviteContextBox");
+  qs("#inviteContextHeading").textContent = businessName
+    ? `${businessName} invited you to join as a ${roleLabel}`
+    : `You have been invited to join as a ${roleLabel}`;
+
+  const details = [
+    businessName
+      ? `You are joining ${businessName}'s existing business on DukaSmart — you are not creating a business of your own.`
+      : "You are joining an existing business on DukaSmart — you are not creating a business of your own.",
+    preview.emailHint ? `This invitation was issued to ${preview.emailHint}, so sign up with that address.` : "",
+    "Your employer controls what you can see and do."
+  ].filter(Boolean);
+
+  qs("#inviteContextText").textContent = details.join(" ");
+  box.hidden = false;
+
+  showIntro(`Set a password below to accept and create your ${roleLabel.toLowerCase()} sign-in.`);
+}
+
 let auth = null;
 let firebaseApi = null;
 let mode = "create"; // "create" | "signin" -- flips if the email already has an account
 let linkToken = "";
+const ROLE_LABELS = { cashier: "Cashier", manager: "Manager" };
+// The only server answers that mean "this link is genuinely dead".
+const PREVIEW_VERDICTS = new Set(["invalid", "used", "expired"]);
 // Held across the email-verification step so Continue can reload the same user
 // rather than asking for the password again.
 let pendingUser = null;
@@ -39,7 +108,15 @@ async function init() {
     return;
   }
 
-  showIntro("Enter your email and set a password to accept this invitation.");
+  // Resolve who is inviting whom BEFORE showing the form, so this never reads
+  // as "create your own account". A dead link (used/expired/unknown) ends here
+  // with a plain explanation instead of a password form that cannot succeed.
+  const preview = await loadInvitePreview();
+  if (preview && preview.ok === false) {
+    showIntro(preview.error || "This invite link is no longer valid. Please ask your employer to resend it.");
+    return;
+  }
+  renderInviteContext(preview);
   qs("#acceptInviteFormFields").hidden = false;
 
   const appApi = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js");

@@ -42,6 +42,14 @@ changed behaviour — investigate before deploying.
   per-document store scoping, member self-read isolation, void/return role
   split, restock field limits, list-query store filtering, monthlyReports
   owner-only.
+- `invite-preview.test.mjs` — boots the real proxy against the emulator and
+  exercises `/api/staff/invite-preview`, the unauthenticated route the
+  acceptance page uses to name the inviting business and role before anyone
+  types a password. Asserts what it refuses to disclose (raw email, storeIds,
+  token material), that a wrong token is indistinguishable from an unknown
+  invite id, and that a missing route 404s *without* a verdict code — the
+  acceptance page relies on that to stay open when Hosting has deployed ahead
+  of Render.
 - `rules-workflow.test.mjs` — the write paths a till actually uses: completing
   a sale, stock movement in both directions, audit logging, credit customers
   and payments, transfers, plus owner-only surfaces, privilege-escalation

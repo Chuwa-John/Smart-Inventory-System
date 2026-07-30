@@ -143,6 +143,96 @@ app.post("/api/auth/check-limit", authAttemptLimiter, (req, res) => {
   res.json({ allowed: true });
 });
 
+// Unauthenticated by necessity -- the invitee has no account yet -- so this is
+// registered above the verifyFirebaseToken mount, alongside /api/auth/check-limit.
+//
+// It exists because the acceptance page had no way to say who was inviting whom:
+// the link token is opaque, nothing resolved it before sign-in, and the invitee
+// was shown a bare "email + set a password" form indistinguishable from ordinary
+// self-signup. Staff could not tell which business had invited them, in what
+// role, or whether the link was still live.
+//
+// Only what the holder of a VALID link legitimately needs is returned. The
+// invited address is masked rather than sent whole, so a forwarded or
+// intercepted link does not disclose someone's email; and an unrecognised
+// token is answered exactly like a non-existent one, so this cannot be used to
+// probe which invite ids exist.
+const invitePreviewLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip,
+  handler: (_req, res) => {
+    res.status(429).json({ ok: false, error: "Too many attempts. Please wait 15 minutes and try again." });
+  }
+});
+
+function maskInviteEmail(email) {
+  const [local = "", domain = ""] = String(email || "").split("@");
+  if (!domain || !local) return "";
+  const head = local.slice(0, Math.min(2, local.length));
+  return `${head}${"•".repeat(Math.max(3, local.length - head.length))}@${domain}`;
+}
+
+app.post("/api/staff/invite-preview", invitePreviewLimiter, async (req, res) => {
+  if (!firestoreDb) {
+    return res.status(503).json({ ok: false, error: "Staff invites are not configured." });
+  }
+
+  const linkToken = readString(req.body?.linkToken);
+  let ownerUid;
+  let inviteId;
+  let token;
+  try {
+    const decoded = Buffer.from(linkToken, "base64url").toString("utf8");
+    [ownerUid, inviteId, token] = decoded.split(":");
+    if (!ownerUid || !inviteId || !token) throw new Error("malformed");
+  } catch {
+    return res.status(400).json({ ok: false, code: "invalid", error: "This invite link is not valid." });
+  }
+
+  try {
+    const inviteSnap = await firestoreDb
+      .collection("users").doc(ownerUid)
+      .collection("invites").doc(inviteId)
+      .get();
+
+    // Same answer for "no such invite" and "wrong token" on purpose.
+    if (!inviteSnap.exists) {
+      return res.status(404).json({ ok: false, code: "invalid", error: "This invite link is no longer valid." });
+    }
+    const invite = inviteSnap.data();
+    if (invite.tokenHash !== hashInviteToken(token)) {
+      return res.status(404).json({ ok: false, code: "invalid", error: "This invite link is no longer valid." });
+    }
+    if (invite.used) {
+      return res.status(410).json({ ok: false, code: "used", error: "This invitation has already been used." });
+    }
+    if (invite.expiresAt.toDate().getTime() < Date.now()) {
+      return res.status(410).json({
+        ok: false,
+        code: "expired",
+        error: "This invitation has expired. Please ask your employer to send a new one."
+      });
+    }
+
+    const ownerSnap = await firestoreDb.collection("users").doc(ownerUid).get();
+    const businessName = clampString(ownerSnap.exists ? ownerSnap.get("businessName") || "" : "", 120);
+
+    return res.json({
+      ok: true,
+      businessName,
+      role: invite.role,
+      emailHint: maskInviteEmail(invite.email),
+      expiresAt: invite.expiresAt.toDate().getTime()
+    });
+  } catch (error) {
+    console.error("Invite preview failed:", error);
+    return res.status(500).json({ ok: false, error: "Could not load this invitation." });
+  }
+});
+
 app.use("/api/", verifyFirebaseToken);
 app.use(
   "/api/",
