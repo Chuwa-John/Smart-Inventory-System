@@ -5720,12 +5720,36 @@ function setAuthMode(mode) {
 
 const LEGAL_DOC_VERSION = "2026-07-15";
 
+// Pre-auth brute-force throttle. FAILS OPEN by design.
+//
+// This used to throw on any non-OK response or network error, and sign-in
+// awaits it -- so whenever the Render free tier had spun down (it sleeps after
+// roughly 15 minutes idle) NOBODY could sign in, owner or staff. Render answers
+// requests during spin-up with its own error page, which carries no CORS
+// headers, so the browser surfaced it as a CORS failure and the throw turned a
+// sleeping side-service into a total outage of the product.
+//
+// Failing open is the right trade here. This check only slows repeated
+// guessing; it authenticates nobody. Firebase Auth applies its own independent
+// rate limiting, and this throttle is already bypassable by calling Identity
+// Toolkit directly (see SECURITY-AUDIT.md F-2) -- App Check enforcement is the
+// real control. Losing a bypassable throttle for a few seconds is a far smaller
+// harm than locking every user out of the application.
+//
+// A genuine 429 is still honoured: that is the server deliberately answering.
 async function checkAuthAttemptLimit(email) {
-  const response = await fetch(new URL("/api/auth/check-limit", aiConfig.proxyUrl), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email })
-  });
+  let response;
+  try {
+    response = await fetch(new URL("/api/auth/check-limit", aiConfig.proxyUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+      signal: AbortSignal.timeout(8000)
+    });
+  } catch (error) {
+    console.warn("Auth throttle unreachable; continuing without it.", error);
+    return;
+  }
 
   if (response.status === 429) {
     const error = new Error("Too many authentication attempts.");
@@ -5733,9 +5757,9 @@ async function checkAuthAttemptLimit(email) {
     throw error;
   }
   if (!response.ok) {
-    const error = new Error("Authentication protection is unavailable.");
-    error.code = "auth/network-request-failed";
-    throw error;
+    // 5xx, or a proxy-layer error page during cold start. Not a decision the
+    // throttle actually made, so it must not block sign-in.
+    console.warn(`Auth throttle returned ${response.status}; continuing without it.`);
   }
 }
 
@@ -6703,6 +6727,13 @@ initIdleActivityTracking();
 translateStaticDom();
 renderAll();
 renderChatLog();
+// Wake the proxy as soon as the page loads, not when the AI views are first
+// opened. The Render free tier sleeps after roughly 15 minutes idle and takes
+// tens of seconds to come back, and the pre-auth throttle sits on the sign-in
+// path -- so the first person to open the app each morning was the one paying
+// that cold-start cost. Fire-and-forget, and the throttle now fails open
+// anyway, so this only shortens the window rather than being relied upon.
+warmUpAiProxy();
 initFirebase();
 
 if ("serviceWorker" in navigator) {

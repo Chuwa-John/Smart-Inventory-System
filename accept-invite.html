@@ -36,8 +36,28 @@
           <span class="field-error" id="acceptInviteError"></span>
           <button class="primary-button full-width" id="acceptInviteSubmitButton" type="submit">Accept Invite</button>
         </div>
+
+        <!-- Shown when the account exists but its email is not verified yet.
+             A brand-new account is never verified at the moment it is created,
+             so this step is the normal path for a first-time staff member,
+             not an error state. -->
+        <div id="inviteVerifySection" hidden>
+          <div class="auth-why">
+            <strong id="inviteVerifyHeading">Verify your email to continue</strong>
+            <p class="auth-copy" id="inviteVerifyText">
+              We sent a verification link to your email. Open it, tap the link, then come back here and press Continue.
+            </p>
+          </div>
+          <span class="field-error" id="inviteVerifyError"></span>
+          <button class="primary-button full-width" id="inviteVerifyContinueButton" type="button">
+            I have verified &mdash; Continue
+          </button>
+          <button class="ghost-button full-width" id="inviteResendVerificationButton" type="button">
+            Resend verification email
+          </button>
+        </div>
       </form>
     </div>
-    <script type="module" src="./accept-invite.js?v=20260728b"></script>
+    <script type="module" src="./accept-invite.js?v=20260729a"></script>
   </body>
 </html>
