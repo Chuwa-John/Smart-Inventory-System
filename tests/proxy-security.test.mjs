@@ -33,20 +33,37 @@ const server = spawn(process.execPath, ["server.js"], {
     PORT: String(PORT),
     NODE_ENV: "development",
     REQUIRE_FIREBASE_AUTH: "false",
-    CORS_ORIGINS: "https://sanitaryflow-erp.web.app"
+    CORS_ORIGINS: "https://sanitaryflow-erp.web.app",
+    DELETION_JOB_SECRET: "test_job_secret_value"
   },
-  stdio: "ignore"
+  // Captured, not discarded: a harness that swallows the server's own startup
+  // error reports "connection refused" and leaves you guessing why.
+  stdio: ["ignore", "pipe", "pipe"]
 });
+
+let serverOutput = "";
+server.stdout.on("data", (d) => (serverOutput += d));
+server.stderr.on("data", (d) => (serverOutput += d));
+server.on("error", (e) => (serverOutput += `spawn error: ${e.message}\n`));
 
 process.on("exit", () => server.kill());
 
-// Wait for listen
-for (let i = 0; i < 40; i++) {
+let up = false;
+for (let i = 0; i < 60; i++) {
+  if (server.exitCode !== null) break;
   try {
     const r = await fetch(BASE + "/health");
-    if (r.ok) break;
+    if (r.ok) { up = true; break; }
   } catch {}
   await sleep(250);
+}
+
+if (!up) {
+  console.error(`Proxy failed to start on port ${PORT} (exit=${server.exitCode}).`);
+  console.error("--- server output ---");
+  console.error(serverOutput || "(no output)");
+  server.kill();
+  process.exit(1);
 }
 
 console.log("=== transport / headers ===");
@@ -144,6 +161,48 @@ console.log("\n=== AI cost limiter (8 per min) ===");
   const rateLimited = codes.filter((c) => c === 429).length;
   check("advisor endpoint enforces a per-minute cap", rateLimited >= 2,
     `429s=${rateLimited} codes=${codes.join(",")}`);
+}
+
+console.log("\n=== deletion job authentication ===");
+{
+  const noSecret = await post("/jobs/process-deletions", {});
+  check("deletion job rejects a request with no secret", noSecret.status === 401, `got ${noSecret.status}`);
+
+  const wrongSecret = await fetch(BASE + "/jobs/process-deletions", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-deletion-job-secret": "wrong_value_here_x" },
+    body: "{}"
+  });
+  check("deletion job rejects a wrong secret", wrongSecret.status === 401, `got ${wrongSecret.status}`);
+
+  // Same length as the real secret, so this also exercises the timingSafeEqual
+  // path rather than short-circuiting on the length check.
+  const sameLength = await fetch(BASE + "/jobs/process-deletions", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-deletion-job-secret": "x".repeat("test_job_secret_value".length) },
+    body: "{}"
+  });
+  check("deletion job rejects a same-length wrong secret", sameLength.status === 401, `got ${sameLength.status}`);
+
+  // Correct secret: Firestore is unconfigured in this harness, so 503 proves
+  // authentication passed and the handler was reached.
+  const ok = await fetch(BASE + "/jobs/process-deletions", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-deletion-job-secret": "test_job_secret_value" },
+    body: "{}"
+  });
+  check("deletion job accepts the correct secret", ok.status === 503, `got ${ok.status}`);
+
+  // It must not sit behind Firebase auth -- the caller is a scheduler.
+  check("deletion job is not behind Firebase token auth", ok.status !== 401);
+}
+
+console.log("\n=== account deletion endpoints require auth ===");
+for (const path of ["/api/account/request-deletion", "/api/account/cancel-deletion"]) {
+  const r = await post(path, {});
+  // REQUIRE_FIREBASE_AUTH is false here, so req.user is absent and the
+  // handler's own uid check must still refuse the call.
+  check(`${path} refuses an unauthenticated call`, r.status === 401 || r.status === 403, `got ${r.status}`);
 }
 
 console.log("\n=== CORS ===");

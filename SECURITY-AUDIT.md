@@ -12,9 +12,24 @@ and is not served publicly.
 
 ---
 
+## 0. F-1 to F-4 — resolution status
+
+All four open findings were addressed on 2026-07-29.
+
+| # | Status | Outcome |
+|---|---|---|
+| **F-1** | **FIXED** | Full six-phase deletion lifecycle: freeze + session revocation + staff lockout, 30-day restorable grace period, classification, anonymisation of retained financial records, recursive purge, 7-year retention limit. Policy in [DATA-DELETION.md](DATA-DELETION.md); 29 assertions in `tests/rules-deletion.test.mjs`. **Requires `DELETION_JOB_SECRET` on Render and in GitHub Actions — phases 5-6 do not run until both are set.** |
+| **F-2** | **VERIFIED, awaiting console toggle** | App Check tokens confirmed minting on the live site (953-char JWT). They were failing before the CSP fix, so enabling enforcement earlier would have locked out every user. Safe to enable now: Firebase Console → App Check → Authentication → Enforce. |
+| **F-3** | **FIXED** | `/api/staff/accept-invite` now requires `email_verified` on the signed token. Enforced server-side, so it cannot be skipped by calling the endpoint directly. |
+| **F-4** | **MITIGATED — prevention not reachable** | See the revised F-4 entry below. Direction-coupling was implemented, tested, found to be both breakable and outage-prone, and removed in favour of an honest detective control. |
+
+---
+
 ## 1. Findings — open
 
-### F-1 Account deletion orphans all tenant data (HIGH, GDPR)
+### F-1 Account deletion orphans all tenant data — **FIXED 2026-07-29**
+
+Retained below for the record; superseded by [DATA-DELETION.md](DATA-DELETION.md).
 
 `confirmDeleteAccount()` in `app.js` reauthenticates and calls Firebase Auth
 `deleteUser()`. That removes the *login*, not the data. Everything under
@@ -63,15 +78,46 @@ to an email address the owner typed, which limits the exposure, and a banner
 prompts verification. Consider requiring `email_verified` on
 `/api/staff/accept-invite` specifically.
 
-### F-4 Stock decrements cannot be bound to a sale (LOW — inherent)
+### F-4 Stock decrements cannot be bound to a sale (LOW — inherent) — **MITIGATED**
 
 Firestore authorizes each write independently, so `validStockMovementUpdate()`
 cannot verify that a stock decrement was accompanied by a matching sale document
 in the same transaction. A cashier can write stock down without recording a sale.
 
-Compensating controls: the sale record and the `auditLogs` entry are both
-required and owner-readable, and physical reconciliation. Fully closing this
-needs a server-mediated sale endpoint (Blaze). Documented in `tests/README.md`.
+**What was tried and rejected.** A `movementReason` field was added, with rules
+requiring the direction of change to agree with the stated reason — a "restock"
+could not reduce stock, a "sale" could not inflate it. Two implementations were
+written and both failed under test:
+
+- Keyed on field *presence*: `movementReason` persists on the document once
+  written, so a later write that omitted it inherited the stale value. A product
+  left reading `"restock"` then rejected the next sale outright — a silent till
+  outage for any client on a cached bundle.
+- Keyed on `diff().affectedKeys()`: only fires when the value *changes*, so
+  consecutive sales (the normal case, same value each time) skipped validation
+  entirely, while a `sale`→`restock` transition was judged against a stale
+  quantity.
+
+Both were caught by `tests/rules-deletion.test.mjs`, not by inspection.
+
+**Why it was dropped rather than fixed.** The security value was negligible in
+either form: anyone writing stock down to cover theft simply omits the field or
+labels the write `"sale"`. It would have imposed real outage risk on the revenue
+path to deter nobody.
+
+**Why prevention is not reachable at all.** Binding the decrement to a sale
+would require the sale to be committed *before* the stock write so a rule could
+`get()` it. That breaks transactional atomicity — a sale could be recorded with
+no stock movement — and it breaks offline selling, which is a headline feature
+of this product. A server-mediated sale endpoint has the same problem: it cannot
+work offline.
+
+**What is in place.** `movementReason` is retained and validated as an enum
+(`sale` / `restock` / `return` / `void`), stamped by all four client stock paths.
+It does not prevent anything; it makes the audit trail precise enough to
+reconcile, which is the actual control — the same way real retail manages
+shrinkage. The owner-facing reconciliation view belongs to the admin dashboard
+(Phase 5) and is the remaining work on this finding.
 
 ---
 
@@ -154,7 +200,10 @@ fully managed by Firebase Hosting and Render — automatic, no rotation work.
 | `/api/settings/override-password` | 5 / 15 min |
 | `/api/staff/accept-invite` | 5 / 15 min |
 | `/api/staff/invite` | 20 / 15 min |
+| `/api/account/request-deletion` | 5 / 15 min |
+| `/api/account/cancel-deletion` | 5 / 15 min |
 | `/api/ai/advisor` | 8/min (cost control) |
+| `/jobs/process-deletions` | shared secret, constant-time compare |
 
 Meets your "5 attempts per 15 minutes on all authentication routes"
 requirement. See **F-2** for the bypass caveat.
@@ -203,19 +252,23 @@ bump together; **this is now enforced in CI** because missing it can serve a
 stale bundle that silently un-gates role-restricted controls. Session-scoped
 member-document cache is a read cache only and never affects authorization.
 
-### PII handling and retention — **PARTIAL**
+### PII handling and retention — **DONE**
 PII collected is minimal and purpose-bound: staff emails, customer names and
 phone numbers for credit accounts. Versioned consent is captured at signup.
-Owners can export their full dataset. **Gaps:** see **F-1** (deletion), plus no
-enforced retention schedule and no documented breach-notification process.
+Owners can export their full dataset. Erasure, anonymisation and a 7-year
+retention limit on anonymised financial records are implemented and tested --
+see [DATA-DELETION.md](DATA-DELETION.md). **Remaining gap:** no documented
+breach-notification process (a procedure, not code).
 
-### GDPR — **PARTIAL**
-Present: lawful-basis consent with version tracking, published privacy policy
-and terms, data portability (JSON export), access (owner sees all their data),
-data minimisation, encryption in transit and at rest.
-Missing: right to erasure (**F-1**), retention limits, breach notification
-procedure, records of processing, and a Data Processing Agreement if you take on
-customers in the EU.
+### GDPR / Tanzania PDPA — **PARTIAL**
+Present: lawful-basis consent with version tracking (Art. 6), published privacy
+policy and terms, data portability (JSON export, Art. 20), access (Art. 15),
+data minimisation (Art. 5), encryption in transit and at rest, **right to
+erasure with anonymisation of legally-retained records (Art. 17 and 6(1)(c))**,
+and storage limitation via the 7-year retention clock.
+Missing: breach-notification procedure (Art. 33), records of processing
+(Art. 30), and a Data Processing Agreement if you take on EU customers. All
+three are documentation and process, not code.
 
 ### HIPAA — **N/A**
 This is retail and hospitality software. It is not a covered entity or business
@@ -228,8 +281,8 @@ controls, encryption attestations, staff training), not a code change.
 
 | Type | Status |
 |---|---|
-| Security rules (integration) | **DONE** — 51 assertions, real emulator |
-| Proxy security/API (integration) | **DONE** — 27 assertions, real HTTP |
+| Security rules (integration) | **DONE** — 80 assertions, real emulator |
+| Proxy security/API (integration) | **DONE** — 34 assertions, real HTTP |
 | Regression | **DONE** — both suites gate CI; both critical bugs have permanent tests |
 | Unit tests for `app.js` | **GAP** — ~6,400-line ES module with no exports; needs refactoring into importable modules before it is unit-testable |
 | End-to-end (browser) | **GAP** — no Playwright/Cypress; sign-in flows are currently verified by hand |
@@ -269,12 +322,17 @@ hide-don't-disable, the stock-movement trade-off) but there is no formal ADR log
 
 ---
 
-## 4. Recommended order
+## 4. Remaining work, in order
 
-1. **F-1** — decide the deletion/retention policy, then implement erasure. Highest
-   user-facing and regulatory impact.
-2. **F-2** — verify App Check tokens mint correctly, then enable enforcement for
-   Authentication. Free, and closes the auth-bypass.
-3. One DR restore drill.
-4. Colour-contrast audit against WCAG AA.
-5. E2E tests for the sign-in and sale paths — the areas currently only checked by hand.
+1. **Set `DELETION_JOB_SECRET`** in the Render environment and as a GitHub
+   Actions secret. Until both are set, accounts freeze and can be restored but
+   are never purged -- which is itself a retention violation.
+2. **Enable App Check enforcement for Authentication** (Console → App Check →
+   Authentication → Enforce). Tokens are verified minting, so this is now safe.
+3. One DR restore drill. A recovery plan that has never been rehearsed is a
+   hypothesis, not a control.
+4. Owner-facing stock reconciliation view -- the detective control that closes
+   out **F-4**. Belongs with the Phase 5 admin dashboard.
+5. Colour-contrast audit against WCAG AA, and a screen-reader pass.
+6. E2E tests for sign-in and the sale path, the areas still only checked by hand.
+7. Breach-notification procedure and records of processing (documentation).

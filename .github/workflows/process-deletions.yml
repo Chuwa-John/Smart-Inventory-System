@@ -1,0 +1,62 @@
+name: Process scheduled account deletions
+
+# Runs phases 5 and 6 of DATA-DELETION.md: anonymise-and-purge for tenants whose
+# 30-day grace period has elapsed, then final purge of anonymised financial
+# records past their retention window.
+#
+# GitHub Actions is used because Render's free tier has no cron and Cloud
+# Scheduler requires the Blaze plan. The job is idempotent and batched, so a
+# skipped or repeated run is harmless.
+#
+# Requires the DELETION_JOB_SECRET repository secret to match the value set in
+# the Render environment. Without it the endpoint returns 503 and nothing is
+# purged -- see the setup section of DATA-DELETION.md.
+
+on:
+  schedule:
+    # 03:17 UTC daily. Off-the-hour to avoid the scheduling spike that makes
+    # GitHub delay cron runs.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger deletion job
+        env:
+          SECRET: ${{ secrets.DELETION_JOB_SECRET }}
+        run: |
+          if [ -z "$SECRET" ]; then
+            echo "::error::DELETION_JOB_SECRET is not set. No deletions can be processed."
+            echo "::error::See the setup section of DATA-DELETION.md."
+            exit 1
+          fi
+
+          # Render's free tier cold-starts, so allow a generous connect timeout.
+          RESPONSE=$(curl -sS -w '\n%{http_code}' \
+            --max-time 300 --connect-timeout 90 --retry 2 --retry-delay 30 \
+            -X POST 'https://sanitaryflow-ai-proxy.onrender.com/jobs/process-deletions' \
+            -H "x-deletion-job-secret: $SECRET" \
+            -H 'content-type: application/json' \
+            -d '{}')
+
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          CODE=$(echo "$RESPONSE" | tail -n1)
+
+          echo "HTTP $CODE"
+          echo "$BODY"
+
+          if [ "$CODE" != "200" ]; then
+            echo "::error::Deletion job failed with HTTP $CODE."
+            exit 1
+          fi
+
+          # Surface what was actually purged, so the run log is the audit record.
+          PROCESSED=$(echo "$BODY" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('processed',[])))" 2>/dev/null || echo "?")
+          RETAINED=$(echo "$BODY" | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('retentionPurged',[])))" 2>/dev/null || echo "?")
+          echo "::notice::Tenants purged: $PROCESSED. Retention-expired purges: $RETAINED."

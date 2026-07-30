@@ -8,7 +8,7 @@ import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import helmet from "helmet";
 import { createRemoteJWKSet, jwtVerify } from "jose";
-import { randomBytes, createHash } from "crypto";
+import { randomBytes, createHash, timingSafeEqual } from "crypto";
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
@@ -264,6 +264,9 @@ async function verifyFirebaseToken(req, res, next) {
     req.user = {
       uid: payload.sub,
       email: payload.email || null,
+      // Firebase puts email_verified in the token payload; it is signed by
+      // Google, so it cannot be forged by the client.
+      emailVerified: payload.email_verified === true,
       // businessOwnerUid is a signed custom claim set after accepting an
       // invite. It is routing data only; Firestore remains the authorization
       // boundary for client access.
@@ -526,6 +529,20 @@ app.post("/api/staff/accept-invite", acceptInviteLimiter, async (req, res) => {
   if (!req.user?.uid || !req.user?.email) {
     return res.status(401).json({ ok: false, error: "Authentication required." });
   }
+  // F-3: redeeming an invite is the single moment an unknown account gains a
+  // role inside someone else's business, so it is the right place to demand a
+  // verified email. The invite is already bound to an address the owner typed,
+  // but without this check anyone who can guess or intercept a link could
+  // redeem it using an account bearing that address unverified. Enforced here
+  // on the token's email_verified claim rather than client-side, because the
+  // client-side check is trivially skipped by calling this endpoint directly.
+  if (req.user.emailVerified !== true) {
+    return res.status(403).json({
+      ok: false,
+      code: "email-not-verified",
+      error: "Please verify your email address before accepting this invitation, then try again."
+    });
+  }
   if (!firestoreDb) {
     return res.status(503).json({ ok: false, error: "Staff invites are not configured." });
   }
@@ -584,6 +601,341 @@ app.post("/api/staff/accept-invite", acceptInviteLimiter, async (req, res) => {
   } catch (error) {
     console.error("Accept-invite failed:", error);
     return res.status(500).json({ ok: false, error: "Could not accept invite." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Account deletion lifecycle (GDPR Art. 17 / Tanzania PDPA).
+// Full policy and rationale: DATA-DELETION.md.
+//
+// Phase 1  request-deletion : freeze tenant, kill sessions, lock out staff
+// Phase 2  30-day grace     : data retained, owner may cancel-deletion
+// Phase 3  classification   : PERSONAL / LEGALLY-REQUIRED / NON-PERSONAL
+// Phase 4  anonymisation    : strip identifiers from retained financial rows
+// Phase 5  purge            : delete personal data + all auth accounts
+// Phase 6  retention limit  : purge anonymised financials after retainUntil
+// ---------------------------------------------------------------------------
+
+const GRACE_PERIOD_DAYS = 30;
+// Tanzanian company/tax law requires accounting records be kept; 7 years is the
+// conservative figure across TRA guidance and common commercial practice. This
+// is the ONLY reason any data survives phase 5, and what survives is anonymised.
+const FINANCIAL_RETENTION_YEARS = 7;
+const DELETED_PLACEHOLDER = "Deleted User";
+const DELETED_STAFF_PLACEHOLDER = "Deleted Staff";
+
+const deletionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.uid || req.ip,
+  handler: (_req, res) => {
+    res.status(429).json({ ok: false, error: "Too many attempts. Please wait 15 minutes and try again." });
+  }
+});
+
+function tenantDocRef(uid) {
+  return firestoreDb.collection("users").doc(uid);
+}
+
+async function listTenantStaffUids(ownerUid) {
+  const snap = await tenantDocRef(ownerUid).collection("members").get();
+  return snap.docs.map((doc) => doc.id);
+}
+
+// Phase 1. Freezing is done by writing tenant status (enforced by
+// firestore.rules tenantNotFrozen) AND by revoking refresh tokens so live
+// sessions die immediately rather than lingering until token expiry. Staff auth
+// accounts are disabled outright: they have no restore rights, so there is no
+// reason to leave them a way in, and disabling is faster and cheaper than
+// adding a status get() to every staff read rule.
+app.post("/api/account/request-deletion", deletionLimiter, async (req, res) => {
+  if (!req.user?.uid) return res.status(401).json({ ok: false, error: "Authentication required." });
+  if (!firestoreDb) return res.status(503).json({ ok: false, error: "Account deletion is not configured." });
+  if (req.user.uid !== getBusinessOwnerUid(req.user)) {
+    return res.status(403).json({ ok: false, error: "Only the business owner can delete the business account." });
+  }
+
+  try {
+    const { getAuth } = await import("firebase-admin/auth");
+    const ownerUid = req.user.uid;
+    const now = new Date();
+    const scheduledFor = new Date(now.getTime() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000);
+
+    const tenantSnap = await tenantDocRef(ownerUid).get();
+    if (tenantSnap.exists && tenantSnap.get("status") === "pending_deletion") {
+      return res.status(409).json({
+        ok: false,
+        error: "This account is already scheduled for deletion.",
+        deletionScheduledFor: tenantSnap.get("deletionScheduledFor")?.toDate?.().getTime() || null
+      });
+    }
+
+    await tenantDocRef(ownerUid).set({
+      status: "pending_deletion",
+      deletedAt: FieldValue.serverTimestamp(),
+      deletionScheduledFor: scheduledFor
+    }, { merge: true });
+
+    await tenantDocRef(ownerUid).collection("auditLogs").add({
+      action: "ACCOUNT_DELETION_REQUESTED",
+      uid: ownerUid,
+      gracePeriodDays: GRACE_PERIOD_DAYS,
+      deletionScheduledFor: scheduledFor,
+      createdAt: FieldValue.serverTimestamp()
+    });
+
+    const staffUids = await listTenantStaffUids(ownerUid);
+    for (const staffUid of staffUids) {
+      try {
+        await getAuth().updateUser(staffUid, { disabled: true });
+        await getAuth().revokeRefreshTokens(staffUid);
+      } catch (staffError) {
+        // A staff account may already be gone; that is not a failure of the
+        // owner's deletion request, so log and carry on rather than aborting
+        // half-way through and leaving the tenant in an ambiguous state.
+        console.warn(`Could not disable staff uid=${staffUid}:`, staffError.message);
+      }
+    }
+    await getAuth().revokeRefreshTokens(ownerUid);
+
+    console.log(`Deletion requested: ownerUid=${ownerUid}, staffDisabled=${staffUids.length}, executeAfter=${scheduledFor.toISOString()}`);
+    return res.json({
+      ok: true,
+      deletionScheduledFor: scheduledFor.getTime(),
+      gracePeriodDays: GRACE_PERIOD_DAYS,
+      staffAccountsDisabled: staffUids.length
+    });
+  } catch (error) {
+    console.error("Deletion request failed:", error);
+    return res.status(500).json({ ok: false, error: "Could not schedule account deletion." });
+  }
+});
+
+// Phase 2 restore. Only valid while still inside the grace period -- once the
+// purge has run there is nothing left to restore, and saying otherwise would be
+// a lie the data cannot back up.
+app.post("/api/account/cancel-deletion", deletionLimiter, async (req, res) => {
+  if (!req.user?.uid) return res.status(401).json({ ok: false, error: "Authentication required." });
+  if (!firestoreDb) return res.status(503).json({ ok: false, error: "Account deletion is not configured." });
+  if (req.user.uid !== getBusinessOwnerUid(req.user)) {
+    return res.status(403).json({ ok: false, error: "Only the business owner can restore the business account." });
+  }
+
+  try {
+    const { getAuth } = await import("firebase-admin/auth");
+    const ownerUid = req.user.uid;
+    const tenantSnap = await tenantDocRef(ownerUid).get();
+    if (!tenantSnap.exists || tenantSnap.get("status") !== "pending_deletion") {
+      return res.status(409).json({ ok: false, error: "This account is not scheduled for deletion." });
+    }
+    const scheduledFor = tenantSnap.get("deletionScheduledFor")?.toDate?.();
+    if (scheduledFor && scheduledFor.getTime() <= Date.now()) {
+      return res.status(410).json({ ok: false, error: "The grace period has ended and this account can no longer be restored." });
+    }
+
+    await tenantDocRef(ownerUid).set({
+      status: "active",
+      deletedAt: FieldValue.delete(),
+      deletionScheduledFor: FieldValue.delete()
+    }, { merge: true });
+
+    await tenantDocRef(ownerUid).collection("auditLogs").add({
+      action: "ACCOUNT_DELETION_CANCELLED",
+      uid: ownerUid,
+      createdAt: FieldValue.serverTimestamp()
+    });
+
+    const staffUids = await listTenantStaffUids(ownerUid);
+    for (const staffUid of staffUids) {
+      try {
+        await getAuth().updateUser(staffUid, { disabled: false });
+      } catch (staffError) {
+        console.warn(`Could not re-enable staff uid=${staffUid}:`, staffError.message);
+      }
+    }
+
+    console.log(`Deletion cancelled: ownerUid=${ownerUid}, staffReEnabled=${staffUids.length}`);
+    return res.json({ ok: true, staffAccountsReEnabled: staffUids.length });
+  } catch (error) {
+    console.error("Deletion cancel failed:", error);
+    return res.status(500).json({ ok: false, error: "Could not restore the account." });
+  }
+});
+
+async function deleteCollectionRecursively(collectionRef, batchSize = 300) {
+  let deleted = 0;
+  for (;;) {
+    const snap = await collectionRef.limit(batchSize).get();
+    if (snap.empty) return deleted;
+    const batch = firestoreDb.batch();
+    for (const doc of snap.docs) {
+      // Recurse first: deleting a document in Firestore does NOT delete its
+      // subcollections, which is precisely how orphaned personal data is
+      // created (customers/{id}/payments outliving its customer).
+      for (const sub of await doc.ref.listCollections()) {
+        deleted += await deleteCollectionRecursively(sub, batchSize);
+      }
+      batch.delete(doc.ref);
+      deleted += 1;
+    }
+    await batch.commit();
+    if (snap.size < batchSize) return deleted;
+  }
+}
+
+// Phases 3-5. Classification is expressed directly in code so the policy and
+// the implementation cannot drift apart.
+async function anonymiseAndPurgeTenant(ownerUid) {
+  const { getAuth } = await import("firebase-admin/auth");
+  const summary = { anonymisedSales: 0, anonymisedAuditLogs: 0, purgedDocs: 0, authAccountsDeleted: 0 };
+  const tenantRef = tenantDocRef(ownerUid);
+
+  // (B) LEGALLY REQUIRED -- retained, but stripped of anything identifying a
+  // natural person. Sales carry a staff name and sometimes a customer name and
+  // phone captured at the till; the financial figures stay untouched.
+  for (;;) {
+    const batchDocs = await tenantRef.collection("sales")
+      .where("anonymised", "==", null).limit(300).get()
+      .catch(() => tenantRef.collection("sales").limit(300).get());
+    const pending = batchDocs.docs.filter((doc) => doc.get("anonymised") !== true);
+    if (!pending.length) break;
+    const batch = firestoreDb.batch();
+    for (const doc of pending) {
+      batch.update(doc.ref, {
+        staffName: DELETED_STAFF_PLACEHOLDER,
+        cashierUid: FieldValue.delete(),
+        staffId: FieldValue.delete(),
+        customerName: FieldValue.delete(),
+        customerPhone: FieldValue.delete(),
+        customerId: FieldValue.delete(),
+        anonymised: true,
+        anonymisedAt: FieldValue.serverTimestamp()
+      });
+      summary.anonymisedSales += 1;
+    }
+    await batch.commit();
+    if (pending.length < 300) break;
+  }
+
+  // Audit logs are retained as the evidence trail for this very deletion, so
+  // the actor uid is replaced rather than the record removed.
+  for (;;) {
+    const snap = await tenantRef.collection("auditLogs").limit(300).get();
+    const pending = snap.docs.filter((doc) => doc.get("anonymised") !== true);
+    if (!pending.length) break;
+    const batch = firestoreDb.batch();
+    for (const doc of pending) {
+      batch.update(doc.ref, {
+        uid: DELETED_PLACEHOLDER,
+        performedByUid: FieldValue.delete(),
+        anonymised: true
+      });
+      summary.anonymisedAuditLogs += 1;
+    }
+    await batch.commit();
+    if (pending.length < 300) break;
+  }
+
+  // (A) PERSONAL DATA + (C) NON-PERSONAL -- deleted outright, recursively, so
+  // no subcollection survives its parent. customers/{id}/payments is reached
+  // by the recursion inside deleteCollectionRecursively.
+  for (const name of ["customers", "members", "staff", "invites", "products", "transfers", "monthlyReports", "private"]) {
+    summary.purgedDocs += await deleteCollectionRecursively(tenantRef.collection(name));
+  }
+
+  // Phase 5: auth accounts. Staff first, then the owner.
+  const staffUids = await listTenantStaffUids(ownerUid).catch(() => []);
+  for (const staffUid of [...staffUids, ownerUid]) {
+    try {
+      await getAuth().deleteUser(staffUid);
+      summary.authAccountsDeleted += 1;
+    } catch (error) {
+      if (error.code !== "auth/user-not-found") {
+        console.warn(`Could not delete auth uid=${staffUid}:`, error.message);
+      }
+    }
+  }
+
+  // Phase 6 clock. Kept OUTSIDE the tenant tree so it survives the purge and
+  // remains findable when the retention window expires.
+  const retainUntil = new Date(Date.now() + FINANCIAL_RETENTION_YEARS * 365.25 * 24 * 60 * 60 * 1000);
+  await firestoreDb.collection("deletedTenants").doc(ownerUid).set({
+    ownerUid,
+    anonymisedAt: FieldValue.serverTimestamp(),
+    retainUntil,
+    retentionYears: FINANCIAL_RETENTION_YEARS,
+    summary,
+    irreversible: true
+  });
+
+  await tenantRef.set({
+    status: "deleted",
+    anonymisedAt: FieldValue.serverTimestamp(),
+    retainUntil,
+    email: FieldValue.delete(),
+    businessName: FieldValue.delete(),
+    uid: FieldValue.delete()
+  }, { merge: true });
+
+  console.log(`Tenant purged: ownerUid=${ownerUid} ${JSON.stringify(summary)} retainUntil=${retainUntil.toISOString()}`);
+  return summary;
+}
+
+// Phase 6: once the statutory window has passed there is no lawful basis left
+// to hold even the anonymised rows, so they go too.
+async function purgeExpiredRetention() {
+  const due = await firestoreDb.collection("deletedTenants")
+    .where("retainUntil", "<=", new Date()).limit(20).get();
+  const purged = [];
+  for (const doc of due.docs) {
+    const ownerUid = doc.id;
+    const tenantRef = tenantDocRef(ownerUid);
+    for (const sub of await tenantRef.listCollections()) {
+      await deleteCollectionRecursively(sub);
+    }
+    await tenantRef.delete().catch(() => {});
+    await doc.ref.set({ finalPurgeAt: FieldValue.serverTimestamp(), retained: false }, { merge: true });
+    purged.push(ownerUid);
+    console.log(`Retention expired, final purge: ownerUid=${ownerUid}`);
+  }
+  return purged;
+}
+
+// Machine-triggered, not user-facing: runs phases 5 and 6 for every tenant
+// whose grace period has elapsed. Authenticated with a shared secret rather
+// than a Firebase token because the caller is a scheduler, not a person.
+// Registered OUTSIDE /api/ so it bypasses verifyFirebaseToken.
+const deletionJobSecret = process.env.DELETION_JOB_SECRET || "";
+app.post("/jobs/process-deletions", async (req, res) => {
+  if (!deletionJobSecret) {
+    return res.status(503).json({ ok: false, error: "Deletion job is not configured." });
+  }
+  const provided = readString(req.headers["x-deletion-job-secret"]);
+  // Length check first: timingSafeEqual throws on a length mismatch.
+  if (provided.length !== deletionJobSecret.length
+    || !timingSafeEqual(Buffer.from(provided), Buffer.from(deletionJobSecret))) {
+    return res.status(401).json({ ok: false, error: "Unauthorized." });
+  }
+  if (!firestoreDb) return res.status(503).json({ ok: false, error: "Not configured." });
+
+  try {
+    const due = await firestoreDb.collection("users")
+      .where("status", "==", "pending_deletion")
+      .where("deletionScheduledFor", "<=", new Date())
+      .limit(10)
+      .get();
+
+    const processed = [];
+    for (const doc of due.docs) {
+      processed.push({ ownerUid: doc.id, summary: await anonymiseAndPurgeTenant(doc.id) });
+    }
+    const retentionPurged = await purgeExpiredRetention();
+    return res.json({ ok: true, processed, retentionPurged });
+  } catch (error) {
+    console.error("Deletion job failed:", error);
+    return res.status(500).json({ ok: false, error: "Deletion job failed." });
   }
 });
 

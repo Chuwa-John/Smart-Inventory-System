@@ -37,6 +37,9 @@ const state = {
   pendingInviteRoleLabel: "",
   businessOwnerUid: "",
   currentUserRole: null,
+  // Epoch ms when the anonymise-and-purge becomes due, or null when the tenant
+  // is active. Read from users/{ownerUid}.deletionScheduledFor at sign-in.
+  deletionScheduledFor: null,
   pendingTransferProductId: null,
   pendingRestockProductId: null,
   stockAlertPopupEnabled: true,
@@ -523,13 +526,22 @@ const DICTIONARY = {
     "dashboard.askAiQuestionRecommendations": "Explain my current purchase recommendations and what I should order this week.",
     "deleteAccount.button": "Delete Account",
     "deleteAccount.title": "Delete Account",
-    "deleteAccount.warning": "This permanently closes your account and signs you out everywhere. You will no longer be able to log in. Your past sales and financial records are kept for accounting purposes, as described in the Terms & Conditions.",
+    "deleteAccount.warning": "Your account will be locked immediately and scheduled for permanent deletion in 30 days. You can restore it by signing in at any time during those 30 days. After that, all personal details — your staff and customer names, phone numbers and emails — are erased permanently and cannot be recovered. Sales and financial records are kept in anonymised form for the period required by law, as described in the Terms & Conditions.",
     "deleteAccount.passwordLabel": "Confirm your password",
     "deleteAccount.typeDeleteLabel": "Type DELETE to confirm",
-    "deleteAccount.confirmButton": "Permanently Delete Account",
+    "deleteAccount.confirmButton": "Schedule Account Deletion",
     "deleteAccount.confirmTextMismatch": "Type DELETE exactly to confirm.",
     "deleteAccount.passwordRequired": "Enter your password to confirm.",
     "deleteAccount.reauthFailed": "Incorrect password. Please try again.",
+    "deleteAccount.alreadyScheduled": "This account is already scheduled for deletion.",
+    "deleteAccount.ownerOnly": "Only the business owner can delete the business account.",
+    "deleteAccount.pendingBanner": "This account is scheduled for permanent deletion in {days} day(s). It is locked and cannot be changed until you restore it.",
+    "deleteAccount.restoreButton": "Restore my account",
+    "deleteAccount.restoreConfirm": "Restore this account and cancel the scheduled deletion?",
+    "deleteAccount.restored": "Account restored. The scheduled deletion has been cancelled.",
+    "deleteAccount.restoreFailed": "Could not restore the account. Please try again.",
+    "deleteAccount.gracePeriodOver": "The 30-day grace period has ended and this account can no longer be restored.",
+    "toast.accountDeletionScheduled": "Account locked and scheduled for deletion in {days} days. Sign in during that time to restore it.",
     "toast.accountDeleted": "Your account has been deleted.",
     "toast.accountDeleteFailed": "Could not delete your account. Please try again.",
     "backup.button": "Download Backup",
@@ -1026,13 +1038,22 @@ const DICTIONARY = {
     "dashboard.askAiQuestionRecommendations": "Eleza mapendekezo yangu ya sasa ya ununuzi na nini ninachopaswa kuagiza wiki hii.",
     "deleteAccount.button": "Futa Akaunti",
     "deleteAccount.title": "Futa Akaunti",
-    "deleteAccount.warning": "Hii itafunga akaunti yako kabisa na kukutoa kila mahali. Hutaweza kuingia tena. Mauzo na kumbukumbu zako za fedha za nyuma zitabaki kwa madhumuni ya uhasibu, kama ilivyoelezwa kwenye Sheria na Masharti.",
+    "deleteAccount.warning": "Akaunti yako itafungwa mara moja na kupangwa kufutwa kabisa baada ya siku 30. Unaweza kuirejesha kwa kuingia wakati wowote katika siku hizo 30. Baada ya hapo, taarifa zote za kibinafsi — majina ya wafanyakazi na wateja, namba za simu na barua pepe — zitafutwa kabisa na haziwezi kurejeshwa. Kumbukumbu za mauzo na fedha zitabaki bila majina kwa kipindi kinachohitajika kisheria, kama ilivyoelezwa kwenye Sheria na Masharti.",
     "deleteAccount.passwordLabel": "Thibitisha nenosiri lako",
     "deleteAccount.typeDeleteLabel": "Andika DELETE kuthibitisha",
-    "deleteAccount.confirmButton": "Futa Akaunti Kabisa",
+    "deleteAccount.confirmButton": "Panga Kufuta Akaunti",
     "deleteAccount.confirmTextMismatch": "Andika DELETE sawasawa kuthibitisha.",
     "deleteAccount.passwordRequired": "Weka nenosiri lako kuthibitisha.",
     "deleteAccount.reauthFailed": "Nenosiri si sahihi. Tafadhali jaribu tena.",
+    "deleteAccount.alreadyScheduled": "Akaunti hii imepangwa kufutwa tayari.",
+    "deleteAccount.ownerOnly": "Mmiliki wa biashara peke yake anaweza kufuta akaunti ya biashara.",
+    "deleteAccount.pendingBanner": "Akaunti hii imepangwa kufutwa kabisa baada ya siku {days}. Imefungwa na haiwezi kubadilishwa hadi uirejeshe.",
+    "deleteAccount.restoreButton": "Rejesha akaunti yangu",
+    "deleteAccount.restoreConfirm": "Rejesha akaunti hii na kusitisha kufutwa kulikopangwa?",
+    "deleteAccount.restored": "Akaunti imerejeshwa. Kufutwa kulikopangwa kumesitishwa.",
+    "deleteAccount.restoreFailed": "Imeshindwa kurejesha akaunti. Tafadhali jaribu tena.",
+    "deleteAccount.gracePeriodOver": "Kipindi cha siku 30 kimeisha na akaunti hii haiwezi kurejeshwa.",
+    "toast.accountDeletionScheduled": "Akaunti imefungwa na imepangwa kufutwa baada ya siku {days}. Ingia katika kipindi hicho kuirejesha.",
     "toast.accountDeleted": "Akaunti yako imefutwa.",
     "toast.accountDeleteFailed": "Imeshindwa kufuta akaunti yako. Tafadhali jaribu tena.",
     "backup.button": "Pakua Nakala",
@@ -2502,7 +2523,8 @@ async function confirmProcessReturn() {
             quantity: currentQuantity + item.qty,
             sold30: Math.max(0, currentSold30 - item.qty),
             sold90: Math.max(0, currentSold90 - item.qty),
-            updatedAt: serverTimestamp()
+            updatedAt: serverTimestamp(),
+            movementReason: "return"
           });
         });
 
@@ -3963,7 +3985,7 @@ async function confirmRestock() {
         const snap = await transaction.get(productRef);
         if (!snap.exists()) throw new Error(t("txerror.itemGone", { name: product.name }));
         const currentQuantity = Number(snap.data().quantity || 0);
-        transaction.update(productRef, { quantity: currentQuantity + qty, updatedAt: serverTimestamp() });
+        transaction.update(productRef, { quantity: currentQuantity + qty, updatedAt: serverTimestamp(), movementReason: "restock" });
 
         const auditRef = doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs"));
         transaction.set(auditRef, {
@@ -4330,25 +4352,47 @@ async function confirmDeleteAccount() {
   confirmButton.disabled = true;
 
   try {
-    const { EmailAuthProvider, reauthenticateWithCredential, deleteUser } = state.firebaseApi.auth;
+    const { EmailAuthProvider, reauthenticateWithCredential } = state.firebaseApi.auth;
     const credential = EmailAuthProvider.credential(state.user.email, password);
     await reauthenticateWithCredential(state.user, credential);
-    if (state.db) {
-      try {
-        const { doc, collection, setDoc, serverTimestamp } = state.firebaseApi.firestore;
-        const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
-        await setDoc(auditRef, {
-          action: "ACCOUNT_DELETION_INITIATED",
-          uid: state.user.uid,
-          createdAt: serverTimestamp()
-        });
-      } catch (auditError) {
-        console.warn(auditError);
-      }
+
+    // This used to call deleteUser() directly, which removed the login and
+    // left the ENTIRE Firestore tree behind -- every product, sale, customer
+    // name and phone number orphaned in place with no account able to reach
+    // it. That is a GDPR Art. 17 failure and the button did far less than its
+    // label implied. Deletion is now server-mediated: the proxy freezes the
+    // tenant, kills live sessions, disables staff accounts, and schedules the
+    // anonymise-and-purge for after a 30-day grace period during which the
+    // owner can still change their mind. See DATA-DELETION.md.
+    const token = await state.user.getIdToken(/* forceRefresh */ true);
+    const response = await fetch(aiConfig.requestDeletionUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: "{}"
+    });
+    const payload = await response.json().catch(() => ({}));
+
+    if (response.status === 409) {
+      setFieldError("deleteAccountError", t("deleteAccount.alreadyScheduled"));
+      return;
     }
-    await deleteUser(state.user);
+    if (response.status === 403) {
+      setFieldError("deleteAccountError", t("deleteAccount.ownerOnly"));
+      return;
+    }
+    if (!response.ok || !payload.ok) {
+      setFieldError("deleteAccountError", t("toast.accountDeleteFailed"));
+      return;
+    }
+
     qs("#deleteAccountDialog").close();
-    showToast(t("toast.accountDeleted"));
+    state.deletionScheduledFor = payload.deletionScheduledFor || null;
+    renderDeletionBanner();
+    // Sessions were just revoked server-side, so this client is already
+    // read-only. Signing out avoids leaving a half-authorised session that
+    // fails on its next write with no explanation.
+    await state.auth.signOut().catch(() => {});
+    showToast(t("toast.accountDeletionScheduled", { days: payload.gracePeriodDays || 30 }));
   } catch (error) {
     console.warn(error);
     if (error.code === "auth/invalid-credential" || error.code === "auth/wrong-password") {
@@ -4358,6 +4402,54 @@ async function confirmDeleteAccount() {
     }
   } finally {
     confirmButton.disabled = false;
+  }
+}
+
+// Grace-period banner. An owner who signs back in during the 30 days must be
+// told plainly that their data is scheduled for irreversible deletion, when,
+// and how to stop it -- a frozen account that silently refuses writes is
+// indistinguishable from a broken one.
+function renderDeletionBanner() {
+  const banner = qs("#deletionPendingBanner");
+  if (!banner) return;
+  const scheduledFor = state.deletionScheduledFor;
+  const pending = Boolean(scheduledFor) && state.user?.uid === state.businessOwnerUid;
+  banner.hidden = !pending;
+  if (!pending) return;
+  const daysLeft = Math.max(0, Math.ceil((scheduledFor - Date.now()) / (24 * 60 * 60 * 1000)));
+  const label = qs("#deletionPendingText");
+  if (label) label.textContent = t("deleteAccount.pendingBanner", { days: daysLeft });
+}
+
+async function cancelAccountDeletion() {
+  if (!state.user) return;
+  if (!window.confirm(t("deleteAccount.restoreConfirm"))) return;
+  try {
+    const token = await state.user.getIdToken(/* forceRefresh */ true);
+    const response = await fetch(aiConfig.cancelDeletionUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: "{}"
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (response.status === 410) {
+      showToast(t("deleteAccount.gracePeriodOver"));
+      return;
+    }
+    if (!response.ok || !payload.ok) {
+      showToast(t("deleteAccount.restoreFailed"));
+      return;
+    }
+    state.deletionScheduledFor = null;
+    renderDeletionBanner();
+    showToast(t("deleteAccount.restored"));
+    // The freeze is enforced by firestore.rules against the tenant document,
+    // so a full resubscribe is the cleanest way to pick up write access again.
+    await subscribeToStores();
+    renderAll();
+  } catch (error) {
+    console.warn(error);
+    showToast(t("deleteAccount.restoreFailed"));
   }
 }
 
@@ -4394,7 +4486,8 @@ async function undoLastSale() {
             quantity: currentQuantity + item.qty,
             sold30: Math.max(0, currentSold30 - item.qty),
             sold90: Math.max(0, currentSold90 - item.qty),
-            updatedAt: serverTimestamp()
+            updatedAt: serverTimestamp(),
+            movementReason: "void"
           });
         });
 
@@ -4727,6 +4820,8 @@ async function initFirebase() {
         state.currentStoreId = "";
         state.businessOwnerUid = "";
         state.currentUserRole = null;
+        state.deletionScheduledFor = null;
+        renderDeletionBanner();
         clearMemberDocCache();
         state.productsInitialized = false;
         state.stockAlertQueue = [];
@@ -5305,15 +5400,21 @@ async function loadUserSettings(user) {
     state.stockAlertPopupEnabled = data && typeof data.stockAlertPopupEnabled === "boolean" ? data.stockAlertPopupEnabled : true;
     state.overridePasswordSet = Boolean(data && data.overridePasswordSet === true);
     state.overridePasswordNudgeDismissed = Boolean(data && data.overridePasswordNudgeDismissed === true);
+    // Pick up a pending deletion so an owner signing back in during the grace
+    // period is told, rather than silently hitting a frozen tenant.
+    const scheduled = data && data.status === "pending_deletion" ? data.deletionScheduledFor : null;
+    state.deletionScheduledFor = scheduled?.toMillis?.() ?? (scheduled ? new Date(scheduled).getTime() : null);
   } catch (error) {
     console.warn(error);
     state.stockAlertPopupEnabled = true;
     state.overridePasswordSet = false;
     state.overridePasswordNudgeDismissed = false;
+    state.deletionScheduledFor = null;
   }
   const toggle = qs("#stockAlertPopupToggle");
   if (toggle) toggle.checked = state.stockAlertPopupEnabled;
   updateOverridePasswordNudgeVisibility();
+  renderDeletionBanner();
 }
 
 // Shows a dismissible nudge (below the verify-email banner) prompting the
@@ -5981,6 +6082,7 @@ function bindEvents() {
   qs("#closeDeleteAccountDialog")?.addEventListener("click", () => qs("#deleteAccountDialog").close());
   qs("#cancelDeleteAccountDialog")?.addEventListener("click", () => qs("#deleteAccountDialog").close());
   qs("#confirmDeleteAccountButton")?.addEventListener("click", confirmDeleteAccount);
+  qs("#cancelDeletionButton")?.addEventListener("click", cancelAccountDeletion);
 
   qsa("th[data-sort]").forEach((header) => {
     header.addEventListener("click", () => {
@@ -6330,7 +6432,8 @@ function bindEvents() {
               quantity: currentQuantity - cartItem.qty,
               sold30: currentSold30 + cartItem.qty,
               sold90: currentSold90 + cartItem.qty,
-              updatedAt: serverTimestamp()
+              updatedAt: serverTimestamp(),
+              movementReason: "sale"
             });
           });
 

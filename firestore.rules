@@ -45,6 +45,28 @@ service cloud.firestore {
       return isOwner(ownerUid) || memberRole(ownerUid) in roles;
     }
 
+    // Deletion lifecycle, phase 1 (see SECURITY-AUDIT.md F-1 and
+    // DATA-DELETION.md). Once an owner requests deletion their tenant is
+    // frozen read-only for a 30-day grace period: existing data stays
+    // readable so they can review it and self-serve a restore, but nothing
+    // new may be written. Only the proxy's Admin SDK can set or clear this
+    // status -- no client can, because users/{userId} update forbids
+    // changing it (see the users match block).
+    //
+    // A missing users/{userId} doc is treated as active: a brand-new signup
+    // writes its first store before its profile document exists, and an
+    // absent profile must not read as "frozen".
+    //
+    // Applied to WRITES only, deliberately. Every get() inside a rule is a
+    // billed read, and reads outnumber writes heavily in a POS. Immediate
+    // read lockout for STAFF is handled instead by the proxy disabling their
+    // Firebase Auth accounts and revoking refresh tokens at request time,
+    // which is both free and faster-acting than any rule.
+    function tenantNotFrozen(userId) {
+      return !exists(/databases/$(database)/documents/users/$(userId))
+        || get(/databases/$(database)/documents/users/$(userId)).data.get('status', 'active') != 'pending_deletion';
+    }
+
     function validProduct() {
       let d = request.resource.data;
       return d.name is string && d.name.size() > 0 && d.name.size() <= 120
@@ -91,12 +113,39 @@ service cloud.firestore {
     // corresponding sale. The compensating controls are the sale record and
     // the auditLogs entry (both required and both owner-readable), plus
     // physical stock reconciliation -- not this rule.
+    // F-4. movementReason records WHY stock moved, so the owner's audit trail
+    // distinguishes a sale from a restock from a return instead of showing a
+    // bare number change. Only the enum is validated here.
+    //
+    // Direction-coupling (rejecting a "restock" that decreases stock) was
+    // implemented and then deliberately removed. It could not be made both
+    // correct and safe: keying off field presence meant a persisted value
+    // constrained later writes that omitted the field, so a product left
+    // reading "restock" rejected the next sale and took the till offline;
+    // keying off diff().affectedKeys() meant consecutive sales -- the normal
+    // case, same value each time -- skipped validation altogether. Both were
+    // caught by tests/rules-deletion.test.mjs.
+    //
+    // The security value was negligible either way: someone writing stock down
+    // to cover theft simply omits the field or labels it "sale". Prevention is
+    // not reachable in rules, because rules authorise each write independently
+    // and so cannot tie a stock decrement to a sale document created in the
+    // same transaction. The real control is detective -- the sale record plus
+    // the auditLogs entry, reconciled by the owner -- which is what this field
+    // exists to make precise. See SECURITY-AUDIT.md F-4.
+    function validMovementReason() {
+      let after = request.resource.data;
+      return !('movementReason' in after)
+        || after.movementReason in ['sale', 'restock', 'return', 'void'];
+    }
+
     function validStockMovementUpdate() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['quantity', 'sold30', 'sold90', 'updatedAt'])
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['quantity', 'sold30', 'sold90', 'updatedAt', 'movementReason'])
         && request.resource.data.quantity is number
         && request.resource.data.quantity >= 0
         && (!('sold30' in request.resource.data) || (request.resource.data.sold30 is number && request.resource.data.sold30 >= 0))
-        && (!('sold90' in request.resource.data) || (request.resource.data.sold90 is number && request.resource.data.sold90 >= 0));
+        && (!('sold90' in request.resource.data) || (request.resource.data.sold90 is number && request.resource.data.sold90 >= 0))
+        && validMovementReason();
     }
 
     function validSaleItem(item) {
@@ -168,18 +217,32 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId);
+      allow create: if isOwner(userId)
+        // A client may never self-assign a deletion state on creation either.
+        && !('status' in request.resource.data)
+        && !('deletedAt' in request.resource.data)
+        && !('deletionScheduledFor' in request.resource.data);
+      // The deletion-lifecycle fields are Admin-SDK-only. If a client could
+      // write `status` it could freeze its own tenant, or -- far worse --
+      // clear `pending_deletion` to escape the grace period and un-schedule a
+      // purge. Unchanged-comparison rather than absence, so a merge write that
+      // legitimately carries the existing value still succeeds.
+      // role stays immutable for the reason given in ensureUserProfile().
       allow update: if isOwner(userId)
         && request.resource.data.uid == userId
-        && request.resource.data.role == resource.data.role;
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.get('status', 'active') == resource.data.get('status', 'active')
+        && request.resource.data.get('deletedAt', null) == resource.data.get('deletedAt', null)
+        && request.resource.data.get('deletionScheduledFor', null) == resource.data.get('deletionScheduledFor', null);
       allow delete: if false;
 
       match /products/{productId} {
         allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId));
-        allow create: if isOwner(userId) && validProduct();
-        allow update: if (isOwner(userId) && validProduct() && productImmutableFieldsUnchanged())
-          || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId) && validStockMovementUpdate());
-        allow delete: if isOwner(userId);
+        allow create: if isOwner(userId) && tenantNotFrozen(userId) && validProduct();
+        allow update: if tenantNotFrozen(userId) && (
+             (isOwner(userId) && validProduct() && productImmutableFieldsUnchanged())
+          || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId) && validStockMovementUpdate()));
+        allow delete: if isOwner(userId) && tenantNotFrozen(userId);
       }
 
       match /stores/{storeId} {
@@ -190,8 +253,8 @@ service cloud.firestore {
         // whose storeId lives in the document body -- see the query-side
         // filtering added around resolveQueryStoreIds() in app.js).
         allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, storeId));
-        allow create: if isOwner(userId) && validStore();
-        allow update: if isOwner(userId) && validStore();
+        allow create: if isOwner(userId) && tenantNotFrozen(userId) && validStore();
+        allow update: if isOwner(userId) && tenantNotFrozen(userId) && validStore();
         allow delete: if false;
       }
 
@@ -200,9 +263,9 @@ service cloud.firestore {
         // select their own name in POS. Write stays owner-only -- adding or
         // removing a cashier-name entry is still an owner action.
         allow read: if isOwner(userId) || isOwnerOrRole(userId, ["manager", "cashier"]);
-        allow create: if isOwner(userId) && validStaff();
-        allow update: if isOwner(userId) && validStaff();
-        allow delete: if isOwner(userId);
+        allow create: if isOwner(userId) && tenantNotFrozen(userId) && validStaff();
+        allow update: if isOwner(userId) && tenantNotFrozen(userId) && validStaff();
+        allow delete: if isOwner(userId) && tenantNotFrozen(userId);
       }
 
       // RBAC (Phase 2): members/{staffUid} docs are the source of truth for
@@ -216,7 +279,7 @@ service cloud.firestore {
       // concerns.
       match /members/{staffUid} {
         allow read: if isOwner(userId) || (signedIn() && request.auth.uid == staffUid);
-        allow write: if isOwner(userId);
+        allow write: if isOwner(userId) && tenantNotFrozen(userId);
       }
 
       match /sales/{saleId} {
@@ -260,7 +323,7 @@ service cloud.firestore {
         }
 
         allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId));
-        allow create: if isOwnerOrRole(userId, ["manager", "cashier"]) && validSale()
+        allow create: if tenantNotFrozen(userId) && isOwnerOrRole(userId, ["manager", "cashier"]) && validSale()
           && (isOwner(userId) || memberCanAccessStore(userId, request.resource.data.storeId));
         // Managers may void a full sale or process an itemized return, but
         // only for a store assigned to them -- owner reasoning revisited:
@@ -269,10 +332,10 @@ service cloud.firestore {
         // (unlike a return, which is capped at the sale total and logged
         // per item), so this remains the single highest-trust write in the
         // schema; it's opened to managers only, never cashiers.
-        allow update: if (isOwner(userId) && (validVoidUpdate() || validReturnUpdate()))
+        allow update: if tenantNotFrozen(userId) && ((isOwner(userId) && (validVoidUpdate() || validReturnUpdate()))
           || (isOwnerOrRole(userId, ["manager"])
             && memberCanAccessStore(userId, resource.data.storeId)
-            && (validVoidUpdate() || validReturnUpdate()));
+            && (validVoidUpdate() || validReturnUpdate())));
         allow delete: if false;
       }
 
@@ -298,11 +361,13 @@ service cloud.firestore {
           return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['creditLimit']);
         }
         allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId));
-        allow create: if (isOwner(userId) && validCustomer())
-          || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, request.resource.data.storeId) && validCustomer());
-        allow update: if (isOwner(userId) && validCustomer())
+        allow create: if tenantNotFrozen(userId) && (
+             (isOwner(userId) && validCustomer())
+          || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, request.resource.data.storeId) && validCustomer()));
+        allow update: if tenantNotFrozen(userId) && (
+             (isOwner(userId) && validCustomer())
           || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId) && validCustomerBalanceUpdate())
-          || (isOwnerOrRole(userId, ["manager"]) && memberCanAccessStore(userId, resource.data.storeId) && validCustomerLimitUpdate());
+          || (isOwnerOrRole(userId, ["manager"]) && memberCanAccessStore(userId, resource.data.storeId) && validCustomerLimitUpdate()));
         allow delete: if false;
 
         match /payments/{paymentId} {
@@ -312,8 +377,9 @@ service cloud.firestore {
               && (!('note' in d) || (d.note is string && d.note.size() <= 200));
           }
           allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, get(/databases/$(database)/documents/users/$(userId)/customers/$(customerId)).data.storeId));
-          allow create: if (isOwner(userId) && validPayment())
-            || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, get(/databases/$(database)/documents/users/$(userId)/customers/$(customerId)).data.storeId) && validPayment());
+          allow create: if tenantNotFrozen(userId) && (
+               (isOwner(userId) && validPayment())
+            || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, get(/databases/$(database)/documents/users/$(userId)/customers/$(customerId)).data.storeId) && validPayment()));
           allow update, delete: if false;
         }
       }
@@ -333,14 +399,21 @@ service cloud.firestore {
             && d.performedByUid == request.auth.uid;
         }
         allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && (memberCanAccessStore(userId, resource.data.sourceStoreId) || memberCanAccessStore(userId, resource.data.destinationStoreId)));
-        allow create: if (isOwner(userId) && validTransfer())
+        allow create: if tenantNotFrozen(userId) && (
+             (isOwner(userId) && validTransfer())
           || (isOwnerOrRole(userId, ["manager"]) && validTransfer()
               && memberCanAccessStore(userId, request.resource.data.sourceStoreId)
-              && memberCanAccessStore(userId, request.resource.data.destinationStoreId));
+              && memberCanAccessStore(userId, request.resource.data.destinationStoreId)));
         allow update, delete: if false;
       }
 
       match /auditLogs/{logId} {
+        // Deliberately NOT gated on tenantNotFrozen(). A frozen tenant must
+        // still be able to record what happened to it -- the deletion request
+        // itself, the restore, and any access attempt during the grace period
+        // are exactly the events an erasure audit needs. Freezing the audit
+        // log would destroy the evidence trail for the deletion it is meant
+        // to document. Entries remain append-only regardless.
         allow read: if isOwner(userId);
         allow create: if isOwnerOrRole(userId, ["manager", "cashier"]) && validAuditLog();
         allow update, delete: if false;
@@ -358,8 +431,8 @@ service cloud.firestore {
         }
 
         allow read: if isOwner(userId);
-        allow create: if isOwner(userId) && validMonthlyReport();
-        allow update: if isOwner(userId) && validMonthlyReport();
+        allow create: if isOwner(userId) && tenantNotFrozen(userId) && validMonthlyReport();
+        allow update: if isOwner(userId) && tenantNotFrozen(userId) && validMonthlyReport();
         allow delete: if false;
       }
 
