@@ -3,7 +3,7 @@
 // instantly on repeat visits. This does NOT cache Firestore/Firebase
 // traffic or any cross-origin requests \u2014 those always go to the network.
 // Bump this on every deploy so old clients pick up new files.
-const CACHE_NAME = "dukasmart-shell-v38";
+const CACHE_NAME = "dukasmart-shell-v39";
 
 const APP_SHELL = [
   "./",
@@ -48,11 +48,19 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put("./index.html", copy));
+          // Key the copy by the request's OWN url. This used to write every
+          // navigation over the "./index.html" entry, so visiting
+          // accept-invite.html replaced the cached app shell with the invite
+          // page -- and the offline fallback below then served the invite page
+          // to anyone opening the app root. Only successful responses are
+          // stored, so a 404 or an error page cannot become the offline shell.
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          }
           return response;
         })
-        .catch(() => caches.match("./index.html"))
+        .catch(() => caches.match(request).then((cached) => cached || caches.match("./index.html")))
     );
     return;
   }
