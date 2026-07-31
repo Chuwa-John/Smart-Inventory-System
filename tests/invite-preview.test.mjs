@@ -108,14 +108,19 @@ server.stderr.on("data", (d) => (serverOutput += d));
 server.on("error", (e) => (serverOutput += `spawn error: ${e.message}\n`));
 process.on("exit", () => server.kill());
 
+// 60s, not the 15s you would reach for first: cold module loading puts this
+// proxy's startup at 4-5s on an idle machine, and well past 15s on one still
+// busy from an `npm ci`. A startup budget that tight fails as though a security
+// control regressed, which is the most expensive kind of false alarm here.
+const startedAt = Date.now();
 let up = false;
-for (let i = 0; i < 60; i++) {
+for (let i = 0; i < 120; i++) {
   if (server.exitCode !== null) break;
   try { if ((await fetch(`${BASE}/health`)).ok) { up = true; break; } } catch {}
-  await sleep(250);
+  await sleep(500);
 }
 if (!up) {
-  console.error(`Proxy failed to start on ${PORT} (exit=${server.exitCode}).`);
+  console.error(`Proxy failed to start on ${PORT} after ${Math.round((Date.now() - startedAt) / 1000)}s (exit=${server.exitCode}).`);
   console.error(serverOutput || "(no output)");
   process.exit(1);
 }
@@ -191,6 +196,52 @@ console.log("\n=== an unknown route stays distinguishable from a dead invite ===
   const body = await r.json().catch(() => ({}));
   check("missing route 404s without a verdict code", r.status === 404 && !body.code,
     `${r.status} ${JSON.stringify(body)}`);
+}
+
+// The shape deploy skew ACTUALLY produces. On a proxy that predates this route
+// the request falls past the unauthenticated mount point into
+// app.use("/api/", verifyFirebaseToken), which answers 401 -- not the 404 you
+// would guess. Either way the body carries no verdict code, which is the only
+// thing the acceptance page keys on, so it stays open. Asserted against a real
+// REQUIRE_FIREBASE_AUTH=true instance rather than assumed.
+console.log("\n=== an auth-gated proxy still yields no verdict ===");
+{
+  const AUTH_PORT = 8798;
+  const authServer = spawn(process.execPath, ["server.js"], {
+    cwd: new URL("../proxy/", import.meta.url),
+    env: {
+      ...process.env,
+      ANTHROPIC_API_KEY: "test_dummy_key",
+      PORT: String(AUTH_PORT),
+      NODE_ENV: "development",
+      REQUIRE_FIREBASE_AUTH: "true",
+      FIREBASE_PROJECT_ID: PROJECT_ID,
+      CORS_ORIGINS: "https://sanitaryflow-erp.web.app"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  process.on("exit", () => authServer.kill());
+
+  let authUp = false;
+  for (let i = 0; i < 120; i++) {
+    if (authServer.exitCode !== null) break;
+    try { if ((await fetch(`http://127.0.0.1:${AUTH_PORT}/health`)).ok) { authUp = true; break; } } catch {}
+    await sleep(500);
+  }
+  check("auth-gated instance boots", authUp, `exit=${authServer.exitCode}`);
+
+  if (authUp) {
+    // A route this build DOES have, but gated -- stands in for the old proxy.
+    const r = await fetch(`http://127.0.0.1:${AUTH_PORT}/api/staff/accept-invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ linkToken: "x" })
+    });
+    const body = await r.json().catch(() => ({}));
+    check("unauthenticated /api call returns 401 with no verdict code",
+      r.status === 401 && !body.code, `${r.status} ${JSON.stringify(body)}`);
+  }
+  authServer.kill();
 }
 
 server.kill();
