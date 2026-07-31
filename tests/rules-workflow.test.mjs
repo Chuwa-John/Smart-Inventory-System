@@ -1,5 +1,5 @@
 import { initializeTestEnvironment, assertFails, assertSucceeds } from "@firebase/rules-unit-testing";
-import { doc, getDoc, getDocs, collection, query, where, setDoc, addDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, getDocs, collection, query, where, setDoc, addDoc, updateDoc, runTransaction } from "firebase/firestore";
 import { readFileSync } from "node:fs";
 
 const OWNER = "owner_uid_1";
@@ -36,6 +36,14 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
 });
 
 const results = [];
+
+// For assertions on a value already computed, rather than on whether a
+// Firestore call is permitted.
+function check_sync(name, pass, detail = "") {
+  results.push({ name, pass, detail });
+  console.log(`${pass ? "PASS" : "FAIL"}  ${name}${pass || !detail ? "" : "\n      " + detail}`);
+}
+
 async function check(name, expectSucceed, fn) {
   try {
     if (expectSucceed) await assertSucceeds(fn()); else await assertFails(fn());
@@ -155,6 +163,77 @@ await check("staff CAN update other profile fields without resending role", true
   () => setDoc(doc(cashier, "users", CASHIER), { businessName: "Updated" }, { merge: true }));
 await check("staff CANNOT write another user's profile", false,
   () => setDoc(doc(cashier, "users", OWNER), { uid: OWNER, role: "Owner" }, { merge: true }));
+
+// Completing a sale reads its own target document id before writing, so a retry
+// resolves to the same path instead of recording the sale twice. That read
+// lands on a document that does NOT exist yet, and a get() on a missing
+// document yields resource == null -- reading resource.data.storeId off it made
+// the whole read condition false, so every cashier and manager sale failed at
+// the till with permission-denied. Owners never saw it: isOwner short-circuits
+// before the store check. Shipped and only found once a cashier rang up a sale.
+console.log("\n=== reading a document that does not exist yet ===");
+await check("cashier CAN get a sale id that does not exist yet (idempotency pre-read)", true,
+  () => getDoc(doc(cashier, "users", OWNER, "sales", "ord_does_not_exist_1")));
+await check("manager CAN get a sale id that does not exist yet", true,
+  () => getDoc(doc(manager, "users", OWNER, "sales", "ord_does_not_exist_2")));
+await check("cashier CAN get a product id that does not exist", true,
+  () => getDoc(doc(cashier, "users", OWNER, "products", "no_such_product")));
+await check("cashier CAN get a customer id that does not exist", true,
+  () => getDoc(doc(cashier, "users", OWNER, "customers", "no_such_customer")));
+
+// The null branch must not have opened up real documents.
+await testEnv.withSecurityRulesDisabled(async (ctx) => {
+  await setDoc(doc(ctx.firestore(), "users", OWNER, "sales", "saleInB"), saleFor(MANAGER, STORE_B, "77"));
+});
+await check("cashier still CANNOT read an existing sale from another store", false,
+  () => getDoc(doc(cashier, "users", OWNER, "sales", "saleInB")));
+await check("cashier still CANNOT read an existing product from another store", false,
+  () => getDoc(doc(cashier, "users", OWNER, "products", "pB")));
+
+// Two tills selling the same product at the same moment. Firestore transactions
+// retry on contention, so both should land and the stock should reflect BOTH
+// sales -- a lost update here would mean stock drifting above what is really on
+// the shelf, and a hard failure would mean a cashier locked out mid-queue.
+console.log("\n=== two cashiers selling the same product at once ===");
+{
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "users", OWNER, "products", "pRace"), {
+      name: "Race", category: "Food", brand: "X", supplier: "Y",
+      quantity: 10, storeId: STORE_A, sellingPrice: 100, createdAt: new Date()
+    });
+  });
+
+  const sellOne = (db) => runTransaction(db, async (tx) => {
+    const ref = doc(db, "users", OWNER, "products", "pRace");
+    const snap = await tx.get(ref);
+    const current = snap.data().quantity;
+    if (current < 1) throw new Error("insufficient stock");
+    tx.update(ref, { quantity: current - 1, sold30: 1, updatedAt: new Date() });
+  });
+
+  const cashierTwo = testEnv.authenticatedContext("cashier_uid_2").firestore();
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "users", OWNER, "members", "cashier_uid_2"),
+      { role: "cashier", status: "active", storeIds: [STORE_A] });
+  });
+
+  let raceError = null;
+  try {
+    await Promise.all([sellOne(cashier), sellOne(cashierTwo)]);
+  } catch (e) {
+    raceError = e;
+  }
+  check_sync("neither cashier is locked out by the other's concurrent sale", raceError === null,
+    String(raceError && raceError.message).slice(0, 160));
+
+  let finalQty = null;
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const snap = await getDoc(doc(ctx.firestore(), "users", OWNER, "products", "pRace"));
+    finalQty = snap.data().quantity;
+  });
+  check_sync("both concurrent sales are reflected in stock (10 -> 8, no lost update)", finalQty === 8,
+    `quantity ended at ${finalQty}`);
+}
 
 await testEnv.cleanup();
 const failed = results.filter((r) => !r.pass);

@@ -237,7 +237,10 @@ service cloud.firestore {
       allow delete: if false;
 
       match /products/{productId} {
-        allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId));
+        // resource == null: see the note on the same branch under /sales.
+        allow read: if isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager", "cashier"])
+              && (resource == null || memberCanAccessStore(userId, resource.data.storeId)));
         allow create: if isOwner(userId) && tenantNotFrozen(userId) && validProduct();
         allow update: if tenantNotFrozen(userId) && (
              (isOwner(userId) && validProduct() && productImmutableFieldsUnchanged())
@@ -322,7 +325,19 @@ service cloud.firestore {
             && after.refundedAmount is number && after.refundedAmount >= 0 && after.refundedAmount <= after.total;
         }
 
-        allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId));
+        // A get() on a document that does not exist yields resource == null, and
+        // reading a field off it makes the whole condition false rather than
+        // erroring loudly. Completing a sale reads its own target id first, so a
+        // retry resolves to the same path and cannot record the sale twice --
+        // and on the normal path that read lands on a document that does not
+        // exist yet. Without this branch every cashier and manager sale died at
+        // the till with permission-denied; the owner never saw it because
+        // isOwner short-circuits first. What a staff member can learn from the
+        // null case is whether an id exists, never any content: an existing
+        // document is still gated on their store access.
+        allow read: if isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager", "cashier"])
+              && (resource == null || memberCanAccessStore(userId, resource.data.storeId)));
         allow create: if tenantNotFrozen(userId) && isOwnerOrRole(userId, ["manager", "cashier"]) && validSale()
           && (isOwner(userId) || memberCanAccessStore(userId, request.resource.data.storeId));
         // Managers may void a full sale or process an itemized return, but
@@ -360,7 +375,10 @@ service cloud.firestore {
         function validCustomerLimitUpdate() {
           return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['creditLimit']);
         }
-        allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId));
+        // resource == null: see the note on the same branch under /sales.
+        allow read: if isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager", "cashier"])
+              && (resource == null || memberCanAccessStore(userId, resource.data.storeId)));
         allow create: if tenantNotFrozen(userId) && (
              (isOwner(userId) && validCustomer())
           || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, request.resource.data.storeId) && validCustomer()));
