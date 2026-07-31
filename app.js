@@ -2136,7 +2136,7 @@ async function generateMonthlyReportNarrative(monthKey, metrics, storeId) {
     `Low stock items: ${metrics.lowStockCount}. Out-of-stock items: ${metrics.outOfStockCount}.`,
     "Include 2-3 short, specific action recommendations. Keep the whole response under 150 words."
   ];
-  return postToAiProxy([{ role: "user", content: promptLines.join("\n") }], { products: [], metrics: {} });
+  return postToAiProxy([{ role: "user", content: promptLines.join("\n") }], { products: [], metrics: {} }, "report");
 }
 
 function renderMonthlyReportsList() {
@@ -3070,7 +3070,10 @@ function sanitizeAiSnapshot(snapshot) {
   };
 }
 
-async function postToAiProxy(messages, snapshot) {
+// `kind` selects the server-side usage bucket: "chat" for advisor questions the
+// user types, "report" for month-end summaries. They are metered separately so
+// a business that has spent its question allowance can still close its month.
+async function postToAiProxy(messages, snapshot, kind = "chat") {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), AI_PROXY_TIMEOUT_MS);
   let response;
@@ -3086,7 +3089,7 @@ async function postToAiProxy(messages, snapshot) {
         "content-type": "application/json",
         authorization: `Bearer ${token}`
       },
-      body: JSON.stringify({ messages: sanitizeAiMessages(messages), snapshot: sanitizeAiSnapshot(snapshot) }),
+      body: JSON.stringify({ messages: sanitizeAiMessages(messages), snapshot: sanitizeAiSnapshot(snapshot), kind }),
       signal: controller.signal
     });
   } catch (networkError) {

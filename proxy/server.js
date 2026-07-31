@@ -1105,7 +1105,20 @@ const aiLimiter = rateLimit({
 // users/{ownerUid}/private/aiUsage, a path firestore.rules grants to nobody --
 // only this Admin SDK connection can read or move the counter, so a client
 // cannot award itself more questions.
-const AI_MONTHLY_QUOTA = Number(process.env.AI_MONTHLY_QUOTA || 100);
+// Two buckets, because the two things that reach this endpoint are not the same
+// thing. A chat question is a user typing into the advisor; a monthly report is
+// the system summarising a closed period, at most a handful of times a month.
+// Sharing one allowance means a business that chatted its way to zero cannot
+// produce its month-end report -- the highest-value output blocked by the most
+// casual one. Separate counters, separate limits, one endpoint.
+const AI_MONTHLY_QUOTA = Number(process.env.AI_MONTHLY_QUOTA || 80);
+const AI_REPORT_QUOTA = Number(process.env.AI_REPORT_QUOTA || 20);
+
+const AI_BUCKETS = {
+  chat: { usedField: "used", fallback: AI_MONTHLY_QUOTA, overrideField: "aiMonthlyQuota" },
+  report: { usedField: "reportsUsed", fallback: AI_REPORT_QUOTA, overrideField: "aiReportQuota" }
+};
+const AI_USED_FIELDS = Object.values(AI_BUCKETS).map((bucket) => bucket.usedField);
 
 function currentPeriodKey(now = new Date()) {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -1117,14 +1130,14 @@ function aiUsageRef(ownerUid) {
 
 // Per-tenant override, so a plan upgrade is a single field write rather than a
 // deploy. Absent or malformed falls back to the environment default.
-async function tenantAiQuota(ownerUid) {
+async function tenantAiQuota(ownerUid, bucket) {
   try {
     const snap = await firestoreDb.collection("users").doc(ownerUid).get();
-    const override = snap.exists ? Number(snap.get("aiMonthlyQuota")) : NaN;
-    return Number.isFinite(override) && override >= 0 ? override : AI_MONTHLY_QUOTA;
+    const override = snap.exists ? Number(snap.get(bucket.overrideField)) : NaN;
+    return Number.isFinite(override) && override >= 0 ? override : bucket.fallback;
   } catch (error) {
     console.error(`AI quota lookup failed for ownerUid=${ownerUid}:`, error);
-    return AI_MONTHLY_QUOTA;
+    return bucket.fallback;
   }
 }
 
@@ -1133,19 +1146,24 @@ async function tenantAiQuota(ownerUid) {
 // counter from last month must not carry over, a malformed `used` must not read
 // as zero-and-allow forever, and the boundary must be >= not > or every tenant
 // silently gets one free question a month.
-function evaluateQuota(existing, limit, periodKey) {
+function evaluateQuota(existing, limit, periodKey, usedField = "used") {
   const sameMonth = Boolean(existing) && existing.periodKey === periodKey;
-  const raw = sameMonth ? existing.used : 0;
-  // A missing, negative, or non-numeric counter is treated as exhausted, not as
-  // zero. Corrupt bookkeeping should cost a question, never the whole month's
-  // budget.
+  const raw = sameMonth ? existing[usedField] : 0;
+  // Absent and malformed are different, and conflating them breaks one bucket or
+  // the other. An ABSENT field is the normal state of a bucket nobody has used
+  // this month -- the first report of every month arrives with no reportsUsed --
+  // so it reads as zero. A field that is PRESENT but not a sane number (null, a
+  // string, NaN, negative) is corrupt bookkeeping and costs a question rather
+  // than the month's whole budget.
   //
-  // Checked by type rather than coerced: Number(null) is 0, so a null counter
-  // would have read as "nothing used yet" and handed out a fresh month's
-  // allowance, while an undefined one correctly failed closed. Two spellings of
-  // the same missing value behaving in opposite directions is exactly the kind
-  // of thing that only shows up on the bill.
-  const used = typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? raw : limit;
+  // Only the Admin SDK can write this document, and every write sets the field
+  // it charges, so `undefined` can only mean "not used yet" -- never tampering.
+  //
+  // Note Number(null) is 0: coercing instead of type-checking would let a null
+  // counter read as "nothing used yet" and hand out a fresh allowance.
+  const used = raw === undefined
+    ? 0
+    : (typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? raw : limit);
   if (used >= limit) return { allowed: false, used, limit, remaining: 0 };
   return { allowed: true, used: used + 1, limit, remaining: limit - (used + 1) };
 }
@@ -1153,23 +1171,37 @@ function evaluateQuota(existing, limit, periodKey) {
 // Reserves one question BEFORE the model call. Reserving after would let a burst
 // of concurrent requests all pass the check against the same stale count and
 // overshoot the quota; a failed call is refunded below instead.
-async function reserveAiQuestion(ownerUid) {
-  const limit = await tenantAiQuota(ownerUid);
+async function reserveAiQuestion(ownerUid, bucket) {
+  const limit = await tenantAiQuota(ownerUid, bucket);
   const periodKey = currentPeriodKey();
   const ref = aiUsageRef(ownerUid);
 
   return firestoreDb.runTransaction(async (transaction) => {
     const snap = await transaction.get(ref);
-    const decision = evaluateQuota(snap.exists ? snap.data() : null, limit, periodKey);
+    const existing = snap.exists ? snap.data() : null;
+    const rolledOver = !existing || existing.periodKey !== periodKey;
+    const decision = evaluateQuota(existing, limit, periodKey, bucket.usedField);
     if (!decision.allowed) {
       return { allowed: false, limit, remaining: 0, periodKey };
     }
-    transaction.set(ref, {
+
+    const payload = {
       periodKey,
-      used: decision.used,
-      limit,
+      [bucket.usedField]: decision.used,
       updatedAt: FieldValue.serverTimestamp()
-    }, { merge: true });
+    };
+    // A new month zeroes EVERY counter, not just the one being charged.
+    // Otherwise whichever bucket happens to roll the period first stamps the new
+    // periodKey while the other still holds last month's total -- and that
+    // counter then reads as already-spent against the fresh allowance. The bug
+    // only appears in the first minutes of a month, on whichever bucket lost the
+    // race, which is precisely the kind that survives a year in production.
+    if (rolledOver) {
+      for (const field of AI_USED_FIELDS) {
+        if (field !== bucket.usedField) payload[field] = 0;
+      }
+    }
+    transaction.set(ref, payload, { merge: true });
     return { allowed: true, limit, remaining: decision.remaining, periodKey };
   });
 }
@@ -1232,6 +1264,11 @@ app.post("/api/ai/advisor", aiLimiter, async (req, res) => {
     return res.status(401).json({ error: "Authentication required." });
   }
 
+  // Unknown or absent kinds fall back to `chat`, the stricter bucket -- a
+  // client cannot escape its question allowance by inventing a kind.
+  const bucketName = readString(req.body?.kind) === "report" ? "report" : "chat";
+  const bucket = AI_BUCKETS[bucketName];
+
   let reservation = null;
   if (ownerUid) {
     // Metering is not optional once we know who is asking. Without Firestore
@@ -1245,7 +1282,7 @@ app.post("/api/ai/advisor", aiLimiter, async (req, res) => {
       });
     }
     try {
-      reservation = await reserveAiQuestion(ownerUid);
+      reservation = await reserveAiQuestion(ownerUid, bucket);
     } catch (error) {
       console.error(`AI quota reservation failed for ownerUid=${ownerUid}:`, error);
       return res.status(503).json({ error: "Could not check your AI usage allowance. Please try again." });
@@ -1253,9 +1290,12 @@ app.post("/api/ai/advisor", aiLimiter, async (req, res) => {
     if (!reservation.allowed) {
       return res.status(429).json({
         code: "ai-quota-exhausted",
+        kind: bucketName,
         limit: reservation.limit,
         remaining: 0,
-        error: `You have used all ${reservation.limit} AI questions included this month. Your allowance resets at the start of next month.`
+        error: bucketName === "report"
+          ? `You have generated all ${reservation.limit} AI monthly reports included this month. Your allowance resets at the start of next month.`
+          : `You have used all ${reservation.limit} AI questions included this month. Your allowance resets at the start of next month.`
       });
     }
   }
@@ -1307,7 +1347,7 @@ app.post("/api/ai/advisor", aiLimiter, async (req, res) => {
 
     return res.json({
       answer,
-      ...(reservation ? { remaining: reservation.remaining, limit: reservation.limit } : {})
+      ...(reservation ? { kind: bucketName, remaining: reservation.remaining, limit: reservation.limit } : {})
     });
   } catch (error) {
     console.error("Anthropic request failed:", error);

@@ -70,11 +70,20 @@ console.log("\n=== month rollover resets in place ===");
   check("a counter from another month is also ignored", future.allowed === true);
 }
 
-console.log("\n=== corrupt bookkeeping fails closed ===");
+console.log("\n=== absent vs corrupt are different states ===");
 {
-  // A malformed counter must cost a question, never the month's whole budget.
-  for (const [label, used] of [["missing", undefined], ["null", null],
-                               ["a string", "many"], ["NaN", NaN], ["negative", -50]]) {
+  // Absent is the normal state of a bucket nobody has used this month — the
+  // first report of every month arrives with no reportsUsed field. It must read
+  // as zero, or that request is refused for no reason.
+  const absent = evaluateQuota({ periodKey: NOW, used: undefined }, 100, NOW);
+  check("an absent counter reads as zero, not as corrupt", absent.allowed === true,
+    `allowed=${absent.allowed}`);
+  check("...and starts the month at 1", absent.used === 1, `used=${absent.used}`);
+
+  // Present-but-malformed is corrupt bookkeeping: cost a question, never the
+  // month's whole budget.
+  for (const [label, used] of [["null", null], ["a string", "many"],
+                               ["NaN", NaN], ["negative", -50]]) {
     const d = evaluateQuota({ periodKey: NOW, used }, 100, NOW);
     check(`a ${label} counter is refused, not read as zero`, d.allowed === false,
       `allowed=${d.allowed}`);
@@ -100,6 +109,41 @@ console.log("\n=== the period key ===");
   // UTC, not local: a device clock in another timezone must not shift the reset.
   check("is computed in UTC",
     currentPeriodKey(new Date(Date.UTC(2026, 7, 1, 0, 30))) === "2026-08");
+}
+
+// Chat questions and month-end reports share the endpoint but not the
+// allowance. Sharing one meant a business that chatted its way to zero could
+// not produce its month-end report -- the highest-value output blocked by the
+// most casual one.
+console.log("\n=== the two buckets are independent ===");
+{
+  const spentChat = { periodKey: NOW, used: 80, reportsUsed: 0 };
+  check("a spent question allowance still permits a report",
+    evaluateQuota(spentChat, 20, NOW, "reportsUsed").allowed === true);
+  check("...and still refuses another question",
+    evaluateQuota(spentChat, 80, NOW, "used").allowed === false);
+
+  const spentReports = { periodKey: NOW, used: 3, reportsUsed: 20 };
+  check("a spent report allowance still permits a question",
+    evaluateQuota(spentReports, 80, NOW, "used").allowed === true);
+  check("...and still refuses another report",
+    evaluateQuota(spentReports, 20, NOW, "reportsUsed").allowed === false);
+
+  // The buckets must not read each other's counter.
+  check("the report bucket ignores the chat counter",
+    evaluateQuota({ periodKey: NOW, used: 80 }, 20, NOW, "reportsUsed").remaining === 19,
+    JSON.stringify(evaluateQuota({ periodKey: NOW, used: 80 }, 20, NOW, "reportsUsed")));
+}
+
+console.log("\n=== rollover applies to a bucket that has no counter yet ===");
+{
+  // Whichever bucket rolls the month first stamps the new periodKey. The other
+  // bucket then reads a doc that is "this month" but has no entry of its own —
+  // it must start at zero, not inherit anything.
+  const chatRolledFirst = { periodKey: NOW, used: 1 };
+  const report = evaluateQuota(chatRolledFirst, 20, NOW, "reportsUsed");
+  check("a bucket with no field this month starts fresh", report.allowed === true);
+  check("...at 1, not at the other bucket's count", report.used === 1, `used=${report.used}`);
 }
 
 const failed = results.filter((r) => !r.pass);
