@@ -690,9 +690,9 @@ const DICTIONARY = {
     "staff.inviteFailed": "Could not create the invite. Please try again.",
     "staff.inviteNetworkError": "Could not reach the invite service. Check your connection and try again.",
     "staff.inviteResultText": "Invite created for {email} as {role}. Share the link below \u2014 it expires in 48 hours and can only be used once.",
-    "staff.copyLinkButton": "Copy Invite Message",
+    "staff.copyLinkButton": "Copy Link",
     "staff.sendWhatsAppButton": "Send via WhatsApp",
-    "staff.linkCopied": "Invite message copied.",
+    "staff.linkCopied": "Invite link copied.",
     "staff.copyFailed": "Could not copy the link. Please try again.",
     "staff.colEmail": "Email",
     "staff.colRole": "Role",
@@ -1208,9 +1208,9 @@ const DICTIONARY = {
     "staff.inviteFailed": "Imeshindwa kuunda mwaliko. Tafadhali jaribu tena.",
     "staff.inviteNetworkError": "Imeshindwa kufikia huduma ya mwaliko. Angalia muunganisho wako na ujaribu tena.",
     "staff.inviteResultText": "Mwaliko umeundwa kwa {email} kama {role}. Shiriki kiungo hapa chini \u2014 kinaisha baada ya masaa 48 na kinaweza kutumika mara moja tu.",
-    "staff.copyLinkButton": "Nakili Ujumbe wa Mwaliko",
+    "staff.copyLinkButton": "Nakili Kiungo",
     "staff.sendWhatsAppButton": "Tuma kupitia WhatsApp",
-    "staff.linkCopied": "Ujumbe wa mwaliko umenakiliwa.",
+    "staff.linkCopied": "Kiungo cha mwaliko kimenakiliwa.",
     "staff.copyFailed": "Imeshindwa kunakili kiungo. Tafadhali jaribu tena.",
     "staff.colEmail": "Barua Pepe",
     "staff.colRole": "Wadhifa",
@@ -3736,9 +3736,13 @@ function excludePurchaseOrderGroup(groupIndex) {
 // link with no context is indistinguishable from a phishing link, and
 // staff have no other way to verify who sent it before they've even
 // opened the app.
+function buildStaffInviteAcceptUrl(linkToken) {
+  return `${window.location.origin}${window.location.pathname.replace(/[^/]*$/, "")}accept-invite.html?accept-invite=${encodeURIComponent(linkToken)}`;
+}
+
 function buildStaffInviteTextLines(linkToken, roleLabel) {
   const businessName = state.cachedProfile?.businessName || state.user?.displayName || "your employer";
-  const acceptUrl = `${window.location.origin}${window.location.pathname.replace(/[^/]*$/, "")}accept-invite.html?accept-invite=${encodeURIComponent(linkToken)}`;
+  const acceptUrl = buildStaffInviteAcceptUrl(linkToken);
   return [
     `This is an official DukaSmart ERP invitation from ${businessName}.`,
     `You've been invited to join as a ${roleLabel} on DukaSmart, the inventory and sales system used by ${businessName}.`,
@@ -5334,14 +5338,17 @@ async function sendStaffInvite() {
   }
 }
 
-// Copies the WHOLE invitation, not just the URL. It used to pick out only the
-// line containing "http", so anyone using this button (rather than the WhatsApp
-// one) pasted a bare link that read like an ordinary sign-up prompt -- none of
-// the business name, role, or expiry that makes an invite trustworthy survived,
-// which is exactly what makes a link look like phishing.
+// Copies the bare accept URL and nothing else, so it can go straight into an
+// address bar or a chat box. Anything else here corrupts the link: copying the
+// whole message meant an address-bar paste folded "This link is valid for 48
+// hours..." into the query string, and the older behaviour of copying the
+// message's link LINE still carried a text prefix. Either way the token picked
+// up stray characters, failed its hash check, and told the invitee their valid
+// invitation was dead. The WhatsApp button still sends the full message with
+// the business name and role -- that channel linkifies the URL correctly.
 function copyInviteLink() {
-  const message = buildStaffInviteTextLines(state.pendingInviteLinkToken, state.pendingInviteRoleLabel).join("\n");
-  navigator.clipboard.writeText(message)
+  const acceptUrl = buildStaffInviteAcceptUrl(state.pendingInviteLinkToken);
+  navigator.clipboard.writeText(acceptUrl)
     .then(() => showToast(t("staff.linkCopied")))
     .catch(() => showToast(t("staff.copyFailed")));
 }

@@ -4,9 +4,23 @@ import { aiConfig } from "./ai-config.js";
 const qs = (selector) => document.querySelector(selector);
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// A pasted invitation frequently arrives with the rest of the message riding
+// along inside the query string: dropping the whole copied text into an address
+// bar folds "This link is valid for 48 hours..." straight onto the end of the
+// token. base64url decoding then swallows those extra characters silently
+// rather than failing, so the token decodes to garbage, misses its hash check,
+// and the invitee is told their perfectly good invitation is no longer valid.
+//
+// The token is the longest run of base64url characters in the parameter, which
+// recovers it whether the stray text landed behind it (address-bar paste) or in
+// front of it (a link copied together with its label).
 function getLinkTokenFromUrl() {
-  const params = new URLSearchParams(window.location.search);
-  return params.get("accept-invite") || "";
+  const raw = new URLSearchParams(window.location.search).get("accept-invite") || "";
+  let token = "";
+  for (const run of raw.match(/[A-Za-z0-9_-]+/g) || []) {
+    if (run.length > token.length) token = run;
+  }
+  return token;
 }
 
 function setFieldError(id, message) {
