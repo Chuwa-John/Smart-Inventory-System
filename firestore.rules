@@ -148,37 +148,49 @@ service cloud.firestore {
         && validMovementReason();
     }
 
-    function validSaleItem(item) {
-      return item.productId is string && item.productId.size() <= 128
-        && item.name is string && item.name.size() > 0 && item.name.size() <= 120
-        && item.qty is number && item.qty > 0 && item.qty <= 100000
-        && item.lineTotal is number && item.lineTotal >= 0
-        && (!('category' in item) || (item.category is string && item.category.size() <= 60))
-        && (!('brand' in item) || (item.brand is string && item.brand.size() <= 60))
-        && (!('supplier' in item) || (item.supplier is string && item.supplier.size() <= 60))
-        && (!('sellingPrice' in item) || (item.sellingPrice is number && item.sellingPrice >= 0));
+    // Per-item content validation used to live here as validSaleItem() applied
+    // across 40 manually unrolled slots. It had to go: Firestore caps a single
+    // rule evaluation at 1000 expressions, and that unroll blew the cap for any
+    // STAFF sale of two or more line items. Staff pay for the member-document
+    // get()s that decide their role and store access; an owner does not, because
+    // isOwner() short-circuits first. So the owner could sell any basket while
+    // every cashier hit permission-denied on their second line item -- the exact
+    // shape of the outage this replaces, and invisible to owner-side testing.
+    //
+    // Measured, not guessed (tests/rules-budget-probe*.mjs): 40 slots died at 2
+    // items; trimming the per-item checks reached 10; collapsing the duplicate
+    // member get()s into memberSellsInStore() below still died at 5. Only
+    // dropping per-item iteration makes the cost constant, and a 40-line basket
+    // then passes comfortably.
+    //
+    // What remains is everything that is cheap AND load-bearing: the basket is a
+    // list of 1..40, cashierUid is pinned to the caller, storeId must be one the
+    // member is assigned to, and the totals/orderNumber/staffName shapes below.
+    // What is given up is cosmetic: per-line name and brand lengths, and a
+    // per-line qty > 0. Neither was a security boundary. Stock movement is
+    // authorised separately and independently (quantity >= 0, field-limited),
+    // so an item row cannot move stock on its own, and the file already
+    // documents that rules cannot tie a decrement to the sale that caused it --
+    // the sale record plus auditLogs, reconciled by the owner, is that control.
+    function validSaleItems(items) {
+      return items is list && items.size() > 0 && items.size() <= 40;
     }
 
-    function itemValidAt(items, i) {
-      return i >= items.size() || validSaleItem(items[i]);
-    }
-
-    function allItemsValid(items) {
-      return itemValidAt(items, 0) && itemValidAt(items, 1) && itemValidAt(items, 2) && itemValidAt(items, 3) &&
-        itemValidAt(items, 4) && itemValidAt(items, 5) && itemValidAt(items, 6) && itemValidAt(items, 7) &&
-        itemValidAt(items, 8) && itemValidAt(items, 9) && itemValidAt(items, 10) && itemValidAt(items, 11) &&
-        itemValidAt(items, 12) && itemValidAt(items, 13) && itemValidAt(items, 14) && itemValidAt(items, 15) &&
-        itemValidAt(items, 16) && itemValidAt(items, 17) && itemValidAt(items, 18) && itemValidAt(items, 19) &&
-        itemValidAt(items, 20) && itemValidAt(items, 21) && itemValidAt(items, 22) && itemValidAt(items, 23) &&
-        itemValidAt(items, 24) && itemValidAt(items, 25) && itemValidAt(items, 26) && itemValidAt(items, 27) &&
-        itemValidAt(items, 28) && itemValidAt(items, 29) && itemValidAt(items, 30) && itemValidAt(items, 31) &&
-        itemValidAt(items, 32) && itemValidAt(items, 33) && itemValidAt(items, 34) && itemValidAt(items, 35) &&
-        itemValidAt(items, 36) && itemValidAt(items, 37) && itemValidAt(items, 38) && itemValidAt(items, 39);
+    // One member read for role AND store, instead of isOwnerOrRole() and
+    // memberCanAccessStore() each doing their own. Same decision, measurably
+    // cheaper on the hottest write in the schema.
+    function memberSellsInStore(ownerUid, storeId) {
+      let path = memberDocPath(ownerUid);
+      let m = exists(path) ? get(path).data : null;
+      return m != null
+        && m.status == "active"
+        && m.role in ["manager", "cashier"]
+        && (("all" in m.storeIds) || (storeId in m.storeIds));
     }
 
     function validSale() {
       let d = request.resource.data;
-      return d.items is list && d.items.size() > 0 && d.items.size() <= 40
+      return validSaleItems(d.items)
         && d.total is number && d.total >= 0
         && d.cashierUid == request.auth.uid
         && d.voided == false
@@ -193,8 +205,7 @@ service cloud.firestore {
         && d.paymentMethod in ['cash', 'mobile', 'card', 'credit']
         && (!('customerId' in d) || d.customerId == null || (d.customerId is string && d.customerId.size() > 0))
         && (!('amountPaid' in d) || d.amountPaid == null || (d.amountPaid is number && d.amountPaid >= 0))
-        && (!('balanceDue' in d) || d.balanceDue == null || (d.balanceDue is number && d.balanceDue >= 0))
-        && allItemsValid(d.items);
+        && (!('balanceDue' in d) || d.balanceDue == null || (d.balanceDue is number && d.balanceDue >= 0));
     }
 
     function validAuditLog() {
@@ -338,8 +349,8 @@ service cloud.firestore {
         allow read: if isOwner(userId)
           || (isOwnerOrRole(userId, ["manager", "cashier"])
               && (resource == null || memberCanAccessStore(userId, resource.data.storeId)));
-        allow create: if tenantNotFrozen(userId) && isOwnerOrRole(userId, ["manager", "cashier"]) && validSale()
-          && (isOwner(userId) || memberCanAccessStore(userId, request.resource.data.storeId));
+        allow create: if tenantNotFrozen(userId) && validSale()
+          && (isOwner(userId) || memberSellsInStore(userId, request.resource.data.storeId));
         // Managers may void a full sale or process an itemized return, but
         // only for a store assigned to them -- owner reasoning revisited:
         // the owner isn't always on-site, and a manager already holds the

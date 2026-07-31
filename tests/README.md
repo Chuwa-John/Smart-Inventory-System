@@ -55,6 +55,18 @@ changed behaviour — investigate before deploying.
   and payments, transfers, plus owner-only surfaces, privilege-escalation
   attempts and cross-tenant isolation.
 
+## Diagnostics (not part of `npm test`)
+
+- `rules-budget-probe.mjs`, `rules-budget-probe2.mjs` — rewrite `firestore.rules`
+  in memory and re-attempt the same sale to find what pushes a rule evaluation
+  past Firestore's 1000-expression ceiling. These are the measurements behind
+  dropping per-item sale validation: 40 unrolled slots died at 2 line items,
+  trimming the per-item checks reached 10, collapsing the duplicate member
+  `get()`s still died at 5, and only removing per-item iteration made the cost
+  constant enough for a 40-line basket. Re-run them before adding anything to
+  `validSale()` — the budget is shared, and staff pay for member lookups that an
+  owner short-circuits past.
+
 ## Known limitation, by design
 
 Rules authorize each write independently, so they cannot verify that a stock

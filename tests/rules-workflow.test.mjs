@@ -235,6 +235,44 @@ console.log("\n=== two cashiers selling the same product at once ===");
     `quantity ended at ${finalQty}`);
 }
 
+// Every sale in this file used a single line item, which is why an outage that
+// began at the SECOND item shipped. Firestore caps a rule evaluation at 1000
+// expressions; the per-item validation loop blew that cap for staff, who pay
+// for the member get()s an owner short-circuits past. Owner-side testing could
+// never have seen it.
+console.log("\n=== a basket with more than one line item ===");
+const basket = (n) => ({
+  items: Array.from({ length: n }, (_, i) => ({
+    productId: `p${i}`, name: `Item ${i}`, category: "Milk", brand: "Festive",
+    supplier: "Festive Ltd", qty: 15, sellingPrice: 5000, lineTotal: 75000
+  })),
+  subtotal: 100, total: 100, paymentMethod: "cash", cashTendered: 100, changeDue: 0,
+  storeId: STORE_A, branchId: STORE_A, cashierUid: CASHIER, staffId: CASHIER,
+  staffName: "John Chuwa", orderNumber: `${1000 + n}`, voided: false, createdAt: new Date()
+});
+for (const n of [2, 5, 20, 40]) {
+  await check(`cashier CAN complete a ${n}-item sale`, true,
+    () => setDoc(doc(cashier, "users", OWNER, "sales", `ord_basket_${n}`), basket(n)));
+}
+await check("a 41-item basket is still refused", false,
+  () => setDoc(doc(cashier, "users", OWNER, "sales", "ord_basket_41"), basket(41)));
+await check("an empty basket is still refused", false,
+  () => setDoc(doc(cashier, "users", OWNER, "sales", "ord_basket_0"), basket(0)));
+
+// The cheap, load-bearing checks must survive the switch to memberSellsInStore().
+await check("cashier still CANNOT sell into a store they are not assigned to", false,
+  () => setDoc(doc(cashier, "users", OWNER, "sales", "ord_wrong_store"),
+    { ...basket(2), storeId: STORE_B, branchId: STORE_B, orderNumber: "2001" }));
+await check("cashier still CANNOT forge another user's cashierUid", false,
+  () => setDoc(doc(cashier, "users", OWNER, "sales", "ord_forged_uid"),
+    { ...basket(2), cashierUid: MANAGER, orderNumber: "2002" }));
+await check("a sale with a non-numeric order number is still refused", false,
+  () => setDoc(doc(cashier, "users", OWNER, "sales", "ord_bad_number"),
+    { ...basket(2), orderNumber: "12ab" }));
+await check("a sale with an empty staffName is still refused", false,
+  () => setDoc(doc(cashier, "users", OWNER, "sales", "ord_no_staff"),
+    { ...basket(2), staffName: "", orderNumber: "2003" }));
+
 await testEnv.cleanup();
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
