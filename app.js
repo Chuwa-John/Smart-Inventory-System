@@ -30,13 +30,20 @@ const state = {
   unsubscribeStores: null,
   staff: [],
   unsubscribeStaff: null,
-  selectedStaffId: "",
   members: [],
   unsubscribeMembers: null,
   pendingInviteLinkToken: "",
   pendingInviteRoleLabel: "",
   businessOwnerUid: "",
   currentUserRole: null,
+  // Who the signed-in account IS on a sale. Sales used to be attributed by
+  // picking a name out of a list the owner maintained by hand; every staff
+  // member now signs in as themselves, so this is resolved from the account
+  // and never chosen at the till.
+  currentUserName: "",
+  // Auto-issued order number held for the cart currently on screen, so a retry
+  // reuses it and stays idempotent. Cleared when the sale completes.
+  pendingAutoOrderNumber: "",
   // Epoch ms when the anonymise-and-purge becomes due, or null when the tenant
   // is active. Read from users/{ownerUid}.deletionScheduledFor at sign-in.
   deletionScheduledFor: null,
@@ -219,7 +226,8 @@ const DICTIONARY = {
     "pos.changeDue": "Change due", "pos.completeSale": "Complete Sale", "pos.undoSale": "Undo Last Sale",
     "pos.staffLabel": "Staff member", "pos.selectStaffPlaceholder": "Select staff",
     "pos.addStaff": "+ Staff", "pos.removeStaff": "Remove Staff",
-    "pos.orderNumberLabel": "Order number (from sales sheet)", "pos.orderNumberPlaceholder": "e.g. 8097",
+    "pos.orderNumberLabel": "Order number (optional)", "pos.orderNumberPlaceholder": "Leave blank to auto-generate",
+    "pos.servedByLabel": "Served by",
     "reports.staffBreakdownTitle": "Sales by Staff", "reports.staffColumn": "Staff",
     "reports.ordersColumn": "Orders", "reports.allStaffRow": "All staff",
     "reports.searchOrderPlaceholder": "Search order number", "reports.orderNotFound": "No sale found for that order number.",
@@ -467,7 +475,7 @@ const DICTIONARY = {
     "toast.signInToAddStaff": "Sign in to add staff.", "toast.staffAdded": "{name} added to staff.",
     "toast.couldNotAddStaff": "Could not add staff member.", "toast.staffRemoved": "{name} removed from staff.",
     "toast.couldNotRemoveStaff": "Could not remove staff member.", "toast.selectStaffFirst": "Select a staff member first.",
-    "toast.orderNumberRequired": "Enter the order number from the sales sheet.",
+    "toast.staffIdentityUnavailable": "Could not confirm who is signed in. Sign out and back in, then try again.",
     "toast.orderNumberInvalid": "Order number must contain digits only.",
     "toast.couldNotSaveAlertSetting": "Could not save alert popup setting.",
     "toast.tooManyFailedAttempts": "Too many failed attempts for this email. Please wait 15 minutes and try again.",
@@ -694,6 +702,7 @@ const DICTIONARY = {
     "staff.sendWhatsAppButton": "Send via WhatsApp",
     "staff.linkCopied": "Invite link copied.",
     "staff.copyFailed": "Could not copy the link. Please try again.",
+    "staff.colName": "Name",
     "staff.colEmail": "Email",
     "staff.colRole": "Role",
     "staff.colStores": "Stores",
@@ -733,7 +742,8 @@ const DICTIONARY = {
     "pos.changeDue": "Chenji", "pos.completeSale": "Kamilisha Mauzo", "pos.undoSale": "Tengua Mauzo ya Mwisho",
     "pos.staffLabel": "Mfanyakazi", "pos.selectStaffPlaceholder": "Chagua mfanyakazi",
     "pos.addStaff": "+ Mfanyakazi", "pos.removeStaff": "Ondoa Mfanyakazi",
-    "pos.orderNumberLabel": "Nambari ya oda (kutoka karatasi ya mauzo)", "pos.orderNumberPlaceholder": "mfano 8097",
+    "pos.orderNumberLabel": "Nambari ya oda (si lazima)", "pos.orderNumberPlaceholder": "Acha wazi itatengenezwa yenyewe",
+    "pos.servedByLabel": "Amehudumiwa na",
     "reports.staffBreakdownTitle": "Mauzo kwa Mfanyakazi", "reports.staffColumn": "Mfanyakazi",
     "reports.ordersColumn": "Oda", "reports.allStaffRow": "Wafanyakazi wote",
     "reports.searchOrderPlaceholder": "Tafuta nambari ya oda", "reports.orderNotFound": "Hakuna mauzo yaliyopatikana kwa nambari hiyo ya oda.",
@@ -982,7 +992,7 @@ const DICTIONARY = {
     "toast.signInToAddStaff": "Ingia ili kuongeza mfanyakazi.", "toast.staffAdded": "{name} ameongezwa kwenye wafanyakazi.",
     "toast.couldNotAddStaff": "Imeshindwa kuongeza mfanyakazi.", "toast.staffRemoved": "{name} ameondolewa kwenye wafanyakazi.",
     "toast.couldNotRemoveStaff": "Imeshindwa kuondoa mfanyakazi.", "toast.selectStaffFirst": "Chagua mfanyakazi kwanza.",
-    "toast.orderNumberRequired": "Weka nambari ya oda kutoka kwenye karatasi ya mauzo.",
+    "toast.staffIdentityUnavailable": "Imeshindwa kuthibitisha aliyeingia. Toka kisha ingia tena, kisha jaribu tena.",
     "toast.orderNumberInvalid": "Nambari ya oda lazima iwe na tarakimu pekee.",
     "toast.couldNotSaveAlertSetting": "Imeshindwa kuhifadhi mpangilio wa arifa ibukizi.",
     "toast.tooManyFailedAttempts": "Majaribio mengi yameshindwa kwa barua pepe hii. Tafadhali subiri dakika 15 na ujaribu tena.",
@@ -1212,6 +1222,7 @@ const DICTIONARY = {
     "staff.sendWhatsAppButton": "Tuma kupitia WhatsApp",
     "staff.linkCopied": "Kiungo cha mwaliko kimenakiliwa.",
     "staff.copyFailed": "Imeshindwa kunakili kiungo. Tafadhali jaribu tena.",
+    "staff.colName": "Jina",
     "staff.colEmail": "Barua Pepe",
     "staff.colRole": "Wadhifa",
     "staff.colStores": "Maduka",
@@ -2507,8 +2518,8 @@ async function confirmProcessReturn() {
     subtotalReturned,
     discountShare: Math.round(discountShare),
     refundAmount,
-    staffId: state.selectedStaffId || "",
-    staffName: (state.staff.find((member) => member.id === state.selectedStaffId) || {}).name || "",
+    staffId: saleIdentity().id,
+    staffName: saleIdentity().name,
     createdAt: new Date().toISOString()
   };
 
@@ -3883,7 +3894,7 @@ function openTransferDialog(productId) {
     .join("");
   const transferStaffNameInput = qs("#transferStaffNameInput");
   if (transferStaffNameInput) {
-    transferStaffNameInput.value = state.staff.find((member) => member.id === state.selectedStaffId)?.name || "";
+    transferStaffNameInput.value = state.currentUserName || "";
   }
   const transferStaffSuggestions = qs("#transferStaffSuggestions");
   if (transferStaffSuggestions) {
@@ -4708,8 +4719,39 @@ async function resolveCurrentUserRole(user, ownerUid) {
   }
 }
 
+// The name a sale is attributed to. Staff carry the name they gave when they
+// accepted their invitation; the owner falls back through their own account
+// details. firestore.rules requires staffName to be a non-empty string of at
+// most 80 characters, so every branch must end in something real -- the email
+// local part is the last resort rather than an empty string, which the rules
+// would reject and which would leave a sale attributed to nobody.
+async function resolveCurrentUserName(user, ownerUid) {
+  const clean = (value) => String(value || "").trim().slice(0, 80);
+  if (user.uid !== ownerUid) {
+    try {
+      const memberSnap = await readOwnMemberDoc();
+      const name = clean(memberSnap.exists() ? memberSnap.data().name : "");
+      if (name) return name;
+    } catch (error) {
+      console.warn("Could not resolve staff name from member doc.", error);
+    }
+  }
+  return clean(user.displayName)
+    || clean(state.cachedProfile?.businessName)
+    || clean((user.email || "").split("@")[0])
+    || "Staff";
+}
+
 function isOwnerRole() {
   return state.currentUserRole === "owner";
+}
+
+// Identity for a sale, return or transfer: always the signed-in account.
+function saleIdentity() {
+  return {
+    id: state.user?.uid || "",
+    name: String(state.currentUserName || "").trim().slice(0, 80)
+  };
 }
 
 function isManagerOrOwnerRole() {
@@ -4723,13 +4765,13 @@ function applyStoreOwnerControlsVisibility() {
   const ownerOnly = isOwnerRole();
   [
     "renameStoreButton", "setBusinessTypeButton", "setCurrencyButton", "archiveStoreButton", "overridePasswordSettingsButton",
-    // Whole-business data export (downloadBackupButton), legacy cashier-name
-    // list writes (add/removeStaffButton -- reads stay open to manager/
-    // cashier per the staff/{staffId} rule, only writes are owner-only), and
-    // monthlyReports generation (no manager/cashier branch in the rules at
-    // all, and a non-owner click would still trigger a billed AI proxy call
-    // before Firestore ever rejected the write).
-    "downloadBackupButton", "addStaffButton", "removeStaffButton", "generateMonthlyReportButton"
+    // Whole-business data export (downloadBackupButton) and monthlyReports
+    // generation (no manager/cashier branch in the rules at all, and a
+    // non-owner click would still trigger a billed AI proxy call before
+    // Firestore ever rejected the write). The hand-maintained cashier-name
+    // list that used to sit here is gone: staff are identified by the account
+    // they sign in with.
+    "downloadBackupButton", "generateMonthlyReportButton"
   ].forEach((id) => {
     const el = qs(`#${id}`);
     if (el) el.hidden = !ownerOnly;
@@ -4791,6 +4833,7 @@ async function initFirebase() {
         clearMemberDocCache();
         state.businessOwnerUid = await resolveBusinessOwnerUid(user);
         state.currentUserRole = await resolveCurrentUserRole(user, state.businessOwnerUid);
+        state.currentUserName = await resolveCurrentUserName(user, state.businessOwnerUid);
         updateAuthUi();
         renderAll();
         startIdleWatcher();
@@ -4829,13 +4872,13 @@ async function initFirebase() {
         state.stores = [];
         state.staff = [];
         state.members = [];
-        state.selectedStaffId = "";
         state.monthlyReports = [];
         state.customers = [];
         state.transfers = [];
         state.currentStoreId = "";
         state.businessOwnerUid = "";
         state.currentUserRole = null;
+        state.currentUserName = "";
         state.deletionScheduledFor = null;
         renderDeletionBanner();
         clearMemberDocCache();
@@ -5212,9 +5255,6 @@ async function subscribeToStaff() {
     const staffQuery = query(collection(state.db, "users", state.businessOwnerUid, "staff"), orderBy("createdAt", "asc"));
     state.unsubscribeStaff = onSnapshot(staffQuery, (snapshot) => {
       state.staff = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-      if (!state.selectedStaffId || !activeStaff().some((member) => member.id === state.selectedStaffId)) {
-        state.selectedStaffId = activeStaff()[0]?.id || "";
-      }
       renderStaffSelect();
       renderStaffOrderLookupSelect();
     });
@@ -5251,6 +5291,7 @@ function renderStaffRoster() {
         ? t("staff.allStoresLabel")
         : (member.storeIds || []).map((id) => state.stores.find((s) => s.id === id)?.name || id).join(", ");
       return `<tr>
+        <td>${esc(member.name || "-")}</td>
         <td>${esc(member.email || "-")}</td>
         <td>${esc(member.role || "-")}</td>
         <td>${esc(storesLabel)}</td>
@@ -5259,7 +5300,7 @@ function renderStaffRoster() {
         </td>
       </tr>`;
     })
-    .join("") || `<tr><td colspan="4" class="empty-state">${t("staff.rosterEmpty")}</td></tr>`;
+    .join("") || `<tr><td colspan="5" class="empty-state">${t("staff.rosterEmpty")}</td></tr>`;
 }
 
 // Hard delete, matching the "revocation = hard delete" decision -- no
@@ -5362,56 +5403,30 @@ function sendInviteWhatsApp() {
   window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
 }
 
-async function addStaffMember() {
-  const name = window.prompt(t("dialog.newStaffNamePrompt"));
-  if (!name || !name.trim()) return;
-  if (!state.db || !state.user) return showToast(t("toast.signInToAddStaff"));
-  try {
-    const { collection, doc, serverTimestamp, setDoc } = state.firebaseApi.firestore;
-    const staffRef = doc(collection(state.db, "users", state.user.uid, "staff"));
-    await setDoc(staffRef, { name: name.trim().slice(0, 80), createdAt: serverTimestamp() });
-    state.selectedStaffId = staffRef.id;
-    showToast(t("toast.staffAdded", { name: name.trim() }));
-  } catch (error) {
-    console.warn(error);
-    showToast(t("toast.couldNotAddStaff"));
-  }
-}
+// The hand-maintained users/{owner}/staff name list is no longer written to:
+// staff exist because they accepted an invitation and signed in, so there is
+// nothing for an owner to add or remove here. The collection is still READ --
+// sales recorded before this change carry those staffIds, and Reports resolves
+// historical names through it.
 
-async function removeStaffMember() {
-  const member = state.staff.find((item) => item.id === state.selectedStaffId);
-  if (!member) return showToast(t("toast.selectStaffFirst"));
-  if (!window.confirm(t("dialog.removeStaffConfirm", { name: member.name || "" }))) return;
-  if (!state.db || !state.user) return showToast(t("toast.signInToAddStaff"));
-  try {
-    const { doc, deleteDoc, collection, setDoc, serverTimestamp } = state.firebaseApi.firestore;
-    await deleteDoc(doc(state.db, "users", state.user.uid, "staff", member.id));
-    try {
-      const auditRef = doc(collection(state.db, "users", state.user.uid, "auditLogs"));
-      await setDoc(auditRef, {
-        action: "STAFF_REMOVED",
-        staffId: member.id,
-        name: member.name || "",
-        uid: state.user?.uid || null,
-        createdAt: serverTimestamp()
-      });
-    } catch (auditError) {
-      console.warn(auditError);
-    }
-    state.selectedStaffId = "";
-    showToast(t("toast.staffRemoved", { name: member.name || "" }));
-  } catch (error) {
-    console.warn(error);
-    showToast(t("toast.couldNotRemoveStaff"));
-  }
-}
-
+// Shows who the till is ringing sales as. This replaced a dropdown of names the
+// owner maintained by hand: staff now sign in with their own credentials, so
+// the identity is read off the account and cannot be mis-picked at the counter.
 function renderStaffSelect() {
-  const select = qs("#posStaffSelect");
-  if (!select) return;
-  const options = activeStaff().map((member) => `<option value="${member.id}">${esc(member.name || "")}</option>`).join("");
-  select.innerHTML = options || `<option value="">${t("pos.selectStaffPlaceholder")}</option>`;
-  select.value = state.selectedStaffId;
+  const label = qs("#posStaffIdentity");
+  if (!label) return;
+  label.textContent = state.currentUserName || "";
+}
+
+// Order numbers are optional at the till. When one is left blank the system
+// issues it from the clock rather than continuing the highest number on file:
+// two tills selling at the same moment would both read the same highest value
+// and mint the same number, and nothing in firestore.rules enforces uniqueness.
+// The last 10 digits of the epoch millisecond satisfy the rules'
+// ^[0-9]{1,10}$ and stay distinct for ~115 days, which is far longer than an
+// order number needs to be unambiguous on a sales sheet.
+function nextAutoOrderNumber() {
+  return String(Date.now()).slice(-10);
 }
 
 async function loadUserSettings(user) {
@@ -5945,13 +5960,14 @@ function warmUpAiProxy() {
   fetch(new URL("/health", aiConfig.proxyUrl)).catch(() => {});
 }
 
-// A cashier works the till: POS to sell, Inventory to restock -- the two
-// surfaces whose writes the rules actually permit them. Dashboard, Reports and
-// AI Advisor are whole-business performance views (revenue, per-staff sales
-// breakdowns, advisory analysis); a till operator has no operational need for
-// them and shouldn't see other staff members' numbers, so they're hidden
-// rather than shown-and-denied.
-const CASHIER_ALLOWED_VIEWS = ["inventory", "pos"];
+// A cashier works the till and nothing else. Dashboard, Reports and AI Advisor
+// are whole-business performance views (revenue, per-staff breakdowns, advisory
+// analysis) that a till operator has no operational need for; Inventory exposes
+// stock levels, cost prices and supplier detail across the business. All are
+// hidden rather than shown-and-denied. The rules still permit a cashier's
+// restock writes, so this is a deliberate product decision about what belongs
+// on a till, not a security boundary -- firestore.rules remains that.
+const CASHIER_ALLOWED_VIEWS = ["pos"];
 
 function canOpenView(viewId) {
   return isManagerOrOwnerRole() || CASHIER_ALLOWED_VIEWS.includes(viewId);
@@ -6005,6 +6021,9 @@ function renderAll() {
   renderMovement();
   renderInventory();
   renderPos();
+  // Depends on the resolved account name, which arrives with the role after
+  // sign-in rather than with the staff snapshot.
+  renderStaffSelect();
   renderCards();
   renderPaymentReports();
   renderAiQuestionSuggestions();
@@ -6087,11 +6106,6 @@ function bindEvents() {
   qs("#archiveStoreButton")?.addEventListener("click", archiveStore);
   qs("#setBusinessTypeButton")?.addEventListener("click", setStoreBusinessType);
   qs("#setCurrencyButton")?.addEventListener("click", setStoreCurrency);
-  qs("#posStaffSelect")?.addEventListener("change", (event) => {
-    state.selectedStaffId = event.target.value;
-  });
-  qs("#addStaffButton")?.addEventListener("click", addStaffMember);
-  qs("#removeStaffButton")?.addEventListener("click", removeStaffMember);
   qs("#staffRosterButton")?.addEventListener("click", () => { renderStaffRoster(); qs("#staffRosterDialog").showModal(); });
   qs("#closeStaffRosterDialog")?.addEventListener("click", () => qs("#staffRosterDialog").close());
   qs("#openInviteStaffButton")?.addEventListener("click", openInviteStaffDialog);
@@ -6428,22 +6442,40 @@ function bindEvents() {
     if (state.db && !state.currentStoreId) return showToast(t("toast.loadingStore"));
     if (state.db && state.currentStoreId === "all") return showToast(t("toast.selectStoreBeforeSale"));
 
-    const staffMember = state.staff.find((member) => member.id === state.selectedStaffId);
-    if (!staffMember) return showToast(t("toast.selectStaffFirst"));
+    const seller = saleIdentity();
+    if (!seller.id || !seller.name) return showToast(t("toast.staffIdentityUnavailable"));
 
+    // Typed order numbers are matched against the sales sheet, so they are still
+    // validated -- but the length cap now mirrors firestore.rules exactly. It
+    // was ^[0-9]+$ here, which let an 11-digit entry through the client only to
+    // be rejected by the rules mid-transaction.
     const orderNumberRaw = qs("#posOrderNumber")?.value.trim() || "";
-    if (!orderNumberRaw) return showToast(t("toast.orderNumberRequired"));
-    if (!/^[0-9]+$/.test(orderNumberRaw)) return showToast(t("toast.orderNumberInvalid"));
+    if (orderNumberRaw && !/^[0-9]{1,10}$/.test(orderNumberRaw)) return showToast(t("toast.orderNumberInvalid"));
+
+    // Held on state rather than generated per click. The sale document id below
+    // is derived from the order number to make retries idempotent, so minting a
+    // fresh number on every press would hand a double-tap two different ids and
+    // record the sale twice, decrementing stock twice with it. One number per
+    // cart, cleared once the sale lands.
+    if (!orderNumberRaw && !state.pendingAutoOrderNumber) {
+      state.pendingAutoOrderNumber = nextAutoOrderNumber();
+    }
+    const orderNumber = orderNumberRaw || state.pendingAutoOrderNumber;
 
     const customerName = (qs("#posCustomerName")?.value || "").trim().slice(0, 80);
     const customerPhone = (qs("#posCustomerPhone")?.value || "").trim().slice(0, 20);
 
-    const duplicate = state.sales.find(
-      (sale) => !sale.voided && sale.staffId === staffMember.id && String(sale.orderNumber || "") === orderNumberRaw
-    );
-    if (duplicate) {
-      const proceed = window.confirm(t("dialog.duplicateOrderConfirm", { orderNumber: orderNumberRaw, name: staffMember.name || "" }));
-      if (!proceed) return;
+    // Only worth warning about for a number the operator typed; a generated one
+    // cannot collide with their own earlier sale.
+    let duplicate = null;
+    if (orderNumberRaw) {
+      duplicate = state.sales.find(
+        (sale) => !sale.voided && sale.staffId === seller.id && String(sale.orderNumber || "") === orderNumberRaw
+      );
+      if (duplicate) {
+        const proceed = window.confirm(t("dialog.duplicateOrderConfirm", { orderNumber: orderNumberRaw, name: seller.name }));
+        if (!proceed) return;
+      }
     }
 
     const saleItems = state.cart.map((cartItem) => ({
@@ -6488,7 +6520,7 @@ function bindEvents() {
       }
     }
 
-    if (!staffMember.id || !String(staffMember.name || "").trim() || !/^[0-9]{1,10}$/.test(orderNumberRaw)) {
+    if (!seller.id || !seller.name || !/^[0-9]{1,10}$/.test(orderNumber)) {
       showToast(t("toast.saleFailedGeneric"));
       return;
     }
@@ -6507,7 +6539,7 @@ function bindEvents() {
         // creating a second sale and double-decrementing stock. If the cashier
         // already confirmed "record again anyway" above (duplicate === true),
         // give that deliberate re-entry its own distinct id so it isn't blocked.
-        const dedupeSaleId = `ord_${staffMember.id}_${orderNumberRaw}`;
+        const dedupeSaleId = `ord_${seller.id}_${orderNumber}`;
         const saleId = duplicate ? `${dedupeSaleId}_dup${Date.now()}` : dedupeSaleId;
         const saleRef = doc(state.db, "users", state.businessOwnerUid, "sales", saleId);
         let creditCustomerId = null;
@@ -6518,7 +6550,7 @@ function bindEvents() {
         await runTransaction(state.db, async (transaction) => {
           const existingSaleSnap = await transaction.get(saleRef);
           if (existingSaleSnap.exists()) {
-            throw new Error(t("txerror.duplicateOrderSubmission", { orderNumber: orderNumberRaw }));
+            throw new Error(t("txerror.duplicateOrderSubmission", { orderNumber }));
           }
 
           const productRefs = state.cart.map((cartItem) => doc(state.db, "users", state.businessOwnerUid, "products", cartItem.id));
@@ -6565,9 +6597,9 @@ function bindEvents() {
             branchId: state.currentStoreId,
             storeId: state.currentStoreId,
             cashierUid: state.user?.uid || null,
-            staffId: staffMember.id,
-            staffName: staffMember.name || "",
-            orderNumber: orderNumberRaw,
+            staffId: seller.id,
+            staffName: seller.name,
+            orderNumber,
             customerName,
             customerPhone,
             voided: false,
@@ -6635,9 +6667,9 @@ function bindEvents() {
         amountPaid: paymentMethod === "credit" ? creditAmountPaid : null,
         amountPaidMethod: paymentMethod === "credit" ? creditAmountPaidMethod : null,
         balanceDue: paymentMethod === "credit" ? creditBalanceDue : null,
-        staffId: staffMember.id,
-        staffName: staffMember.name || "",
-        orderNumber: orderNumberRaw,
+        staffId: seller.id,
+        staffName: seller.name,
+        orderNumber,
         customerName,
         customerPhone,
         voided: false,
@@ -6657,14 +6689,17 @@ function bindEvents() {
       changeDue: paymentMethod === "cash" ? changeDue : null,
       amountPaid: paymentMethod === "credit" ? creditAmountPaid : null,
       balanceDue: paymentMethod === "credit" ? creditBalanceDue : null,
-      staffName: staffMember.name || "",
-      orderNumber: orderNumberRaw,
+      staffName: seller.name,
+      orderNumber,
       customerName,
       customerPhone,
       storeId: state.currentStoreId,
       createdAt: new Date()
     });
 
+    // The sale landed, so the held auto-number has done its job. The next cart
+    // gets a fresh one.
+    state.pendingAutoOrderNumber = "";
     state.cart = [];
     state.cartHistory = [];
     clearDiscount();

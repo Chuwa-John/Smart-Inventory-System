@@ -246,10 +246,14 @@
                 <span data-i18n="pos.total">Total</span>
                 <strong id="cartTotal">TZS 0</strong>
               </div>
+              <!-- The seller is the signed-in account. This replaced a dropdown
+                   of names the owner kept by hand, which could be left on the
+                   wrong person and mis-attribute a sale. -->
               <div class="staff-controls">
-                <select id="posStaffSelect" aria-label="Staff member"></select>
-                <button class="ghost-button compact" id="addStaffButton" type="button" data-i18n="pos.addStaff">+ Staff</button>
-                <button class="ghost-button compact danger" id="removeStaffButton" type="button" data-i18n="pos.removeStaff">Remove Staff</button>
+                <span class="pos-staff-identity">
+                  <span data-i18n="pos.servedByLabel">Served by</span>
+                  <strong id="posStaffIdentity"></strong>
+                </span>
                 <button class="ghost-button compact" id="staffRosterButton" type="button" data-i18n="staff.rosterButton">Staff Roster</button>
               </div>
               <label><span data-i18n="pos.customerName">Customer name (optional)</span>
@@ -258,8 +262,8 @@
               <label><span data-i18n="pos.customerPhone">Customer phone (optional)</span>
                 <input id="posCustomerPhone" type="tel" maxlength="20" placeholder="e.g. 07XXXXXXXX" data-i18n-placeholder="pos.customerPhonePlaceholder" />
               </label>
-              <label><span data-i18n="pos.orderNumberLabel">Order number (from sales sheet)</span>
-                <input id="posOrderNumber" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="e.g. 8097" data-i18n-placeholder="pos.orderNumberPlaceholder" />
+              <label><span data-i18n="pos.orderNumberLabel">Order number (optional)</span>
+                <input id="posOrderNumber" type="text" inputmode="numeric" pattern="[0-9]{1,10}" maxlength="10" placeholder="Leave blank to auto-generate" data-i18n-placeholder="pos.orderNumberPlaceholder" />
               </label>
               <div class="payment-grid" id="paymentGrid">
                 <button class="ghost-button payment-option active" data-payment="cash" type="button" data-i18n="pos.cash">Cash</button>
@@ -726,6 +730,7 @@
         <table>
           <thead>
             <tr>
+              <th data-i18n="staff.colName">Name</th>
               <th data-i18n="staff.colEmail">Email</th>
               <th data-i18n="staff.colRole">Role</th>
               <th data-i18n="staff.colStores">Stores</th>
@@ -841,6 +846,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js" integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script type="module" src="./app.js?v=20260731b"></script>
+    <script type="module" src="./app.js?v=20260731c"></script>
   </body>
 </html>

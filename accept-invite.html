@@ -27,6 +27,14 @@
         </div>
 
         <div id="acceptInviteFormFields" hidden>
+          <!-- Sales are attributed to this name. It is collected here, from the
+               person themselves, because the owner no longer maintains a list of
+               cashier names for the till to pick from. -->
+          <label>
+            <span>Your full name</span>
+            <input id="inviteFullName" type="text" autocomplete="name" maxlength="80" required />
+            <span class="field-error" id="inviteFullNameError"></span>
+          </label>
           <label>
             <span>Email</span>
             <input id="inviteEmail" type="email" autocomplete="email" required />
@@ -67,6 +75,6 @@
         </div>
       </form>
     </div>
-    <script type="module" src="./accept-invite.js?v=20260731a"></script>
+    <script type="module" src="./accept-invite.js?v=20260731b"></script>
   </body>
 </html>

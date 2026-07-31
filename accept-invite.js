@@ -102,6 +102,9 @@ let auth = null;
 let firebaseApi = null;
 let mode = "create"; // "create" | "signin" -- flips if the email already has an account
 let linkToken = "";
+// Captured on submit and reused by the verification step, which completes the
+// acceptance later without the form still being on screen.
+let staffFullName = "";
 const ROLE_LABELS = { cashier: "Cashier", manager: "Manager" };
 // The only server answers that mean "this link is genuinely dead".
 const PREVIEW_VERDICTS = new Set(["invalid", "used", "expired"]);
@@ -186,7 +189,7 @@ async function callAcceptInvite(idToken) {
   const response = await fetch(new URL("/api/staff/accept-invite", aiConfig.proxyUrl), {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${idToken}` },
-    body: JSON.stringify({ linkToken })
+    body: JSON.stringify({ linkToken, name: staffFullName })
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !payload.ok) {
@@ -306,15 +309,23 @@ async function handleSubmit(event) {
   event.preventDefault();
   if (!auth) return;
 
+  const fullName = qs("#inviteFullName").value.trim().replace(/\s+/g, " ").slice(0, 80);
   const email = qs("#inviteEmail").value.trim();
   const password = qs("#invitePassword").value;
   const confirmPassword = qs("#inviteConfirmPassword").value;
 
+  setFieldError("inviteFullNameError", "");
   setFieldError("inviteEmailError", "");
   setFieldError("invitePasswordError", "");
   setFieldError("inviteConfirmPasswordError", "");
   setFieldError("acceptInviteError", "");
 
+  // Every sale this person rings up is attributed to this name, and there is no
+  // longer an owner-maintained list to fall back on, so it is required here.
+  if (fullName.length < 2) {
+    return setFieldError("inviteFullNameError", "Enter your full name as it should appear on sales records.");
+  }
+  staffFullName = fullName;
   if (!EMAIL_PATTERN.test(email)) return setFieldError("inviteEmailError", "Enter a valid email address.");
   if (password.length < 6) return setFieldError("invitePasswordError", "Password must be at least 6 characters.");
   if (mode === "create" && password !== confirmPassword) {

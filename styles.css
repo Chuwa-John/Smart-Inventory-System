@@ -1112,13 +1112,26 @@ button:disabled {
   margin: 14px 0 10px;
 }
 
-.staff-controls select {
-  min-width: 160px;
-  border: 1px solid var(--line);
-  background: var(--surface);
+/* Reads as a statement of fact, not an editable control: the seller is the
+   signed-in account and there is nothing here to change. */
+.pos-staff-identity {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.813rem;
+  font-weight: 550;
+}
+
+.pos-staff-identity strong {
   color: var(--text);
-  border-radius: var(--radius);
-  padding: 10px 12px;
+  font-size: 0.938rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .store-breakdown {

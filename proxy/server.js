@@ -665,6 +665,16 @@ app.post("/api/staff/accept-invite", acceptInviteLimiter, async (req, res) => {
   }
 
   const linkToken = readString(req.body?.linkToken);
+
+  // The name every sale by this account will be attributed to. Required, and
+  // capped at the 80 characters firestore.rules allows for staffName on a sale
+  // -- a longer value stored here would produce sales the rules reject at the
+  // till, which is the worst possible place to discover it.
+  const name = clampString(readString(req.body?.name).trim().replace(/\s+/g, " "), 80);
+  if (name.length < 2) {
+    return res.status(400).json({ ok: false, error: "A full name is required to accept this invitation." });
+  }
+
   let ownerUid;
   let inviteId;
   let token;
@@ -697,6 +707,7 @@ app.post("/api/staff/accept-invite", acceptInviteLimiter, async (req, res) => {
         storeIds: invite.storeIds,
         status: "active",
         email: invite.email,
+        name,
         createdAt: FieldValue.serverTimestamp()
       });
       transaction.update(inviteRef, { used: true, usedAt: FieldValue.serverTimestamp(), usedByUid: req.user.uid });
