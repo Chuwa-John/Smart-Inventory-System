@@ -3052,7 +3052,29 @@ function renderChatLog() {
 const AI_PROXY_TIMEOUT_MS = 60000;
 
 const AI_QUESTION_MAX_CHARS = 2000;
-const AI_SNAPSHOT_MAX_PRODUCTS = 500;
+// Mirrors the server's own cap (compactSnapshot slices products to 80). Sending
+// more was doing two kinds of damage at once: at ~400+ products the body passed
+// the proxy's 64kb limit and the whole request died with "Payload too large",
+// and below that the surplus was simply parsed and thrown away -- up to 85% of
+// a mobile upload, on connections where that is the user's own money.
+const AI_SNAPSHOT_MAX_PRODUCTS = 80;
+const AI_SNAPSHOT_MAX_SUPPLIERS = 30;
+const AI_SNAPSHOT_MAX_PURCHASES = 30;
+
+// WHICH 80 matters more than how many. The products subscription has no
+// orderBy, so Firestore returns them by document id -- and product ids are
+// UUIDs, so "the first 80" was an arbitrary sample. Any shop past 80 products
+// was getting reorder advice computed from a random ~16% of its catalogue, with
+// nothing in the answer admitting the rest existed. Rank by what the advice
+// actually depends on, so the 80 that travel are the 80 worth reasoning about.
+function aiProductPriority(product) {
+  const quantity = Number(product.quantity || 0);
+  const reorderLevel = Number(product.reorderLevel || 0);
+  const sold30 = Number(product.sold30 || 0);
+  if (quantity <= 0) return 3000000 + sold30;
+  if (quantity <= reorderLevel) return 2000000 + sold30;
+  return sold30;
+}
 
 function sanitizeAiMessages(messages) {
   return messages
@@ -3063,10 +3085,15 @@ function sanitizeAiMessages(messages) {
     }));
 }
 
+// Last line of defence on payload size. callAiProxy already ranks and caps, but
+// this runs on every caller — including the monthly report path — so the cap is
+// enforced here too rather than trusted upstream.
 function sanitizeAiSnapshot(snapshot) {
   return {
     ...snapshot,
-    products: Array.isArray(snapshot.products) ? snapshot.products.slice(0, AI_SNAPSHOT_MAX_PRODUCTS) : []
+    products: Array.isArray(snapshot.products) ? snapshot.products.slice(0, AI_SNAPSHOT_MAX_PRODUCTS) : [],
+    suppliers: Array.isArray(snapshot.suppliers) ? snapshot.suppliers.slice(0, AI_SNAPSHOT_MAX_SUPPLIERS) : [],
+    purchases: Array.isArray(snapshot.purchases) ? snapshot.purchases.slice(0, AI_SNAPSHOT_MAX_PURCHASES) : []
   };
 }
 
@@ -3119,15 +3146,21 @@ async function callAiProxy(historyForRequest) {
   return postToAiProxy(historyForRequest, {
     businessType: currentBusinessType(),
     language: state.language,
-    products: storeProducts().map((product) => ({
-      name: product.name,
-      category: product.category,
-      quantity: Number(product.quantity || 0),
-      reorderLevel: Number(product.reorderLevel || 0),
-      sold30: Number(product.sold30 || 0),
-      sold90: Number(product.sold90 || 0),
-      leadTimeDays: Number(product.leadTimeDays || 10)
-    })),
+    products: storeProducts()
+      .map((product) => ({
+        name: product.name,
+        category: product.category,
+        quantity: Number(product.quantity || 0),
+        reorderLevel: Number(product.reorderLevel || 0),
+        sold30: Number(product.sold30 || 0),
+        sold90: Number(product.sold90 || 0),
+        leadTimeDays: Number(product.leadTimeDays || 10)
+      }))
+      // Out of stock first, then at-or-below reorder level, then fastest
+      // movers. Deterministic given the same data, which also keeps the cached
+      // prompt prefix stable across turns of a conversation.
+      .sort((a, b) => aiProductPriority(b) - aiProductPriority(a))
+      .slice(0, AI_SNAPSHOT_MAX_PRODUCTS),
     metrics: calculateMetrics()
   });
 }

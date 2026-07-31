@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node control-panel-math.test.mjs && node ai-quota.test.mjs && firebase emulators:exec --only firestore --project sanitaryflow-erp \"node rules-access.test.mjs && node rules-workflow.test.mjs && node rules-deletion.test.mjs && node invite-preview.test.mjs\""
+    "test": "node control-panel-math.test.mjs && node ai-quota.test.mjs && node ai-snapshot.test.mjs && firebase emulators:exec --only firestore --project sanitaryflow-erp \"node rules-access.test.mjs && node rules-workflow.test.mjs && node rules-deletion.test.mjs && node invite-preview.test.mjs\""
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",
