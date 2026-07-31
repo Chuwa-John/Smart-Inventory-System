@@ -96,6 +96,73 @@
 
           <div class="kpi-grid" id="kpiGrid"></div>
 
+          <!-- Shift control. Manager + owner. Scoped to the store on screen and
+               to today, because it answers "what happened on my floor during my
+               shift" -- the question the KPI grid above does not. -->
+          <section class="control-panel" id="managerControlPanel" hidden>
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="control.managerEyebrow">Shift control</p>
+                <h2 data-i18n="control.managerTitle">Manager control</h2>
+              </div>
+              <span class="muted control-scope" id="managerControlScope"></span>
+            </div>
+            <div class="control-grid" id="managerControlGrid"></div>
+            <div class="control-subhead">
+              <h3 data-i18n="control.byStaffToday">Takings by staff today</h3>
+            </div>
+            <div class="table-scroll">
+              <table class="control-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="control.colStaff">Staff</th>
+                    <th data-i18n="control.colSales">Sales</th>
+                    <th data-i18n="control.colItems">Items</th>
+                    <th data-i18n="control.colDiscount">Discounts</th>
+                    <th data-i18n="control.colVoids">Voids</th>
+                    <th data-i18n="control.colTakings">Takings</th>
+                  </tr>
+                </thead>
+                <tbody id="managerStaffTable"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Business control. Owner only. Deliberately NOT today-scoped and
+               not store-scoped: this is the whole business over the month, plus
+               the governance facts an owner is accountable for. -->
+          <section class="control-panel" id="adminControlPanel" hidden>
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="control.adminEyebrow">Business control</p>
+                <h2 data-i18n="control.adminTitle">Owner control</h2>
+              </div>
+              <span class="muted control-scope" data-i18n="control.allStoresScope">All stores · month to date</span>
+            </div>
+            <div class="control-grid" id="adminControlGrid"></div>
+            <div class="control-subhead">
+              <h3 data-i18n="control.byStore">Performance by store</h3>
+            </div>
+            <div class="table-scroll">
+              <table class="control-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="control.colStore">Store</th>
+                    <th data-i18n="control.colToday">Today</th>
+                    <th data-i18n="control.colMonth">Month to date</th>
+                    <th data-i18n="control.colLowStock">Low / out</th>
+                    <th data-i18n="control.colStockValue">Stock at cost</th>
+                  </tr>
+                </thead>
+                <tbody id="adminStoreTable"></tbody>
+              </table>
+            </div>
+            <div class="control-subhead">
+              <h3 data-i18n="control.governance">Governance</h3>
+            </div>
+            <div class="control-governance" id="adminGovernance"></div>
+          </section>
+
           <div class="dashboard-grid">
             <article class="panel sales-panel">
               <div class="panel-head">
@@ -846,6 +913,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js" integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script type="module" src="./app.js?v=20260731c"></script>
+    <script type="module" src="./app.js?v=20260731d"></script>
   </body>
 </html>

@@ -1408,6 +1408,139 @@ label input[type="radio"] {
   margin-top: var(--space-2);
 }
 
+/* Role control panels. Deliberately flatter than .panel: these are read-only
+   instrument clusters, and competing with the cards below for attention would
+   bury the alerts that actually need acting on. */
+.control-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  margin-bottom: var(--space-5);
+  /* Without min-width:0 a grid/flex child refuses to shrink below its content,
+     so the wide staff table pushed the whole page sideways instead of scrolling
+     inside its own box. A till is operated on a phone; the body must never
+     scroll horizontally. */
+  min-width: 0;
+  max-width: 100%;
+}
+
+.control-scope {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+}
+
+.control-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg);
+  border: 1px solid var(--line-soft);
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4);
+  min-width: 0;
+}
+
+.control-tile.accent { border-left-color: var(--accent); }
+.control-tile.warn { border-left-color: var(--amber); }
+.control-tile.danger { border-left-color: var(--red); }
+
+.control-tile-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.control-tile-value {
+  color: var(--text);
+  font-size: 1.05rem;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.control-tile-note {
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.control-subhead {
+  margin: var(--space-5) 0 var(--space-2);
+}
+
+.control-subhead h3 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-weight: 650;
+}
+
+/* Wide tables scroll inside their own box; the page itself must never scroll
+   sideways on a phone, which is what a till operator is holding. */
+.table-scroll {
+  overflow-x: auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.control-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  min-width: 460px;
+}
+
+.control-table th,
+.control-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+}
+
+.control-table th {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 650;
+}
+
+.control-table tr:last-child td { border-bottom: 0; }
+.cell-warn { color: var(--amber); font-weight: 600; }
+.cell-danger { color: var(--red); font-weight: 650; }
+
+.control-governance {
+  display: grid;
+  gap: 6px;
+}
+
+.governance-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  background: var(--bg);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  padding: 9px var(--space-4);
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.governance-row strong { color: var(--text); text-align: right; }
+.governance-row.warn strong { color: var(--amber); }
+.governance-row.danger strong { color: var(--red); }
+
 .field-error {
   display: block;
   min-height: 1em;

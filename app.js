@@ -228,6 +228,62 @@ const DICTIONARY = {
     "pos.addStaff": "+ Staff", "pos.removeStaff": "Remove Staff",
     "pos.orderNumberLabel": "Order number (optional)", "pos.orderNumberPlaceholder": "Leave blank to auto-generate",
     "pos.servedByLabel": "Served by",
+    "control.managerEyebrow": "Shift control",
+    "control.managerTitle": "Manager control",
+    "control.adminEyebrow": "Business control",
+    "control.adminTitle": "Owner control",
+    "control.todayScope": "today",
+    "control.allStoresScope": "All stores · month to date",
+    "control.expectedCash": "Expected in drawer",
+    "control.expectedCashNote": "Cash sales plus cash deposits, less refunds",
+    "control.netTakings": "Net takings",
+    "control.netTakingsNote": "After refunds, excluding voids",
+    "control.salesCount": "Sales",
+    "control.averageBasket": "Average basket {value}",
+    "control.byMethod": "Cash · Mobile",
+    "control.cardCredit": "Card · Credit",
+    "control.discountsGiven": "Discounts given",
+    "control.voidsToday": "Voids today",
+    "control.refundsToday": "Refunds today",
+    "control.stockAttention": "Low · Out of stock",
+    "control.stockAttentionNote": "In this store",
+    "control.byStaffToday": "Takings by staff today",
+    "control.colStaff": "Staff",
+    "control.colSales": "Sales",
+    "control.colItems": "Items",
+    "control.colDiscount": "Discounts",
+    "control.colVoids": "Voids",
+    "control.colTakings": "Takings",
+    "control.noSalesToday": "No sales recorded yet today.",
+    "control.revenueToday": "Revenue today",
+    "control.revenueMonth": "Revenue month to date",
+    "control.salesCountNote": "{count} sales this month",
+    "control.grossMargin": "Gross margin (est.)",
+    "control.marginNote": "Revenue less cost of goods sold",
+    "control.marginIncomplete": "Incomplete — some items have no cost price",
+    "control.stockAtCost": "Stock value at cost",
+    "control.stockAtRetail": "At retail {value}",
+    "control.creditOwed": "Credit outstanding",
+    "control.voidsMonth": "Voids this month",
+    "control.refundsMonth": "Refunds this month",
+    "control.discountsMonth": "Discounts this month",
+    "control.byStore": "Performance by store",
+    "control.colStore": "Store",
+    "control.colToday": "Today",
+    "control.colMonth": "Month to date",
+    "control.colLowStock": "Low / out",
+    "control.colStockValue": "Stock at cost",
+    "control.noStores": "No active stores yet.",
+    "control.governance": "Governance",
+    "control.govTeam": "Team",
+    "control.govTeamValue": "{managers} manager(s), {cashiers} cashier(s)",
+    "control.govOverride": "Override password",
+    "control.govSet": "Set",
+    "control.govNotSet": "Not set — voids and returns are blocked",
+    "control.govUnnamed": "Staff without a name on file",
+    "control.govDeletion": "Account deletion",
+    "control.govDeletionPending": "Scheduled",
+    "control.govDeletionNone": "Not scheduled",
     "reports.staffBreakdownTitle": "Sales by Staff", "reports.staffColumn": "Staff",
     "reports.ordersColumn": "Orders", "reports.allStaffRow": "All staff",
     "reports.searchOrderPlaceholder": "Search order number", "reports.orderNotFound": "No sale found for that order number.",
@@ -744,6 +800,62 @@ const DICTIONARY = {
     "pos.addStaff": "+ Mfanyakazi", "pos.removeStaff": "Ondoa Mfanyakazi",
     "pos.orderNumberLabel": "Nambari ya oda (si lazima)", "pos.orderNumberPlaceholder": "Acha wazi itatengenezwa yenyewe",
     "pos.servedByLabel": "Amehudumiwa na",
+    "control.managerEyebrow": "Udhibiti wa zamu",
+    "control.managerTitle": "Udhibiti wa msimamizi",
+    "control.adminEyebrow": "Udhibiti wa biashara",
+    "control.adminTitle": "Udhibiti wa mmiliki",
+    "control.todayScope": "leo",
+    "control.allStoresScope": "Maduka yote · mwezi hadi leo",
+    "control.expectedCash": "Fedha inayotarajiwa",
+    "control.expectedCashNote": "Mauzo ya taslimu na malipo, ukiondoa marejesho",
+    "control.netTakings": "Mapato halisi",
+    "control.netTakingsNote": "Baada ya marejesho, bila mauzo yaliyofutwa",
+    "control.salesCount": "Mauzo",
+    "control.averageBasket": "Wastani wa manunuzi {value}",
+    "control.byMethod": "Taslimu · Simu",
+    "control.cardCredit": "Kadi · Mkopo",
+    "control.discountsGiven": "Punguzo lililotolewa",
+    "control.voidsToday": "Yaliyofutwa leo",
+    "control.refundsToday": "Marejesho leo",
+    "control.stockAttention": "Chini · Imeisha",
+    "control.stockAttentionNote": "Katika duka hili",
+    "control.byStaffToday": "Mapato kwa mfanyakazi leo",
+    "control.colStaff": "Mfanyakazi",
+    "control.colSales": "Mauzo",
+    "control.colItems": "Bidhaa",
+    "control.colDiscount": "Punguzo",
+    "control.colVoids": "Yaliyofutwa",
+    "control.colTakings": "Mapato",
+    "control.noSalesToday": "Hakuna mauzo yaliyorekodiwa leo.",
+    "control.revenueToday": "Mapato leo",
+    "control.revenueMonth": "Mapato mwezi hadi leo",
+    "control.salesCountNote": "Mauzo {count} mwezi huu",
+    "control.grossMargin": "Faida ghafi (makadirio)",
+    "control.marginNote": "Mapato ukiondoa gharama ya bidhaa",
+    "control.marginIncomplete": "Haijakamilika — baadhi ya bidhaa hazina bei ya gharama",
+    "control.stockAtCost": "Thamani ya hisa kwa gharama",
+    "control.stockAtRetail": "Kwa bei ya rejareja {value}",
+    "control.creditOwed": "Mkopo unaodaiwa",
+    "control.voidsMonth": "Yaliyofutwa mwezi huu",
+    "control.refundsMonth": "Marejesho mwezi huu",
+    "control.discountsMonth": "Punguzo mwezi huu",
+    "control.byStore": "Utendaji kwa duka",
+    "control.colStore": "Duka",
+    "control.colToday": "Leo",
+    "control.colMonth": "Mwezi hadi leo",
+    "control.colLowStock": "Chini / imeisha",
+    "control.colStockValue": "Hisa kwa gharama",
+    "control.noStores": "Hakuna maduka yanayotumika bado.",
+    "control.governance": "Usimamizi",
+    "control.govTeam": "Timu",
+    "control.govTeamValue": "Wasimamizi {managers}, wauzaji {cashiers}",
+    "control.govOverride": "Nenosiri la idhini",
+    "control.govSet": "Limewekwa",
+    "control.govNotSet": "Halijawekwa — kufuta na marejesho hayafanyi kazi",
+    "control.govUnnamed": "Wafanyakazi wasio na jina",
+    "control.govDeletion": "Kufuta akaunti",
+    "control.govDeletionPending": "Kumepangwa",
+    "control.govDeletionNone": "Hakujapangwa",
     "reports.staffBreakdownTitle": "Mauzo kwa Mfanyakazi", "reports.staffColumn": "Mfanyakazi",
     "reports.ordersColumn": "Oda", "reports.allStaffRow": "Wafanyakazi wote",
     "reports.searchOrderPlaceholder": "Tafuta nambari ya oda", "reports.orderNotFound": "Hakuna mauzo yaliyopatikana kwa nambari hiyo ya oda.",
@@ -4746,6 +4858,255 @@ function isOwnerRole() {
   return state.currentUserRole === "owner";
 }
 
+// createdAt arrives as a Firestore Timestamp from a live snapshot, a Date from
+// the offline fallback path, and a string from an export. All three reach these
+// panels, so normalise once rather than at every call site.
+function saleTimestamp(sale) {
+  const raw = sale?.createdAt;
+  if (!raw) return null;
+  if (typeof raw.toDate === "function") return raw.toDate();
+  const date = raw instanceof Date ? raw : new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isSameDay(date, reference) {
+  return Boolean(date)
+    && date.getFullYear() === reference.getFullYear()
+    && date.getMonth() === reference.getMonth()
+    && date.getDate() === reference.getDate();
+}
+
+function isSameMonth(date, reference) {
+  return Boolean(date)
+    && date.getFullYear() === reference.getFullYear()
+    && date.getMonth() === reference.getMonth();
+}
+
+// Number() turns a malformed field into NaN, and NaN spreads: one sale document
+// with a bad total rendered every tile on the panel as "NaN", not just its own.
+// These figures are counted against a physical drawer, so a single bad row must
+// degrade to zero rather than take the whole panel down.
+function safeNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+// One pass over a set of sales producing everything both panels need. Voided
+// sales are counted but excluded from takings; refunds are netted off rather
+// than ignored, because a shift that sold 200,000 and refunded 150,000 has not
+// taken 200,000 and showing that figure is how a till gets robbed quietly.
+function summariseSales(sales) {
+  const s = {
+    count: 0, gross: 0, net: 0, items: 0, discounts: 0,
+    cash: 0, mobile: 0, card: 0, credit: 0,
+    voidCount: 0, voidValue: 0, refundCount: 0, refundValue: 0,
+    creditOutstanding: 0, drawerCash: 0
+  };
+  for (const sale of sales) {
+    const total = safeNumber(sale.total);
+    if (sale.voided) {
+      s.voidCount += 1;
+      s.voidValue += total;
+      continue;
+    }
+    const refunded = safeNumber(sale.refundedAmount);
+    s.count += 1;
+    s.gross += total;
+    s.net += total - refunded;
+    s.discounts += safeNumber(sale.discountAmount);
+    s.items += (sale.items || []).reduce((sum, item) => sum + safeNumber(item.qty), 0);
+    if (refunded > 0) {
+      s.refundCount += 1;
+      s.refundValue += refunded;
+    }
+    const method = sale.paymentMethod || "cash";
+    if (method in s) s[method] += total;
+    // What should physically be in the drawer: cash sales, plus any deposit
+    // taken in cash against a credit sale.
+    if (method === "cash") s.drawerCash += total - refunded;
+    if (method === "credit") {
+      s.creditOutstanding += safeNumber(sale.balanceDue);
+      if ((sale.amountPaidMethod || "cash") === "cash") s.drawerCash += safeNumber(sale.amountPaid);
+    }
+  }
+  return s;
+}
+
+function controlTile(label, value, tone = "", note = "") {
+  return `<div class="control-tile${tone ? ` ${tone}` : ""}">
+    <span class="control-tile-label">${esc(label)}</span>
+    <strong class="control-tile-value">${esc(value)}</strong>
+    ${note ? `<span class="control-tile-note">${esc(note)}</span>` : ""}
+  </div>`;
+}
+
+// Manager panel: this store, today. A manager is accountable for a floor and a
+// shift, so anything wider belongs in Reports or the owner panel below.
+function renderManagerControl() {
+  const panel = qs("#managerControlPanel");
+  if (!panel) return;
+  panel.hidden = !isManagerOrOwnerRole();
+  if (panel.hidden) return;
+
+  const now = new Date();
+  const scopedToStore = state.currentStoreId && state.currentStoreId !== "all";
+  const sales = state.sales.filter((sale) => {
+    if (!isSameDay(saleTimestamp(sale), now)) return false;
+    return !scopedToStore || sale.storeId === state.currentStoreId;
+  });
+  const s = summariseSales(sales);
+
+  const storeName = scopedToStore
+    ? (state.stores.find((store) => store.id === state.currentStoreId)?.name || t("storeSwitcher.fallbackName"))
+    : t("staff.allStoresLabel");
+  qs("#managerControlScope").textContent = `${storeName} · ${t("control.todayScope")}`;
+
+  const products = scopedToStore ? state.products.filter((p) => p.storeId === state.currentStoreId) : state.products;
+  const outOfStock = products.filter((p) => safeNumber(p.quantity) <= 0).length;
+  const lowStock = products.filter((p) => {
+    const qty = safeNumber(p.quantity);
+    return qty > 0 && qty <= safeNumber(p.reorderLevel);
+  }).length;
+
+  qs("#managerControlGrid").innerHTML = [
+    controlTile(t("control.expectedCash"), money(s.drawerCash), "accent", t("control.expectedCashNote")),
+    controlTile(t("control.netTakings"), money(s.net), "", t("control.netTakingsNote")),
+    controlTile(t("control.salesCount"), String(s.count),
+      "", s.count ? t("control.averageBasket", { value: money(Math.round(s.net / s.count)) }) : ""),
+    controlTile(t("control.byMethod"),
+      `${money(s.cash)} · ${money(s.mobile)}`, "", `${t("pos.cash")} · ${t("pos.mobile")}`),
+    controlTile(t("control.cardCredit"),
+      `${money(s.card)} · ${money(s.credit)}`, "", `${t("pos.card")} · ${t("pos.credit")}`),
+    controlTile(t("control.discountsGiven"), money(s.discounts), s.discounts > 0 ? "warn" : ""),
+    controlTile(t("control.voidsToday"), `${s.voidCount} · ${money(s.voidValue)}`, s.voidCount > 0 ? "warn" : ""),
+    controlTile(t("control.refundsToday"), `${s.refundCount} · ${money(s.refundValue)}`, s.refundCount > 0 ? "warn" : ""),
+    controlTile(t("control.stockAttention"), `${lowStock} · ${outOfStock}`,
+      outOfStock > 0 ? "danger" : (lowStock > 0 ? "warn" : ""), t("control.stockAttentionNote"))
+  ].join("");
+
+  const byStaff = new Map();
+  for (const sale of sales) {
+    const key = sale.staffId || sale.cashierUid || "-";
+    if (!byStaff.has(key)) {
+      byStaff.set(key, { name: sale.staffName || t("report.none"), count: 0, items: 0, discounts: 0, voids: 0, net: 0 });
+    }
+    const row = byStaff.get(key);
+    if (sale.voided) {
+      row.voids += 1;
+      continue;
+    }
+    row.count += 1;
+    row.items += (sale.items || []).reduce((sum, item) => sum + safeNumber(item.qty), 0);
+    row.discounts += safeNumber(sale.discountAmount);
+    row.net += safeNumber(sale.total) - safeNumber(sale.refundedAmount);
+  }
+
+  const rows = [...byStaff.values()].sort((a, b) => b.net - a.net);
+  qs("#managerStaffTable").innerHTML = rows.length
+    ? rows.map((row) => `<tr>
+        <td>${esc(row.name)}</td>
+        <td>${row.count}</td>
+        <td>${row.items}</td>
+        <td>${money(row.discounts)}</td>
+        <td class="${row.voids > 0 ? "cell-warn" : ""}">${row.voids}</td>
+        <td><strong>${money(row.net)}</strong></td>
+      </tr>`).join("")
+    : `<tr><td colspan="6" class="empty-state">${t("control.noSalesToday")}</td></tr>`;
+}
+
+// Owner panel: whole business, month to date, plus the governance facts an
+// owner is accountable for and nobody else can see.
+function renderAdminControl() {
+  const panel = qs("#adminControlPanel");
+  if (!panel) return;
+  panel.hidden = !isOwnerRole();
+  if (panel.hidden) return;
+
+  const now = new Date();
+  const monthSales = state.sales.filter((sale) => isSameMonth(saleTimestamp(sale), now));
+  const todaySales = monthSales.filter((sale) => isSameDay(saleTimestamp(sale), now));
+  const month = summariseSales(monthSales);
+  const today = summariseSales(todaySales);
+
+  // Cost of goods is estimated from each product's CURRENT costPrice, because
+  // sale items do not carry the cost they were bought at. A price change
+  // therefore rewrites history here -- fine for a running indicator, not for
+  // accounts, which is why the tile says estimated.
+  const costById = new Map(state.products.map((p) => [p.id, safeNumber(p.costPrice)]));
+  let cogs = 0;
+  let costKnown = true;
+  for (const sale of monthSales) {
+    if (sale.voided) continue;
+    for (const item of sale.items || []) {
+      if (!costById.has(item.productId)) costKnown = false;
+      cogs += (costById.get(item.productId) || 0) * safeNumber(item.qty);
+    }
+  }
+  const margin = month.net - cogs;
+  const marginPct = month.net > 0 ? Math.round((margin / month.net) * 100) : 0;
+
+  const stockAtCost = state.products.reduce((sum, p) => sum + safeNumber(p.quantity) * safeNumber(p.costPrice), 0);
+  const stockAtRetail = state.products.reduce((sum, p) => sum + safeNumber(p.quantity) * safeNumber(p.sellingPrice), 0);
+  const creditOwed = state.customers.reduce((sum, c) => sum + safeNumber(c.balanceOwed), 0);
+
+  qs("#adminControlGrid").innerHTML = [
+    controlTile(t("control.revenueToday"), money(today.net)),
+    controlTile(t("control.revenueMonth"), money(month.net), "accent",
+      t("control.salesCountNote", { count: String(month.count) })),
+    controlTile(t("control.grossMargin"), `${money(margin)} · ${marginPct}%`,
+      margin <= 0 && month.net > 0 ? "danger" : "",
+      costKnown ? t("control.marginNote") : t("control.marginIncomplete")),
+    controlTile(t("control.stockAtCost"), money(stockAtCost), "",
+      t("control.stockAtRetail", { value: money(stockAtRetail) })),
+    controlTile(t("control.creditOwed"), money(creditOwed), creditOwed > 0 ? "warn" : ""),
+    controlTile(t("control.voidsMonth"), `${month.voidCount} · ${money(month.voidValue)}`,
+      month.voidCount > 0 ? "warn" : ""),
+    controlTile(t("control.refundsMonth"), `${month.refundCount} · ${money(month.refundValue)}`,
+      month.refundCount > 0 ? "warn" : ""),
+    controlTile(t("control.discountsMonth"), money(month.discounts), month.discounts > 0 ? "warn" : "")
+  ].join("");
+
+  const stores = activeStores();
+  qs("#adminStoreTable").innerHTML = stores.length
+    ? stores.map((store) => {
+        const storeMonth = summariseSales(monthSales.filter((sale) => sale.storeId === store.id));
+        const storeToday = summariseSales(todaySales.filter((sale) => sale.storeId === store.id));
+        const storeProducts = state.products.filter((p) => p.storeId === store.id);
+        const out = storeProducts.filter((p) => safeNumber(p.quantity) <= 0).length;
+        const low = storeProducts.filter((p) => {
+          const qty = safeNumber(p.quantity);
+          return qty > 0 && qty <= safeNumber(p.reorderLevel);
+        }).length;
+        const cost = storeProducts.reduce((sum, p) => sum + safeNumber(p.quantity) * safeNumber(p.costPrice), 0);
+        return `<tr>
+          <td>${esc(store.name || t("storeSwitcher.fallbackName"))}</td>
+          <td>${money(storeToday.net)}</td>
+          <td><strong>${money(storeMonth.net)}</strong></td>
+          <td class="${out > 0 ? "cell-danger" : (low > 0 ? "cell-warn" : "")}">${low} / ${out}</td>
+          <td>${money(cost)}</td>
+        </tr>`;
+      }).join("")
+    : `<tr><td colspan="5" class="empty-state">${t("control.noStores")}</td></tr>`;
+
+  const roleCount = (role) => state.members.filter((m) => m.role === role).length;
+  const unnamedMembers = state.members.filter((m) => !String(m.name || "").trim()).length;
+  const governance = [
+    [t("control.govTeam"), t("control.govTeamValue", {
+      managers: String(roleCount("manager")), cashiers: String(roleCount("cashier"))
+    }), ""],
+    [t("control.govOverride"), state.overridePasswordSet ? t("control.govSet") : t("control.govNotSet"),
+      state.overridePasswordSet ? "" : "warn"],
+    [t("control.govUnnamed"), String(unnamedMembers), unnamedMembers > 0 ? "warn" : ""],
+    [t("control.govDeletion"), state.deletionScheduledFor
+      ? t("control.govDeletionPending") : t("control.govDeletionNone"),
+      state.deletionScheduledFor ? "danger" : ""]
+  ];
+  qs("#adminGovernance").innerHTML = governance.map(([label, value, tone]) =>
+    `<div class="governance-row${tone ? ` ${tone}` : ""}">
+      <span>${esc(label)}</span><strong>${esc(value)}</strong>
+    </div>`).join("");
+}
+
 // Identity for a sale, return or transfer: always the signed-in account.
 function saleIdentity() {
   return {
@@ -6021,6 +6382,8 @@ function renderAll() {
   renderMovement();
   renderInventory();
   renderPos();
+  renderManagerControl();
+  renderAdminControl();
   // Depends on the resolved account name, which arrives with the role after
   // sign-in rather than with the staff snapshot.
   renderStaffSelect();
