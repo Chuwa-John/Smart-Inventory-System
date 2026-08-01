@@ -507,6 +507,7 @@ const DICTIONARY = {
     "toast.pdfLibraryFailed": "PDF library did not load. Check your connection and try again.",
     "toast.excelLibraryFailed": "Excel library did not load. Check your connection and try again.",
     "toast.aiProxyUnavailable": "AI proxy unavailable ({message}). Showing local recommendation.",
+    "toast.aiQuestionTooLong": "That question is too long. Please shorten it to {max} characters or fewer.",
     "toast.noInventoryData": "No inventory data to export yet.",
     "toast.selectStoreBeforeAdd": "Select a specific store before adding a new product.",
     "toast.productSaved": "{name} saved to inventory.",
@@ -1089,6 +1090,7 @@ const DICTIONARY = {
     "toast.pdfLibraryFailed": "Maktaba ya PDF haikupakia. Angalia muunganisho wako na ujaribu tena.",
     "toast.excelLibraryFailed": "Maktaba ya Excel haikupakia. Angalia muunganisho wako na ujaribu tena.",
     "toast.aiProxyUnavailable": "Proksi ya AI haipatikani ({message}). Inaonyesha pendekezo la ndani.",
+    "toast.aiQuestionTooLong": "Swali hilo ni refu mno. Tafadhali lifupishe hadi herufi {max} au chini.",
     "toast.noInventoryData": "Hakuna data ya hisa ya kuhamisha bado.",
     "toast.selectStoreBeforeAdd": "Chagua duka mahususi kabla ya kuongeza bidhaa mpya.",
     "toast.productSaved": "{name} imehifadhiwa kwenye hisa.",
@@ -3108,7 +3110,11 @@ function renderChatLog() {
 
 const AI_PROXY_TIMEOUT_MS = 60000;
 
-const AI_QUESTION_MAX_CHARS = 2000;
+// Must not exceed MAX_MESSAGE_LENGTH in proxy/server.js. It was 2000 against a
+// server that rejects at 700, so a long question was accepted, sent, and refused
+// -- after a wait of up to 60 seconds on a cold proxy, for a limit nothing had
+// mentioned. tests/validation-limits.test.mjs fails if the two drift again.
+const AI_QUESTION_MAX_CHARS = 700;
 // Mirrors the server's own cap (compactSnapshot slices products to 80). Sending
 // more was doing two kinds of damage at once: at ~400+ products the body passed
 // the proxy's 64kb limit and the whole request died with "Payload too large",
@@ -3225,6 +3231,14 @@ async function callAiProxy(historyForRequest) {
 async function askAi() {
   const question = qs("#aiQuestion").value.trim();
   if (!question) return;
+  // maxlength stops this being reachable by typing or pasting, but the check
+  // stays: silently truncating someone's question and answering the wrong one is
+  // worse than telling them to shorten it. Caught here rather than after a
+  // round trip to a proxy that may take a minute to wake.
+  if (question.length > AI_QUESTION_MAX_CHARS) {
+    showToast(t("toast.aiQuestionTooLong", { max: String(AI_QUESTION_MAX_CHARS) }));
+    return;
+  }
   qs("#aiQuestion").value = "";
 
   state.chatHistory.push({ role: "user", content: question });

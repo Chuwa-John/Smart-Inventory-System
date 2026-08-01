@@ -550,7 +550,7 @@
                 <button data-question="How do I read my reports?">Guide: Reports</button>
                 <button data-question="How do I use multiple stores?">Guide: Multi-store</button>
               </div>
-              <textarea id="aiQuestion" rows="5" placeholder="Ask about your inventory, stock levels, sales, or forecasts..." data-i18n-placeholder="ai.questionPlaceholder"></textarea>
+              <textarea id="aiQuestion" rows="5" placeholder="Ask about your inventory, stock levels, sales, or forecasts..." data-i18n-placeholder="ai.questionPlaceholder" maxlength="700"></textarea>
               <button class="primary-button" id="askAiButton" data-i18n="ai.askButton">Ask AI Advisor</button>
             </article>
             <article class="panel ai-answer">
@@ -604,14 +604,14 @@
         </div>
         <input name="id" type="hidden" />
         <div class="form-grid">
-          <label><span data-i18n="product.nameLabel">Product name</span><input name="name" required /></label>
-         <label><span data-i18n="product.categoryLabel">Category</span><input name="category" list="categorySuggestions" required /></label>
+          <label><span data-i18n="product.nameLabel">Product name</span><input name="name" required maxlength="120" /></label>
+         <label><span data-i18n="product.categoryLabel">Category</span><input name="category" list="categorySuggestions" required maxlength="60" /></label>
           <datalist id="categorySuggestions"></datalist>
-          <label><span data-i18n="product.brandLabel">Brand</span><input name="brand" /></label>
-          <label><span data-i18n="product.supplierLabel">Suppliers</span><input name="supplier" /></label>
+          <label><span data-i18n="product.brandLabel">Brand</span><input name="brand" maxlength="60" /></label>
+          <label><span data-i18n="product.supplierLabel">Suppliers</span><input name="supplier" maxlength="60" /></label>
           <label><span data-i18n="product.barcodeLabel">Barcode</span>
             <span class="scan-input-row">
-              <input name="barcode" />
+              <input name="barcode" maxlength="64" />
               <button class="ghost-button compact" type="button" id="scanProductBarcodeButton" data-i18n="product.scanButton">Scan</button>
             </span>
           </label>
@@ -824,7 +824,7 @@
       <div id="inviteStaffFormSection">
         <div class="form-grid">
           <label><span data-i18n="staff.inviteEmailLabel">Staff email</span>
-            <input id="inviteStaffEmail" type="email" autocomplete="off" />
+            <input id="inviteStaffEmail" type="email" autocomplete="off" maxlength="254" />
           </label>
           <label><span data-i18n="pos.staffLabel">Staff member</span>
             <select id="inviteStaffRole">
@@ -887,8 +887,8 @@
             <li data-i18n="auth.whyAi">Ask the built-in AI Advisor which products to reorder, in English or Swahili.</li>
           </ul>
         </div>
-        <label><span data-i18n="auth.businessName">Business name</span><input id="businessName" name="businessName" autocomplete="organization" /></label>
-        <label><span data-i18n="auth.email">Email</span><input id="authEmail" name="email" type="email" autocomplete="email" required /><span class="field-error" id="authEmailError"></span></label>
+        <label><span data-i18n="auth.businessName">Business name</span><input id="businessName" name="businessName" autocomplete="organization" maxlength="120" /></label>
+        <label><span data-i18n="auth.email">Email</span><input id="authEmail" name="email" type="email" autocomplete="email" required maxlength="254" /><span class="field-error" id="authEmailError"></span></label>
         <label><span data-i18n="auth.password">Password</span><input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="6" required /><span class="field-error" id="authPasswordError"></span></label>
         <button class="link-button" id="authForgotPasswordButton" type="button" data-i18n="auth.forgotPassword">Forgot password?</button>
         <label id="authConfirmPasswordRow"><span data-i18n="auth.confirmPassword">Confirm password</span><input id="authConfirmPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="6" /><span class="field-error" id="authConfirmPasswordError"></span></label>
@@ -920,6 +920,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js" integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script type="module" src="./app.js?v=20260731h"></script>
+    <script type="module" src="./app.js?v=20260801a"></script>
   </body>
 </html>
