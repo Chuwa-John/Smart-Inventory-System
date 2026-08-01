@@ -92,7 +92,10 @@
   --line: #e2e8ef;
   --line-soft: #eef2f6;
   --line-strong: #cfd8e3;
-  --control-border: #8d97a6;
+  /* 3.42:1 against both #fff and --bg. #848fa0 also clears 3.0, by 0.07 --
+     close enough that any later change to a panel colour would silently push
+     it back under. */
+  --control-border: #7b8799;
 
   /* Measured against white, not eyeballed. The first pass of this palette
      failed WCAG AA for normal text in five places -- most importantly white
