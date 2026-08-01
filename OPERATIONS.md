@@ -12,10 +12,25 @@ Do not enable Firebase Functions, Firebase Storage, or a Firebase billing upgrad
 ## Release procedure
 
 1. Keep the working tree clean and review `git diff --check`.
-2. For every hosted frontend release, increment both values together:
+2. For every hosted frontend release, increment all of these together:
    - `index.html`: the `app.js?v=...` value.
-   - `sw.js`: `CACHE_NAME`.
+   - `index.html` and `accept-invite.html`: the `styles.css?v=...` value.
+   - `sw.js`: `CACHE_NAME`, and the `styles.css?v=...` entry in `APP_SHELL`.
+
    This prevents an old shell from referencing a new app bundle or vice versa.
+
+   The stylesheet carries a version for the same reason the bundle does, and
+   the reason is worth keeping: the service worker serves the app shell
+   cache-first, so an unversioned `styles.css` is taken from the previous
+   cache on the first load after a deploy. The CSS is correct on the server
+   and stale in the browser, and the fix appears not to have worked until the
+   user loads a second time. That has cost real debugging twice. The
+   `APP_SHELL` entry must use the identical URL the page requests, or the
+   worker pre-caches one copy and serves another.
+
+   Verify a release by checking the DEPLOYED file, not the local one --
+   `curl` the hosted asset and grep it for the change. "The deploy said
+   success" is not evidence the change is live.
 3. Run:
 
    ```powershell
