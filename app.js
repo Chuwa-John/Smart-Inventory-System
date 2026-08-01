@@ -7314,6 +7314,16 @@ function bindEvents() {
     const seller = saleIdentity();
     if (!seller.id || !seller.name) return showToast(t("toast.staffIdentityUnavailable"));
 
+    // Claimed before the first await, not after it. The credit-alert check
+    // awaits a network round trip to verify the override password, and the page
+    // stays interactive for the whole of it -- so the button was live during
+    // exactly the pause a cashier is most likely to tap it again.
+    const completeButton = qs("#completeSaleButton");
+    if (completeButton.disabled) return;
+    completeButton.disabled = true;
+    // Re-enabled in the finally below, so no path can leave the till dead.
+    try {
+
     // Typed order numbers are matched against the sales sheet, so they are still
     // validated -- but the length cap now mirrors firestore.rules exactly. It
     // was ^[0-9]+$ here, which let an 11-digit entry through the client only to
@@ -7395,9 +7405,6 @@ function bindEvents() {
       showToast(t("toast.saleFailedGeneric"));
       return;
     }
-
-    const completeButton = qs("#completeSaleButton");
-    completeButton.disabled = true;
 
     if (state.db && state.user && state.businessOwnerUid) {
       try {
@@ -7522,7 +7529,6 @@ function bindEvents() {
       } catch (error) {
         console.warn(error);
         showToast(describeOperationError(error, "toast.saleFailedGeneric"));
-        completeButton.disabled = false;
         return;
       }
     } else {
@@ -7601,9 +7607,17 @@ function bindEvents() {
     if (qs("#posCustomerPhone")) qs("#posCustomerPhone").value = "";
     if (qs("#creditAmountPaidInput")) qs("#creditAmountPaidInput").value = "";
     if (qs("#creditAmountPaidMethod")) qs("#creditAmountPaidMethod").value = "cash";
-    renderAll();
-    completeButton.disabled = false;
-    showToast(changeDue > 0 ? t("toast.saleCompletedChange", { change: money(changeDue) }) : t("toast.saleCompleted"));
+      renderAll();
+      showToast(changeDue > 0 ? t("toast.saleCompletedChange", { change: money(changeDue) }) : t("toast.saleCompleted"));
+    } finally {
+      // The till must never be left dead. The re-enable used to sit on two
+      // specific paths -- the transaction catch, and the last line of the happy
+      // path -- with an unguarded await and a full renderAll() in between.
+      // Anything throwing there disabled the button permanently, and since the
+      // sale may already have been written the cashier could not tell whether
+      // to enter it again.
+      completeButton.disabled = false;
+    }
   });
 
   qs("#productForm").addEventListener("submit", (event) => {
