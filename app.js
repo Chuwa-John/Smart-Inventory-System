@@ -7,6 +7,8 @@ const state = {
   paymentMethod: "cash",
   discountType: "none",
   discountValue: 0,
+  // Subtotal a fixed discount was authorised against; see revalidateDiscountForCart.
+  discountBasis: 0,
   sortKey: "name",
   sortDirection: 1,
   authMode: "signup",
@@ -633,6 +635,7 @@ const DICTIONARY = {
     "toast.discountPercentTooHigh": "Percentage discount cannot exceed 100%.",
     "toast.discountExceedsSubtotal": "Fixed discount cannot exceed the subtotal.",
     "toast.discountApplied": "Discount applied.",
+    "toast.discountClearedCartChanged": "The cart changed, so the discount was removed. Apply it again if it still applies.",
     "toast.discountCleared": "Discount cleared.",
     "product.expiryLabel": "Expiry date (optional)",
     "inventory.thExpiry": "Expiry",
@@ -1209,6 +1212,7 @@ const DICTIONARY = {
     "toast.discountPercentTooHigh": "Punguzo la asilimia haliwezi kuzidi 100%.",
     "toast.discountExceedsSubtotal": "Punguzo maalum haliwezi kuzidi jumla ndogo.",
     "toast.discountApplied": "Punguzo limetumika.",
+    "toast.discountClearedCartChanged": "Kikapu kimebadilika, hivyo punguzo limeondolewa. Liweke tena kama bado linafaa.",
     "toast.discountCleared": "Punguzo limefutwa.",
     "product.expiryLabel": "Tarehe ya mwisho wa matumizi (hiari)",
     "inventory.thExpiry": "Mwisho wa Matumizi",
@@ -1893,6 +1897,30 @@ function computeDiscountAmount(subtotal) {
 function clearDiscount() {
   state.discountType = "none";
   state.discountValue = 0;
+  state.discountBasis = 0;
+}
+
+// A fixed discount is authorised against one basket and stays applied while the
+// basket changes underneath it. computeDiscountAmount caps it at the subtotal,
+// so shrinking the cart quietly turns "50,000 off 60,000" into a 100% discount:
+// remove the expensive line, add a cheap one, and the total is zero on a sale
+// record that looks ordinary. The override password -- the control that exists
+// to stop unauthorised discounting -- was satisfied once, for different goods.
+//
+// So a fixed discount is tied to the subtotal it was granted against, and
+// dropping below that requires re-authorisation. Percent discounts scale with
+// the basket and carry no such exposure, so they are deliberately left alone
+// rather than adding friction to the common case.
+function revalidateDiscountForCart() {
+  if (state.discountType !== "fixed") return false;
+  if (cartSubtotal() >= Number(state.discountBasis || 0)) return false;
+  clearDiscount();
+  const select = qs("#discountTypeSelect");
+  if (select) select.value = "none";
+  const row = qs("#discountValueRow");
+  if (row) row.hidden = true;
+  showToast(t("toast.discountClearedCartChanged"));
+  return true;
 }
 
 async function applyDiscount() {
@@ -1911,6 +1939,9 @@ async function applyDiscount() {
 
   state.discountType = type;
   state.discountValue = rawValue;
+  // The basket this discount was authorised against. Only meaningful for fixed
+  // discounts; percent scales on its own.
+  state.discountBasis = type === "fixed" ? cartSubtotal() : 0;
   renderCart();
   showToast(t("toast.discountApplied"));
 }
@@ -1924,6 +1955,14 @@ function clearDiscountAndRender() {
 }
 
 function renderCart() {
+  // Runs before the totals are read, so a discount that no longer fits the
+  // basket is gone by the time anything is displayed or charged. Re-enters
+  // renderCart at most once: clearing sets discountType to "none", which the
+  // guard returns on immediately.
+  if (revalidateDiscountForCart()) {
+    renderCart();
+    return;
+  }
   const totalQty = state.cart.reduce((sum, item) => sum + item.qty, 0);
   const subtotal = cartSubtotal();
   const discountAmount = computeDiscountAmount(subtotal);
@@ -4651,16 +4690,31 @@ async function undoLastSale() {
           : null;
         const creditCustomerSnap = creditCustomerRef ? await transaction.get(creditCustomerRef) : null;
 
+        // Net off anything already given back by a return, or the void restores
+        // stock a second time and invents inventory that does not exist: sell
+        // 10, return 3 (stock +3), void (stock +10) leaves 13 units on the books
+        // for a 10-unit sale. The same applies to sold30/sold90, which the
+        // return path also decrements -- there the double-count was hidden by
+        // the Math.max(0, ...) floor rather than prevented by it.
+        //
+        // Read from saleData, the server copy, not from state.lastSale: a return
+        // processed after the sale completed is on the document and not in the
+        // local object.
+        const alreadyReturnedByProduct = saleReturnedQtyMap(saleData);
+
         productSnaps.forEach((snap, index) => {
           if (!snap.exists()) return;
           const item = sale.items[index];
+          const alreadyReturned = alreadyReturnedByProduct.get(item.productId) || 0;
+          const netQty = Math.max(0, Number(item.qty || 0) - alreadyReturned);
+          if (netQty === 0) return;
           const currentQuantity = Number(snap.data().quantity || 0);
           const currentSold30 = Number(snap.data().sold30 || 0);
           const currentSold90 = Number(snap.data().sold90 || 0);
           transaction.update(productRefs[index], {
-            quantity: currentQuantity + item.qty,
-            sold30: Math.max(0, currentSold30 - item.qty),
-            sold90: Math.max(0, currentSold90 - item.qty),
+            quantity: currentQuantity + netQty,
+            sold30: Math.max(0, currentSold30 - netQty),
+            sold90: Math.max(0, currentSold90 - netQty),
             updatedAt: serverTimestamp(),
             movementReason: "void"
           });
