@@ -81,3 +81,22 @@ jobs:
       - name: Firestore security rules tests
         working-directory: tests
         run: npm test
+
+      # Contrast is a property of rendered pixels, not of source text. Grepping
+      # styles.css for a hex value proves someone typed a colour, not that the
+      # colour passes -- the ratios depend on custom properties, gradients and
+      # which surface an element lands on. So this one check needs a browser.
+      # Chromium only, and the browser binary is cached between runs.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ hashFiles('tests/package-lock.json') }}
+          restore-keys: playwright-chromium-
+
+      - name: Install Chromium for the contrast check
+        working-directory: tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Colour contrast (WCAG 1.4.3 and 1.4.11, both themes)
+        run: node tests/contrast.headless.mjs
