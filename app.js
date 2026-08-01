@@ -5,6 +5,8 @@ const state = {
   products: [],
   cart: [],
   paymentMethod: "cash",
+  // Connectivity as the app currently understands it; see watchConnection.
+  online: true,
   discountType: "none",
   discountValue: 0,
   // Subtotal a fixed discount was authorised against; see revalidateDiscountForCart.
@@ -635,6 +637,14 @@ const DICTIONARY = {
     "toast.discountPercentTooHigh": "Percentage discount cannot exceed 100%.",
     "toast.discountExceedsSubtotal": "Fixed discount cannot exceed the subtotal.",
     "toast.discountApplied": "Discount applied.",
+    "offline.bannerText": "No internet connection. You can keep browsing, but sales cannot be recorded until the connection returns.",
+    "error.offline": "No internet connection, so this was not saved. Check your signal and try again.",
+    "error.timeout": "The connection is too slow to finish this. Please try again.",
+    "error.permissionDenied": "Your account is not allowed to do this. Ask the business owner.",
+    "error.busy": "The system is busy right now. Please wait a moment and try again.",
+    "error.contention": "Someone else changed this at the same time. Please try again.",
+    "error.notFound": "That record no longer exists. Refresh and try again.",
+    "error.failedPrecondition": "This could not be completed. Refresh and try again.",
     "toast.discountClearedCartChanged": "The cart changed, so the discount was removed. Apply it again if it still applies.",
     "toast.discountCleared": "Discount cleared.",
     "product.expiryLabel": "Expiry date (optional)",
@@ -1212,6 +1222,14 @@ const DICTIONARY = {
     "toast.discountPercentTooHigh": "Punguzo la asilimia haliwezi kuzidi 100%.",
     "toast.discountExceedsSubtotal": "Punguzo maalum haliwezi kuzidi jumla ndogo.",
     "toast.discountApplied": "Punguzo limetumika.",
+    "offline.bannerText": "Hakuna muunganisho wa intaneti. Unaweza kuendelea kuangalia, lakini mauzo hayawezi kurekodiwa hadi muunganisho urudi.",
+    "error.offline": "Hakuna muunganisho wa intaneti, hivyo hii haikuhifadhiwa. Angalia mtandao kisha jaribu tena.",
+    "error.timeout": "Muunganisho ni wa polepole sana kukamilisha hili. Tafadhali jaribu tena.",
+    "error.permissionDenied": "Akaunti yako hairuhusiwi kufanya hili. Muulize mmiliki wa biashara.",
+    "error.busy": "Mfumo una shughuli nyingi kwa sasa. Subiri kidogo kisha jaribu tena.",
+    "error.contention": "Mtu mwingine amebadilisha hili wakati mmoja. Tafadhali jaribu tena.",
+    "error.notFound": "Rekodi hiyo haipo tena. Onyesha upya kisha jaribu tena.",
+    "error.failedPrecondition": "Hili halikuweza kukamilika. Onyesha upya kisha jaribu tena.",
     "toast.discountClearedCartChanged": "Kikapu kimebadilika, hivyo punguzo limeondolewa. Liweke tena kama bado linafaa.",
     "toast.discountCleared": "Punguzo limefutwa.",
     "product.expiryLabel": "Tarehe ya mwisho wa matumizi (hiari)",
@@ -3242,6 +3260,48 @@ async function askAi() {
   renderChatLog();
 }
 
+// Firestore and Auth failures arrive from the SDK carrying an English `message`
+// and a machine-readable `code`. Preferring `message` put strings like "Missing
+// or insufficient permissions" and "Failed to get document because the client is
+// offline" in front of a cashier who may not read English and can act on
+// neither. Errors the app raises itself are already translated -- they were
+// built with t() -- and they carry no `code`, which is what tells the two apart
+// without having to touch every throw site.
+const SDK_ERROR_MESSAGE_KEYS = {
+  "unavailable": "error.offline",
+  "deadline-exceeded": "error.timeout",
+  "permission-denied": "error.permissionDenied",
+  "resource-exhausted": "error.busy",
+  "aborted": "error.contention",
+  "not-found": "error.notFound",
+  "failed-precondition": "error.failedPrecondition"
+};
+
+function describeOperationError(error, fallbackKey) {
+  // Being offline outranks whatever code the SDK attached: when there is no
+  // connection, that is the only fact the operator can act on.
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return t("error.offline");
+  if (error && typeof error.code === "string") {
+    return t(SDK_ERROR_MESSAGE_KEYS[error.code] || fallbackKey);
+  }
+  return (error && error.message) || t(fallbackKey);
+}
+
+function renderOfflineBanner() {
+  const banner = qs("#offlineBanner");
+  if (banner) banner.hidden = state.online !== false;
+}
+
+function watchConnection() {
+  const sync = () => {
+    state.online = typeof navigator === "undefined" ? true : navigator.onLine !== false;
+    renderOfflineBanner();
+  };
+  window.addEventListener("online", sync);
+  window.addEventListener("offline", sync);
+  sync();
+}
+
 function showToast(message) {
   const toast = qs("#toast");
   toast.textContent = message;
@@ -3554,7 +3614,7 @@ async function confirmRecordPayment() {
       });
     } catch (error) {
       console.warn(error);
-      showToast(error.message || t("toast.paymentFailed"));
+      showToast(describeOperationError(error, "toast.paymentFailed"));
       return;
     }
   } else {
@@ -4168,7 +4228,7 @@ async function confirmTransfer() {
     qs("#transferDialog").close();
   } catch (error) {
     console.warn(error);
-    showToast(error.message || t("toast.transferFailed"));
+    showToast(describeOperationError(error, "toast.transferFailed"));
   }
 }
 
@@ -4213,7 +4273,7 @@ async function confirmRestock() {
       });
     } catch (error) {
       console.warn(error);
-      showToast(error.message || t("toast.restockFailed"));
+      showToast(describeOperationError(error, "toast.restockFailed"));
       return;
     }
   } else {
@@ -4738,7 +4798,7 @@ async function undoLastSale() {
       });
     } catch (error) {
       console.warn(error);
-      showToast(error.message || t("toast.couldNotUndoSale"));
+      showToast(describeOperationError(error, "toast.couldNotUndoSale"));
       return;
     }
   } else {
@@ -7082,7 +7142,7 @@ function bindEvents() {
         state.lastSale = { mode: "firestore", saleId: saleRef.id, items: saleItems, paymentMethod, total };
       } catch (error) {
         console.warn(error);
-        showToast(error.message || t("toast.saleFailedGeneric"));
+        showToast(describeOperationError(error, "toast.saleFailedGeneric"));
         completeButton.disabled = false;
         return;
       }
@@ -7223,6 +7283,7 @@ function bindEvents() {
 setAuthMode("signup");
 bindEvents();
 initIdleActivityTracking();
+watchConnection();
 translateStaticDom();
 renderAll();
 renderChatLog();
