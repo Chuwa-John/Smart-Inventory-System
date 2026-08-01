@@ -1,19 +1,21 @@
-// DukaSmart service worker
+// Savia service worker
 // Scope: installability + a small app-shell cache so the UI shell loads
 // instantly on repeat visits. This does NOT cache Firestore/Firebase
 // traffic or any cross-origin requests \u2014 those always go to the network.
 // Bump this on every deploy so old clients pick up new files.
-const CACHE_NAME = "dukasmart-shell-v63";
+const CACHE_NAME = "savia-shell-v65";
 
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=20260802c",
+  "./styles.css?v=20260802e",
   "./app.js",
-  "./boot.js?v=20260802c",
+  "./boot.js?v=20260802e",
   "./manifest.json",
   "./icons/icon-192.png",
-  "./icons/icon-512.png"
+  "./icons/icon-512.png",
+  "./icons/icon-maskable-512.png",
+  "./icons/favicon-64.png"
 ];
 
 self.addEventListener("install", (event) => {

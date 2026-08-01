@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Savia">
+  <!--
+    Savia is sap: the fluid a plant moves nutrients through. For a system that
+    moves stock and money through a shop, that is a reason for the mark to exist
+    rather than a decoration.
+
+    So the S is drawn as one continuous channel, not a letterform: a single
+    stroke with round caps, the same weight throughout, so it reads as flow at
+    512px and still reads as an S at 32. Two leaf points sit at the ends of the
+    stroke where the flow enters and leaves.
+
+    Colours are the app's own: --bg #0b0d10 and the accent #3ddc97 through
+    #2bb87b, so the icon on a home screen is the same product as the screen it
+    opens.
+
+    Nothing sits inside the stroke. Two dots were tried at the ends to suggest
+    where the sap enters and leaves; at any size they read as holes punched in
+    the letter rather than as flow, so they are gone. The round caps carry the
+    idea on their own.
+
+    Geometry is kept inside the central 80% so the maskable variant survives a
+    circular crop on Android.
+  -->
+  <defs>
+    <linearGradient id="sap" x1="150" y1="120" x2="362" y2="392" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4dedaa"/>
+      <stop offset="1" stop-color="#22a86e"/>
+    </linearGradient>
+    <linearGradient id="tile" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#141a20"/>
+      <stop offset="1" stop-color="#0b0d10"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="116" fill="url(#tile)"/>
+
+  <!-- The channel. One path, so the flow is unbroken. -->
+  <path d="M 330 170 A 74 74 0 1 0 256 244 A 74 74 0 1 1 182 318"
+        fill="none" stroke="url(#sap)" stroke-width="52"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+</svg>

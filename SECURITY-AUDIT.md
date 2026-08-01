@@ -1,4 +1,4 @@
-# Security audit — DukaSmart
+# Security audit — Savia
 
 Date: 2026-07-29. Covers `app.js`, `firestore.rules`, `proxy/server.js`,
 `firebase.json`, CI, and dependencies.

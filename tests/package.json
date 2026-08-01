@@ -1,10 +1,10 @@
 {
-  "name": "dukasmart-rules-tests",
+  "name": "savia-rules-tests",
   "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node control-panel-math.test.mjs && node ai-quota.test.mjs && node ai-snapshot.test.mjs && node sale-lifecycle.test.mjs && node error-messages.test.mjs && node validation-limits.test.mjs && node lazy-libraries.test.mjs && node credit-override.test.mjs && node keyboard-focus.test.mjs && node till-availability.test.mjs && firebase emulators:exec --only firestore --project sanitaryflow-erp \"node rules-access.test.mjs && node rules-workflow.test.mjs && node rules-deletion.test.mjs && node rules-shifts.test.mjs && node concurrency-integrity.test.mjs && node invite-preview.test.mjs && node api-contract.test.mjs\""
+    "test": "node control-panel-math.test.mjs && node ai-quota.test.mjs && node ai-snapshot.test.mjs && node sale-lifecycle.test.mjs && node error-messages.test.mjs && node validation-limits.test.mjs && node lazy-libraries.test.mjs && node brand-coherence.test.mjs && node credit-override.test.mjs && node keyboard-focus.test.mjs && node till-availability.test.mjs && firebase emulators:exec --only firestore --project sanitaryflow-erp \"node rules-access.test.mjs && node rules-workflow.test.mjs && node rules-deletion.test.mjs && node rules-shifts.test.mjs && node concurrency-integrity.test.mjs && node invite-preview.test.mjs && node api-contract.test.mjs\""
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",

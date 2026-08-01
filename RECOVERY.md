@@ -13,7 +13,7 @@
 ## Owner backup procedure
 
 1. Sign in and select **Download Backup** in the account area.
-2. Keep the downloaded `dukasmart-backup-YYYY-MM-DD.json` in an encrypted device location or approved encrypted drive.
+2. Keep the downloaded `savia-backup-YYYY-MM-DD.json` in an encrypted device location or approved encrypted drive.
 3. Make a backup after major inventory imports, period close, or before account closure.
 4. Treat the backup as sensitive business data: it can contain customer, sales, and audit information. Do not send it through unencrypted chat or public links.
 

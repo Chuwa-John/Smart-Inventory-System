@@ -99,7 +99,14 @@ const measure = async (theme) => page.evaluate(async (theme) => {
     while (node && node !== document.documentElement) {
       const cs = getComputedStyle(node), img = cs.backgroundImage;
       if (img && img !== "none" && img.includes("gradient")) {
-        const stops = rgbs(img).map((x) => x.c);
+        // Only OPAQUE stops count. A wash like
+        // radial-gradient(var(--accent-quiet), transparent) layered over a solid
+        // panel is a tint, not a background -- treating its stops as the backdrop
+        // compares text against near-transparency and reports 1:1 on a panel that
+        // is perfectly legible. That produced three false failures on the split
+        // sign-in panel, and I nearly redesigned around a measurement error.
+        // Where every stop is translucent, keep walking for the solid beneath.
+        const stops = rgbs(img).filter((x) => x.a > 0.9).map((x) => x.c);
         if (stops.length) { const s = stops.sort((a, b) => lum(a) - lum(b)); return [s[0], s[s.length - 1]]; }
       }
       const bg = rgbs(cs.backgroundColor)[0];

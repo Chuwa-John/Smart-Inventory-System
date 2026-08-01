@@ -62,7 +62,7 @@ const state = {
   productsInitialized: false,
   stockAlertQueue: [],
   stockAlertPopupOpen: false,
-  language: localStorage.getItem("dukasmart:lang") || localStorage.getItem("sanitaryflow:lang") || "en",
+  language: localStorage.getItem("savia:lang") || localStorage.getItem("sanitaryflow:lang") || "en",
   monthlyReports: [],
   unsubscribeMonthlyReports: null,
   reportMonthSelection: new Date().toISOString().slice(0, 7),
@@ -341,7 +341,11 @@ const DICTIONARY = {
     "auth.confirmPassword": "Confirm password",
     "auth.consentPrefix": "I agree to the", "auth.consentTerms": "Terms & Conditions",
     "auth.consentAnd": "and", "auth.consentPrivacy": "Privacy Policy", "auth.consentSuffix": ".",
-    "auth.whyTitle": "Why DukaSmart",
+    "auth.whyTitle": "Why Savia",
+    "auth.aboutLink": "What Savia does →",
+    "auth.ledgerExpected": "Should be in the drawer",
+    "auth.ledgerCounted": "Counted at close",
+    "auth.ledgerDiff": "Difference",
     "auth.whyMultiStore": "Track inventory across every branch from one dashboard.",
     "auth.whyOffline": "Keep selling even when the internet drops \u2014 it syncs automatically once you're back online.",
     "auth.whyReceipts": "Print or share receipts on WhatsApp, with cash, mobile money, and card tracking built in.",
@@ -964,7 +968,11 @@ const DICTIONARY = {
     "auth.confirmPassword": "Thibitisha nenosiri",
     "auth.consentPrefix": "Nakubali", "auth.consentTerms": "Sheria na Masharti",
     "auth.consentAnd": "na", "auth.consentPrivacy": "Sera ya Faragha", "auth.consentSuffix": ".",
-    "auth.whyTitle": "Kwa Nini DukaSmart",
+    "auth.whyTitle": "Kwa Nini Savia",
+    "auth.aboutLink": "Savia inafanya nini →",
+    "auth.ledgerExpected": "Inayotakiwa kuwa kwenye droo",
+    "auth.ledgerCounted": "Iliyohesabiwa mwisho",
+    "auth.ledgerDiff": "Tofauti",
     "auth.whyMultiStore": "Fuatilia hisa ya matawi yako yote kwenye dashibodi moja.",
     "auth.whyOffline": "Endelea kuuza hata mtandao ukikatika \u2014 hujisawazisha kiotomatiki ukirudi mtandaoni.",
     "auth.whyReceipts": "Chapisha au shiriki risiti kupitia WhatsApp, ukiwa na ufuatiliaji wa fedha taslimu, pesa za simu, na kadi.",
@@ -1487,7 +1495,7 @@ function translateStaticDom() {
 function setLanguage(nextLanguage) {
   state.language = nextLanguage;
   try {
-    localStorage.setItem("dukasmart:lang", nextLanguage);
+    localStorage.setItem("savia:lang", nextLanguage);
   } catch (error) {
     console.warn(error);
   }
@@ -2435,7 +2443,7 @@ async function exportMonthlyReportPdf() {
   const metrics = report.metrics || {};
   const doc = new jsPdfCtor();
   doc.setFontSize(14);
-  doc.text(`DukaSmart Monthly Report \u2014 ${report.periodLabel}`, 14, 16);
+  doc.text(`Savia Monthly Report \u2014 ${report.periodLabel}`, 14, 16);
   doc.setFontSize(10);
   doc.text(new Date().toLocaleString(), 14, 22);
 
@@ -2467,7 +2475,7 @@ async function exportMonthlyReportPdf() {
   const summaryLines = doc.splitTextToSize(report.aiSummary || "", 180);
   doc.text(summaryLines, 14, y);
 
-  doc.save(`dukasmart-monthly-report-${report.periodLabel}.pdf`);
+  doc.save(`savia-monthly-report-${report.periodLabel}.pdf`);
 }
 
 async function subscribeToMonthlyReports() {
@@ -3186,7 +3194,7 @@ function exportPaymentReportCsv() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "dukasmart-payment-report.csv";
+  link.download = "savia-payment-report.csv";
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -3198,7 +3206,7 @@ async function exportPaymentReportPdf() {
   if (!jsPdfCtor) return showToast(t("toast.pdfLibraryFailed"));
   const doc = new jsPdfCtor();
   doc.setFontSize(14);
-  doc.text("DukaSmart Payment Report", 14, 16);
+  doc.text("Savia Payment Report", 14, 16);
   doc.setFontSize(10);
   doc.text(new Date().toLocaleString(), 14, 22);
   const headers = Object.keys(rows[0]);
@@ -3213,7 +3221,7 @@ async function exportPaymentReportPdf() {
       doc.text(headers.map((header) => String(row[header])).join(" | "), 14, y);
     });
   }
-  doc.save("dukasmart-payment-report.pdf");
+  doc.save("savia-payment-report.pdf");
 }
 
 function renderCards() {
@@ -3531,7 +3539,7 @@ function exportCsv() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "dukasmart-inventory.csv";
+  link.download = "savia-inventory.csv";
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -3571,7 +3579,7 @@ async function downloadAccountBackup() {
 
     const backup = {
       schemaVersion: 1,
-      application: "DukaSmart ERP",
+      application: "Savia Smart ERP",
       exportedAt: new Date().toISOString(),
       accountUid: state.user.uid,
       profile: profileSnap.exists() ? backupSerializable(profileSnap.data()) : null,
@@ -3582,7 +3590,7 @@ async function downloadAccountBackup() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `dukasmart-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    link.download = `savia-backup-${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
     URL.revokeObjectURL(url);
     showToast(t("toast.backupDownloaded"));
@@ -3623,7 +3631,7 @@ function generateReportCsv() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "dukasmart-report.csv";
+  link.download = "savia-report.csv";
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -3636,7 +3644,7 @@ async function generateReportPdf() {
   if (!jsPdfCtor) return showToast(t("toast.pdfLibraryFailed"));
   const doc = new jsPdfCtor();
   doc.setFontSize(14);
-  doc.text("DukaSmart Inventory Report", 14, 16);
+  doc.text("Savia Inventory Report", 14, 16);
   doc.setFontSize(10);
   doc.text(new Date().toLocaleString(), 14, 22);
   const headers = Object.keys(rows[0]);
@@ -3651,7 +3659,7 @@ async function generateReportPdf() {
       doc.text(headers.map((header) => String(row[header])).join(" | "), 14, y);
     });
   }
-  doc.save("dukasmart-report.pdf");
+  doc.save("savia-report.pdf");
 }
 
 async function generateReportXlsx() {
@@ -3661,7 +3669,7 @@ async function generateReportXlsx() {
   const worksheet = window.XLSX.utils.json_to_sheet(rows);
   const workbook = window.XLSX.utils.book_new();
   window.XLSX.utils.book_append_sheet(workbook, worksheet, "Inventory");
-  window.XLSX.writeFile(workbook, "dukasmart-report.xlsx");
+  window.XLSX.writeFile(workbook, "savia-report.xlsx");
 }
 
 function generateReport(format) {
@@ -3901,7 +3909,7 @@ function agingBucketStatusClass(bucket) {
 
 function buildReminderTextLines(customer) {
   const days = customerDaysOutstanding(customer);
-  const businessName = state.cachedProfile?.businessName || state.user?.displayName || "DukaSmart";
+  const businessName = state.cachedProfile?.businessName || state.user?.displayName || "Savia";
   const lines = [
     t("reminder.messageLine1", { name: customer.name || "", business: businessName, balance: money(customer.balanceOwed) })
   ];
@@ -4264,7 +4272,7 @@ function excludePurchaseOrderGroup(groupIndex) {
   renderPurchaseOrderDialog();
 }
 
-// Builds the WhatsApp text for a staff invite. Explicitly names DukaSmart
+// Builds the WhatsApp text for a staff invite. Explicitly names Savia
 // and the inviting business by name in the message itself -- an invite
 // link with no context is indistinguishable from a phishing link, and
 // staff have no other way to verify who sent it before they've even
@@ -4277,8 +4285,8 @@ function buildStaffInviteTextLines(linkToken, roleLabel) {
   const businessName = state.cachedProfile?.businessName || state.user?.displayName || "your employer";
   const acceptUrl = buildStaffInviteAcceptUrl(linkToken);
   return [
-    `This is an official DukaSmart ERP invitation from ${businessName}.`,
-    `You've been invited to join as a ${roleLabel} on DukaSmart, the inventory and sales system used by ${businessName}.`,
+    `This is an official Savia Smart ERP invitation from ${businessName}.`,
+    `You've been invited to join as a ${roleLabel} on Savia, the inventory and sales system used by ${businessName}.`,
     "",
     `Tap this link to accept and set up your account: ${acceptUrl}`,
     "",
@@ -4703,7 +4711,7 @@ async function openBarcodeScanner(target) {
 function receiptMeta(sale) {
   const store = state.stores.find((item) => item.id === (sale.storeId || state.currentStoreId));
   const storeName = store?.name || t("storeSwitcher.fallbackName");
-  const businessName = state.cachedProfile?.businessName || state.user?.displayName || "DukaSmart";
+  const businessName = state.cachedProfile?.businessName || state.user?.displayName || "Savia";
   const date = sale.createdAt
     ? (typeof sale.createdAt.toDate === "function" ? sale.createdAt.toDate() : new Date(sale.createdAt))
     : new Date();
@@ -8143,7 +8151,10 @@ function bindEvents() {
   });
 }
 
-setAuthMode("signup");
+// The landing page links here with ?mode=signin for "Sign in" and plainly for
+// "Get started", so the two are one journey rather than two products that
+// happen to share a palette. Signup stays the default for a bare visit.
+setAuthMode(new URLSearchParams(location.search).get("mode") === "signin" ? "signin" : "signup");
 bindEvents();
 initIdleActivityTracking();
 watchConnection();

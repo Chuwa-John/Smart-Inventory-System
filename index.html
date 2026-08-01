@@ -3,21 +3,22 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>DukaSmart ERP</title>
+    <title>Savia Smart ERP</title>
     <link rel="preconnect" href="https://www.gstatic.com" />
     <!-- Export/scanner libraries load on demand (see EXTERNAL_LIBRARIES in
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260802c" />
+    <link rel="stylesheet" href="./styles.css?v=20260802e" />
     <link rel="manifest" href="./manifest.json" />
-    <meta name="theme-color" content="#101114" />
-    <link rel="icon" href="./icons/icon-192.png" />
+    <meta name="theme-color" content="#0b0d10" />
+    <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
+    <link rel="icon" href="./icons/icon-512.png" sizes="512x512" />
     <link rel="apple-touch-icon" href="./icons/icon-192.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="DukaSmart" />
+    <meta name="apple-mobile-web-app-title" content="Savia" />
   </head>
   <body>
     <!-- Cleared only by a browser that can run ES modules. One too old to parse
@@ -28,7 +29,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260802c"></script>
+    <script type="module" src="./boot.js?v=20260802e"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -37,10 +38,10 @@
          is not running. -->
     <div class="app-unavailable" role="alert">
       <div class="app-unavailable-card">
-        <strong>DukaSmart needs JavaScript to run.</strong>
+        <strong>Savia needs JavaScript to run.</strong>
         <p>Please open this page in Chrome, Firefox, Edge or Safari, and turn off
            any data-saving or "extreme" browsing mode.</p>
-        <p lang="sw">DukaSmart inahitaji JavaScript ifanye kazi. Tafadhali fungua
+        <p lang="sw">Savia inahitaji JavaScript ifanye kazi. Tafadhali fungua
            ukurasa huu kwa Chrome, Firefox, Edge au Safari, na uzime hali ya
            kuokoa data.</p>
       </div>
@@ -53,9 +54,9 @@
     <div class="app-shell">
       <aside class="sidebar" aria-label="Primary navigation">
         <div class="brand">
-          <div class="brand-mark">DS</div>
+          <div class="brand-mark">S</div>
           <div>
-            <strong>DukaSmart</strong>
+            <strong>Savia</strong>
             <span data-i18n="brand.tagline">AI Inventory ERP</span>
           </div>
         </div>
@@ -921,14 +922,20 @@
     </dialog>
 
     <div class="auth-gate" id="authGate" aria-live="polite">
+      <!-- Split into a brand side and a form side. Purely structural: every
+           input keeps its id and stays inside <form>, so submission and every
+           handler are untouched. Nothing in CSS or JS reached these by
+           position, which is what made the wrap safe to do at all. -->
       <form class="auth-panel" id="authForm" novalidate>
+        <div class="auth-brand">
         <div>
           <p class="eyebrow" data-i18n="auth.eyebrow">Account access</p>
-          <h1>DukaSmart ERP</h1>
+          <h1>Savia Smart ERP</h1>
           <p class="auth-copy" data-i18n="auth.copy">Create an account or sign in to manage your own inventory, stock levels, sales, and AI recommendations.</p>
+          <p class="auth-copy"><a href="./landing.html" data-i18n="auth.aboutLink">What Savia does &rarr;</a></p>
         </div>
         <div class="auth-why">
-          <p class="eyebrow" data-i18n="auth.whyTitle">Why DukaSmart</p>
+          <p class="eyebrow" data-i18n="auth.whyTitle">Why Savia</p>
           <ul class="auth-why-list">
             <li data-i18n="auth.whyMultiStore">Track inventory across every branch from one dashboard.</li>
             <li data-i18n="auth.whyOffline">Keep selling even when the internet drops — it syncs automatically once you're back online.</li>
@@ -936,6 +943,17 @@
             <li data-i18n="auth.whyAi">Ask the built-in AI Advisor which products to reorder, in English or Swahili.</li>
           </ul>
         </div>
+
+        <!-- The same close-of-day figures the landing page opens with, so the
+             thing someone was sold is the first thing they see on arriving. -->
+        <div class="auth-ledger" aria-hidden="true">
+          <div class="auth-ledger-row"><span data-i18n="auth.ledgerExpected">Should be in the drawer</span><b>213,000</b></div>
+          <div class="auth-ledger-row"><span data-i18n="auth.ledgerCounted">Counted at close</span><b>211,500</b></div>
+          <div class="auth-ledger-row short"><span data-i18n="auth.ledgerDiff">Difference</span><b>1,500</b></div>
+        </div>
+        </div>
+
+        <div class="auth-fields">
         <label><span data-i18n="auth.businessName">Business name</span><input id="businessName" name="businessName" autocomplete="organization" maxlength="120" /></label>
         <label><span data-i18n="auth.email">Email</span><input id="authEmail" name="email" type="email" autocomplete="email" required maxlength="254" /><span class="field-error" id="authEmailError"></span></label>
         <label><span data-i18n="auth.password">Password</span><input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="6" required /><span class="field-error" id="authPasswordError"></span></label>
@@ -953,6 +971,7 @@
         <span class="field-error" id="authConsentError"></span>
         <button class="primary-button full-width" id="authSubmitButton" type="submit">Create account</button>
         <button class="ghost-button full-width" id="authModeButton" type="button">I already have an account</button>
+        </div>
       </form>
     </div>
 
@@ -965,6 +984,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260802c"></script>
+    <script type="module" src="./app.js?v=20260802e"></script>
   </body>
 </html>

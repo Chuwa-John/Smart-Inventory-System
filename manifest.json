@@ -1,13 +1,13 @@
 {
-  "name": "DukaSmart ERP",
-  "short_name": "DukaSmart",
-  "description": "AI Inventory ERP for Tanzanian stores \u2014 inventory, POS, reports, and an AI advisor.",
+  "name": "Savia Smart ERP",
+  "short_name": "Savia",
+  "description": "Inventory, point of sale, staff and customer credit for Tanzanian shops, in Kiswahili and English.",
   "start_url": "./?source=pwa",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#101114",
-  "theme_color": "#101114",
+  "background_color": "#0b0d10",
+  "theme_color": "#0b0d10",
   "icons": [
     {
       "src": "./icons/icon-192.png",
@@ -20,6 +20,12 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
