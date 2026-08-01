@@ -67,22 +67,51 @@ service cloud.firestore {
         || get(/databases/$(database)/documents/users/$(userId)).data.get('status', 'active') != 'pending_deletion';
     }
 
+    // Upper bounds on every number written here.
+    //
+    // These existed only as `>= 0`, which let two things through. Infinity
+    // satisfies both `is number` and `>= 0`, so a price or a quantity of
+    // Infinity was accepted -- and once stored, every total and report that
+    // touches the row is Infinity too, with no arithmetic that recovers it.
+    // Values above 2^53 were also accepted and silently lose integer
+    // precision: 9007199254740993 stores as 9007199254740992, so a stock
+    // count is quietly wrong rather than visibly rejected. Both were measured
+    // against these rules, not assumed.
+    //
+    // The ceilings are deliberately far above any real shop. They exist to
+    // keep arithmetic exact, not to judge what a business may sell. In TZS a
+    // billion is roughly USD 380,000 for a single unit. The sale ceiling is
+    // set so 40 lines (the item cap) at the per-line maxima still land well
+    // inside the safe-integer range.
+    //
+    // The client mirrors these in app.js and rejects with a readable message
+    // first; tests/validation-limits.test.mjs fails if the two ever disagree.
+    function countInRange(v) {
+      return v is number && v >= 0 && v <= 1000000;
+    }
+    function moneyInRange(v) {
+      return v is number && v >= 0 && v <= 1000000000;
+    }
+    function totalInRange(v) {
+      return v is number && v >= 0 && v <= 1000000000000;
+    }
+
     function validProduct() {
       let d = request.resource.data;
       return d.name is string && d.name.size() > 0 && d.name.size() <= 120
         && d.category is string && d.category.size() <= 60
         && d.brand is string && d.brand.size() <= 60
         && d.supplier is string && d.supplier.size() <= 60
-        && d.quantity is number && d.quantity >= 0
+        && countInRange(d.quantity)
         && d.storeId is string && d.storeId.size() > 0
         && (!('barcode' in d) || (d.barcode is string && d.barcode.size() <= 64))
         && (!('description' in d) || (d.description is string && d.description.size() <= 500))
         && (!('warehouse' in d) || (d.warehouse is string && d.warehouse.size() <= 60))
         && (!('shelf' in d) || (d.shelf is string && d.shelf.size() <= 60))
         && (!('sku' in d) || (d.sku is string && d.sku.size() <= 40))
-        && (!('costPrice' in d) || (d.costPrice is number && d.costPrice >= 0))
-        && (!('sellingPrice' in d) || (d.sellingPrice is number && d.sellingPrice >= 0))
-        && (!('reorderLevel' in d) || (d.reorderLevel is number && d.reorderLevel >= 0))
+        && (!('costPrice' in d) || moneyInRange(d.costPrice))
+        && (!('sellingPrice' in d) || moneyInRange(d.sellingPrice))
+        && (!('reorderLevel' in d) || countInRange(d.reorderLevel))
         && (!('expiryDate' in d) || (d.expiryDate is string && d.expiryDate.size() <= 10));
     }
 
@@ -141,10 +170,9 @@ service cloud.firestore {
 
     function validStockMovementUpdate() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['quantity', 'sold30', 'sold90', 'updatedAt', 'movementReason'])
-        && request.resource.data.quantity is number
-        && request.resource.data.quantity >= 0
-        && (!('sold30' in request.resource.data) || (request.resource.data.sold30 is number && request.resource.data.sold30 >= 0))
-        && (!('sold90' in request.resource.data) || (request.resource.data.sold90 is number && request.resource.data.sold90 >= 0))
+        && countInRange(request.resource.data.quantity)
+        && (!('sold30' in request.resource.data) || countInRange(request.resource.data.sold30))
+        && (!('sold90' in request.resource.data) || countInRange(request.resource.data.sold90))
         && validMovementReason();
     }
 
@@ -191,21 +219,21 @@ service cloud.firestore {
     function validSale() {
       let d = request.resource.data;
       return validSaleItems(d.items)
-        && d.total is number && d.total >= 0
+        && totalInRange(d.total)
         && d.cashierUid == request.auth.uid
         && d.voided == false
         && d.storeId is string && d.storeId.size() > 0
         && d.staffId is string && d.staffId.size() > 0
         && d.staffName is string && d.staffName.size() > 0 && d.staffName.size() <= 80
         && d.orderNumber is string && d.orderNumber.matches('^[0-9]{1,10}$')
-        && (!('subtotal' in d) || (d.subtotal is number && d.subtotal >= 0))
+        && (!('subtotal' in d) || totalInRange(d.subtotal))
         && (!('discountType' in d) || d.discountType in ['none', 'percent', 'fixed'])
-        && (!('discountValue' in d) || (d.discountValue is number && d.discountValue >= 0))
-        && (!('discountAmount' in d) || (d.discountAmount is number && d.discountAmount >= 0))
+        && (!('discountValue' in d) || totalInRange(d.discountValue))
+        && (!('discountAmount' in d) || totalInRange(d.discountAmount))
         && d.paymentMethod in ['cash', 'mobile', 'card', 'credit']
         && (!('customerId' in d) || d.customerId == null || (d.customerId is string && d.customerId.size() > 0))
-        && (!('amountPaid' in d) || d.amountPaid == null || (d.amountPaid is number && d.amountPaid >= 0))
-        && (!('balanceDue' in d) || d.balanceDue == null || (d.balanceDue is number && d.balanceDue >= 0));
+        && (!('amountPaid' in d) || d.amountPaid == null || totalInRange(d.amountPaid))
+        && (!('balanceDue' in d) || d.balanceDue == null || totalInRange(d.balanceDue));
     }
 
     function validAuditLog() {
@@ -402,7 +430,7 @@ service cloud.firestore {
         match /payments/{paymentId} {
           function validPayment() {
             let d = request.resource.data;
-            return d.amount is number && d.amount > 0
+            return d.amount is number && d.amount > 0 && d.amount <= 1000000000000
               && (!('note' in d) || (d.note is string && d.note.size() <= 200));
           }
           allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, get(/databases/$(database)/documents/users/$(userId)/customers/$(customerId)).data.storeId));
@@ -418,7 +446,7 @@ service cloud.firestore {
           let d = request.resource.data;
           return d.productId is string && d.productId.size() > 0
             && d.productName is string && d.productName.size() <= 120
-            && d.quantity is number && d.quantity > 0 && d.quantity <= 1000000
+            && countInRange(d.quantity) && d.quantity > 0
             && d.sourceStoreId is string && d.sourceStoreId.size() > 0
             && d.destinationStoreId is string && d.destinationStoreId.size() > 0
             && d.staffName is string && d.staffName.size() > 0 && d.staffName.size() <= 80

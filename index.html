@@ -615,15 +615,15 @@
               <button class="ghost-button compact" type="button" id="scanProductBarcodeButton" data-i18n="product.scanButton">Scan</button>
             </span>
           </label>
-          <label><span data-i18n="product.quantityLabel">Quantity</span><input name="quantity" type="number" min="0" required /></label>
-          <label><span data-i18n="product.priceLabel">Selling price (TZS)</span> <input name="sellingPrice" type="number" min="0" step="1" required /></label>
+          <label><span data-i18n="product.quantityLabel">Quantity</span><input name="quantity" type="number" min="0" required max="1000000" /></label>
+          <label><span data-i18n="product.priceLabel">Selling price (TZS)</span> <input name="sellingPrice" type="number" min="0" step="1" required max="1000000000" /></label>
           <label><span data-i18n="product.priceTypeLabel">Price type</span>
             <select name="priceType">
               <option value="fixed" data-i18n="product.priceFixed">Fixed price</option>
               <option value="dynamic" data-i18n="product.priceDynamic">Flexible / dynamic price</option>
             </select>
           </label>
-          <label><span data-i18n="product.reorderLabel">Low stock threshold</span><input name="reorderLevel" type="number" min="0" placeholder="e.g. 10" data-i18n-placeholder="product.reorderPlaceholder" /></label>
+          <label><span data-i18n="product.reorderLabel">Low stock threshold</span><input name="reorderLevel" type="number" min="0" placeholder="e.g. 10" data-i18n-placeholder="product.reorderPlaceholder" max="1000000" /></label>
           <label><span data-i18n="product.expiryLabel">Expiry date (optional)</span><input name="expiryDate" type="date" /></label>
         </div>
         <div class="button-row end">
@@ -920,6 +920,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js" integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script type="module" src="./app.js?v=20260801a"></script>
+    <script type="module" src="./app.js?v=20260801b"></script>
   </body>
 </html>

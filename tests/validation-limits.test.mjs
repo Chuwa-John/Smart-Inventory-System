@@ -39,6 +39,20 @@ for (const tag of html.match(/<(?:input|textarea)\b[^>]*>/g) || []) {
   fields.set(key, { type, maxlength: max ? Number(max[1]) : null });
 }
 
+// Pulls a real function out of app.js by brace-matching, so the test exercises
+// the shipped code rather than a reimplementation of it.
+function extractFn(name) {
+  const start = app.indexOf(`function ${name}(`);
+  if (start === -1) throw new Error(`${name} not found in app.js`);
+  let depth = 0;
+  let i = app.indexOf("{", start);
+  for (; i < app.length; i++) {
+    if (app[i] === "{") depth++;
+    else if (app[i] === "}") { depth--; if (depth === 0) break; }
+  }
+  return app.slice(start, i + 1);
+}
+
 function proxyConst(name) {
   const m = proxy.match(new RegExp(`const ${name} = (\\d+)`));
   if (!m) throw new Error(`${name} not found in proxy/server.js`);
@@ -149,6 +163,82 @@ console.log("\n=== fields already bounded stayed correct ===");
     check(`"${id}" is still capped at ${cap} (${why})`, Boolean(f && f.maxlength === cap),
       `got ${f && f.maxlength}`);
   }
+}
+
+console.log("\n=== the client's own copy of the string caps agrees with rules ===");
+{
+  // A third copy of the same numbers lives in app.js and drives the toast that
+  // names the limit. It can drift from both the markup and the rules.
+  const block = app.slice(app.indexOf("const PRODUCT_FIELD_LIMITS"),
+    app.indexOf("};", app.indexOf("const PRODUCT_FIELD_LIMITS")) + 2);
+  const clientLimits = new Map(
+    [...block.matchAll(/(\w+): (\d+)/g)].map((m) => [m[1], Number(m[2])])
+  );
+  check("PRODUCT_FIELD_LIMITS was found", clientLimits.size >= 5, block.slice(0, 60));
+  for (const [field, limit] of clientLimits) {
+    const cap = productCaps.get(field);
+    check(`PRODUCT_FIELD_LIMITS.${field} (${limit}) matches the rules cap (${cap})`, limit === cap);
+    const f = fields.get(field);
+    check(`...and the markup for "${field}" agrees too`, Boolean(f && f.maxlength === limit),
+      `maxlength=${f && f.maxlength}`);
+  }
+}
+
+console.log("\n=== numbers are bounded above, not just below (QA-003) ===");
+{
+  // Measured against the emulator before this fix: rules accepted Infinity as
+  // both a quantity and a price, because `is number` and `>= 0` are both true
+  // of Infinity. An upper bound excludes it as a side effect. Values past 2^53
+  // were accepted too and silently stopped being exact integers.
+  const ruleCeilings = new Map();
+  for (const fn of ["countInRange", "moneyInRange", "totalInRange"]) {
+    const m = rules.match(new RegExp(`function ${fn}\\(v\\) \\{[^}]*v <= (\\d+)`));
+    ruleCeilings.set(fn, m ? Number(m[1]) : null);
+  }
+  for (const [fn, ceiling] of ruleCeilings) {
+    check(`rules define an upper bound in ${fn}`, ceiling !== null);
+  }
+
+  const MAX_COUNT = appConst("MAX_COUNT");
+  const MAX_MONEY = appConst("MAX_MONEY");
+  check("app MAX_COUNT matches rules countInRange", MAX_COUNT === ruleCeilings.get("countInRange"),
+    `${MAX_COUNT} vs ${ruleCeilings.get("countInRange")}`);
+  check("app MAX_MONEY matches rules moneyInRange", MAX_MONEY === ruleCeilings.get("moneyInRange"),
+    `${MAX_MONEY} vs ${ruleCeilings.get("moneyInRange")}`);
+
+  // Every ceiling must leave the arithmetic exact. 40 is the rules cap on sale
+  // line items.
+  const worstSale = 40 * ruleCeilings.get("countInRange") * ruleCeilings.get("moneyInRange");
+  check("a sale ceiling exists that keeps totals exact",
+    ruleCeilings.get("totalInRange") <= Number.MAX_SAFE_INTEGER,
+    `totalInRange=${ruleCeilings.get("totalInRange")} exceeds 2^53`);
+  check("the total ceiling is what keeps 40 max-value lines from losing precision",
+    worstSale > Number.MAX_SAFE_INTEGER && ruleCeilings.get("totalInRange") < Number.MAX_SAFE_INTEGER,
+    `unbounded worst case ${worstSale} vs safe ${Number.MAX_SAFE_INTEGER}`);
+
+  // Infinity must be excluded by the bound, in the client helper too.
+  const { clampNonNegativeNumber } = new Function(
+    `const MAX_COUNT = ${MAX_COUNT};\n${extractFn("clampNonNegativeNumber")}\nreturn { clampNonNegativeNumber };`
+  )();
+  const rejected = [Infinity, -Infinity, NaN, -1, MAX_COUNT + 1, 1e308];
+  for (const value of rejected) {
+    check(`clampNonNegativeNumber rejects ${value}`, clampNonNegativeNumber(value, MAX_COUNT) === null);
+  }
+  check("it still accepts an ordinary count", clampNonNegativeNumber(50, MAX_COUNT) === 50);
+  check("it accepts exactly the ceiling", clampNonNegativeNumber(MAX_COUNT, MAX_COUNT) === MAX_COUNT);
+  check("a price at the money ceiling is accepted", clampNonNegativeNumber(MAX_MONEY, MAX_MONEY) === MAX_MONEY);
+  check("a price above the money ceiling is refused", clampNonNegativeNumber(MAX_MONEY + 1, MAX_MONEY) === null);
+
+  // The markup bound should agree with the constant the code enforces.
+  for (const [field, expected] of [["quantity", MAX_COUNT], ["sellingPrice", MAX_MONEY], ["reorderLevel", MAX_COUNT]]) {
+    const tag = (html.match(new RegExp(`<input name="${field}" type="number"[^>]*>`)) || [""])[0];
+    const max = (tag.match(/max="(\d+)"/) || [])[1];
+    check(`"${field}" carries max="${expected}" in markup`, Number(max) === expected, `got ${max}`);
+  }
+
+  check("the refusal names the field and the limit",
+    /toast\.numberOutOfRange/.test(app) && app.includes('"toast.numberOutOfRange": "{field}'));
+  check("the refusal exists in sw", /"toast\.numberOutOfRange": "\{field\} lazima/.test(app));
 }
 
 console.log("\n=== no free-text field escapes a bound ===");

@@ -570,6 +570,7 @@ const DICTIONARY = {
     "toast.saleCompletedChange": "Sale completed. Give {change} change.",
     "toast.saleCompleted": "Sale completed and inventory updated.",
     "toast.quantityPriceInvalid": "Quantity and price fields must be zero or positive numbers.",
+    "toast.numberOutOfRange": "{field} must be a number between 0 and {max}.",
     "toast.fieldTooLong": "{field} must be {max} characters or fewer.",
     "product.barcodeLabel": "Barcode", "product.scanButton": "Scan",
     "pos.scanBarcode": "Scan Barcode",
@@ -1153,6 +1154,7 @@ const DICTIONARY = {
     "toast.saleCompletedChange": "Mauzo yamekamilika. Toa chenji ya {change}.",
     "toast.saleCompleted": "Mauzo yamekamilika na hisa imesasishwa.",
     "toast.quantityPriceInvalid": "Sehemu za kiasi na bei lazima ziwe sifuri au chanya.",
+    "toast.numberOutOfRange": "{field} lazima iwe namba kati ya 0 na {max}.",
     "toast.fieldTooLong": "{field} lazima iwe na herufi {max} au chache.",
     "product.barcodeLabel": "Msimbo pau", "product.scanButton": "Changanua",
     "pos.scanBarcode": "Changanua Msimbo Pau",
@@ -4071,9 +4073,20 @@ function validateProductFields(product) {
   return null;
 }
 
-function clampNonNegativeNumber(value) {
+// Mirrors countInRange / moneyInRange / totalInRange in firestore.rules, which
+// are the authority. These exist so an out-of-range figure is refused here with
+// a message naming the field and the limit, rather than by rules with a
+// permission-denied that reads like the shop lost its access.
+// tests/validation-limits.test.mjs fails if the two ever disagree.
+const MAX_COUNT = 1000000;
+const MAX_MONEY = 1000000000;
+
+function clampNonNegativeNumber(value, max = MAX_COUNT) {
   const number = Number(value);
-  if (!Number.isFinite(number) || number < 0) return null;
+  // Number.isFinite already rejects Infinity and NaN. The upper bound is the
+  // new part: without it a mistyped figure was stored, and anything past 2^53
+  // stopped being an exact integer, so stock counts drifted silently.
+  if (!Number.isFinite(number) || number < 0 || number > max) return null;
   return number;
 }
 
@@ -7252,20 +7265,31 @@ function bindEvents() {
       return;
     }
 
-    const quantity = clampNonNegativeNumber(product.quantity);
-    const costPrice = clampNonNegativeNumber(product.costPrice || 0);
-    const sellingPrice = clampNonNegativeNumber(product.sellingPrice || 0);
-    const reorderLevel = clampNonNegativeNumber(product.reorderLevel || 0);
-
-    if (quantity === null || costPrice === null || sellingPrice === null || reorderLevel === null) {
-      showToast(t("toast.quantityPriceInvalid"));
-      return;
+    // Counts and money have different ceilings, so each field is checked
+    // against its own and named in the message. "Quantity or price is invalid"
+    // told the user neither which box was wrong nor what would be accepted.
+    // Counts and money have different ceilings, so each is checked against its
+    // own and named in the message. "Quantity or price is invalid" told the
+    // user neither which box was wrong nor what would be accepted. costPrice
+    // has no input in this form today and arrives as 0; it is checked anyway so
+    // adding the field later cannot quietly skip the bound.
+    const numericFields = [
+      ["quantity", product.quantity, MAX_COUNT, "product.quantityLabel"],
+      ["costPrice", product.costPrice || 0, MAX_MONEY, "product.priceTypeLabel"],
+      ["sellingPrice", product.sellingPrice || 0, MAX_MONEY, "product.priceLabel"],
+      ["reorderLevel", product.reorderLevel || 0, MAX_COUNT, "product.reorderLabel"]
+    ];
+    for (const [field, raw, max, labelKey] of numericFields) {
+      const value = clampNonNegativeNumber(raw, max);
+      if (value === null) {
+        showToast(t("toast.numberOutOfRange", {
+          field: t(labelKey),
+          max: max.toLocaleString()
+        }));
+        return;
+      }
+      product[field] = value;
     }
-
-    product.quantity = quantity;
-    product.costPrice = costPrice;
-    product.sellingPrice = sellingPrice;
-    product.reorderLevel = reorderLevel;
     product.category = String(product.category || "").trim();
     product.sku = product.sku || `${String(product.name || "ITEM").trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 18) || "ITEM"}-${Date.now().toString().slice(-6)}`;
     product.barcode = product.barcode || "";
