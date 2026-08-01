@@ -3,6 +3,7 @@ import { aiConfig } from "./ai-config.js";
 
 const state = {
   products: [],
+  creditOverrides: [],
   cart: [],
   paymentMethod: "cash",
   // Connectivity as the app currently understands it; see watchConnection.
@@ -730,15 +731,17 @@ const DICTIONARY = {
     "reminder.messageLine2": "This balance has been outstanding for {days} days.",
     "reminder.messageClosing": "Kindly settle at your earliest convenience. Thank you for your business!",
     "toast.reminderNoPhone": "This customer has no phone number on file.",
-    "customers.colCreditLimit": "Credit Limit",
-    "customers.setLimitButton": "Set Limit",
-    "customers.noLimit": "No limit",
-    "dialog.creditLimitPrompt": "Enter a credit limit for {name} in {currency} (leave blank for no limit):",
+    "customers.colCreditLimit": "Credit Alert At",
+    "customers.setLimitButton": "Set Alert",
+    "customers.noLimit": "No alert",
+    "dialog.creditLimitPrompt": "Alert when {name} owes more than this, in {currency}. Sales above it need a manager's override password. Leave blank for no alert:",
     "toast.creditLimitInvalid": "Enter a valid credit limit, or leave blank for no limit.",
     "toast.creditLimitSet": "{name}'s credit limit set to {limit}.",
     "toast.creditLimitCleared": "{name}'s credit limit removed.",
-    "toast.creditLimitFailed": "Could not update the credit limit. Please try again.",
-    "dialog.creditLimitExceededConfirm": "{name} already owes {currentBalance}. This sale would add {newBalanceDue}, bringing their balance to {projectedTotal}, over their {limit} limit. Proceed anyway?",
+    "toast.creditLimitFailed": "Could not update the credit alert. Please try again.",
+    "toast.creditLimitOverrideRefused": "Not authorised. The sale was not completed.",
+    "control.creditOverrides": "Credit alerts overridden (30 days)",
+    "dialog.creditLimitExceededConfirm": "{name} already owes {currentBalance}. This sale adds {newBalanceDue}, bringing them to {projectedTotal} — above the {limit} alert level. Continuing needs a manager override password, and will be recorded. Continue?",
     "dashboard.setCurrency": "Currency",
     "dialog.currencyCodePrompt": "Enter a 3-letter currency code for this store (e.g. TZS, USD, KES, UGX):",
     "toast.currencyInvalid": "Enter a valid 3-letter currency code (letters only).",
@@ -1324,15 +1327,17 @@ const DICTIONARY = {
     "reminder.messageLine2": "Deni hili limekuwa wazi kwa siku {days}.",
     "reminder.messageClosing": "Tafadhali lipa mapema iwezekanavyo. Asante kwa biashara yako!",
     "toast.reminderNoPhone": "Mteja huyu hana namba ya simu iliyorekodiwa.",
-    "customers.colCreditLimit": "Kikomo cha Deni",
-    "customers.setLimitButton": "Weka Kikomo",
-    "customers.noLimit": "Hakuna kikomo",
-    "dialog.creditLimitPrompt": "Weka kikomo cha deni kwa {name} kwa {currency} (acha wazi kama hakuna kikomo):",
+    "customers.colCreditLimit": "Tahadhari ya Deni",
+    "customers.setLimitButton": "Weka Tahadhari",
+    "customers.noLimit": "Hakuna tahadhari",
+    "dialog.creditLimitPrompt": "Toa tahadhari {name} anapodaiwa zaidi ya kiasi hiki, kwa {currency}. Mauzo zaidi ya hapo yanahitaji nenosiri la meneja. Acha wazi kama hakuna tahadhari:",
     "toast.creditLimitInvalid": "Weka kikomo sahihi cha deni, au acha wazi kama hakuna kikomo.",
     "toast.creditLimitSet": "Kikomo cha deni cha {name} kimewekwa kuwa {limit}.",
     "toast.creditLimitCleared": "Kikomo cha deni cha {name} kimeondolewa.",
-    "toast.creditLimitFailed": "Imeshindwa kusasisha kikomo cha deni. Tafadhali jaribu tena.",
-    "dialog.creditLimitExceededConfirm": "{name} tayari anadaiwa {currentBalance}. Mauzo haya yataongeza {newBalanceDue}, na kufanya deni lake kuwa {projectedTotal}, zaidi ya kikomo chake cha {limit}. Uendelee?",
+    "toast.creditLimitFailed": "Imeshindwa kusasisha tahadhari ya deni. Tafadhali jaribu tena.",
+    "toast.creditLimitOverrideRefused": "Hujaidhinishwa. Mauzo hayakukamilika.",
+    "control.creditOverrides": "Tahadhari za deni zilizopitishwa (siku 30)",
+    "dialog.creditLimitExceededConfirm": "{name} tayari anadaiwa {currentBalance}. Mauzo haya yanaongeza {newBalanceDue}, hadi {projectedTotal} — zaidi ya tahadhari ya {limit}. Kuendelea kunahitaji nenosiri la meneja, na kutarekodiwa. Uendelee?",
     "dashboard.setCurrency": "Sarafu",
     "dialog.currencyCodePrompt": "Weka msimbo wa herufi 3 wa sarafu ya duka hili (mfano, TZS, USD, KES, UGX):",
     "toast.currencyInvalid": "Weka msimbo sahihi wa herufi 3 za sarafu (herufi pekee).",
@@ -3884,22 +3889,54 @@ async function setCustomerCreditLimit(customerId) {
   showToast(nextLimit === null ? t("toast.creditLimitCleared", { name: customer.name || "" }) : t("toast.creditLimitSet", { name: customer.name || "", limit: money(nextLimit) }));
 }
 
-function checkCreditLimitBeforeSale(customerName, phoneKey, newBalanceDue) {
+// The threshold is deliberately not a hard block. In this market a refused sale
+// to a regular does not prevent the credit -- it moves it off the books, as
+// cash or under a duplicate customer record, and the shop keeps the exposure
+// while losing sight of it. What was missing was not prevention but
+// accountability: any cashier could click through a plain confirm() and nothing
+// recorded that they had.
+//
+// So crossing it now costs the same override password that authorises a price
+// override, and the crossing is written to the audit log with the numbers that
+// justified it. A cashier alone can no longer extend credit past the ceiling,
+// and the owner can see who decided to.
+//
+// Returns a decision object rather than a boolean because the caller has to
+// record WHY it proceeded, not just that it did.
+async function checkCreditLimitBeforeSale(customerName, phoneKey, newBalanceDue) {
   const existing = findCustomerByPhone(phoneKey, state.currentStoreId);
   const limit = existing?.creditLimit;
-  if (limit == null) return true;
+  if (limit == null) return { allowed: true, overridden: false };
 
   const currentBalance = Number(existing.balanceOwed || 0);
   const projectedTotal = currentBalance + newBalanceDue;
-  if (projectedTotal <= limit) return true;
+  if (projectedTotal <= limit) return { allowed: true, overridden: false };
 
-  return window.confirm(t("dialog.creditLimitExceededConfirm", {
+  // Show the numbers first. Asking for a password before saying why is how
+  // people learn to type it without reading.
+  const acknowledged = window.confirm(t("dialog.creditLimitExceededConfirm", {
     name: existing.name || customerName || phoneKey,
     currentBalance: money(currentBalance),
     newBalanceDue: money(newBalanceDue),
     projectedTotal: money(projectedTotal),
     limit: money(limit)
   }));
+  if (!acknowledged) return { allowed: false, overridden: false };
+
+  const authorized = await verifyOverridePassword();
+  if (!authorized) {
+    showToast(t("toast.creditLimitOverrideRefused"));
+    return { allowed: false, overridden: false };
+  }
+
+  return {
+    allowed: true,
+    overridden: true,
+    customerId: existing.id || null,
+    limit,
+    previousBalance: currentBalance,
+    projectedTotal
+  };
 }
 
 function transferDate(transfer) {
@@ -5254,6 +5291,49 @@ function controlTile(label, value, tone = "", note = "") {
 
 // Manager panel: this store, today. A manager is accountable for a floor and a
 // shift, so anything wider belongs in Reports or the owner panel below.
+// Credit-alert overrides, for the manager panel. Audit logs are not held in
+// state -- they are written far more often than they are read, and pulling the
+// whole collection into every session would cost reads on every load to show a
+// number that is usually zero.
+//
+// Deliberately fails quiet. This is a supervisory figure beside live till
+// totals; if the query fails the panel must still show the cash, so the tile
+// reports nothing rather than taking the page down with it.
+const CREDIT_OVERRIDE_WINDOW_DAYS = 30;
+
+let creditOverrideFetchKey = null;
+
+// Fetched once per business, not per render: renderManagerControl() runs on
+// every data change and a query on each would be a read per keystroke-ish
+// event. Store scoping is applied at render time instead, so switching branches
+// costs nothing.
+function ensureCreditOverridesLoaded() {
+  if (!state.db || !state.businessOwnerUid) return;
+  if (creditOverrideFetchKey === state.businessOwnerUid) return;
+  creditOverrideFetchKey = state.businessOwnerUid;
+  loadCreditOverrideCount().then(() => renderManagerControl());
+}
+
+async function loadCreditOverrideCount() {
+  if (!state.db || !state.businessOwnerUid) return;
+  const since = new Date(Date.now() - CREDIT_OVERRIDE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  try {
+    const snapshot = await getDocs(query(
+      collection(state.db, "users", state.businessOwnerUid, "auditLogs"),
+      where("action", "==", "CREDIT_LIMIT_EXCEEDED"),
+      orderBy("createdAt", "desc"),
+      limit(100)
+    ));
+    const rows = snapshot.docs
+      .map((entry) => entry.data())
+      .filter((row) => row.createdAt?.toDate && row.createdAt.toDate() >= since);
+    state.creditOverrides = rows;
+  } catch (error) {
+    console.warn("Could not load credit override history.", error);
+    state.creditOverrides = null;
+  }
+}
+
 function renderManagerControl() {
   const panel = qs("#managerControlPanel");
   if (!panel) return;
@@ -5280,6 +5360,10 @@ function renderManagerControl() {
     return qty > 0 && qty <= safeNumber(p.reorderLevel);
   }).length;
 
+  ensureCreditOverridesLoaded();
+  const scopedOverrides = (state.creditOverrides || []).filter((row) =>
+    !scopedToStore || row.storeId === state.currentStoreId);
+
   qs("#managerControlGrid").innerHTML = [
     controlTile(t("control.expectedCash"), money(s.drawerCash), "accent", t("control.expectedCashNote")),
     controlTile(t("control.netTakings"), money(s.net), "", t("control.netTakingsNote")),
@@ -5293,7 +5377,15 @@ function renderManagerControl() {
     controlTile(t("control.voidsToday"), `${s.voidCount} · ${money(s.voidValue)}`, s.voidCount > 0 ? "warn" : ""),
     controlTile(t("control.refundsToday"), `${s.refundCount} · ${money(s.refundValue)}`, s.refundCount > 0 ? "warn" : ""),
     controlTile(t("control.stockAttention"), `${lowStock} · ${outOfStock}`,
-      outOfStock > 0 ? "danger" : (lowStock > 0 ? "warn" : ""), t("control.stockAttentionNote"))
+      outOfStock > 0 ? "danger" : (lowStock > 0 ? "warn" : ""), t("control.stockAttentionNote")),
+    // The whole point of making the override accountable: somewhere the owner
+    // actually looks. A record nobody reads is not a control.
+    controlTile(t("control.creditOverrides"),
+      state.creditOverrides === null ? "—" : String(scopedOverrides.length),
+      scopedOverrides.length ? "warn" : "",
+      scopedOverrides.length
+        ? money(scopedOverrides.reduce((sum, row) => sum + safeNumber(row.saleTotal), 0))
+        : "")
   ].join("");
 
   const byStaff = new Map();
@@ -7180,6 +7272,7 @@ function bindEvents() {
     let creditAmountPaid = 0;
     let creditAmountPaidMethod = "cash";
     let creditBalanceDue = 0;
+    let creditLimitDecision = { allowed: true, overridden: false };
     if (paymentMethod === "credit") {
       creditPhoneKey = normalizeCustomerPhoneKey(customerPhone);
       if (!creditPhoneKey) return showToast(t("toast.creditNeedsPhone"));
@@ -7190,8 +7283,9 @@ function bindEvents() {
       }
       creditAmountPaidMethod = qs("#creditAmountPaidMethod")?.value || "cash";
       creditBalanceDue = Math.max(0, total - creditAmountPaid);
-      if (creditBalanceDue > 0 && !checkCreditLimitBeforeSale(customerName, creditPhoneKey, creditBalanceDue)) {
-        return;
+      if (creditBalanceDue > 0) {
+        creditLimitDecision = await checkCreditLimitBeforeSale(customerName, creditPhoneKey, creditBalanceDue);
+        if (!creditLimitDecision.allowed) return;
       }
     }
 
@@ -7299,6 +7393,24 @@ function bindEvents() {
             uid: state.user?.uid || null,
             createdAt: serverTimestamp()
           });
+
+          // Written in the same transaction as the sale it justifies. A record
+          // of an override whose sale rolled back would be worse than none.
+          if (creditLimitDecision.overridden) {
+            const overrideRef = doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs"));
+            transaction.set(overrideRef, {
+              action: "CREDIT_LIMIT_EXCEEDED",
+              customerId: creditLimitDecision.customerId,
+              customerName: customerName || null,
+              limit: creditLimitDecision.limit,
+              previousBalance: creditLimitDecision.previousBalance,
+              projectedTotal: creditLimitDecision.projectedTotal,
+              saleTotal: total,
+              storeId: state.currentStoreId,
+              uid: state.user?.uid || null,
+              createdAt: serverTimestamp()
+            });
+          }
         });
 
         state.lastSale = { mode: "firestore", saleId: saleRef.id, items: saleItems, paymentMethod, total };
