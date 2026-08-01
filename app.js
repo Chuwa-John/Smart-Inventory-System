@@ -274,6 +274,9 @@ const DICTIONARY = {
     "control.voidsMonth": "Voids this month",
     "control.refundsMonth": "Refunds this month",
     "control.discountsMonth": "Discounts this month",
+    "control.totalMismatches": "Sales whose total disagrees with their items",
+    "control.totalMismatchNote": "Recomputed from line items. Review these sales.",
+    "control.totalMismatchClear": "Every sale matches its line items.",
     "control.byStore": "Performance by store",
     "control.colStore": "Store",
     "control.colToday": "Today",
@@ -893,6 +896,9 @@ const DICTIONARY = {
     "control.voidsMonth": "Yaliyofutwa mwezi huu",
     "control.refundsMonth": "Marejesho mwezi huu",
     "control.discountsMonth": "Punguzo mwezi huu",
+    "control.totalMismatches": "Mauzo yenye jumla isiyolingana na bidhaa zake",
+    "control.totalMismatchNote": "Imehesabiwa upya kutoka kwa bidhaa. Kagua mauzo haya.",
+    "control.totalMismatchClear": "Kila mauzo yanalingana na bidhaa zake.",
     "control.byStore": "Utendaji kwa duka",
     "control.colStore": "Duka",
     "control.colToday": "Leo",
@@ -5802,6 +5808,52 @@ function renderManagerControl() {
 
 // Owner panel: whole business, month to date, plus the governance facts an
 // owner is accountable for and nobody else can see.
+// A sale's total is not tied to its line items anywhere a server can check.
+// Firestore rules cannot iterate or sum a list, and the per-item unrolled
+// version of this was removed from firestore.rules because it blew the
+// 1000-expression evaluation budget on the sale path and took the till offline.
+// Measured against the emulator: a basket of 10 x 1,500 can be written with a
+// total of 1, or 0, and the rules accept it.
+//
+// So this is detection rather than prevention, which is the honest answer to an
+// invariant that cannot be enforced where it matters. It recomputes each sale
+// from its own line items and reports what disagrees, for the owner to act on.
+//
+// A cash sale under-reported this way also shows up as a drawer that is OVER at
+// shift close, so the two controls corroborate each other: one names the sale,
+// the other names the shift.
+const SALE_TOTAL_TOLERANCE = 1;   // absorbs rounding, not tampering
+
+function saleLineItemsTotal(sale) {
+  if (!Array.isArray(sale.items)) return null;
+  let sum = 0;
+  for (const item of sale.items) {
+    const qty = safeNumber(item.quantity ?? item.qty);
+    const price = safeNumber(item.sellingPrice ?? item.price);
+    sum += qty * price;
+  }
+  return sum;
+}
+
+function saleTotalMismatches(sales) {
+  const out = [];
+  for (const sale of sales || []) {
+    if (sale.voided) continue;
+    const lineTotal = saleLineItemsTotal(sale);
+    if (lineTotal === null) continue;
+    // Discounts legitimately move the total away from the line sum, so they are
+    // added back before comparing. Without this every discounted sale would be
+    // reported as tampering, and a report that cries wolf is not read.
+    const discount = safeNumber(sale.discountAmount);
+    const expected = lineTotal - discount;
+    const gap = safeNumber(sale.total) - expected;
+    if (Math.abs(gap) > SALE_TOTAL_TOLERANCE) {
+      out.push({ id: sale.id, orderNumber: sale.orderNumber, recorded: safeNumber(sale.total), expected, gap });
+    }
+  }
+  return out;
+}
+
 function renderAdminControl() {
   const panel = qs("#adminControlPanel");
   if (!panel) return;
@@ -5835,6 +5887,8 @@ function renderAdminControl() {
   const stockAtRetail = state.products.reduce((sum, p) => sum + safeNumber(p.quantity) * safeNumber(p.sellingPrice), 0);
   const creditOwed = state.customers.reduce((sum, c) => sum + safeNumber(c.balanceOwed), 0);
 
+  const totalMismatches = saleTotalMismatches(state.sales);
+
   qs("#adminControlGrid").innerHTML = [
     controlTile(t("control.revenueToday"), money(today.net)),
     controlTile(t("control.revenueMonth"), money(month.net), "accent",
@@ -5849,7 +5903,12 @@ function renderAdminControl() {
       month.voidCount > 0 ? "warn" : ""),
     controlTile(t("control.refundsMonth"), `${month.refundCount} · ${money(month.refundValue)}`,
       month.refundCount > 0 ? "warn" : ""),
-    controlTile(t("control.discountsMonth"), money(month.discounts), month.discounts > 0 ? "warn" : "")
+    controlTile(t("control.discountsMonth"), money(month.discounts), month.discounts > 0 ? "warn" : ""),
+    // Nothing server-side can prove a total matches its line items, so this
+    // reports the ones that do not rather than pretending the check exists.
+    controlTile(t("control.totalMismatches"), String(totalMismatches.length),
+      totalMismatches.length ? "danger" : "",
+      totalMismatches.length ? t("control.totalMismatchNote") : t("control.totalMismatchClear"))
   ].join("");
 
   const stores = activeStores();
