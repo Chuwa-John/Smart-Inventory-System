@@ -1905,3 +1905,47 @@ label textarea {
   color: inherit;
   font: inherit;
 }
+
+/* Rendering without JavaScript is worse than rendering nothing: the shell
+   markup contains every view, so six of them stack up complete with buttons
+   and form fields that respond to nothing. A shopkeeper reads that as a broken
+   product rather than an unsupported browser. */
+.app-unavailable { display: none; }
+
+/* Everything except the message, rather than a list of the containers that
+   happen to exist today. #authGate sits outside .app-shell and was still
+   rendering a full sign-in form under the notice; the next top-level element
+   added would have done the same. */
+.js-pending body > *:not(.app-unavailable) { display: none; }
+
+.js-pending .app-unavailable {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: var(--space-5, 24px);
+  /* Held back briefly so a normal load never flashes it: a browser that CAN
+     run modules clears .js-pending during parse, long before this fades in. */
+  opacity: 0;
+  animation: app-unavailable-in 200ms ease 700ms forwards;
+}
+
+@keyframes app-unavailable-in { to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .js-pending .app-unavailable { animation-duration: 1ms; }
+}
+
+.app-unavailable-card {
+  max-width: 40ch;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  padding: var(--space-5, 24px);
+  border: 1px solid var(--line, #262d38);
+  border-radius: var(--radius, 12px);
+  background: var(--panel, #171b21);
+  color: var(--text, #f2f5f9);
+  line-height: 1.55;
+}
+.app-unavailable-card strong { font-size: 1.05rem; color: var(--text-strong, #fff); }
+.app-unavailable-card p { color: var(--muted-strong, #b6c0d0); font-size: 0.94rem; }

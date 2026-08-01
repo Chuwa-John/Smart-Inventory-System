@@ -100,3 +100,9 @@ jobs:
 
       - name: Colour contrast (WCAG 1.4.3 and 1.4.11, both themes)
         run: node tests/contrast.headless.mjs
+
+      # What the DOM looks like when the script never runs cannot be answered by
+      # reading source. Opera Mini's extreme mode, data-saver proxies and any
+      # browser too old for ES modules all land there.
+      - name: Graceful failure without JavaScript
+        run: node tests/compatibility.headless.mjs

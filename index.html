@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="js-pending">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -9,7 +9,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260801l" />
+    <link rel="stylesheet" href="./styles.css?v=20260801m" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#101114" />
     <link rel="icon" href="./icons/icon-192.png" />
@@ -20,6 +20,29 @@
     <meta name="apple-mobile-web-app-title" content="DukaSmart" />
   </head>
   <body>
+    <!-- Cleared only by a browser that can run ES modules. One too old to parse
+         this tag ignores it and keeps .js-pending, which is the whole point:
+         the fallback below stays up instead of the app shell rendering as a
+         dead jumble of six stacked views. Inline rather than inside app.js so
+         it does not wait on a 360 KB download to decide. -->
+    <script type="module">document.documentElement.classList.remove("js-pending");</script>
+
+    <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
+         data-saver proxy, or a browser too old for ES modules. Opera Mini's
+         extreme mode does all three and has real share in this market.
+         Bilingual and static, because the translation layer is part of what
+         is not running. -->
+    <div class="app-unavailable" role="alert">
+      <div class="app-unavailable-card">
+        <strong>DukaSmart needs JavaScript to run.</strong>
+        <p>Please open this page in Chrome, Firefox, Edge or Safari, and turn off
+           any data-saving or "extreme" browsing mode.</p>
+        <p lang="sw">DukaSmart inahitaji JavaScript ifanye kazi. Tafadhali fungua
+           ukurasa huu kwa Chrome, Firefox, Edge au Safari, na uzime hali ya
+           kuokoa data.</p>
+      </div>
+    </div>
+
     <!-- First tab stop on every view. Without it a keyboard user crossed 21
          controls -- the whole sidebar and topbar -- before reaching the page
          they had just navigated to, on every single navigation. -->
@@ -924,6 +947,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260801l"></script>
+    <script type="module" src="./app.js?v=20260801m"></script>
   </body>
 </html>

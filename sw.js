@@ -3,12 +3,12 @@
 // instantly on repeat visits. This does NOT cache Firestore/Firebase
 // traffic or any cross-origin requests \u2014 those always go to the network.
 // Bump this on every deploy so old clients pick up new files.
-const CACHE_NAME = "dukasmart-shell-v59";
+const CACHE_NAME = "dukasmart-shell-v60";
 
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=20260801l",
+  "./styles.css?v=20260801m",
   "./app.js",
   "./manifest.json",
   "./icons/icon-192.png",
