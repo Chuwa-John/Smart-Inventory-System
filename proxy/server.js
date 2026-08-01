@@ -131,14 +131,14 @@ const authAttemptLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => readString(req.body?.email).trim().toLowerCase() || req.ip,
   handler: (_req, res) => {
-    res.status(429).json({ allowed: false, error: "Too many attempts. Please wait 15 minutes and try again." });
+    res.status(429).json({ ok: false, allowed: false, error: "Too many attempts. Please wait 15 minutes and try again." });
   }
 });
 
 app.post("/api/auth/check-limit", authAttemptLimiter, (req, res) => {
   const email = readString(req.body?.email).trim();
   if (!EMAIL_PATTERN.test(email) || email.length > 254) {
-    return res.status(400).json({ allowed: false, error: "A valid email is required." });
+    return res.status(400).json({ ok: false, allowed: false, error: "A valid email is required." });
   }
   res.json({ allowed: true });
 });
@@ -210,8 +210,7 @@ app.post("/api/staff/invite-preview", invitePreviewLimiter, async (req, res) => 
       return res.status(410).json({ ok: false, code: "used", error: "This invitation has already been used." });
     }
     if (invite.expiresAt.toDate().getTime() < Date.now()) {
-      return res.status(410).json({
-        ok: false,
+      return res.status(410).json({ ok: false,
         code: "expired",
         error: "This invitation has expired. Please ask your employer to send a new one."
       });
@@ -346,7 +345,7 @@ async function verifyFirebaseToken(req, res, next) {
   try {
     const header = req.headers.authorization || "";
     const token = header.startsWith("Bearer ") ? header.slice(7) : "";
-    if (!token) return res.status(401).json({ error: "Missing Firebase auth token." });
+    if (!token) return res.status(401).json({ ok: false, error: "Missing Firebase auth token." });
     const { payload } = await jwtVerify(token, firebaseJwks, {
       issuer: firebaseIssuer,
       audience: firebaseProjectId
@@ -365,7 +364,7 @@ async function verifyFirebaseToken(req, res, next) {
     };
     return next();
   } catch {
-    return res.status(401).json({ error: "Invalid Firebase auth token." });
+    return res.status(401).json({ ok: false, error: "Invalid Firebase auth token." });
   }
 }
 
@@ -420,11 +419,14 @@ function getBusinessOwnerUid(user) {
 
 app.post("/api/ai/override-verify", overrideLimiter, async (req, res) => {
   if (requireFirebaseAuth && !req.user) {
-    return res.status(401).json({ authorized: false });
+    return res.status(401).json({ ok: false, authorized: false, error: "Authentication required." });
   }
   const code = readString(req.body?.code);
   if (!code || code.length > 64) {
-    return res.status(400).json({ authorized: false });
+    // Deliberately does not say whether the code was absent, too long or
+    // simply wrong -- that distinction is worth nothing to the caller and
+    // something to anyone guessing.
+    return res.status(400).json({ ok: false, authorized: false, error: "A valid override code is required." });
   }
 
   const businessOwnerUid = getBusinessOwnerUid(req.user);
@@ -433,7 +435,7 @@ app.post("/api/ai/override-verify", overrideLimiter, async (req, res) => {
   const hashToCheck = tenantHash || OVERRIDE_HASH;
 
   if (!hashToCheck) {
-    return res.status(503).json({ authorized: false, error: "Price overrides are not configured." });
+    return res.status(503).json({ ok: false, authorized: false, error: "Price overrides are not configured." });
   }
 
   try {
@@ -447,10 +449,13 @@ app.post("/api/ai/override-verify", overrideLimiter, async (req, res) => {
       // that means everyone who needs it has set their own password.
       console.warn(`businessOwnerUid=${businessOwnerUid || "unknown"} has no per-business override password yet; used legacy shared fallback.`);
     }
-    return res.status(ok ? 200 : 401).json({ authorized: ok });
+    // `ok` here is the bcrypt result, and it is also exactly what the envelope
+    // means: a wrong password is answered 401, and every 4xx in this API
+    // carries ok:false. authorized stays because the client reads it by name.
+    return res.status(ok ? 200 : 401).json({ ok, authorized: ok });
   } catch (error) {
     console.error("Override verify failed:", error);
-    return res.status(500).json({ authorized: false });
+    return res.status(500).json({ ok: false, authorized: false, error: "Could not check the override code." });
   }
 });
 
@@ -525,7 +530,7 @@ app.post("/api/settings/override-password", passwordChangeLimiter, async (req, r
     return res.json({ ok: true });
   } catch (error) {
     console.error("Override password change failed:", error);
-    return res.status(500).json({ ok: false });
+    return res.status(500).json({ ok: false, error: "Could not change the discount password." });
   }
 });
 
@@ -654,8 +659,7 @@ app.post("/api/staff/accept-invite", acceptInviteLimiter, async (req, res) => {
   // on the token's email_verified claim rather than client-side, because the
   // client-side check is trivially skipped by calling this endpoint directly.
   if (req.user.emailVerified !== true) {
-    return res.status(403).json({
-      ok: false,
+    return res.status(403).json({ ok: false,
       code: "email-not-verified",
       error: "Please verify your email address before accepting this invitation, then try again."
     });
@@ -793,8 +797,7 @@ app.post("/api/account/request-deletion", deletionLimiter, async (req, res) => {
 
     const tenantSnap = await tenantDocRef(ownerUid).get();
     if (tenantSnap.exists && tenantSnap.get("status") === "pending_deletion") {
-      return res.status(409).json({
-        ok: false,
+      return res.status(409).json({ ok: false,
         error: "This account is already scheduled for deletion.",
         deletionScheduledFor: tenantSnap.get("deletionScheduledFor")?.toDate?.().getTime() || null
       });
@@ -1069,8 +1072,7 @@ app.post("/jobs/process-deletions", async (req, res) => {
     // notices is broken -- the first failure here was a missing Firestore
     // composite index (status ASC + deletionScheduledFor ASC on `users`), and
     // the generic response gave no way to tell that from a credentials problem.
-    return res.status(500).json({
-      ok: false,
+    return res.status(500).json({ ok: false,
       error: "Deletion job failed.",
       reason: String(error?.message || error).slice(0, 500),
       code: error?.code || null
@@ -1090,7 +1092,7 @@ const aiLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => req.user?.uid || req.ip,
   handler: (_req, res) => {
-    res.status(429).json({ error: "Too many AI requests. Please wait a moment and try again." });
+    res.status(429).json({ ok: false, error: "Too many AI requests. Please wait a moment and try again." });
   }
 });
 
@@ -1242,13 +1244,12 @@ function recordAiTokens(ownerUid, periodKey, usage) {
 
 app.post("/api/ai/advisor", aiLimiter, async (req, res) => {
   const validationError = validateAdvisorRequest(req.body);
-  if (validationError) return res.status(400).json({ error: validationError });
+  if (validationError) return res.status(400).json({ ok: false, error: validationError });
   const conversation = sanitizeConversation(req.body?.messages);
   const lastMessage = conversation[conversation.length - 1];
 
   if (!conversation.length || !lastMessage || lastMessage.role !== "user") {
-    return res.status(400).json({
-      error: "Please enter a question (up to 700 characters)."
+    return res.status(400).json({ ok: false, error: "Please enter a question (up to 700 characters)."
     });
   }
 
@@ -1261,7 +1262,7 @@ app.post("/api/ai/advisor", aiLimiter, async (req, res) => {
   // production and cannot become a way to get free tokens.
   const ownerUid = getBusinessOwnerUid(req.user);
   if (requireFirebaseAuth && !ownerUid) {
-    return res.status(401).json({ error: "Authentication required." });
+    return res.status(401).json({ ok: false, error: "Authentication required." });
   }
 
   // Unknown or absent kinds fall back to `chat`, the stricter bucket -- a
@@ -1277,19 +1278,17 @@ app.post("/api/ai/advisor", aiLimiter, async (req, res) => {
     // CLOSED rather than quietly serving free tokens, and names the cause so an
     // operator is not left guessing at a bare 503.
     if (!firestoreDb) {
-      return res.status(503).json({
-        error: "The AI advisor is unavailable because usage metering is not configured."
+      return res.status(503).json({ ok: false, error: "The AI advisor is unavailable because usage metering is not configured."
       });
     }
     try {
       reservation = await reserveAiQuestion(ownerUid, bucket);
     } catch (error) {
       console.error(`AI quota reservation failed for ownerUid=${ownerUid}:`, error);
-      return res.status(503).json({ error: "Could not check your AI usage allowance. Please try again." });
+      return res.status(503).json({ ok: false, error: "Could not check your AI usage allowance. Please try again." });
     }
     if (!reservation.allowed) {
-      return res.status(429).json({
-        code: "ai-quota-exhausted",
+      return res.status(429).json({ ok: false, code: "ai-quota-exhausted",
         kind: bucketName,
         limit: reservation.limit,
         remaining: 0,
@@ -1353,24 +1352,83 @@ app.post("/api/ai/advisor", aiLimiter, async (req, res) => {
     console.error("Anthropic request failed:", error);
     // The question was reserved but never answered -- give it back.
     if (reservation) await refundAiQuestion(ownerUid, reservation.periodKey);
-    return res.status(502).json({ error: "AI provider request failed." });
+    return res.status(502).json({ ok: false, error: "AI provider request failed." });
   }
 });
 
+// Express matches path AND method together, so a GET to a POST-only route
+// matches nothing and falls all the way through to the 404 below. For a caller
+// that is a lie: the path exists, only the method is wrong, and being told
+// "not found" sends them looking for a typo in the URL instead of at their
+// own request.
+//
+// Unauthenticated callers still get 401 from verifyFirebaseToken, which is
+// mounted above every /api/ route and therefore runs first. That ordering is
+// deliberate and stays: answering 405 to an anonymous probe would confirm
+// which paths exist to someone who has not proved they may know.
+//
+// The table is derived from the routes actually registered rather than
+// hand-maintained, so a new endpoint cannot forget to appear here. If Express
+// ever stops exposing its router the lookup yields nothing and every request
+// falls through to the plain 404 -- degraded, never broken.
+function registeredMethodsFor(pathname) {
+  // Express 4 exposes the stack as app._router. Do NOT reach for app.router
+  // first as a "modern" fallback: in Express 4 that name is a getter that
+  // THROWS, and the throw lands in the error handler below, which turns every
+  // request -- including ones that should 404 -- into 400 "Request could not
+  // be processed". Express 5 renames it, so try _router first and only then
+  // the new name, inside a guard.
+  let stack;
+  try {
+    stack = app._router?.stack || app.router?.stack;
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(stack)) return [];
+  const methods = new Set();
+  for (const layer of stack) {
+    if (!layer.route || typeof layer.route.path !== "string") continue;
+    if (layer.route.path !== pathname) continue;
+    for (const [method, enabled] of Object.entries(layer.route.methods || {})) {
+      if (enabled) methods.add(method.toUpperCase());
+    }
+  }
+  // HEAD is served by GET handlers; advertising it separately would be noise.
+  methods.delete("HEAD");
+  return [...methods].sort();
+}
+
+app.use((req, res, next) => {
+  const allowed = registeredMethodsFor(req.path);
+  if (allowed.length === 0) return next();
+  // RFC 9110 requires Allow on a 405; without it a client is told "no" with no
+  // way to work out what "yes" would look like.
+  res.set("Allow", allowed.join(", "));
+  return res.status(405).json({ ok: false,
+    error: `Method ${req.method} is not supported for this endpoint. Allowed: ${allowed.join(", ")}.`
+  });
+});
+
 app.use((_req, res) => {
-  res.status(404).json({ error: "Not found." });
+  res.status(404).json({ ok: false, error: "Not found." });
 });
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
   if (err?.message === "Origin not allowed.") {
-    return res.status(403).json({ error: "Origin not allowed." });
+    return res.status(403).json({ ok: false, error: "Origin not allowed." });
   }
   if (err?.type === "entity.too.large") {
-    return res.status(413).json({ error: "Payload too large." });
+    return res.status(413).json({ ok: false, error: "Payload too large." });
+  }
+  // A body that is not valid JSON is the client's mistake, not the server's,
+  // and it arrives here indistinguishable from a genuine fault. Naming it
+  // saves the caller reading it as an outage.
+  if (err?.type === "entity.parse.failed") {
+    return res.status(400).json({ ok: false, error: "Request body is not valid JSON." });
   }
   console.error("Unhandled request error:", err);
-  return res.status(err?.status || err?.statusCode || 400).json({ error: "Request could not be processed." });
+  return res.status(err?.status || err?.statusCode || 400).json({ ok: false, error: "Request could not be processed." });
 });
 
 app.listen(port, () => {
