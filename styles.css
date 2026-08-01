@@ -22,6 +22,15 @@
   --line-soft: #1c222a;
   --line-strong: #333c4a;
 
+  /* WCAG 1.4.11 wants the boundary of an interactive control to reach 3:1
+     against what surrounds it. --line-strong is deliberately quiet -- the
+     comment above is right that shouty borders are how a dark theme goes wrong
+     -- but at 1.55:1 against --panel a text field was not distinguishable from
+     the card holding it. That is felt hardest in a lit shop on a cheap screen,
+     which is where this app runs.
+     Controls only. Dividers and dashed decoration keep the quiet hairline. */
+  --control-border: #6b7789;
+
   --accent: #3ddc97;
   --accent-strong: #2bb87b;
   --accent-quiet: rgb(61 220 151 / 12%);
@@ -83,6 +92,7 @@
   --line: #e2e8ef;
   --line-soft: #eef2f6;
   --line-strong: #cfd8e3;
+  --control-border: #8d97a6;
 
   /* Measured against white, not eyeballed. The first pass of this palette
      failed WCAG AA for normal text in five places -- most importantly white
@@ -343,7 +353,7 @@ textarea,
 select,
 label input {
   width: 100%;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--control-border);
   background: var(--bg);
   color: var(--text);
   border-radius: var(--radius-sm);
@@ -409,7 +419,7 @@ kbd {
 .question-grid button {
   min-height: var(--tap);
   border-radius: var(--radius-sm);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--control-border);
   color: var(--text);
   background: var(--panel);
   padding: 0 var(--space-4);
