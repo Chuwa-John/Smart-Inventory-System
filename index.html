@@ -9,7 +9,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260801m" />
+    <link rel="stylesheet" href="./styles.css?v=20260802a" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#101114" />
     <link rel="icon" href="./icons/icon-192.png" />
@@ -146,6 +146,14 @@
               <span class="muted control-scope" id="managerControlScope"></span>
             </div>
             <div class="control-grid" id="managerControlGrid"></div>
+
+            <!-- Cash reconciliation. Rendered by renderShiftPanel(): either an
+                 open shift with its expected drawer and a way to close it, or
+                 the float entry to open one. -->
+            <div class="control-subhead">
+              <h3 data-i18n="shift.heading">Shift &amp; cash</h3>
+            </div>
+            <div id="shiftPanel" class="shift-panel"></div>
             <div class="control-subhead">
               <h3 data-i18n="control.byStaffToday">Takings by staff today</h3>
             </div>
@@ -728,6 +736,13 @@
         <label><span data-i18n="payment.amountLabel">Payment amount (TZS)</span>
           <input id="paymentAmountInput" type="number" min="0" step="1" />
         </label>
+        <label><span data-i18n="payment.methodLabel">Paid by</span>
+          <select id="paymentMethodSelect">
+            <option value="cash" data-i18n="pos.cash">Cash</option>
+            <option value="mobile" data-i18n="pos.mobile">Mobile Money</option>
+            <option value="card" data-i18n="pos.card">Card</option>
+          </select>
+        </label>
         <label><span data-i18n="payment.noteLabel">Note (optional)</span>
           <input id="paymentNoteInput" type="text" maxlength="200" />
         </label>
@@ -947,6 +962,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260801m"></script>
+    <script type="module" src="./app.js?v=20260802a"></script>
   </body>
 </html>

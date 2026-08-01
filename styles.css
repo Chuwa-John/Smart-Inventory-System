@@ -1949,3 +1949,25 @@ label textarea {
 }
 .app-unavailable-card strong { font-size: 1.05rem; color: var(--text-strong, #fff); }
 .app-unavailable-card p { color: var(--muted-strong, #b6c0d0); font-size: 0.94rem; }
+
+/* Shift and cash reconciliation panel. */
+.shift-panel { display: flex; flex-direction: column; gap: var(--space-4, 16px); }
+.shift-open { display: flex; flex-direction: column; gap: var(--space-3, 12px); }
+.shift-facts { display: flex; flex-wrap: wrap; gap: var(--space-2, 8px) var(--space-5, 24px); }
+.shift-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3, 12px);
+}
+.shift-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 150px; }
+.shift-field span { font-size: 0.8rem; color: var(--muted); }
+/* Variance carries meaning, so it is coloured as well as signed: a drawer that
+   is short reads differently from one that is over. */
+.control-table td.warn { color: var(--amber); }
+.control-table td.danger { color: var(--red); }
+.control-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 760px) {
+  .shift-actions { flex-direction: column; align-items: stretch; }
+}

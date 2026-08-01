@@ -92,6 +92,13 @@ service cloud.firestore {
     function moneyInRange(v) {
       return v is number && v >= 0 && v <= 1000000000;
     }
+    // Variance is counted minus expected, so it is negative exactly when the
+    // drawer is short -- the case the whole feature exists to surface. The
+    // unsigned helpers above would reject precisely the shifts worth reading.
+    function signedMoneyInRange(v) {
+      return v is number && v >= -1000000000 && v <= 1000000000;
+    }
+
     function totalInRange(v) {
       return v is number && v >= 0 && v <= 1000000000000;
     }
@@ -236,6 +243,43 @@ service cloud.firestore {
         && (!('balanceDue' in d) || d.balanceDue == null || totalInRange(d.balanceDue));
     }
 
+    function validShiftOpen() {
+      let d = request.resource.data;
+      return d.storeId is string && d.storeId.size() > 0
+        && d.status == "open"
+        && moneyInRange(d.openingFloat)
+        && d.openedByUid == request.auth.uid
+        && d.openedByName is string && d.openedByName.size() > 0 && d.openedByName.size() <= 80
+        && (!('storeName' in d) || (d.storeName is string && d.storeName.size() <= 60));
+    }
+
+    // A close may only ever move an open shift to closed, and may not rewrite
+    // how it opened. Without pinning the opening fields, a short drawer could be
+    // reconciled away after the fact by raising the float it claims to have
+    // started with.
+    function validShiftClose() {
+      let d = request.resource.data;
+      return resource.data.status == "open"
+        && d.status == "closed"
+        && d.openingFloat == resource.data.openingFloat
+        && d.openedByUid == resource.data.openedByUid
+        && d.openedAt == resource.data.openedAt
+        && d.storeId == resource.data.storeId
+        && moneyInRange(d.countedCash)
+        && moneyInRange(d.expectedCash)
+        && signedMoneyInRange(d.variance)
+        && d.closedByUid == request.auth.uid
+        && d.closedByName is string && d.closedByName.size() > 0 && d.closedByName.size() <= 80
+        && (!('note' in d) || (d.note is string && d.note.size() <= 200));
+    }
+
+    // Managers and cashiers may set which shift a till is currently on, and
+    // nothing else about the store. Widening store writes outright would let a
+    // cashier rename a branch or change its currency.
+    function validShiftPointerUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentShiftId']);
+    }
+
     function validAuditLog() {
       return request.resource.data.uid == request.auth.uid
         && request.resource.data.action is string;
@@ -296,7 +340,9 @@ service cloud.firestore {
         // filtering added around resolveQueryStoreIds() in app.js).
         allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, storeId));
         allow create: if isOwner(userId) && tenantNotFrozen(userId) && validStore();
-        allow update: if isOwner(userId) && tenantNotFrozen(userId) && validStore();
+        allow update: if tenantNotFrozen(userId) && (
+             (isOwner(userId) && validStore())
+          || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, storeId) && validShiftPointerUpdate()));
         allow delete: if false;
       }
 
@@ -439,6 +485,32 @@ service cloud.firestore {
             || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, get(/databases/$(database)/documents/users/$(userId)/customers/$(customerId)).data.storeId) && validPayment()));
           allow update, delete: if false;
         }
+      }
+
+      // A shift is one till, one person, one stretch of time: opened with a
+      // float, closed with a physical count, and carrying the difference
+      // between what the system expected and what was actually there.
+      //
+      // Only one shift may be open per store at a time. Rules cannot express
+      // that on their own, so the store document carries a currentShiftId
+      // pointer and both open and close run as transactions against it --
+      // see validShiftPointerUpdate above.
+      match /shifts/{shiftId} {
+        allow read: if isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager", "cashier"])
+              && (resource == null || memberCanAccessStore(userId, resource.data.storeId)));
+        allow create: if tenantNotFrozen(userId) && (
+             (isOwner(userId) && validShiftOpen())
+          || (isOwnerOrRole(userId, ["manager", "cashier"])
+              && memberCanAccessStore(userId, request.resource.data.storeId)
+              && validShiftOpen()));
+        allow update: if tenantNotFrozen(userId) && (
+             (isOwner(userId) && validShiftClose())
+          || (isOwnerOrRole(userId, ["manager", "cashier"])
+              && memberCanAccessStore(userId, resource.data.storeId)
+              && validShiftClose()));
+        // A reconciliation record that can be removed is not a record.
+        allow delete: if false;
       }
 
       match /transfers/{transferId} {

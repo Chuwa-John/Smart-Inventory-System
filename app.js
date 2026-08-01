@@ -4,6 +4,8 @@ import { aiConfig } from "./ai-config.js";
 const state = {
   products: [],
   creditOverrides: [],
+  shifts: [],
+  openShift: null,
   cart: [],
   paymentMethod: "cash",
   // Connectivity as the app currently understands it; see watchConnection.
@@ -719,6 +721,32 @@ const DICTIONARY = {
     "payment.confirmButton": "Record Payment",
     "toast.paymentInvalidAmount": "Enter a valid payment amount.",
     "toast.paymentExceedsBalance": "Payment cannot exceed the current balance.",
+    "toast.paymentMethodInvalid": "Choose how the payment was made.",
+    "shift.heading": "Shift & cash",
+    "shift.openButton": "Open shift",
+    "shift.closeButton": "Close shift",
+    "shift.floatLabel": "Opening float",
+    "shift.countedLabel": "Cash counted",
+    "shift.noteLabel": "Note (optional)",
+    "shift.openedBy": "Opened by {name}",
+    "shift.noneOpen": "No shift open on this till",
+    "shift.expected": "Expected in drawer",
+    "shift.over": "over",
+    "shift.short": "short",
+    "shift.variance": "Variance",
+    "shift.historyHeading": "Recent shifts",
+    "shift.balanced": "Balanced",
+    "shift.selectStore": "Choose a single branch to run a shift",
+    "toast.selectStoreBeforeShift": "Choose a single branch before opening a shift.",
+    "toast.shiftOpened": "Shift opened with {float} in the drawer.",
+    "toast.shiftOpenFailed": "Could not open the shift. Please try again.",
+    "toast.shiftCloseFailed": "Could not close the shift. Please try again.",
+    "toast.noOpenShift": "There is no open shift on this till.",
+    "toast.shiftBalanced": "Shift closed. The drawer balanced exactly.",
+    "toast.shiftVariance": "Shift closed. The drawer is {amount} {direction}.",
+    "txerror.shiftAlreadyOpen": "A shift is already open on this till.",
+    "txerror.shiftAlreadyClosed": "That shift has already been closed.",
+    "payment.methodLabel": "Paid by",
     "toast.paymentRecorded": "Payment of {amount} recorded. New balance: {balance}.",
     "toast.paymentFailed": "Could not record the payment. Please try again.",
     "customers.colDaysOutstanding": "Days Outstanding",
@@ -1316,6 +1344,32 @@ const DICTIONARY = {
     "payment.confirmButton": "Rekodi Malipo",
     "toast.paymentInvalidAmount": "Weka kiasi sahihi cha malipo.",
     "toast.paymentExceedsBalance": "Malipo hayawezi kuzidi deni la sasa.",
+    "toast.paymentMethodInvalid": "Chagua jinsi malipo yalivyofanyika.",
+    "shift.heading": "Zamu na fedha",
+    "shift.openButton": "Fungua zamu",
+    "shift.closeButton": "Funga zamu",
+    "shift.floatLabel": "Fedha za kuanzia",
+    "shift.countedLabel": "Fedha zilizohesabiwa",
+    "shift.noteLabel": "Maelezo (hiari)",
+    "shift.openedBy": "Imefunguliwa na {name}",
+    "shift.noneOpen": "Hakuna zamu iliyo wazi kwenye kaunta hii",
+    "shift.expected": "Inayotarajiwa kwenye droo",
+    "shift.over": "zaidi",
+    "shift.short": "pungufu",
+    "shift.variance": "Tofauti",
+    "shift.historyHeading": "Zamu za hivi karibuni",
+    "shift.balanced": "Sawa kabisa",
+    "shift.selectStore": "Chagua tawi moja ili kuendesha zamu",
+    "toast.selectStoreBeforeShift": "Chagua tawi moja kabla ya kufungua zamu.",
+    "toast.shiftOpened": "Zamu imefunguliwa na {float} kwenye droo.",
+    "toast.shiftOpenFailed": "Imeshindwa kufungua zamu. Tafadhali jaribu tena.",
+    "toast.shiftCloseFailed": "Imeshindwa kufunga zamu. Tafadhali jaribu tena.",
+    "toast.noOpenShift": "Hakuna zamu iliyo wazi kwenye kaunta hii.",
+    "toast.shiftBalanced": "Zamu imefungwa. Droo imelingana kabisa.",
+    "toast.shiftVariance": "Zamu imefungwa. Droo ina {amount} {direction}.",
+    "txerror.shiftAlreadyOpen": "Tayari kuna zamu iliyo wazi kwenye kaunta hii.",
+    "txerror.shiftAlreadyClosed": "Zamu hiyo tayari imefungwa.",
+    "payment.methodLabel": "Imelipwa kwa",
     "toast.paymentRecorded": "Malipo ya {amount} yamerekodiwa. Deni jipya: {balance}.",
     "toast.paymentFailed": "Imeshindwa kurekodi malipo. Tafadhali jaribu tena.",
     "customers.colDaysOutstanding": "Siku za Deni",
@@ -3741,6 +3795,17 @@ async function confirmRecordPayment() {
   const note = (qs("#paymentNoteInput")?.value || "").trim().slice(0, 200);
   if (note.length > 200) return showToast(t("toast.fieldTooLong", { field: t("payment.noteLabel"), max: 200 }));
 
+  // A repayment in cash lands in the drawer; one on a phone does not. Without
+  // this the expected-cash figure understates every till that takes debt
+  // repayments, which is most of them.
+  const paymentMethod = qs("#paymentMethodSelect")?.value || "cash";
+  if (!["cash", "mobile", "card"].includes(paymentMethod)) {
+    return showToast(t("toast.paymentMethodInvalid"));
+  }
+  // Attributed to the customer's own store rather than whatever is on screen,
+  // so a manager viewing "all stores" cannot post a repayment to the wrong till.
+  const paymentStoreId = customer.storeId || state.currentStoreId || null;
+
   const newBalance = Math.max(0, Number(customer.balanceOwed || 0) - amount);
 
   if (state.db && state.user && state.businessOwnerUid) {
@@ -3757,13 +3822,18 @@ async function confirmRecordPayment() {
         const customerUpdate = { balanceOwed: nextBalance, updatedAt: serverTimestamp() };
         if (nextBalance <= 0) customerUpdate.oldestUnpaidAt = null;
         transaction.update(customerRef, customerUpdate);
-        transaction.set(paymentRef, { amount, note, createdAt: serverTimestamp() });
+        transaction.set(paymentRef, {
+          amount, note, method: paymentMethod, storeId: paymentStoreId,
+          createdAt: serverTimestamp()
+        });
 
         const auditRef = doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs"));
         transaction.set(auditRef, {
           action: "PAYMENT_RECORDED",
           customerId,
           amount,
+          method: paymentMethod,
+          storeId: paymentStoreId,
           uid: state.user?.uid || null,
           createdAt: serverTimestamp()
         });
@@ -5346,6 +5416,304 @@ async function loadCreditOverrideCount() {
   }
 }
 
+// ---- Shifts and cash reconciliation -----------------------------------------
+//
+// A shift is one till, one person, one stretch of time: opened with a float,
+// closed with a physical count, and carrying the difference between what the
+// system expected to be in the drawer and what was actually there.
+//
+// Only one shift may be open per store. Firestore rules cannot express that on
+// their own, so the store document carries a currentShiftId and both open and
+// close run as transactions against it -- two cashiers opening at the same
+// moment, the realistic race at shift change, resolve to one winner rather than
+// two open shifts and a drawer nobody can reconcile.
+
+const SHIFT_HISTORY_LIMIT = 20;
+
+function shiftCashFromSales(sales, storeId, fromMs, toMs) {
+  let cashSales = 0;
+  let cashRefunds = 0;
+  for (const sale of sales) {
+    if (sale.storeId !== storeId) continue;
+    const at = sale.createdAt?.toDate ? sale.createdAt.toDate().getTime() : null;
+    if (at === null || at < fromMs || at > toMs) continue;
+    if (sale.voided) continue;                 // a void took no money in
+    if (sale.paymentMethod === "cash") {
+      cashSales += safeNumber(sale.total);
+      cashRefunds += safeNumber(sale.refundedAmount);
+    } else if (sale.paymentMethod === "credit" && (sale.amountPaidMethod || "cash") === "cash") {
+      // A deposit paid in cash against a credit sale is still cash in the till.
+      cashSales += safeNumber(sale.amountPaid);
+    }
+  }
+  return { cashSales, cashRefunds };
+}
+
+// Debt repayments come from the audit log rather than each customer's payments
+// subcollection: the log is one collection with an index that already exists,
+// where the subcollections would need a collection-group query and its own
+// rules surface to reach the same numbers.
+async function shiftCashRepayments(storeId, fromMs, toMs) {
+  if (!state.db || !state.businessOwnerUid) return 0;
+  const { collection, query, where, orderBy, limit, getDocs } = state.firebaseApi.firestore;
+  const snapshot = await getDocs(query(
+    collection(state.db, "users", state.businessOwnerUid, "auditLogs"),
+    where("action", "==", "PAYMENT_RECORDED"),
+    orderBy("createdAt", "desc"),
+    limit(300)
+  ));
+  let total = 0;
+  for (const entry of snapshot.docs) {
+    const row = entry.data();
+    if (row.storeId !== storeId) continue;
+    // Entries written before repayments recorded a method are treated as cash,
+    // which is what they overwhelmingly were. Counting them is closer to the
+    // truth than dropping them and telling the cashier the drawer is over.
+    if ((row.method || "cash") !== "cash") continue;
+    const at = row.createdAt?.toDate ? row.createdAt.toDate().getTime() : null;
+    if (at === null || at < fromMs || at > toMs) continue;
+    total += safeNumber(row.amount);
+  }
+  return total;
+}
+
+async function computeShiftExpectedCash(shift) {
+  const from = shift.openedAt?.toDate ? shift.openedAt.toDate().getTime() : Date.now();
+  const to = Date.now();
+  const { cashSales, cashRefunds } = shiftCashFromSales(state.sales, shift.storeId, from, to);
+  const cashRepayments = await shiftCashRepayments(shift.storeId, from, to);
+  const openingFloat = safeNumber(shift.openingFloat);
+  return {
+    openingFloat,
+    cashSales,
+    cashRefunds,
+    cashRepayments,
+    expected: openingFloat + cashSales - cashRefunds + cashRepayments
+  };
+}
+
+async function openShift(openingFloat) {
+  const storeId = state.currentStoreId;
+  if (!state.db || !storeId || storeId === "all") return showToast(t("toast.selectStoreBeforeShift"));
+  const float = clampNonNegativeNumber(openingFloat, MAX_MONEY);
+  if (float === null) {
+    return showToast(t("toast.numberOutOfRange", {
+      field: t("shift.floatLabel"), max: MAX_MONEY.toLocaleString()
+    }));
+  }
+  const identity = saleIdentity();
+  if (!identity.name) return showToast(t("toast.staffIdentityUnavailable"));
+
+  try {
+    const { doc, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
+    const storeRef = doc(state.db, "users", state.businessOwnerUid, "stores", storeId);
+    const shiftId = `shift_${storeId}_${Date.now()}`;
+    const shiftRef = doc(state.db, "users", state.businessOwnerUid, "shifts", shiftId);
+    await runTransaction(state.db, async (transaction) => {
+      const storeSnap = await transaction.get(storeRef);
+      // The pointer is the lock. Read it inside the transaction so a second
+      // cashier opening at the same instant loses rather than both winning.
+      if (storeSnap.data()?.currentShiftId) throw new Error(t("txerror.shiftAlreadyOpen"));
+      transaction.set(shiftRef, {
+        storeId,
+        storeName: storeSnap.data()?.name || "",
+        status: "open",
+        openingFloat: float,
+        openedByUid: state.user.uid,
+        openedByName: identity.name,
+        openedAt: serverTimestamp()
+      });
+      transaction.update(storeRef, { currentShiftId: shiftId });
+    });
+    showToast(t("toast.shiftOpened", { float: money(float) }));
+    await loadShifts();
+  } catch (error) {
+    console.warn(error);
+    showToast(describeOperationError(error, "toast.shiftOpenFailed"));
+  }
+}
+
+async function closeShift(countedCash, note) {
+  const shift = state.openShift;
+  if (!shift) return showToast(t("toast.noOpenShift"));
+  const counted = clampNonNegativeNumber(countedCash, MAX_MONEY);
+  if (counted === null) {
+    return showToast(t("toast.numberOutOfRange", {
+      field: t("shift.countedLabel"), max: MAX_MONEY.toLocaleString()
+    }));
+  }
+  const identity = saleIdentity();
+  if (!identity.name) return showToast(t("toast.staffIdentityUnavailable"));
+
+  try {
+    // Computed before the transaction opens: it reads a query, and a Firestore
+    // transaction may not run a query inside it.
+    const totals = await computeShiftExpectedCash(shift);
+    const variance = counted - totals.expected;
+    const { doc, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
+    const storeRef = doc(state.db, "users", state.businessOwnerUid, "stores", shift.storeId);
+    const shiftRef = doc(state.db, "users", state.businessOwnerUid, "shifts", shift.id);
+    await runTransaction(state.db, async (transaction) => {
+      const shiftSnap = await transaction.get(shiftRef);
+      if (shiftSnap.data()?.status !== "open") throw new Error(t("txerror.shiftAlreadyClosed"));
+      transaction.update(shiftRef, {
+        status: "closed",
+        countedCash: counted,
+        expectedCash: totals.expected,
+        variance,
+        cashSales: totals.cashSales,
+        cashRefunds: totals.cashRefunds,
+        cashRepayments: totals.cashRepayments,
+        closedByUid: state.user.uid,
+        closedByName: identity.name,
+        closedAt: serverTimestamp(),
+        note: String(note || "").slice(0, 200)
+      });
+      transaction.update(storeRef, { currentShiftId: null });
+    });
+    showToast(variance === 0
+      ? t("toast.shiftBalanced")
+      : t("toast.shiftVariance", {
+          amount: money(Math.abs(variance)),
+          direction: t(variance > 0 ? "shift.over" : "shift.short")
+        }));
+    await loadShifts();
+  } catch (error) {
+    console.warn(error);
+    showToast(describeOperationError(error, "toast.shiftCloseFailed"));
+  }
+}
+
+let shiftFetchKey = null;
+
+function ensureShiftsLoaded() {
+  if (!state.db || !state.businessOwnerUid) return;
+  const key = state.businessOwnerUid + ":" + state.currentStoreId;
+  if (shiftFetchKey === key) return;
+  shiftFetchKey = key;
+  loadShifts();
+}
+
+async function loadShifts() {
+  if (!state.db || !state.businessOwnerUid) return;
+  const storeId = state.currentStoreId;
+  if (!storeId || storeId === "all") {
+    state.shifts = [];
+    state.openShift = null;
+    renderManagerControl();
+    return;
+  }
+  try {
+    const { collection, query, where, orderBy, limit, getDocs } = state.firebaseApi.firestore;
+    const snapshot = await getDocs(query(
+      collection(state.db, "users", state.businessOwnerUid, "shifts"),
+      where("storeId", "==", storeId),
+      orderBy("openedAt", "desc"),
+      limit(SHIFT_HISTORY_LIMIT)
+    ));
+    state.shifts = snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
+    state.openShift = state.shifts.find((row) => row.status === "open") || null;
+  } catch (error) {
+    // Fails quiet, like the credit-override history: the panel beside this one
+    // shows the day's cash and must not go down with it.
+    console.warn("Could not load shifts.", error);
+    state.shifts = null;
+    state.openShift = null;
+  }
+  renderManagerControl();
+}
+
+// Rendered from state rather than kept as static markup, because the panel is
+// two different things: an open shift you can close, or a float entry to open
+// one. Escaped through esc() -- staff names and notes are user text and
+// this builds HTML.
+function renderShiftPanel() {
+  const host = qs("#shiftPanel");
+  if (!host) return;
+
+  if (!state.db || !state.currentStoreId || state.currentStoreId === "all") {
+    host.innerHTML = `<p class="muted">${esc(t("shift.selectStore"))}</p>`;
+    return;
+  }
+  if (state.shifts === null) {
+    host.innerHTML = `<p class="muted">&mdash;</p>`;
+    return;
+  }
+
+  const open = state.openShift;
+  const history = (state.shifts || []).filter((row) => row.status === "closed").slice(0, 5);
+
+  const openBlock = open
+    ? `
+      <div class="shift-open">
+        <div class="shift-facts">
+          <span class="muted">${esc(t("shift.openedBy", { name: open.openedByName || "" }))}</span>
+          <span class="muted">${esc(t("shift.floatLabel"))}: <strong>${esc(money(open.openingFloat))}</strong></span>
+          <span class="muted" id="shiftExpectedLine">${esc(t("shift.expected"))}: <strong>&hellip;</strong></span>
+        </div>
+        <div class="shift-actions">
+          <label class="shift-field"><span>${esc(t("shift.countedLabel"))}</span>
+            <input id="shiftCountedInput" type="number" min="0" max="${MAX_MONEY}" step="1" inputmode="numeric" />
+          </label>
+          <label class="shift-field"><span>${esc(t("shift.noteLabel"))}</span>
+            <input id="shiftNoteInput" type="text" maxlength="200" />
+          </label>
+          <button class="primary-button compact" type="button" id="closeShiftButton">${esc(t("shift.closeButton"))}</button>
+        </div>
+      </div>`
+    : `
+      <div class="shift-actions">
+        <span class="muted">${esc(t("shift.noneOpen"))}</span>
+        <label class="shift-field"><span>${esc(t("shift.floatLabel"))}</span>
+          <input id="shiftFloatInput" type="number" min="0" max="${MAX_MONEY}" step="1" inputmode="numeric" />
+        </label>
+        <button class="primary-button compact" type="button" id="openShiftButton">${esc(t("shift.openButton"))}</button>
+      </div>`;
+
+  const rows = history.map((row) => {
+    const variance = safeNumber(row.variance);
+    const tone = variance === 0 ? "" : (variance > 0 ? "warn" : "danger");
+    const label = variance === 0
+      ? t("shift.balanced")
+      : `${money(Math.abs(variance))} ${t(variance > 0 ? "shift.over" : "shift.short")}`;
+    const closedAt = row.closedAt?.toDate ? row.closedAt.toDate().toLocaleString() : "";
+    return `<tr>
+      <td>${esc(closedAt)}</td>
+      <td>${esc(row.closedByName || row.openedByName || "")}</td>
+      <td class="num">${esc(money(row.expectedCash))}</td>
+      <td class="num">${esc(money(row.countedCash))}</td>
+      <td class="num ${tone}">${esc(label)}</td>
+    </tr>`;
+  }).join("");
+
+  host.innerHTML = `
+    ${openBlock}
+    ${history.length ? `
+    <div class="table-scroll">
+      <table class="control-table">
+        <thead><tr>
+          <th>${esc(t("shift.historyHeading"))}</th>
+          <th>${esc(t("control.colStaff"))}</th>
+          <th>${esc(t("shift.expected"))}</th>
+          <th>${esc(t("shift.countedLabel"))}</th>
+          <th>${esc(t("shift.variance"))}</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>` : ""}`;
+
+  // The expected figure needs a query, so it lands after the panel rather than
+  // holding the render behind a network round trip.
+  if (open) {
+    computeShiftExpectedCash(open)
+      .then((totals) => {
+        const line = qs("#shiftExpectedLine");
+        if (line) line.innerHTML = `${esc(t("shift.expected"))}: <strong>${esc(money(totals.expected))}</strong>`;
+      })
+      .catch(() => {});
+  }
+}
+
 function renderManagerControl() {
   const panel = qs("#managerControlPanel");
   if (!panel) return;
@@ -5373,6 +5741,8 @@ function renderManagerControl() {
   }).length;
 
   ensureCreditOverridesLoaded();
+  ensureShiftsLoaded();
+  renderShiftPanel();
   const scopedOverrides = (state.creditOverrides || []).filter((row) =>
     !scopedToStore || row.storeId === state.currentStoreId);
 
@@ -7690,6 +8060,25 @@ function bindEvents() {
   });
 
   qs("#commandInput").addEventListener("input", (event) => renderCommands(event.target.value));
+  // The shift panel is re-rendered on every data change, so its controls are
+  // delegated: binding them directly would leave stale listeners on nodes that
+  // no longer exist.
+  qs("#shiftPanel")?.addEventListener("click", (event) => {
+    if (event.target.closest("#openShiftButton")) {
+      openShift(qs("#shiftFloatInput")?.value);
+      return;
+    }
+    if (event.target.closest("#closeShiftButton")) {
+      const button = event.target.closest("#closeShiftButton");
+      // Counting a drawer twice because the first tap looked unresponsive is
+      // exactly how a variance gets recorded against the wrong shift.
+      if (button.disabled) return;
+      button.disabled = true;
+      closeShift(qs("#shiftCountedInput")?.value, qs("#shiftNoteInput")?.value)
+        .finally(() => { button.disabled = false; });
+    }
+  });
+
   qs("#commandPalette").addEventListener("click", (event) => {
     if (event.target.id === "commandPalette") closeCommandPalette();
   });
