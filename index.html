@@ -52,7 +52,7 @@
           <button class="icon-button mobile-menu" id="mobileMenuButton" aria-label="Open menu">&#9776;</button>
           <div class="search-wrap">
             <span>Search</span>
-            <input id="globalSearch" type="search" placeholder="Search your products..." data-i18n-placeholder="topbar.searchPlaceholder" />
+            <input id="globalSearch" type="search" placeholder="Search your products..." data-i18n-placeholder="topbar.searchPlaceholder" data-i18n-aria-label="a11y.globalSearch" />
             <kbd>Ctrl K</kbd>
           </div>
           <div class="account-chip" id="accountChip" hidden>
@@ -282,7 +282,7 @@
               <div class="panel-head">
                 <h2 data-i18n="pos.productSearch">Product Search</h2>
                 <span class="scan-input-row">
-                  <input id="posSearch" type="search" placeholder="Search products" data-i18n-placeholder="pos.searchPlaceholder" />
+                  <input id="posSearch" type="search" placeholder="Search products" data-i18n-placeholder="pos.searchPlaceholder" data-i18n-aria-label="a11y.posSearch" />
                   <button class="ghost-button compact" type="button" id="scanPosBarcodeButton" data-i18n="pos.scanBarcode">Scan Barcode</button>
                 </span>
               </div>
@@ -307,7 +307,7 @@
                   </select>
                 </label>
                 <div class="discount-value-row" id="discountValueRow" hidden>
-                  <input id="discountValueInput" type="number" min="0" step="0.01" placeholder="Enter value" data-i18n-placeholder="pos.discountValuePlaceholder" />
+                  <input id="discountValueInput" type="number" min="0" step="0.01" placeholder="Enter value" data-i18n-placeholder="pos.discountValuePlaceholder" data-i18n-aria-label="a11y.discountValue" />
                   <button class="ghost-button compact" id="applyDiscountButton" type="button" data-i18n="pos.applyDiscount">Apply</button>
                   <button class="ghost-button compact danger" id="clearDiscountButton" type="button" hidden data-i18n="pos.clearDiscount">Clear</button>
                 </div>
@@ -410,7 +410,7 @@
                 <p class="eyebrow" data-i18n="reports.financialEyebrow">Financial tracking</p>
                 <h2 data-i18n="reports.staffBreakdownTitle">Sales by Staff</h2>
               </div>
-              <input id="orderNumberSearch" type="search" placeholder="Search order number" data-i18n-placeholder="reports.searchOrderPlaceholder" />
+              <input id="orderNumberSearch" type="search" placeholder="Search order number" data-i18n-placeholder="reports.searchOrderPlaceholder" data-i18n-aria-label="a11y.orderNumberSearch" />
             </div>
             <div id="orderNumberSearchResult" class="muted" hidden></div>
             <div class="table-panel" style="box-shadow:none;border:none">
@@ -514,7 +514,7 @@
                 <h2 data-i18n="reports.dailyStaffReportTitle">Daily Staff Report</h2>
               </div>
               <div class="button-row" style="gap:8px">
-                <input id="dailyStaffReportDate" type="date" />
+                <input id="dailyStaffReportDate" type="date" data-i18n-aria-label="a11y.staffReportDate" />
                 <button class="primary-button compact" id="dailyStaffReportButton" type="button" data-i18n="reports.dailyStaffReportButton">Generate Daily Report</button>
               </div>
             </div>
@@ -554,7 +554,7 @@
                 <button data-question="How do I read my reports?">Guide: Reports</button>
                 <button data-question="How do I use multiple stores?">Guide: Multi-store</button>
               </div>
-              <textarea id="aiQuestion" rows="5" placeholder="Ask about your inventory, stock levels, sales, or forecasts..." data-i18n-placeholder="ai.questionPlaceholder" maxlength="700"></textarea>
+              <textarea id="aiQuestion" rows="5" placeholder="Ask about your inventory, stock levels, sales, or forecasts..." data-i18n-placeholder="ai.questionPlaceholder" maxlength="700" data-i18n-aria-label="a11y.aiQuestion"></textarea>
               <button class="primary-button" id="askAiButton" data-i18n="ai.askButton">Ask AI Advisor</button>
             </article>
             <article class="panel ai-answer">
@@ -915,11 +915,11 @@
 
     <div class="command-palette" id="commandPalette" aria-hidden="true">
       <div class="command-box">
-        <input id="commandInput" placeholder="Type a command or module name" data-i18n-placeholder="command.placeholder" />
+        <input id="commandInput" placeholder="Type a command or module name" data-i18n-placeholder="command.placeholder" data-i18n-aria-label="a11y.commandInput" />
         <div id="commandResults"></div>
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260801d"></script>
+    <script type="module" src="./app.js?v=20260801e"></script>
   </body>
 </html>

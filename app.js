@@ -508,6 +508,13 @@ const DICTIONARY = {
     "toast.excelLibraryFailed": "Excel library did not load. Check your connection and try again.",
     "toast.aiProxyUnavailable": "AI proxy unavailable ({message}). Showing local recommendation.",
     "toast.aiQuestionTooLong": "That question is too long. Please shorten it to {max} characters or fewer.",
+    "a11y.globalSearch": "Search products",
+    "a11y.posSearch": "Search products to add to the sale",
+    "a11y.orderNumberSearch": "Search by order number",
+    "a11y.discountValue": "Discount value",
+    "a11y.staffReportDate": "Report date",
+    "a11y.aiQuestion": "Ask a question about your business",
+    "a11y.commandInput": "Search commands and modules",
     "toast.noInventoryData": "No inventory data to export yet.",
     "toast.selectStoreBeforeAdd": "Select a specific store before adding a new product.",
     "toast.productSaved": "{name} saved to inventory.",
@@ -1092,6 +1099,13 @@ const DICTIONARY = {
     "toast.excelLibraryFailed": "Maktaba ya Excel haikupakia. Angalia muunganisho wako na ujaribu tena.",
     "toast.aiProxyUnavailable": "Proksi ya AI haipatikani ({message}). Inaonyesha pendekezo la ndani.",
     "toast.aiQuestionTooLong": "Swali hilo ni refu mno. Tafadhali lifupishe hadi herufi {max} au chini.",
+    "a11y.globalSearch": "Tafuta bidhaa",
+    "a11y.posSearch": "Tafuta bidhaa za kuongeza kwenye mauzo",
+    "a11y.orderNumberSearch": "Tafuta kwa namba ya oda",
+    "a11y.discountValue": "Kiasi cha punguzo",
+    "a11y.staffReportDate": "Tarehe ya ripoti",
+    "a11y.aiQuestion": "Uliza swali kuhusu biashara yako",
+    "a11y.commandInput": "Tafuta amri na moduli",
     "toast.noInventoryData": "Hakuna data ya hisa ya kuhamisha bado.",
     "toast.selectStoreBeforeAdd": "Chagua duka mahususi kabla ya kuongeza bidhaa mpya.",
     "toast.productSaved": "{name} imehifadhiwa kwenye hisa.",
@@ -1391,6 +1405,13 @@ function translateStaticDom() {
   });
   qsa("[data-i18n-placeholder]").forEach((el) => {
     el.placeholder = t(el.dataset.i18nPlaceholder);
+  });
+  // A placeholder is not an accessible name: screen readers may ignore it, and
+  // it disappears the moment there is text in the field. Seven inputs had
+  // nothing else, so they announced as unlabelled. Translated like every other
+  // string -- an English-only aria-label in a Swahili UI is its own bug.
+  qsa("[data-i18n-aria-label]").forEach((el) => {
+    el.setAttribute("aria-label", t(el.dataset.i18nAriaLabel));
   });
   const langButton = qs("#langToggleButton");
   if (langButton) langButton.textContent = t("topbar.langToggle");

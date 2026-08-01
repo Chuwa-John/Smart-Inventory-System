@@ -1744,6 +1744,36 @@ label textarea {
 }
 
 @media (max-width: 760px) {
+  /* The search box measured 35px wide on a 375px screen -- unusable. Its two
+     flex siblings were taking 107px of a 189px row: a decorative "Search"
+     label duplicating the placeholder, and a keyboard shortcut hint for a
+     shortcut no touch device can perform. Both go, and the field gets the
+     128px back. The label is safe to drop because it was never associated
+     with the input; a real aria-label now does that job. */
+  .search-wrap > span,
+  .search-wrap > kbd {
+    display: none;
+  }
+
+  /* iOS Safari zooms the page whenever a focused input is under 16px, and
+     every field here was 15px. The user then has to pinch back out, mid-sale.
+     Applied only at this breakpoint so desktop keeps its denser type. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  /* Tap targets. The label is the real target for a wrapped checkbox, and this
+     row was 18px tall against a 44px guideline -- a miss at the till is a
+     setting silently toggled, or not toggled, with no feedback either way. */
+  .checkbox-row,
+  .checkbox-row label {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+
   .app-shell {
     grid-template-columns: 1fr;
   }
