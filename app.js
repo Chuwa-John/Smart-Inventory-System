@@ -2229,9 +2229,93 @@ function openMonthlyReportDetail(reportId) {
   qs("#monthlyReportDialog").showModal();
 }
 
-function exportMonthlyReportPdf() {
+// These four libraries used to load as plain parser-blocking <script> tags on
+// every page load: 552 KB gzipped, 1.66 MB parsed. Measured on desktop
+// broadband, that cost 1.8s of main-thread parse between domInteractive and
+// DOMContentLoaded, and a phone parses JS several times slower than the machine
+// those numbers came from.
+//
+// None of it is needed to open a till. xlsx alone is 315 KB gzipped and exists
+// to write a spreadsheet an owner exports occasionally -- every cashier paid
+// for it at every shift start. They now load the first time something actually
+// needs them.
+//
+// The SRI hashes travel with the URLs. Do not separate them: they are the only
+// thing standing between a compromised CDN and arbitrary code in the till.
+const EXTERNAL_LIBRARIES = {
+  xlsx: [{
+    global: "XLSX",
+    url: "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",
+    integrity: "sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw"
+  }],
+  // Ordered, not parallel: the autotable plugin attaches itself to an already
+  // loaded jsPDF, so racing them leaves the plugin with nothing to attach to.
+  pdf: [{
+    global: "jspdf",
+    url: "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
+    integrity: "sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk"
+  }, {
+    url: "https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js",
+    integrity: "sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3"
+  }],
+  scanner: [{
+    global: "Html5Qrcode",
+    url: "https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js",
+    integrity: "sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+"
+  }]
+};
+
+const externalLibraryLoads = new Map();
+
+function loadScriptOnce(spec) {
+  if (spec.global && window[spec.global]) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = spec.url;
+    script.integrity = spec.integrity;
+    script.crossOrigin = "anonymous";
+    script.referrerPolicy = "no-referrer";
+    script.onload = () => resolve();
+    // Fires for a network failure AND for an SRI hash mismatch, which is the
+    // case worth caring about: a tampered file is refused rather than run.
+    script.onerror = () => reject(new Error(`Could not load ${spec.url}`));
+    document.head.appendChild(script);
+  });
+}
+
+function loadExternalLibrary(name) {
+  if (!externalLibraryLoads.has(name)) {
+    const load = (async () => {
+      for (const spec of EXTERNAL_LIBRARIES[name]) await loadScriptOnce(spec);
+    })().catch((error) => {
+      // A failed load is deliberately NOT cached. On the connections this app
+      // runs over, one dropped request must not disable exporting until the
+      // page is reloaded -- the next attempt retries.
+      externalLibraryLoads.delete(name);
+      throw error;
+    });
+    externalLibraryLoads.set(name, load);
+  }
+  return externalLibraryLoads.get(name);
+}
+
+// Returns false and tells the user, so callers keep the early-return shape the
+// old `if (!window.XLSX)` guards had.
+async function ensureLibrary(name, failureKey) {
+  try {
+    await loadExternalLibrary(name);
+    return true;
+  } catch (error) {
+    console.warn(error);
+    showToast(t(failureKey));
+    return false;
+  }
+}
+
+async function exportMonthlyReportPdf() {
   const report = state.monthlyReports.find((item) => item.id === state.openMonthlyReportId);
   if (!report) return;
+  if (!(await ensureLibrary("pdf", "toast.pdfLibraryFailed"))) return;
   const jsPdfCtor = window.jspdf && window.jspdf.jsPDF;
   if (!jsPdfCtor) return showToast(t("toast.pdfLibraryFailed"));
   const metrics = report.metrics || {};
@@ -2993,8 +3077,9 @@ function exportPaymentReportCsv() {
   URL.revokeObjectURL(url);
 }
 
-function exportPaymentReportPdf() {
+async function exportPaymentReportPdf() {
   const rows = buildPaymentReportRows();
+  if (!(await ensureLibrary("pdf", "toast.pdfLibraryFailed"))) return;
   const jsPdfCtor = window.jspdf && window.jspdf.jsPDF;
   if (!jsPdfCtor) return showToast(t("toast.pdfLibraryFailed"));
   const doc = new jsPdfCtor();
@@ -3429,9 +3514,10 @@ function generateReportCsv() {
   URL.revokeObjectURL(url);
 }
 
-function generateReportPdf() {
+async function generateReportPdf() {
   const rows = buildReportRows();
   if (!rows.length) return showToast(t("toast.noInventoryData"));
+  if (!(await ensureLibrary("pdf", "toast.pdfLibraryFailed"))) return;
   const jsPdfCtor = window.jspdf && window.jspdf.jsPDF;
   if (!jsPdfCtor) return showToast(t("toast.pdfLibraryFailed"));
   const doc = new jsPdfCtor();
@@ -3454,10 +3540,10 @@ function generateReportPdf() {
   doc.save("dukasmart-report.pdf");
 }
 
-function generateReportXlsx() {
+async function generateReportXlsx() {
   const rows = buildReportRows();
   if (!rows.length) return showToast(t("toast.noInventoryData"));
-  if (!window.XLSX) return showToast(t("toast.excelLibraryFailed"));
+  if (!(await ensureLibrary("xlsx", "toast.excelLibraryFailed"))) return;
   const worksheet = window.XLSX.utils.json_to_sheet(rows);
   const workbook = window.XLSX.utils.book_new();
   window.XLSX.utils.book_append_sheet(workbook, worksheet, "Inventory");
@@ -3979,10 +4065,11 @@ function sendPurchaseOrderWhatsApp(groupIndex) {
   window.open(`https://wa.me/${normalized}?text=${encodeURIComponent(text)}`, "_blank");
 }
 
-function downloadPurchaseOrderPdf(groupIndex) {
+async function downloadPurchaseOrderPdf(groupIndex) {
   const group = currentPoGroupQuantities(groupIndex);
   if (!group || !group.items.length) return showToast(t("toast.poAllQuantitiesZero"));
 
+  if (!(await ensureLibrary("pdf", "toast.pdfLibraryFailed"))) return;
   const jsPdfCtor = window.jspdf && window.jspdf.jsPDF;
   if (!jsPdfCtor) return showToast(t("toast.pdfLibraryFailed"));
 
@@ -4405,8 +4492,8 @@ function handleBarcodeScanned(decodedText) {
   if (result?.success) showToast(t("toast.barcodeAdded", { name: product.name }));
 }
 
-function openBarcodeScanner(target) {
-  if (!window.Html5Qrcode) return showToast(t("toast.barcodeLibraryFailed"));
+async function openBarcodeScanner(target) {
+  if (!(await ensureLibrary("scanner", "toast.barcodeLibraryFailed"))) return;
 
   state.barcodeScanTarget = target;
   qs("#barcodeScannerStatus").textContent = "";
@@ -4575,9 +4662,10 @@ function shareReceiptWhatsApp() {
   window.open(`https://wa.me/${normalized}?text=${encodeURIComponent(text)}`, "_blank");
 }
 
-function downloadReceiptPdf() {
+async function downloadReceiptPdf() {
   const sale = state.lastReceiptSale;
   if (!sale) return;
+  if (!(await ensureLibrary("pdf", "toast.pdfLibraryFailed"))) return;
   const jsPdfCtor = window.jspdf && window.jspdf.jsPDF;
   if (!jsPdfCtor) return showToast(t("toast.pdfLibraryFailed"));
 
