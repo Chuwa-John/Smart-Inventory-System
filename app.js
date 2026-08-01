@@ -3923,20 +3923,30 @@ async function checkCreditLimitBeforeSale(customerName, phoneKey, newBalanceDue)
   }));
   if (!acknowledged) return { allowed: false, overridden: false };
 
+  const details = {
+    customerId: existing.id || null,
+    limit,
+    previousBalance: currentBalance,
+    projectedTotal
+  };
+
+  // A business that has never set an override password must not be silently
+  // handed a hard block. Demanding a password nobody has would refuse the sale
+  // outright -- exactly the behaviour this design rejects, arrived at by
+  // accident. Where no password exists the acknowledgement stands on its own
+  // and the crossing is still recorded, flagged as unauthorised so the owner
+  // can tell the two apart and has a concrete reason to set one.
+  if (!state.overridePasswordSet) {
+    return { allowed: true, overridden: true, authorised: false, ...details };
+  }
+
   const authorized = await verifyOverridePassword();
   if (!authorized) {
     showToast(t("toast.creditLimitOverrideRefused"));
     return { allowed: false, overridden: false };
   }
 
-  return {
-    allowed: true,
-    overridden: true,
-    customerId: existing.id || null,
-    limit,
-    previousBalance: currentBalance,
-    projectedTotal
-  };
+  return { allowed: true, overridden: true, authorised: true, ...details };
 }
 
 function transferDate(transfer) {
@@ -7405,6 +7415,9 @@ function bindEvents() {
               limit: creditLimitDecision.limit,
               previousBalance: creditLimitDecision.previousBalance,
               projectedTotal: creditLimitDecision.projectedTotal,
+              // false means no override password was configured for this
+              // business, so nobody was actually asked to authorise it.
+              authorised: creditLimitDecision.authorised === true,
               saleTotal: total,
               storeId: state.currentStoreId,
               uid: state.user?.uid || null,

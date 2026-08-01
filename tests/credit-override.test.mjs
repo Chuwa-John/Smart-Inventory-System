@@ -90,9 +90,24 @@ console.log("\n=== a crossing is always recorded ===");
     "audit write is outside the sale transaction");
   check("it is written through the transaction object",
     /if \(creditLimitDecision\.overridden\)[\s\S]{0,200}transaction\.set\(/.test(app));
-  check("it records who authorised it", /action: "CREDIT_LIMIT_EXCEEDED"[\s\S]{0,400}uid:/.test(app));
+  check("it records who authorised it", /action: "CREDIT_LIMIT_EXCEEDED"[\s\S]{0,900}uid:/.test(app));
   check("it records the customer and the amounts",
-    /action: "CREDIT_LIMIT_EXCEEDED"[\s\S]{0,400}customerId:[\s\S]{0,400}saleTotal:/.test(app));
+    /action: "CREDIT_LIMIT_EXCEEDED"[\s\S]{0,900}customerId:[\s\S]{0,900}saleTotal:/.test(app));
+}
+
+console.log("\n=== an unconfigured business is not silently hard-blocked ===");
+{
+  // The trap this design walks into if unguarded: verifyOverridePassword()
+  // returns false when no password has been configured, so demanding one would
+  // refuse the sale outright -- the hard block this whole approach rejects,
+  // arrived at by accident, and only for the businesses least set up to notice.
+  check("no configured password means the acknowledgement stands alone",
+    /if \(!state\.overridePasswordSet\)[\s\S]{0,140}allowed: true/.test(gate),
+    "an unconfigured business would have the sale refused");
+  check("that case is still recorded", /authorised: false/.test(gate));
+  check("an authorised crossing is marked as such", /authorised: true/.test(gate));
+  check("the audit row carries the distinction",
+    /authorised: creditLimitDecision\.authorised === true/.test(app));
 }
 
 console.log("\n=== the owner is shown it, not just told it exists ===");
