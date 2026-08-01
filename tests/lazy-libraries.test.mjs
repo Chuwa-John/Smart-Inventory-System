@@ -111,6 +111,30 @@ console.log("\n=== every consumer waits for its library ===");
   }
 }
 
+console.log("\n=== only the till's library is warmed ahead of use ===");
+{
+  const start = app.indexOf("function prewarmScannerWhenIdle(");
+  check("the prewarm exists", start !== -1);
+  let depth = 0, i = app.indexOf("{", start);
+  for (; i < app.length; i++) {
+    if (app[i] === "{") depth++;
+    else if (app[i] === "}") { depth--; if (depth === 0) break; }
+  }
+  const body = app.slice(start, i + 1);
+
+  check("it warms the scanner", /loadExternalLibrary\("scanner"\)/.test(body));
+  // Warming the exports would give back the win this whole change bought.
+  check("it does NOT warm xlsx or pdf",
+    !/loadExternalLibrary\("(xlsx|pdf)"\)/.test(body), "an export library is being prefetched");
+  check("it respects Save-Data", /saveData/.test(body));
+  check("it skips 2G connections", /2g/.test(body));
+  check("it runs off the critical path", /requestIdleCallback/.test(body));
+  check("it has a fallback for browsers without requestIdleCallback", /setTimeout\(warm/.test(body));
+  check("a failed prewarm is swallowed, not surfaced", /\.catch\(\(\) => \{\}\)/.test(body));
+  check("it is actually called during startup",
+    /^prewarmScannerWhenIdle\(\);$/m.test(app));
+}
+
 console.log("\n=== failures are still explained to the user ===");
 {
   for (const key of ["toast.excelLibraryFailed", "toast.pdfLibraryFailed", "toast.barcodeLibraryFailed"]) {

@@ -2299,6 +2299,32 @@ function loadExternalLibrary(name) {
   return externalLibraryLoads.get(name);
 }
 
+// The scanner is the one lazy library on the cashier's hot path: opened
+// mid-sale, at the till, with a customer waiting. Measured cold it costs about
+// 2.9s to fetch -- fine for an owner exporting a PDF, not fine for the first
+// scan of a shift.
+//
+// So it alone is warmed once the app has gone quiet. The exports deliberately
+// are not: keeping 431 KB of xlsx and jsPDF off a cashier's phone is the whole
+// point of this change, and an export is chosen from a menu where a short wait
+// reads as the export starting.
+//
+// Skipped on a metered or slow connection. Data costs real money to the shops
+// running this, and someone on 2G is better served by a fast till than by a
+// scanner that is ready three seconds sooner. Failure is swallowed: this is an
+// optimisation, and openBarcodeScanner still loads and reports for itself.
+function prewarmScannerWhenIdle() {
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (connection?.saveData) return;
+  if (/(^|-)2g$/.test(connection?.effectiveType || "")) return;
+
+  const warm = () => { loadExternalLibrary("scanner").catch(() => {}); };
+  // requestIdleCallback keeps this off the critical path; the timeout is the
+  // fallback for Safari, which still does not implement it.
+  if (typeof requestIdleCallback === "function") requestIdleCallback(warm, { timeout: 10000 });
+  else setTimeout(warm, 4000);
+}
+
 // Returns false and tells the user, so callers keep the early-return shape the
 // old `if (!window.XLSX)` guards had.
 async function ensureLibrary(name, failureKey) {
@@ -7410,6 +7436,7 @@ setAuthMode("signup");
 bindEvents();
 initIdleActivityTracking();
 watchConnection();
+prewarmScannerWhenIdle();
 translateStaticDom();
 renderAll();
 renderChatLog();
