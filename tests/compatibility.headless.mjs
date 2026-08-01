@@ -20,6 +20,7 @@
 import { chromium } from "playwright";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -33,13 +34,30 @@ function check(name, pass, detail = "") {
   console.log(`${pass ? "PASS" : "FAIL"}  ${name}${pass || !detail ? "" : `\n      ${detail}`}`);
 }
 
+// The REAL production headers, read from firebase.json rather than copied here
+// where they could drift. This exists because of a live outage: the
+// flag-clearing script was inline, the production CSP is script-src 'self' with
+// no unsafe-inline, so the browser blocked it, the flag never cleared, and every
+// visitor saw the "cannot run" notice on a browser that runs the app perfectly
+// well. This test passed at the time because the server below sent no CSP at
+// all -- it was faithfully testing a page that does not exist in production.
+const hostingHeaders = (() => {
+  const config = JSON.parse(readFileSync(new URL("../firebase.json", import.meta.url), "utf8"));
+  const out = {};
+  for (const rule of config.hosting?.headers ?? []) {
+    if (rule.source !== "**") continue;
+    for (const { key, value } of rule.headers ?? []) out[key] = value;
+  }
+  return out;
+})();
+
 const server = createServer(async (req, res) => {
   try {
     const rel = normalize(decodeURIComponent(req.url.split("?")[0])).replace(/^(\.\.[/\\])+/, "");
     const file = join(ROOT, rel === "/" ? "index.html" : rel);
     if (!file.startsWith(ROOT)) { res.writeHead(403).end(); return; }
     const body = await readFile(file);
-    res.writeHead(200, { "content-type": TYPES[extname(file)] || "application/octet-stream" });
+    res.writeHead(200, { ...hostingHeaders, "content-type": TYPES[extname(file)] || "application/octet-stream" });
     res.end(body);
   } catch { res.writeHead(404).end(); }
 });
@@ -105,16 +123,34 @@ console.log("\n=== a browser that can run it is unaffected ===");
   check("controls are interactive again", on.visibleControls > 5, `${on.visibleControls} visible`);
 }
 
-console.log("\n=== the flag is cleared by a module, not a classic script ===");
+console.log("\n=== the flag is cleared the only way the CSP permits ===");
 {
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
-  // A classic inline script would run on the very browsers that must keep
-  // seeing the notice, silently defeating the whole mechanism.
-  check("the clearing script is type=module",
-    /<script type="module">document\.documentElement\.classList\.remove\("js-pending"\);<\/script>/.test(html));
-  check("it is inline, so it does not wait on the app bundle",
-    html.indexOf('classList.remove("js-pending")') < html.indexOf('src="./app.js'));
+  const boot = await readFile(new URL("../boot.js", import.meta.url), "utf8");
+
+  // Inline is what caused the outage: script-src 'self' with no unsafe-inline
+  // blocks it silently, so the flag never clears and the app is unreachable.
+  check("no inline script tries to clear the flag",
+    !/<script(?![^>]*\bsrc=)[^>]*>[^<]*js-pending/.test(html),
+    "an inline script is blocked by the production CSP and the app never appears");
+  check("it is a same-origin file, which script-src 'self' allows",
+    /<script type="module" src="\.\/boot\.js\?v=[^"]+"><\/script>/.test(html));
+  // Still a module: a browser too old for ES modules must ignore it and keep
+  // the notice, which is the entire point of the mechanism.
+  check("it is still loaded as a module", /<script type="module" src="\.\/boot\.js/.test(html));
+  check("boot.js does the clearing", /classList\.remove\("js-pending"\)/.test(boot));
+  check("it loads before the app bundle, not after",
+    html.indexOf("boot.js") < html.indexOf('src="./app.js'),
+    "otherwise the notice shows until a 360 KB download finishes");
+  check("boot.js is versioned like every other cached asset",
+    /boot\.js\?v=/.test(html));
+  check("the service worker pre-caches the same url the page requests",
+    (await readFile(new URL("../sw.js", import.meta.url), "utf8")).includes(
+      (html.match(/\.\/boot\.js\?v=[^"]+/) || [""])[0]));
   check("the document starts flagged", /<html lang="en" class="js-pending">/.test(html));
+  check("the production CSP is actually being served by this test",
+    /script-src/.test(hostingHeaders["Content-Security-Policy"] || ""),
+    "without it, an inline-script regression passes here and breaks production");
 }
 
 await browser.close();

@@ -9,7 +9,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260802a" />
+    <link rel="stylesheet" href="./styles.css?v=20260802b" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#101114" />
     <link rel="icon" href="./icons/icon-192.png" />
@@ -23,9 +23,12 @@
     <!-- Cleared only by a browser that can run ES modules. One too old to parse
          this tag ignores it and keeps .js-pending, which is the whole point:
          the fallback below stays up instead of the app shell rendering as a
-         dead jumble of six stacked views. Inline rather than inside app.js so
-         it does not wait on a 360 KB download to decide. -->
-    <script type="module">document.documentElement.classList.remove("js-pending");</script>
+         dead jumble of six stacked views.
+         A FILE, not an inline script: the production CSP is script-src 'self'
+         with no unsafe-inline, so an inline version is blocked and the notice
+         never clears. Separate from app.js so it does not wait on a 360 KB
+         download to decide. -->
+    <script type="module" src="./boot.js?v=20260802b"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -962,6 +965,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260802a"></script>
+    <script type="module" src="./app.js?v=20260802b"></script>
   </body>
 </html>
