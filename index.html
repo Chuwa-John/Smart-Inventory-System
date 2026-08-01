@@ -9,7 +9,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260801h" />
+    <link rel="stylesheet" href="./styles.css?v=20260801i" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#101114" />
     <link rel="icon" href="./icons/icon-192.png" />
@@ -20,6 +20,10 @@
     <meta name="apple-mobile-web-app-title" content="DukaSmart" />
   </head>
   <body>
+    <!-- First tab stop on every view. Without it a keyboard user crossed 21
+         controls -- the whole sidebar and topbar -- before reaching the page
+         they had just navigated to, on every single navigation. -->
+    <a class="skip-link" href="#mainContent" data-i18n="a11y.skipToContent">Skip to main content</a>
     <div class="app-shell">
       <aside class="sidebar" aria-label="Primary navigation">
         <div class="brand">
@@ -47,7 +51,7 @@
         </div>
       </aside>
 
-      <main class="main">
+      <main class="main" id="mainContent" tabindex="-1">
         <header class="topbar">
           <button class="icon-button mobile-menu" id="mobileMenuButton" aria-label="Open menu">&#9776;</button>
           <div class="search-wrap">
@@ -920,6 +924,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260801h"></script>
+    <script type="module" src="./app.js?v=20260801i"></script>
   </body>
 </html>

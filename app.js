@@ -509,6 +509,7 @@ const DICTIONARY = {
     "toast.excelLibraryFailed": "Excel library did not load. Check your connection and try again.",
     "toast.aiProxyUnavailable": "AI proxy unavailable ({message}). Showing local recommendation.",
     "toast.aiQuestionTooLong": "That question is too long. Please shorten it to {max} characters or fewer.",
+    "a11y.skipToContent": "Skip to main content",
     "a11y.globalSearch": "Search products",
     "a11y.posSearch": "Search products to add to the sale",
     "a11y.orderNumberSearch": "Search by order number",
@@ -1102,6 +1103,7 @@ const DICTIONARY = {
     "toast.excelLibraryFailed": "Maktaba ya Excel haikupakia. Angalia muunganisho wako na ujaribu tena.",
     "toast.aiProxyUnavailable": "Proksi ya AI haipatikani ({message}). Inaonyesha pendekezo la ndani.",
     "toast.aiQuestionTooLong": "Swali hilo ni refu mno. Tafadhali lifupishe hadi herufi {max} au chini.",
+    "a11y.skipToContent": "Rukia maudhui makuu",
     "a11y.globalSearch": "Tafuta bidhaa",
     "a11y.posSearch": "Tafuta bidhaa za kuongeza kwenye mauzo",
     "a11y.orderNumberSearch": "Tafuta kwa namba ya oda",
@@ -6770,6 +6772,92 @@ function openView(viewId) {
   if (viewId === "reports" || viewId === "ai") warmUpAiProxy();
 }
 
+// The command palette is a plain <div>, not a <dialog>, so none of the modal
+// behaviour a browser gives showModal() applies: no focus trap, no inertness,
+// no focus restore. It was also marked aria-hidden="true" in the markup and the
+// attribute was never updated, so it stayed invisible to assistive technology
+// while visibly open -- and focus was moved INTO that hidden subtree, which
+// tells a screen reader the element holding focus does not exist.
+//
+// Rewriting it as a <dialog> would be the cleaner fix, but it is opened from a
+// global key handler on every view and closed from four places; this keeps the
+// existing shape and supplies the behaviour the element type does not.
+let commandPaletteReturnFocus = null;
+
+function isCommandPaletteOpen() {
+  return qs("#commandPalette").classList.contains("open");
+}
+
+function commandPaletteItems() {
+  return qsa("#commandResults .command-result");
+}
+
+function openCommandPalette() {
+  const palette = qs("#commandPalette");
+  // Remember where the user was so Escape can put them back, rather than
+  // dropping focus onto <body> and restarting Tab from the top of the document.
+  commandPaletteReturnFocus = document.activeElement;
+  palette.classList.add("open");
+  palette.setAttribute("aria-hidden", "false");
+  renderCommands();
+  qs("#commandInput").value = "";
+  qs("#commandInput").focus();
+}
+
+function closeCommandPalette({ restoreFocus = true } = {}) {
+  const palette = qs("#commandPalette");
+  if (!palette.classList.contains("open")) return;
+  palette.classList.remove("open");
+  palette.setAttribute("aria-hidden", "true");
+  // Focus must leave before the subtree is hidden again, or focus is left on an
+  // aria-hidden element -- the same defect in the other direction.
+  if (restoreFocus && commandPaletteReturnFocus?.isConnected) {
+    commandPaletteReturnFocus.focus();
+  } else if (document.activeElement && palette.contains(document.activeElement)) {
+    document.activeElement.blur();
+  }
+  commandPaletteReturnFocus = null;
+}
+
+// Arrow keys move through results, Enter runs the focused one, and Tab is
+// contained. Without the trap, one Tab from the search box landed on the page
+// behind an apparently-modal overlay.
+function handleCommandPaletteKeys(event) {
+  const items = commandPaletteItems();
+
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    if (!items.length) return;
+    event.preventDefault();
+    const at = items.indexOf(document.activeElement);
+    const next = event.key === "ArrowDown"
+      ? (at + 1) % items.length
+      : (at <= 0 ? items.length - 1 : at - 1);
+    items[next].focus();
+    return;
+  }
+
+  // From a result, Enter is the button's own job. From the search box it should
+  // run the first match, which is what a command palette is for.
+  if (event.key === "Enter" && document.activeElement === qs("#commandInput") && items.length) {
+    event.preventDefault();
+    items[0].click();
+    return;
+  }
+
+  if (event.key === "Tab") {
+    const focusable = [qs("#commandInput"), ...items];
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+}
+
 function renderCommands(term = "") {
   const commands = [
     ["dashboard", t("command.openDashboard")],
@@ -6781,8 +6869,12 @@ function renderCommands(term = "") {
     .filter(([view]) => canOpenView(view))
     .filter(([, label]) => label.toLowerCase().includes(term.toLowerCase()));
 
+  // Buttons, not divs. These used to be plain <div>s, so a keyboard shortcut
+  // opened a palette that could be typed into but never operated: no result was
+  // focusable and none could be activated without a mouse.
   qs("#commandResults").innerHTML = commands
-    .map(([view, label]) => `<div class="command-result" data-command-view="${view}">${label}</div>`)
+    .map(([view, label]) =>
+      `<button type="button" class="command-result" data-command-view="${view}">${label}</button>`)
     .join("");
 }
 
@@ -7179,7 +7271,7 @@ function bindEvents() {
     const command = event.target.closest("[data-command-view]");
     if (command) {
       openView(command.dataset.commandView);
-      qs("#commandPalette").classList.remove("open");
+      closeCommandPalette({ restoreFocus: false });
       return;
     }
 
@@ -7564,17 +7656,28 @@ function bindEvents() {
 
   document.addEventListener("keydown", (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+      // A modal dialog owns the top layer, so the palette cannot paint above it.
+      // Opening anyway put it on screen invisibly, stole nothing (the browser
+      // refuses focus outside an open modal), and then surfaced it the moment
+      // the dialog closed.
+      if (document.querySelector("dialog[open]")) return;
       event.preventDefault();
-      qs("#commandPalette").classList.add("open");
-      qs("#commandInput").focus();
-      renderCommands();
+      openCommandPalette();
+      return;
     }
-    if (event.key === "Escape") qs("#commandPalette").classList.remove("open");
+    // Only act when it is actually open. Otherwise every Escape anywhere in the
+    // app ran this, including the ones closing a dialog.
+    if (event.key === "Escape" && isCommandPaletteOpen()) {
+      event.preventDefault();
+      closeCommandPalette();
+      return;
+    }
+    if (isCommandPaletteOpen()) handleCommandPaletteKeys(event);
   });
 
   qs("#commandInput").addEventListener("input", (event) => renderCommands(event.target.value));
   qs("#commandPalette").addEventListener("click", (event) => {
-    if (event.target.id === "commandPalette") qs("#commandPalette").classList.remove("open");
+    if (event.target.id === "commandPalette") closeCommandPalette();
   });
 }
 
