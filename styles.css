@@ -1760,7 +1760,14 @@ label textarea {
      Applied only at this breakpoint so desktop keeps its denser type. */
   input,
   select,
-  textarea {
+  textarea,
+  /* label-wrapped fields need the same specificity as the (0,0,2) rule that
+     sets them to 0.938rem, or they keep it: a media query adds no specificity,
+     so source order never gets a say. 45 of the 59 fields sit inside a label,
+     which is exactly the set that stayed at 15px on the first attempt. */
+  label input,
+  label select,
+  label textarea {
     font-size: 16px;
   }
 
