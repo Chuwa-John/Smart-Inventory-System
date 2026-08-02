@@ -82,7 +82,12 @@
       /* ---- masthead ---- */
       .top { border-bottom: 1px solid var(--rule); background: var(--paper); }
       .top-in { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding-block: 18px; }
-      .brand { display: flex; align-items: baseline; gap: 9px; font-family: var(--display); font-size: 1.25rem; letter-spacing: -0.01em; }
+      /* gap: 0 is load-bearing. The two halves are separate tags so "Smart" can
+         carry the accent colour, and a flex gap put a space between them that
+         the markup does not contain -- it rendered as "Savia Smart" while the
+         source read SaviaSmart, so checking the HTML said it was fixed when the
+         screen said otherwise. */
+      .brand { display: flex; align-items: baseline; gap: 0; font-family: var(--display); font-size: 1.25rem; letter-spacing: -0.01em; }
       .brand b { font-weight: 400; }
       .brand i { font-style: normal; color: var(--accent); }
       .links { display: flex; gap: 26px; font-size: 0.93rem; color: var(--ink-soft); }

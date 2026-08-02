@@ -1326,16 +1326,52 @@ dialog::backdrop {
   box-shadow: var(--shadow-lg);
 }
 
+/*
+  The same warehouse the landing page opens with, so arriving here is
+  continuous rather than a flat panel after a photograph.
+
+  Everything inside is pinned to light ink and a fixed dark ground, NOT to the
+  theme tokens. Those tokens flip with the light theme, and light-theme text on
+  a dark photograph is unreadable -- the panel has its own world now and does
+  not follow the switch.
+
+  The 800px variant is deliberate: this column is about 490px wide, so the wide
+  file would be three times the pixels for nothing. It is also the same file the
+  phone breakpoint of the landing page uses, so anyone arriving from there
+  already has it cached.
+
+  Contrast is carried by the scrim, checked against a pure white photograph, so
+  swapping the image cannot quietly make the text unreadable.
+*/
 .auth-brand {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
   padding: var(--space-8) var(--space-6);
   border-right: 1px solid var(--line);
-  background:
-    radial-gradient(680px 340px at 0% 0%, var(--accent-quiet) 0%, transparent 62%),
-    var(--panel-soft);
+  background-color: #0d1117;
+  background-image:
+    linear-gradient(180deg, rgb(9 13 18 / 88%) 0%, rgb(9 13 18 / 78%) 55%, rgb(9 13 18 / 90%) 100%),
+    url("./images/hero-warehouse-800.jpg");
+  background-size: cover;
+  background-position: center;
 }
+
+.auth-brand .eyebrow { color: #6fe0ab; }
+.auth-brand h1 { color: #ffffff; }
+.auth-brand .auth-copy { color: #d3dae2; }
+.auth-brand .auth-copy a { color: #6fe0ab; }
+.auth-brand .auth-why {
+  border-color: rgb(244 247 250 / 16%);
+  background: rgb(9 13 18 / 45%);
+}
+.auth-brand .auth-why .eyebrow { color: #9fe8c6; }
+.auth-brand .auth-why-list { color: #cbd4de; }
+.auth-brand .auth-why-list li::marker { color: #6fe0ab; }
+.auth-brand .auth-ledger { border-top-color: rgb(244 247 250 / 18%); }
+.auth-brand .auth-ledger-row { color: #c8d1db; }
+.auth-brand .auth-ledger-row b { color: #ffffff; }
+.auth-brand .auth-ledger-row.short b { color: #ff9d8f; }
 
 .auth-fields {
   display: grid;
