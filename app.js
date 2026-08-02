@@ -4328,6 +4328,11 @@ function openProductDialog(product = null) {
       if (form.elements[key]) form.elements[key].value = value ?? "";
     });
   }
+  // What the stock box was filled with, so saving can tell a deliberate
+  // correction from a number the form merely happened to be holding. See
+  // saveProduct: without this, editing a price wrote back a stale count and
+  // put sold goods back on the shelf.
+  state.productFormOpeningQuantity = product ? safeNumber(product.quantity) : null;
   qs("#productDialog").showModal();
 }
 
@@ -4396,13 +4401,38 @@ async function saveProduct(product) {
     try {
       const { collection, doc, serverTimestamp, setDoc } = state.firebaseApi.firestore;
       const [root, uid, child] = productCollectionPath();
+
+      // Stock is only written when the owner actually changed the box.
+      //
+      // This form carries every field, so saving a PRICE also wrote back
+      // whatever quantity the form happened to be holding. If a cashier sold
+      // five between the dialog opening and the owner pressing save, those five
+      // came back onto the shelf -- verified against the emulator, stock went
+      // 40 -> 35 -> 40. Offline it is worse: the write queues and lands hours
+      // later, quietly reversing every sale in between.
+      //
+      // Editing stock here is still legitimate -- an owner who has counted the
+      // shelf is correcting it -- so a real change is kept and reasoned as a
+      // correction. A number nobody touched is simply not sent, and the server's
+      // own count stands.
+      const payload = {
+        ...product,
+        createdAt: existing?.createdAt || serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+      const opened = state.productFormOpeningQuantity;
+      const quantityUntouched = existing && opened !== null && safeNumber(product.quantity) === opened;
+      if (quantityUntouched) {
+        delete payload.quantity;
+        delete payload.sold30;
+        delete payload.sold90;
+      } else if (existing) {
+        payload.movementReason = "correction";
+      }
+
       await setDoc(
         doc(collection(state.db, root, uid, child), product.id),
-        {
-          ...product,
-          createdAt: existing?.createdAt || serverTimestamp(),
-          updatedAt: serverTimestamp()
-        },
+        payload,
         { merge: true }
       );
       try {
