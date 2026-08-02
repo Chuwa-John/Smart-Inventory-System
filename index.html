@@ -100,7 +100,45 @@
       .btn-ghost:hover { border-color: var(--ink); }
 
       /* ---- opening ---- */
-      .open { padding-block: clamp(52px, 9vh, 96px); }
+      /*
+        A real warehouse behind the opening, because the alternative is a laptop
+        mockup and nobody has ever been persuaded by one.
+
+        Two things make this safe rather than decorative. A scrim sits between
+        the photograph and the text, so contrast is guaranteed by the overlay
+        rather than by whatever happens to be in the picture -- swap the image
+        and the text stays legible. And --hero-ink is a fixed dark ground under
+        the image, so the section looks deliberate before the photo has loaded
+        and if it never loads at all.
+      */
+      .open {
+        padding-block: clamp(60px, 11vh, 116px);
+        position: relative;
+        isolation: isolate;
+        background-color: #0d1117;
+        background-image:
+          linear-gradient(90deg, rgb(9 13 18 / 92%) 0%, rgb(9 13 18 / 74%) 46%, rgb(9 13 18 / 42%) 100%),
+          image-set(url("./images/hero-warehouse.jpg") 1x);
+        background-size: cover;
+        background-position: center right;
+        border-bottom: 1px solid var(--rule);
+      }
+      /* On a phone the photograph is behind a single column of text, so the
+         scrim goes even rather than left-weighted. */
+      @media (max-width: 900px) {
+        .open {
+          background-image:
+            linear-gradient(180deg, rgb(9 13 18 / 90%) 0%, rgb(9 13 18 / 86%) 100%),
+            image-set(url("./images/hero-warehouse-800.jpg") 1x);
+          background-position: center;
+        }
+      }
+      .open h1, .open .lede, .open .fineprint, .open .kicker { color: #f4f7fa; }
+      .open .lede { color: #d3dae2; }
+      .open .fineprint { color: #c8d1db; }
+      .open .kicker { color: #6fe0ab; border-left-color: #6fe0ab; }
+      .open .btn-ghost { color: #f4f7fa; border-color: rgb(244 247 250 / 38%); }
+      .open .btn-ghost:hover { border-color: #f4f7fa; }
       .open-grid {
         display: grid;
         grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
