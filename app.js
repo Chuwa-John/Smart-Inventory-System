@@ -2002,12 +2002,27 @@ function cartSubtotal() {
   return state.cart.reduce((sum, item) => sum + item.qty * Number(item.sellingPrice || 0), 0);
 }
 
+// Rounded to whole currency units, because a shilling has no working subunit
+// and a drawer holds notes and coins, not fractions.
+//
+// Unrounded, 10%% off 1,333 gave a discount of 133.3 and a total of 1,199.7 --
+// an amount that cannot be paid. Change came back as 0.2999999999999545, and
+// worse, expected cash at shift close accumulated the fractions: a cashier who
+// counted the drawer perfectly still recorded a variance, so the reconciliation
+// feature could never balance once a percentage discount had been used.
+//
+// The refund path already rounded (see processReturn), so the same money was
+// being treated two different ways depending on which way it moved. It is one
+// way now.
+//
+// If a currency with a real subunit is ever added, this is the line that has to
+// change, along with the rounding in processReturn.
 function computeDiscountAmount(subtotal) {
   if (state.discountType === "percent") {
-    return Math.min(subtotal, subtotal * (Number(state.discountValue || 0) / 100));
+    return Math.round(Math.min(subtotal, subtotal * (Number(state.discountValue || 0) / 100)));
   }
   if (state.discountType === "fixed") {
-    return Math.min(subtotal, Number(state.discountValue || 0));
+    return Math.round(Math.min(subtotal, Number(state.discountValue || 0)));
   }
   return 0;
 }
@@ -2084,7 +2099,9 @@ function renderCart() {
   const totalQty = state.cart.reduce((sum, item) => sum + item.qty, 0);
   const subtotal = cartSubtotal();
   const discountAmount = computeDiscountAmount(subtotal);
-  const totalAmount = Math.max(0, subtotal - discountAmount);
+  // Settled here as well: a unit price entered with a fraction would otherwise
+  // carry one into the total by a different route than the discount.
+  const totalAmount = Math.round(Math.max(0, subtotal - discountAmount));
 
   qs("#cartCount").textContent = totalQty;
   qs("#cartItems").innerHTML = state.cart
@@ -7807,7 +7824,7 @@ function bindEvents() {
     const subtotal = saleItems.reduce((sum, item) => sum + item.lineTotal, 0);
     const discountType = state.discountType || "none";
     const discountAmount = computeDiscountAmount(subtotal);
-    const total = Math.max(0, subtotal - discountAmount);
+    const total = Math.round(Math.max(0, subtotal - discountAmount));
     const paymentMethod = state.paymentMethod || "cash";
     const cashTendered = Number(qs("#cashTendered")?.value || 0);
 

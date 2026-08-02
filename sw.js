@@ -3,15 +3,15 @@
 // instantly on repeat visits. This does NOT cache Firestore/Firebase
 // traffic or any cross-origin requests \u2014 those always go to the network.
 // Bump this on every deploy so old clients pick up new files.
-const CACHE_NAME = "savia-shell-v69";
+const CACHE_NAME = "savia-shell-v70";
 
 const APP_SHELL = [
   "./",
   "./index.html",
   "./app.html",
-  "./styles.css?v=20260802i",
+  "./styles.css?v=20260802j",
   "./app.js",
-  "./boot.js?v=20260802i",
+  "./boot.js?v=20260802j",
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
