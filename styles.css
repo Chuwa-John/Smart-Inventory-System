@@ -1294,12 +1294,10 @@ dialog::backdrop {
   position: fixed;
   inset: 0;
   z-index: 50;
-  display: flex;
-  overflow-y: auto;
-  padding: var(--space-6) var(--space-5);
-  background:
-    radial-gradient(1200px 600px at 50% -10%, var(--accent-quiet) 0%, transparent 60%),
-    color-mix(in srgb, var(--bg) 92%, rgb(0 0 0));
+  display: block;
+  overflow: hidden;
+  padding: 0;
+  background: var(--bg);
 }
 
 .auth-gate.hidden {
@@ -1310,20 +1308,22 @@ dialog::backdrop {
    single 440px column that was here made a first impression of a form and
    nothing else. Collapses to one column below 900px, where a phone has no room
    for an argument beside a password field. */
+/* Full bleed, both halves floor to ceiling. A centred card floating in a dark
+   room reads as a dialog interrupting something; a full screen reads as the
+   front of the product. */
 .auth-panel {
-  width: min(980px, 100%);
-  flex: 0 0 auto;
-  margin: auto;
+  width: 100%;
+  height: 100%;
+  margin: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: stretch;
   gap: 0;
   padding: 0;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  background: var(--panel);
-  box-shadow: var(--shadow-lg);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 /*
@@ -1346,8 +1346,10 @@ dialog::backdrop {
 .auth-brand {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: var(--space-4);
-  padding: var(--space-8) var(--space-6);
+  padding: clamp(28px, 5vw, 64px);
+  overflow-y: auto;
   border-right: 1px solid var(--line);
   background-color: #0d1117;
   background-image:
@@ -1373,11 +1375,20 @@ dialog::backdrop {
 .auth-brand .auth-ledger-row b { color: #ffffff; }
 .auth-brand .auth-ledger-row.short b { color: #ff9d8f; }
 
+/* Plain. No panel, no border, no shadow -- the form sits on the page itself so
+   the eye goes to the fields rather than to a box drawn around them. Capped in
+   width because a password field stretched across half a monitor is neither
+   comfortable nor legible. */
 .auth-fields {
   display: grid;
-  align-content: start;
+  align-content: center;
+  justify-items: stretch;
   gap: var(--space-4);
+  width: min(420px, 100%);
+  margin-inline: auto;
   padding: var(--space-8) var(--space-6);
+  overflow-y: auto;
+  background: transparent;
 }
 
 /* The close-of-day figures, in the same ruled shape the landing page uses. */
@@ -1403,7 +1414,7 @@ dialog::backdrop {
 .auth-ledger-row.short b { color: var(--red); }
 
 @media (max-width: 900px) {
-  .auth-panel { width: min(440px, 100%); grid-template-columns: 1fr; }
+  .auth-panel { grid-template-columns: 1fr; }
   /* The argument is for someone deciding. On a phone, someone opening this
      already decided -- so the form leads and the pitch is not shown at all. */
   .auth-brand { display: none; }
@@ -2060,4 +2071,14 @@ label textarea {
 
 @media (max-width: 760px) {
   .shift-actions { flex-direction: column; align-items: stretch; }
+}
+
+/* The hidden attribute means "this is not here". It was losing: label sets
+   display:grid and .auth-consent-row sets display:flex, so setAuthMode("signin")
+   hid three fields that the stylesheet kept drawing -- someone signing in was
+   shown Business name, Confirm password and a consent checkbox they had no
+   business seeing. There is no case where an element should be hidden and
+   visible at once, so this is allowed to be absolute. */
+[hidden] {
+  display: none !important;
 }
