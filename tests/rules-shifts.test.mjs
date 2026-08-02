@@ -18,6 +18,9 @@ import { readFileSync } from "node:fs";
 
 const OWNER = "owner_shift";
 const CASHIER = "cashier_shift";
+// A second cashier on the SAME till, so "someone else's drawer" can be tested
+// without the store scoping being what rejects it.
+const CASHIER2 = "cashier_shift_2";
 const MANAGER = "manager_shift";
 const OUTSIDER = "cashier_other_store";
 const STORE_A = "storeA";
@@ -36,6 +39,7 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, "users", OWNER, "stores", STORE_A), { name: "Branch A", currencyCode: "TZS" });
   await setDoc(doc(db, "users", OWNER, "stores", STORE_B), { name: "Branch B", currencyCode: "TZS" });
   await setDoc(doc(db, "users", OWNER, "members", CASHIER), { role: "cashier", status: "active", storeIds: [STORE_A] });
+  await setDoc(doc(db, "users", OWNER, "members", CASHIER2), { role: "cashier", status: "active", storeIds: [STORE_A] });
   await setDoc(doc(db, "users", OWNER, "members", MANAGER), { role: "manager", status: "active", storeIds: [STORE_A, STORE_B] });
   await setDoc(doc(db, "users", OWNER, "members", OUTSIDER), { role: "cashier", status: "active", storeIds: [STORE_B] });
   // An already-open shift to exercise the close path against.
@@ -105,6 +109,45 @@ await check("a short drawer records a negative variance",
     closePayload({ closedByUid: OWNER, variance: -7500, countedCash: 42500 }))));
 await check("an already-closed shift cannot be closed again",
   assertFails(updateDoc(doc(as(CASHIER), "users", OWNER, "shifts", "closedShift"), closePayload())));
+
+console.log("\n=== a drawer is closed by the person who opened it, or by a supervisor ===");
+// One shift is open per till, not per person, so before this the till's drawer
+// could be counted and closed by whoever happened to be standing at it. Both
+// uids were recorded, but a shortfall then belonged to two people at once --
+// and with the closing cash figures also coming from the client (see L-1 in
+// KNOWN-LIMITATIONS.md), that is the wrong pair of hands to leave it in.
+//
+// A manager keeps the escape hatch: a cashier who goes home without closing
+// must not be able to strand the till, because the currentShiftId pointer stays
+// set until someone closes the shift and no new one can open behind it.
+await testEnv.withSecurityRulesDisabled(async (ctx) => {
+  const db = ctx.firestore();
+  for (const [id, opener, name] of [
+    ["peerShift1", CASHIER, "Asha"], ["peerShift2", CASHIER, "Asha"],
+    ["peerShift3", CASHIER, "Asha"], ["ownShift2", CASHIER2, "Baraka"],
+    ["mgrShift", MANAGER, "Neema"]
+  ]) {
+    await setDoc(doc(db, "users", OWNER, "shifts", id), {
+      storeId: STORE_A, status: "open", openingFloat: 20000,
+      openedByUid: opener, openedByName: name, openedAt: new Date()
+    });
+  }
+});
+await check("a cashier may NOT close a drawer opened by another cashier",
+  assertFails(updateDoc(doc(as(CASHIER2), "users", OWNER, "shifts", "peerShift1"),
+    closePayload({ closedByUid: CASHIER2, closedByName: "Baraka" }))));
+await check("a cashier may still close the drawer they opened themselves",
+  assertSucceeds(updateDoc(doc(as(CASHIER2), "users", OWNER, "shifts", "ownShift2"),
+    closePayload({ closedByUid: CASHIER2, closedByName: "Baraka" }))));
+await check("a manager may close a cashier's drawer (cashier went home)",
+  assertSucceeds(updateDoc(doc(as(MANAGER), "users", OWNER, "shifts", "peerShift2"),
+    closePayload({ closedByUid: MANAGER, closedByName: "Neema" }))));
+await check("the owner may close a cashier's drawer",
+  assertSucceeds(updateDoc(doc(as(OWNER), "users", OWNER, "shifts", "peerShift3"),
+    closePayload({ closedByUid: OWNER, closedByName: "Owner" }))));
+await check("a manager may close their own drawer",
+  assertSucceeds(updateDoc(doc(as(MANAGER), "users", OWNER, "shifts", "mgrShift"),
+    closePayload({ closedByUid: MANAGER, closedByName: "Neema" }))));
 
 console.log("\n=== a close cannot rewrite how the shift opened ===");
 await testEnv.withSecurityRulesDisabled(async (ctx) => {

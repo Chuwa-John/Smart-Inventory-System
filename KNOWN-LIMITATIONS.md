@@ -1,0 +1,178 @@
+# Known limitations and technical debt — SaviaSmart
+
+Things deliberately not fixed, and why. Every entry is a conscious tradeoff
+rather than an oversight; anything discovered and left open belongs here on the
+day it is discovered, not on the day someone remembers it.
+
+Each entry records: what the limitation is, why it was not fixed now, the risk
+level, the workaround or compensating control that stands in for the fix, and
+the milestone the real fix is planned for.
+
+Status keys: **OPEN** no fix scheduled · **PLANNED** fix has a milestone ·
+**INHERENT** cannot be fixed at this layer, compensating control only.
+
+This file is excluded from Firebase Hosting and is not served publicly.
+
+---
+
+## L-1 Expected cash in a shift close cannot be proven — **INHERENT**
+
+**Limitation.** A shift is reconciled with
+
+```
+variance     = countedCash - expectedCash
+expectedCash = openingFloat + cashSales - cashRefunds + cashRepayments
+```
+
+`firestore.rules` now pins `openingFloat` to the opening document, requires
+`expectedCash` to equal the derivation above, and requires `variance` to equal
+`countedCash - expectedCash` (`shiftExpectedCashIsDerived`, and
+`tests/rules-shift-variance.test.mjs`). What it still cannot do is prove
+`cashSales`. Firestore rules authorise one write at a time and cannot aggregate
+a shift's sales, so the figure arrives from the client and no arrangement of
+rules will change that.
+
+A cashier who is willing to lie can therefore still understate `cashSales`,
+write the matching `expectedCash`, and close a short drawer as balanced.
+
+**Why not fixed now.** The real fix is to derive `expectedCash` server-side —
+the proxy sums that shift's cash sales with the Admin SDK and writes the closing
+document, after which rules pin it the way they pin `openingFloat`. That is a
+new endpoint, a new failure mode at close of day (a till that cannot close
+because the proxy is unreachable is worse than a till that closes with a figure
+the owner can check), and an offline story that has to be designed rather than
+assumed. It did not fit this release.
+
+**Risk: Medium.** Bounded by the fact that the lie is now *falsifiable*. Before
+the rules change, a cashier could write `variance: 0` directly and nothing
+contradicted it — the number that judged the drawer was chosen by the person
+holding it, and no other record disagreed. Now any concealment must be spent in
+`cashSales`, which is reconcilable against the `sales` collection for the same
+store and window. The attack moved from invisible to detectable.
+
+**Compensating control.** Owner-facing shift reconciliation view: for each
+closed shift, show recorded `cashSales` beside the actual sum of cash sales for
+that store between `openedAt` and `closedAt`, and flag any divergence. Until
+that view exists the data is present and correct but nobody is looking at it,
+which is the weak point of this entry — a detective control nobody reads is not
+a control.
+
+**Planned:** Phase 5 admin dashboard, alongside the F-4 stock reconciliation
+view, which is the same shape of report over a different collection. Build both
+at once.
+
+---
+
+## L-2 A stock decrement cannot be bound to a sale — **INHERENT**
+
+Carried from `SECURITY-AUDIT.md` F-4, recorded here so the whole set is in one
+place. Rules authorise each write independently and cannot verify that a stock
+decrement was accompanied by a matching sale document in the same transaction,
+so a cashier can write stock down without recording a sale.
+
+**Risk: Low**, and unchanged. **Compensating controls:** the sale record and the
+`auditLogs` entry, both required and both owner-readable, plus physical stock
+reconciliation. `movementReason` exists to make the audit trail say *why* stock
+moved rather than showing a bare number change.
+
+Direction-coupling (rejecting a "restock" that decreases stock) was implemented,
+tested, found to be both evadable and outage-prone, and removed. See F-4 for the
+full reasoning — it is a good record of why the obvious fix was the wrong one.
+
+**Planned:** owner-facing stock reconciliation view, Phase 5 admin dashboard.
+
+---
+
+## L-3 The audit log is append-only but not tamper-evident — **OPEN**
+
+Carried from `SECURITY-AUDIT.md`. Rules forbid update and delete, and as of the
+Phase 2 QA pass `action` is a closed, role-scoped set with a closed document
+shape (`tests/rules-audit-log.test.mjs`) — so no client can forge or flood
+entries. But the project owner has full Firebase console access and can delete
+entries out of band. Append-only is not the same as tamper-evident.
+
+**Why not fixed now.** True tamper evidence needs hash-chaining or off-site log
+shipping. Both are real work, and the threat model is the owner attacking their
+own records, which is a different and much weaker motive than staff attacking
+them.
+
+**Risk: Low** for the owner-operated single-business case this product serves
+today. It rises if SaviaSmart is ever used where an owner must prove their books
+to a third party — a lender, an auditor, a tax authority, a buyer. Revisit this
+entry the first time a customer asks whether the logs are admissible.
+
+**Planned:** unscheduled.
+
+---
+
+## L-4 Two proxy-dependent test files are not run in CI — **OPEN**
+
+`tests/invite-preview.test.mjs` and `tests/api-contract.test.mjs` boot the real
+proxy against the emulator. They pass locally but were not executed during the
+2026-08-02 QA pass, because the sandbox running it had no egress and
+`proxy/server.js` never reached `app.listen`.
+
+**Risk: Low but structural.** Everything else in the suite runs on any machine;
+these two need a specific environment, and a test that is awkward to run is a
+test that quietly stops being run. They cover the unauthenticated invite-preview
+endpoint — which is the one route that answers to strangers.
+
+**Compensating control:** run `cd tests && npm test` in full on a developer
+machine before every rules or proxy deploy, not just the non-emulator subset.
+
+**Planned:** make the proxy's startup tolerate no egress (defer whatever
+network call blocks `app.listen`), so the whole suite runs anywhere.
+
+---
+
+## L-6 The access-during-grace audit entry is documented but never written — **OPEN**
+
+**Limitation.** `firestore.rules` explains that `auditLogs` is deliberately not
+gated on `tenantNotFrozen()` because "the deletion request itself, the restore,
+and any access attempt during the grace period are exactly the events an erasure
+audit needs". `rules-deletion.test.mjs` asserts a frozen owner can still append
+an entry, and passes.
+
+But nothing writes it. `ACCOUNT_ACCESS_DURING_GRACE` appears only in
+`firestore.rules` and in two test files — never in `app.js`, never in
+`proxy/server.js`. The permission exists, the test exercises the permission, and
+the writer was never built, so the evidence trail the deletion policy describes
+is empty in production.
+
+Found by `tests/audit-actions-agree.test.mjs` on its first run, comparing the
+rules enum against what the client can actually emit. It was invisible before
+that, because the test asserting the capability supplied the action name itself.
+
+**Why not fixed now.** It needs a decision rather than a patch: what counts as
+"access" worth recording (every app open while frozen? every write attempt? the
+first per session?), and how to avoid a frozen tenant's client writing an audit
+entry on a loop. That is a small design, not a one-liner, and it touches
+`app.js`, so it carries a version bump and a Hosting deploy.
+
+**Risk: Low** operationally — nothing is broken and no data is wrong. It is a
+**documentation-accuracy** risk: `DATA-DELETION.md` describes a control that
+does not exist, and the gap survived a security audit because a test named the
+action for it. If the deletion policy is ever shown to a regulator or a customer
+as evidence of practice, it currently overstates what happens.
+
+**Workaround.** None needed. Deletion, freezing and restoration all work and are
+audited; only the access-attempt trail is absent.
+
+**Planned:** Phase 5, alongside the admin dashboard's audit log viewer — the
+entry is only useful once there is somewhere to read it.
+
+---
+
+## L-5 No load, stress or chaos testing — **OPEN**
+
+Carried from `SECURITY-AUDIT.md`, which marks this a GAP. Correctness under
+concurrency is covered by `concurrency-integrity.test.mjs` and
+`sync-integrity.test.mjs`; behaviour under volume is not tested at all. Nobody
+has measured what happens at 250,000 products, a million sales, or fifty tills
+against one tenant.
+
+**Risk: Medium and unquantified**, which is the problem with it. The first
+customer large enough to find the ceiling will find it in production.
+
+**Planned:** before onboarding any business materially larger than the current
+pilot.

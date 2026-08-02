@@ -751,6 +751,7 @@ const DICTIONARY = {
     "shift.noteLabel": "Note (optional)",
     "shift.openedBy": "Opened by {name}",
     "shift.noneOpen": "No shift open on this till",
+    "shift.closeLockedToOpener": "{name} opened this drawer and counts it down. A manager can close it if they have left.",
     "shift.expected": "Expected in drawer",
     "shift.over": "over",
     "shift.short": "short",
@@ -1384,6 +1385,7 @@ const DICTIONARY = {
     "shift.noteLabel": "Maelezo (hiari)",
     "shift.openedBy": "Imefunguliwa na {name}",
     "shift.noneOpen": "Hakuna zamu iliyo wazi kwenye kaunta hii",
+    "shift.closeLockedToOpener": "{name} alifungua droo hii na ndiye anayeihesabu. Meneja anaweza kuifunga kama ameondoka.",
     "shift.expected": "Inayotarajiwa kwenye droo",
     "shift.over": "zaidi",
     "shift.short": "pungufu",
@@ -3595,7 +3597,17 @@ async function downloadAccountBackup() {
 
   try {
     const { collection, doc, getDoc, getDocs } = state.firebaseApi.firestore;
-    const rootCollections = ["products", "sales", "stores", "staff", "customers", "transfers", "auditLogs", "monthlyReports"];
+    // members and shifts were missing. members carries every staff member's
+    // role and branch assignments, so a business restored without it comes back
+    // with nobody able to sign in but the owner -- the backup would look
+    // complete and the shop still could not open. shifts carries the cash
+    // reconciliation history, which is the record an owner reconciles against
+    // and the one thing here that cannot be reconstructed from anything else.
+    //
+    // errorLog is deliberately absent: it is diagnostic, not business data, and
+    // restoring last month's faults would help nobody.
+    const rootCollections = ["products", "sales", "stores", "staff", "members", "shifts",
+                             "customers", "transfers", "auditLogs", "monthlyReports"];
     const [profileSnap, ...collectionSnaps] = await Promise.all([
       getDoc(doc(state.db, "users", state.user.uid)),
       ...rootCollections.map((name) => getDocs(collection(state.db, "users", state.user.uid, name)))
@@ -3612,7 +3624,7 @@ async function downloadAccountBackup() {
     );
 
     const backup = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       application: "SaviaSmart ERP",
       exportedAt: new Date().toISOString(),
       accountUid: state.user.uid,
@@ -5729,7 +5741,9 @@ function renderShiftPanel() {
           <span class="muted">${esc(t("shift.floatLabel"))}: <strong>${esc(money(open.openingFloat))}</strong></span>
           <span class="muted" id="shiftExpectedLine">${esc(t("shift.expected"))}: <strong>&hellip;</strong></span>
         </div>
-        <div class="shift-actions">
+        ${
+          canCloseOpenShift(open)
+            ? `<div class="shift-actions">
           <label class="shift-field"><span>${esc(t("shift.countedLabel"))}</span>
             <input id="shiftCountedInput" type="number" min="0" max="${MAX_MONEY}" step="1" inputmode="numeric" />
           </label>
@@ -5737,7 +5751,11 @@ function renderShiftPanel() {
             <input id="shiftNoteInput" type="text" maxlength="200" />
           </label>
           <button class="primary-button compact" type="button" id="closeShiftButton">${esc(t("shift.closeButton"))}</button>
-        </div>
+        </div>`
+            : `<div class="shift-actions">
+          <span class="muted">${esc(t("shift.closeLockedToOpener", { name: open.openedByName || "" }))}</span>
+        </div>`
+        }
       </div>`
     : `
       <div class="shift-actions">
@@ -6151,6 +6169,19 @@ function saleIdentity() {
 
 function isManagerOrOwnerRole() {
   return state.currentUserRole === "owner" || state.currentUserRole === "manager";
+}
+
+// A cashier counts down the drawer they opened, and no one else's; a manager or
+// the owner may close any shift on a till they can reach, so a cashier who goes
+// home without closing cannot strand it. Mirrors the shifts update rule in
+// firestore.rules -- the rule is the boundary, this only decides whether the
+// control is worth showing. Hidden rather than disabled, per the same reasoning
+// as the rest of the role gating: a visible control that always refuses tells a
+// bad actor where to push.
+function canCloseOpenShift(shift) {
+  if (!shift) return false;
+  if (isManagerOrOwnerRole()) return true;
+  return Boolean(state.user) && shift.openedByUid === state.user.uid;
 }
 
 // Static, owner-only store controls (rules: stores update = isOwner only,
