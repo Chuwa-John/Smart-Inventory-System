@@ -1,5 +1,5 @@
 // Clears the .js-pending flag that app.html ships with, revealing the app and
-// hiding the "this browser cannot run Savia" notice.
+// hiding the "this browser cannot run SaviaSmart" notice.
 //
 // This is a separate file rather than an inline <script> for one reason: the
 // production Content-Security-Policy is `script-src 'self' ...` with no

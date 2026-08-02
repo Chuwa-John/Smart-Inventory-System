@@ -1,6 +1,6 @@
 {
-  "name": "Savia Smart ERP",
-  "short_name": "Savia",
+  "name": "SaviaSmart ERP",
+  "short_name": "SaviaSmart",
   "description": "Inventory, point of sale, staff and customer credit for Tanzanian shops, in Kiswahili and English.",
   "start_url": "./app.html?source=pwa",
   "scope": "./",

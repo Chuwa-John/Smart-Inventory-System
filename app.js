@@ -341,8 +341,8 @@ const DICTIONARY = {
     "auth.confirmPassword": "Confirm password",
     "auth.consentPrefix": "I agree to the", "auth.consentTerms": "Terms & Conditions",
     "auth.consentAnd": "and", "auth.consentPrivacy": "Privacy Policy", "auth.consentSuffix": ".",
-    "auth.whyTitle": "Why Savia",
-    "auth.aboutLink": "What Savia does →",
+    "auth.whyTitle": "Why SaviaSmart",
+    "auth.aboutLink": "What SaviaSmart does →",
     "auth.ledgerExpected": "Should be in the drawer",
     "auth.ledgerCounted": "Counted at close",
     "auth.ledgerDiff": "Difference",
@@ -968,8 +968,8 @@ const DICTIONARY = {
     "auth.confirmPassword": "Thibitisha nenosiri",
     "auth.consentPrefix": "Nakubali", "auth.consentTerms": "Sheria na Masharti",
     "auth.consentAnd": "na", "auth.consentPrivacy": "Sera ya Faragha", "auth.consentSuffix": ".",
-    "auth.whyTitle": "Kwa Nini Savia",
-    "auth.aboutLink": "Savia inafanya nini →",
+    "auth.whyTitle": "Kwa Nini SaviaSmart",
+    "auth.aboutLink": "SaviaSmart inafanya nini →",
     "auth.ledgerExpected": "Inayotakiwa kuwa kwenye droo",
     "auth.ledgerCounted": "Iliyohesabiwa mwisho",
     "auth.ledgerDiff": "Tofauti",
@@ -2443,7 +2443,7 @@ async function exportMonthlyReportPdf() {
   const metrics = report.metrics || {};
   const doc = new jsPdfCtor();
   doc.setFontSize(14);
-  doc.text(`Savia Monthly Report \u2014 ${report.periodLabel}`, 14, 16);
+  doc.text(`SaviaSmart Monthly Report \u2014 ${report.periodLabel}`, 14, 16);
   doc.setFontSize(10);
   doc.text(new Date().toLocaleString(), 14, 22);
 
@@ -3206,7 +3206,7 @@ async function exportPaymentReportPdf() {
   if (!jsPdfCtor) return showToast(t("toast.pdfLibraryFailed"));
   const doc = new jsPdfCtor();
   doc.setFontSize(14);
-  doc.text("Savia Payment Report", 14, 16);
+  doc.text("SaviaSmart Payment Report", 14, 16);
   doc.setFontSize(10);
   doc.text(new Date().toLocaleString(), 14, 22);
   const headers = Object.keys(rows[0]);
@@ -3579,7 +3579,7 @@ async function downloadAccountBackup() {
 
     const backup = {
       schemaVersion: 1,
-      application: "Savia Smart ERP",
+      application: "SaviaSmart ERP",
       exportedAt: new Date().toISOString(),
       accountUid: state.user.uid,
       profile: profileSnap.exists() ? backupSerializable(profileSnap.data()) : null,
@@ -3644,7 +3644,7 @@ async function generateReportPdf() {
   if (!jsPdfCtor) return showToast(t("toast.pdfLibraryFailed"));
   const doc = new jsPdfCtor();
   doc.setFontSize(14);
-  doc.text("Savia Inventory Report", 14, 16);
+  doc.text("SaviaSmart Inventory Report", 14, 16);
   doc.setFontSize(10);
   doc.text(new Date().toLocaleString(), 14, 22);
   const headers = Object.keys(rows[0]);
@@ -3909,7 +3909,7 @@ function agingBucketStatusClass(bucket) {
 
 function buildReminderTextLines(customer) {
   const days = customerDaysOutstanding(customer);
-  const businessName = state.cachedProfile?.businessName || state.user?.displayName || "Savia";
+  const businessName = state.cachedProfile?.businessName || state.user?.displayName || "SaviaSmart";
   const lines = [
     t("reminder.messageLine1", { name: customer.name || "", business: businessName, balance: money(customer.balanceOwed) })
   ];
@@ -4272,7 +4272,7 @@ function excludePurchaseOrderGroup(groupIndex) {
   renderPurchaseOrderDialog();
 }
 
-// Builds the WhatsApp text for a staff invite. Explicitly names Savia
+// Builds the WhatsApp text for a staff invite. Explicitly names SaviaSmart
 // and the inviting business by name in the message itself -- an invite
 // link with no context is indistinguishable from a phishing link, and
 // staff have no other way to verify who sent it before they've even
@@ -4285,8 +4285,8 @@ function buildStaffInviteTextLines(linkToken, roleLabel) {
   const businessName = state.cachedProfile?.businessName || state.user?.displayName || "your employer";
   const acceptUrl = buildStaffInviteAcceptUrl(linkToken);
   return [
-    `This is an official Savia Smart ERP invitation from ${businessName}.`,
-    `You've been invited to join as a ${roleLabel} on Savia, the inventory and sales system used by ${businessName}.`,
+    `This is an official SaviaSmart ERP invitation from ${businessName}.`,
+    `You've been invited to join as a ${roleLabel} on SaviaSmart, the inventory and sales system used by ${businessName}.`,
     "",
     `Tap this link to accept and set up your account: ${acceptUrl}`,
     "",
@@ -4711,7 +4711,7 @@ async function openBarcodeScanner(target) {
 function receiptMeta(sale) {
   const store = state.stores.find((item) => item.id === (sale.storeId || state.currentStoreId));
   const storeName = store?.name || t("storeSwitcher.fallbackName");
-  const businessName = state.cachedProfile?.businessName || state.user?.displayName || "Savia";
+  const businessName = state.cachedProfile?.businessName || state.user?.displayName || "SaviaSmart";
   const date = sale.createdAt
     ? (typeof sale.createdAt.toDate === "function" ? sale.createdAt.toDate() : new Date(sale.createdAt))
     : new Date();

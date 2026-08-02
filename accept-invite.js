@@ -86,8 +86,8 @@ function renderInviteContext(preview) {
 
   const details = [
     businessName
-      ? `You are joining ${businessName}'s existing business on Savia — you are not creating a business of your own.`
-      : "You are joining an existing business on Savia — you are not creating a business of your own.",
+      ? `You are joining ${businessName}'s existing business on SaviaSmart — you are not creating a business of your own.`
+      : "You are joining an existing business on SaviaSmart — you are not creating a business of your own.",
     preview.emailHint ? `This invitation was issued to ${preview.emailHint}, so sign up with that address.` : "",
     "Your employer controls what you can see and do."
   ].filter(Boolean);
