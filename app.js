@@ -1,9 +1,20 @@
 import { firebaseConfig } from "./firebase-config.js";
 import { aiConfig } from "./ai-config.js";
 
+// Taken from this module's own ?v= query rather than declared. The release
+// procedure already asks for four values to move together; a fifth that only
+// matters when something has already gone wrong is the one most likely to be
+// forgotten, and a fault report labelled with the wrong build is worse than one
+// labelled "unknown".
+const APP_VERSION = (() => {
+  try { return new URL(import.meta.url).searchParams.get("v") || "dev"; }
+  catch { return "unknown"; }
+})();
+
 const state = {
   products: [],
   creditOverrides: [],
+  faults: [],
   shifts: [],
   openShift: null,
   cart: [],
@@ -275,6 +286,9 @@ const DICTIONARY = {
     "control.refundsMonth": "Refunds this month",
     "control.discountsMonth": "Discounts this month",
     "control.totalMismatches": "Sales whose total disagrees with their items",
+    "control.faults": "App faults (7 days)",
+    "control.faultsNote": "Something failed on a device. Tell us what the staff were doing.",
+    "control.faultsClear": "Nothing has failed this week.",
     "control.totalMismatchNote": "Recomputed from line items. Review these sales.",
     "control.totalMismatchClear": "Every sale matches its line items.",
     "control.byStore": "Performance by store",
@@ -901,6 +915,9 @@ const DICTIONARY = {
     "control.refundsMonth": "Marejesho mwezi huu",
     "control.discountsMonth": "Punguzo mwezi huu",
     "control.totalMismatches": "Mauzo yenye jumla isiyolingana na bidhaa zake",
+    "control.faults": "Hitilafu za programu (siku 7)",
+    "control.faultsNote": "Kitu kilishindikana kwenye kifaa. Tuambie wafanyakazi walikuwa wanafanya nini.",
+    "control.faultsClear": "Hakuna kilichoshindikana wiki hii.",
     "control.totalMismatchNote": "Imehesabiwa upya kutoka kwa bidhaa. Kagua mauzo haya.",
     "control.totalMismatchClear": "Kila mauzo yanalingana na bidhaa zake.",
     "control.byStore": "Utendaji kwa duka",
@@ -5909,6 +5926,117 @@ function saleTotalMismatches(sales) {
   return out;
 }
 
+// ---- Fault reporting -------------------------------------------------------
+//
+// Before this, 73 console.warn and console.error calls wrote to a browser
+// console on a shopkeeper's phone. Nobody opens that. A shop hitting a fault
+// reached us only if someone thought to telephone, which means the first report
+// of a broken till is an angry call rather than a row in a list.
+//
+// Deliberately small. This is not crash reporting as a service: it captures
+// what broke, where, and under which build, and puts it somewhere the owner
+// already looks. No third party, no new dependency, no monthly bill on a
+// product whose whole economics are thin.
+//
+// Three things it must never do: cost more than it is worth, leak a customer's
+// details, or break the app it is watching.
+
+const ERROR_LOG_MAX_PER_SESSION = 5;   // a render loop must not write a thousand rows
+const ERROR_LOG_MESSAGE_MAX = 300;     // matches the cap in firestore.rules
+
+const reportedFaults = new Set();      // dedupe: the same fault repeats, it is still one fault
+let faultsReportedThisSession = 0;
+
+// Error text is written by developers but can carry whatever it was handed --
+// a customer name in a thrown message, a phone number in a failed lookup. None
+// of that belongs in a log, so it is removed before the message leaves the
+// device rather than trusted not to be there.
+function scrubFaultText(value) {
+  return String(value ?? "")
+    .replace(/\b[\w.+-]+@[\w-]+\.[\w.]+\b/g, "[email]")
+    .replace(/\b(?:\+?255|0)\d{8,9}\b/g, "[phone]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, ERROR_LOG_MESSAGE_MAX);
+}
+
+async function reportFault(kind, message, where) {
+  try {
+    const text = scrubFaultText(message);
+    if (!text) return;
+    // Dedupe before the session cap, so five DIFFERENT faults are five rows
+    // rather than one fault counted five times.
+    const key = `${kind}:${text}:${where || ""}`;
+    if (reportedFaults.has(key)) return;
+    reportedFaults.add(key);
+    if (faultsReportedThisSession >= ERROR_LOG_MAX_PER_SESSION) return;
+    faultsReportedThisSession += 1;
+
+    if (!state.db || !state.user || !state.businessOwnerUid) return;
+    const { collection, doc, setDoc, serverTimestamp } = state.firebaseApi.firestore;
+    const ref = doc(collection(state.db, "users", state.businessOwnerUid, "errorLog"));
+    await setDoc(ref, {
+      kind,
+      message: text,
+      where: scrubFaultText(where).slice(0, 200) || null,
+      uid: state.user.uid,
+      storeId: state.currentStoreId && state.currentStoreId !== "all" ? state.currentStoreId : null,
+      appVersion: APP_VERSION,
+      createdAt: serverTimestamp()
+    });
+  } catch {
+    // A reporter that throws takes down the thing it was meant to watch. It
+    // stays silent instead: a missing fault row is a smaller problem than a
+    // till that stopped working because logging failed.
+  }
+}
+
+function installFaultReporting() {
+  window.addEventListener("error", (event) => {
+    const where = event.filename
+      ? `${String(event.filename).split("/").pop()}:${event.lineno || 0}`
+      : "";
+    reportFault("error", event.message || event.error?.message || "Unknown error", where);
+  });
+
+  // A rejected promise nobody caught is the commonest way this app fails --
+  // every Firestore call is one -- and it never reaches the handler above.
+  window.addEventListener("unhandledrejection", (event) => {
+    const reason = event.reason;
+    reportFault("rejection", reason?.message || reason?.code || String(reason), "promise");
+  });
+}
+
+// Read for the owner panel. Bounded and quiet, like the credit overrides tile:
+// a supervisory figure must never take down the screen showing the day's cash.
+const FAULT_WINDOW_DAYS = 7;
+let faultFetchKey = null;
+
+function ensureFaultsLoaded() {
+  if (!state.db || !state.businessOwnerUid) return;
+  if (faultFetchKey === state.businessOwnerUid) return;
+  faultFetchKey = state.businessOwnerUid;
+  loadFaults().then(() => renderAdminControl());
+}
+
+async function loadFaults() {
+  try {
+    const { collection, query, orderBy, limit, getDocs } = state.firebaseApi.firestore;
+    const snapshot = await getDocs(query(
+      collection(state.db, "users", state.businessOwnerUid, "errorLog"),
+      orderBy("createdAt", "desc"),
+      limit(50)
+    ));
+    const since = Date.now() - FAULT_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+    state.faults = snapshot.docs
+      .map((entry) => entry.data())
+      .filter((row) => row.createdAt?.toDate && row.createdAt.toDate().getTime() >= since);
+  } catch (error) {
+    console.warn("Could not load the fault log.", error);
+    state.faults = null;
+  }
+}
+
 function renderAdminControl() {
   const panel = qs("#adminControlPanel");
   if (!panel) return;
@@ -5942,6 +6070,7 @@ function renderAdminControl() {
   const stockAtRetail = state.products.reduce((sum, p) => sum + safeNumber(p.quantity) * safeNumber(p.sellingPrice), 0);
   const creditOwed = state.customers.reduce((sum, c) => sum + safeNumber(c.balanceOwed), 0);
 
+  ensureFaultsLoaded();
   const totalMismatches = saleTotalMismatches(state.sales);
 
   qs("#adminControlGrid").innerHTML = [
@@ -5961,6 +6090,11 @@ function renderAdminControl() {
     controlTile(t("control.discountsMonth"), money(month.discounts), month.discounts > 0 ? "warn" : ""),
     // Nothing server-side can prove a total matches its line items, so this
     // reports the ones that do not rather than pretending the check exists.
+    // A fault nobody can see is a fault reported by an angry phone call.
+    controlTile(t("control.faults"),
+      state.faults === null ? "—" : String(state.faults.length),
+      state.faults?.length ? "danger" : "",
+      state.faults?.length ? t("control.faultsNote") : t("control.faultsClear")),
     controlTile(t("control.totalMismatches"), String(totalMismatches.length),
       totalMismatches.length ? "danger" : "",
       totalMismatches.length ? t("control.totalMismatchNote") : t("control.totalMismatchClear"))
@@ -8201,6 +8335,7 @@ function bindEvents() {
 // The landing page links here with ?mode=signin for "Sign in" and plainly for
 // "Get started", so the two are one journey rather than two products that
 // happen to share a palette. Signup stays the default for a bare visit.
+installFaultReporting();
 setAuthMode(new URLSearchParams(location.search).get("mode") === "signin" ? "signin" : "signup");
 bindEvents();
 initIdleActivityTracking();

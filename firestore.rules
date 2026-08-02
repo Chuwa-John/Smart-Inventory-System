@@ -536,6 +536,34 @@ service cloud.firestore {
         allow update, delete: if false;
       }
 
+      // Client faults, so a shop breaking is something the owner can see rather
+      // than something they have to phone about. 73 console.warn calls existed
+      // before this and every one of them landed in a browser console on a
+      // phone nobody will ever open.
+      //
+      // Append-only and owner-read: staff write what broke in front of them but
+      // cannot read the collection back or tidy it afterwards. Bounded fields
+      // so a loop cannot write unbounded documents, and no field here is meant
+      // to carry customer data -- the client strips what looks like a phone
+      // number or an email before sending.
+      match /errorLog/{entryId} {
+        function validErrorEntry() {
+          let d = request.resource.data;
+          return d.message is string && d.message.size() > 0 && d.message.size() <= 300
+            && d.uid == request.auth.uid
+            && (!('where' in d) || (d.where is string && d.where.size() <= 200))
+            && (!('kind' in d) || d.kind in ['error', 'rejection'])
+            && (!('storeId' in d) || d.storeId == null || (d.storeId is string && d.storeId.size() <= 64))
+            && (!('appVersion' in d) || (d.appVersion is string && d.appVersion.size() <= 40));
+        }
+        allow read: if isOwner(userId);
+        allow create: if tenantNotFrozen(userId)
+          && (isOwner(userId) || isOwnerOrRole(userId, ["manager", "cashier"]))
+          && validErrorEntry();
+        // A fault report that can be edited or removed is not a report.
+        allow update, delete: if false;
+      }
+
       match /auditLogs/{logId} {
         // Deliberately NOT gated on tenantNotFrozen(). A frozen tenant must
         // still be able to record what happened to it -- the deletion request
