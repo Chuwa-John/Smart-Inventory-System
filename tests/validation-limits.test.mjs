@@ -3,7 +3,7 @@
 //   node validation-limits.test.mjs
 //
 // Three separate places enforce length in this system, and they deploy
-// independently: the browser (index.html maxlength + app.js constants), the
+// independently: the browser (app.html maxlength + app.js constants), the
 // proxy on Render (proxy/server.js), and Firestore rules. Nothing linked them,
 // so they drifted -- the AI box accepted 2,000 characters against a server that
 // rejects at 700, and every product text field was unbounded against rules that
@@ -16,7 +16,7 @@
 // Change a cap anywhere and this tells you what else has to move.
 import { readFileSync } from "node:fs";
 
-const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+const html = readFileSync(new URL("../app.html", import.meta.url), "utf8");
 const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const proxy = readFileSync(new URL("../proxy/server.js", import.meta.url), "utf8");
 const rules = readFileSync(new URL("../firestore.rules", import.meta.url), "utf8");

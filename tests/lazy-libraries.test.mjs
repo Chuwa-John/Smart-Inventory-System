@@ -7,14 +7,14 @@
 // alone is 315 KB gzipped and serves one occasional owner export, yet every
 // cashier paid for it at every shift start.
 //
-// Two ways this regresses. Someone re-adds a <script> tag to index.html for
+// Two ways this regresses. Someone re-adds a <script> tag to app.html for
 // convenience and the cost quietly comes back. Or a consumer uses a global
 // without awaiting the load first, which works on a warm cache and fails on a
 // cold one -- the kind of bug that never reproduces on the developer's machine.
 import { readFileSync } from "node:fs";
 
 const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
-const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+const html = readFileSync(new URL("../app.html", import.meta.url), "utf8");
 
 const results = [];
 function check(name, pass, detail = "") {
@@ -30,7 +30,7 @@ const registry = app.slice(
 console.log("=== nothing heavy loads before the app does ===");
 {
   const eagerTags = [...html.matchAll(/<script[^>]*cdnjs\.cloudflare\.com[^>]*>/g)];
-  check("index.html has no eager CDN script tags", eagerTags.length === 0,
+  check("app.html has no eager CDN script tags", eagerTags.length === 0,
     eagerTags.map((m) => m[0].slice(0, 80)).join("\n      "));
 
   // The Firebase SDK is a different case: the app genuinely cannot start

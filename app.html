@@ -1,0 +1,989 @@
+<!doctype html>
+<html lang="en" class="js-pending">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Savia Smart ERP</title>
+    <link rel="preconnect" href="https://www.gstatic.com" />
+    <!-- Export/scanner libraries load on demand (see EXTERNAL_LIBRARIES in
+         app.js). Warming the connection here keeps that first click quick
+         without paying to download 552 KB nobody may ever use. -->
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
+    <link rel="stylesheet" href="./styles.css?v=20260802f" />
+    <link rel="manifest" href="./manifest.json" />
+    <meta name="theme-color" content="#0b0d10" />
+    <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
+    <link rel="icon" href="./icons/icon-512.png" sizes="512x512" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Savia" />
+  </head>
+  <body>
+    <!-- Cleared only by a browser that can run ES modules. One too old to parse
+         this tag ignores it and keeps .js-pending, which is the whole point:
+         the fallback below stays up instead of the app shell rendering as a
+         dead jumble of six stacked views.
+         A FILE, not an inline script: the production CSP is script-src 'self'
+         with no unsafe-inline, so an inline version is blocked and the notice
+         never clears. Separate from app.js so it does not wait on a 360 KB
+         download to decide. -->
+    <script type="module" src="./boot.js?v=20260802f"></script>
+
+    <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
+         data-saver proxy, or a browser too old for ES modules. Opera Mini's
+         extreme mode does all three and has real share in this market.
+         Bilingual and static, because the translation layer is part of what
+         is not running. -->
+    <div class="app-unavailable" role="alert">
+      <div class="app-unavailable-card">
+        <strong>Savia needs JavaScript to run.</strong>
+        <p>Please open this page in Chrome, Firefox, Edge or Safari, and turn off
+           any data-saving or "extreme" browsing mode.</p>
+        <p lang="sw">Savia inahitaji JavaScript ifanye kazi. Tafadhali fungua
+           ukurasa huu kwa Chrome, Firefox, Edge au Safari, na uzime hali ya
+           kuokoa data.</p>
+      </div>
+    </div>
+
+    <!-- First tab stop on every view. Without it a keyboard user crossed 21
+         controls -- the whole sidebar and topbar -- before reaching the page
+         they had just navigated to, on every single navigation. -->
+    <a class="skip-link" href="#mainContent" data-i18n="a11y.skipToContent">Skip to main content</a>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <div class="brand">
+          <div class="brand-mark">S</div>
+          <div>
+            <strong>Savia</strong>
+            <span data-i18n="brand.tagline">AI Inventory ERP</span>
+          </div>
+        </div>
+
+        <nav class="nav-list">
+          <button class="nav-item active" data-view="dashboard" data-i18n="nav.dashboard">Dashboard</button>
+          <button class="nav-item" data-view="inventory" data-i18n="nav.inventory">Inventory</button>
+          <button class="nav-item" data-view="pos" data-i18n="nav.pos">Point of Sale</button>
+          <button class="nav-item" data-view="reports" data-i18n="nav.reports">Reports</button>
+          <button class="nav-item" data-view="ai" data-i18n="nav.ai">AI Advisor</button>
+        </nav>
+
+        <div class="sidebar-card">
+          <span class="status-dot"></span>
+          <div>
+            <strong id="connectionLabel">Account inventory</strong>
+            <span id="connectionHint" data-i18n="sidebar.connectionHintSignedOut">Sign in to sync inventory</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main" id="mainContent" tabindex="-1">
+        <header class="topbar">
+          <button class="icon-button mobile-menu" id="mobileMenuButton" aria-label="Open menu">&#9776;</button>
+          <div class="search-wrap">
+            <span>Search</span>
+            <input id="globalSearch" type="search" placeholder="Search your products..." data-i18n-placeholder="topbar.searchPlaceholder" data-i18n-aria-label="a11y.globalSearch" />
+            <kbd>Ctrl K</kbd>
+          </div>
+          <div class="account-chip" id="accountChip" hidden>
+            <span id="userEmail">Signed out</span>
+            <button class="ghost-button compact" id="downloadBackupButton" type="button" data-i18n="backup.button">Download Backup</button>
+            <button class="ghost-button compact" id="overridePasswordSettingsButton" type="button" data-i18n="settings.overridePasswordOpenButton">Discount Password</button>
+            <button class="ghost-button compact" id="signOutButton" data-i18n="topbar.signOut">Sign out</button>
+            <button class="ghost-button compact danger" id="deleteAccountButton" type="button" data-i18n="deleteAccount.button">Delete Account</button>
+          </div>
+          <button class="ghost-button compact" id="langToggleButton" type="button">Kiswahili</button>
+          <button class="ghost-button" id="themeButton">Light</button>
+          <button class="primary-button" id="newProductButton" data-i18n="topbar.addProduct">Add Product</button>
+        </header>
+
+        <div class="verify-banner" id="verifyBanner" hidden role="status">
+          <span data-i18n="verifyEmail.bannerText">Please verify your email address to keep full access to your account.</span>
+          <button class="ghost-button compact" id="resendVerificationButton" type="button" data-i18n="verifyEmail.resendButton">Resend verification email</button>
+        </div>
+
+        <!-- Selling uses a Firestore transaction, and transactions cannot run
+             offline however good the local cache is. Without this the till just
+             failed with an SDK string and no explanation. -->
+        <div class="verify-banner danger-banner" id="offlineBanner" hidden role="status">
+          <span data-i18n="offline.bannerText">No internet connection. You can keep browsing, but sales cannot be recorded until the connection returns.</span>
+        </div>
+
+        <div class="verify-banner danger-banner" id="deletionPendingBanner" hidden role="alert">
+          <span id="deletionPendingText">This account is scheduled for permanent deletion.</span>
+          <button class="ghost-button compact" id="cancelDeletionButton" type="button" data-i18n="deleteAccount.restoreButton">Restore my account</button>
+        </div>
+
+        <div class="verify-banner" id="overridePasswordNudgeBanner" hidden role="status">
+          <span data-i18n="nudge.overridePasswordText">Set a password for price discounts and overrides so only trusted staff can use them.</span>
+          <button class="ghost-button compact" id="overridePasswordNudgeSetButton" type="button" data-i18n="nudge.overridePasswordSetButton">Set it now</button>
+          <button class="ghost-button compact" id="overridePasswordNudgeDismissButton" type="button" data-i18n="nudge.overridePasswordDismissButton">Dismiss</button>
+        </div>
+
+        <section class="view active" id="dashboard">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow" data-i18n="dashboard.eyebrowToday">Today</p>
+              <h1 data-i18n="dashboard.title">Operations Command Center</h1>
+            </div>
+            <div class="store-switcher">
+              <select id="storeSwitcher" aria-label="Current store"></select>
+              <button class="ghost-button compact" id="addStoreButton" type="button" data-i18n="dashboard.addStore">+ Store</button>
+               <button class="ghost-button compact" id="renameStoreButton" type="button" data-i18n="dashboard.renameStore">Rename</button>
+              <button class="ghost-button compact" id="setBusinessTypeButton" type="button" data-i18n="dashboard.setBusinessType">Business Type</button>
+              <button class="ghost-button compact" id="setCurrencyButton" type="button" data-i18n="dashboard.setCurrency">Currency</button>
+              <button class="ghost-button compact" id="archiveStoreButton" type="button" data-i18n="dashboard.archiveStore">Archive</button>            </div>
+          </div>
+
+          <div class="kpi-grid" id="kpiGrid"></div>
+
+          <!-- Shift control. Manager + owner. Scoped to the store on screen and
+               to today, because it answers "what happened on my floor during my
+               shift" -- the question the KPI grid above does not. -->
+          <section class="control-panel" id="managerControlPanel" hidden>
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="control.managerEyebrow">Shift control</p>
+                <h2 data-i18n="control.managerTitle">Manager control</h2>
+              </div>
+              <span class="muted control-scope" id="managerControlScope"></span>
+            </div>
+            <div class="control-grid" id="managerControlGrid"></div>
+
+            <!-- Cash reconciliation. Rendered by renderShiftPanel(): either an
+                 open shift with its expected drawer and a way to close it, or
+                 the float entry to open one. -->
+            <div class="control-subhead">
+              <h3 data-i18n="shift.heading">Shift &amp; cash</h3>
+            </div>
+            <div id="shiftPanel" class="shift-panel"></div>
+            <div class="control-subhead">
+              <h3 data-i18n="control.byStaffToday">Takings by staff today</h3>
+            </div>
+            <div class="table-scroll">
+              <table class="control-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="control.colStaff">Staff</th>
+                    <th data-i18n="control.colSales">Sales</th>
+                    <th data-i18n="control.colItems">Items</th>
+                    <th data-i18n="control.colDiscount">Discounts</th>
+                    <th data-i18n="control.colVoids">Voids</th>
+                    <th data-i18n="control.colTakings">Takings</th>
+                  </tr>
+                </thead>
+                <tbody id="managerStaffTable"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <!-- Business control. Owner only. Deliberately NOT today-scoped and
+               not store-scoped: this is the whole business over the month, plus
+               the governance facts an owner is accountable for. -->
+          <section class="control-panel" id="adminControlPanel" hidden>
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="control.adminEyebrow">Business control</p>
+                <h2 data-i18n="control.adminTitle">Owner control</h2>
+              </div>
+              <span class="muted control-scope" data-i18n="control.allStoresScope">All stores · month to date</span>
+            </div>
+            <div class="control-grid" id="adminControlGrid"></div>
+            <div class="control-subhead">
+              <h3 data-i18n="control.byStore">Performance by store</h3>
+            </div>
+            <div class="table-scroll">
+              <table class="control-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="control.colStore">Store</th>
+                    <th data-i18n="control.colToday">Today</th>
+                    <th data-i18n="control.colMonth">Month to date</th>
+                    <th data-i18n="control.colLowStock">Low / out</th>
+                    <th data-i18n="control.colStockValue">Stock at cost</th>
+                  </tr>
+                </thead>
+                <tbody id="adminStoreTable"></tbody>
+              </table>
+            </div>
+            <div class="control-subhead">
+              <h3 data-i18n="control.governance">Governance</h3>
+            </div>
+            <div class="control-governance" id="adminGovernance"></div>
+          </section>
+
+          <div class="dashboard-grid">
+            <article class="panel sales-panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow" data-i18n="dashboard.analyticsEyebrow">Inventory analytics</p>
+                  <h2 data-i18n="dashboard.stockLevelsTitle">Stock levels</h2>
+                </div>
+                <select id="chartRange" aria-label="Chart range">
+                  <option value="quantity" data-i18n="dashboard.chartQuantity">Quantity</option>
+                </select>
+              </div>
+              <canvas id="salesChart" width="900" height="320"></canvas>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow" data-i18n="dashboard.alertsEyebrow">Smart alerts</p>
+                  <h2 data-i18n="dashboard.needsAttention">Needs attention</h2>
+                </div>
+                <div class="alert-head-controls">
+                  <label class="checkbox-row"><input type="checkbox" id="stockAlertPopupToggle" checked /> <span data-i18n="dashboard.popupAlerts">Popup alerts</span></label>
+                  <button class="ghost-button compact" type="button" data-ask-ai="alerts" data-i18n="dashboard.askAiButton">Ask AI about this</button>
+                  <span class="count-badge" id="alertCount">0</span>
+                </div>
+              </div>
+              <div class="alert-list" id="alertList"></div>
+            </article>
+          </div>
+
+          <div class="dashboard-grid secondary-grid">
+            <article class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow" data-i18n="dashboard.analyticsEyebrow">Inventory analytics</p>
+                  <h2 data-i18n="dashboard.movementTitle">Movement classes</h2>
+                </div>
+              </div>
+              <div class="movement-list" id="movementList"></div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow" data-i18n="dashboard.aiEngineEyebrow">AI reorder engine</p>
+                  <h2 data-i18n="dashboard.recommendationsTitle">Purchase recommendations</h2>
+                </div>
+                <button class="ghost-button compact" type="button" data-ask-ai="recommendations" data-i18n="dashboard.askAiButton">Ask AI about this</button>
+              </div>
+              <div class="recommendation-list" id="recommendationList"></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" id="inventory">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow" data-i18n="inventory.eyebrow">Stock control</p>
+              <h1 data-i18n="inventory.title">Inventory Management</h1>
+            </div>
+            <div class="button-row">
+              <button class="ghost-button" id="exportInventoryButton" data-i18n="inventory.exportCsv">Export CSV</button>
+              <button class="ghost-button" id="generatePoButton" type="button" data-i18n="inventory.generatePoButton">Generate Purchase Orders</button>
+              <button class="primary-button" id="inventoryAddButton" data-i18n="inventory.addProduct">Add Product</button>
+            </div>
+          </div>
+
+          <div class="filters">
+            <select id="categoryFilter" aria-label="Category filter"></select>
+            <select id="stockFilter" aria-label="Stock status filter">
+              <option value="all" data-i18n="inventory.stockAll">All stock states</option>
+              <option value="low" data-i18n="inventory.stockLow">Low stock</option>
+              <option value="out" data-i18n="inventory.stockOut">Out of stock</option>
+              <option value="healthy" data-i18n="inventory.stockHealthy">Healthy</option>
+            </select>
+          </div>
+
+          <article class="panel table-panel">
+            <table>
+              <thead>
+                <tr>
+                  <th data-sort="name" data-i18n="inventory.thProduct">Product</th>
+                  <th data-sort="category" data-i18n="inventory.thCategory">Category</th>
+                  <th data-sort="brand" data-i18n="inventory.thBrand">Brand</th>
+                  <th data-sort="supplier" data-i18n="inventory.thSupplier">Supplier</th>
+                  <th data-sort="quantity" data-i18n="inventory.thQty">Qty</th>
+                  <th data-i18n="inventory.thStatus">Status</th>
+                  <th data-i18n="inventory.thExpiry">Expiry</th>
+                  <th data-i18n="inventory.thActions">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="inventoryTable"></tbody>
+            </table>
+          </article>
+        </section>
+
+        <section class="view" id="pos">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow" data-i18n="pos.eyebrow">Fast checkout</p>
+              <h1 data-i18n="pos.title">Point of Sale</h1>
+            </div>
+          </div>
+          <div class="pos-grid">
+            <article class="panel">
+              <div class="panel-head">
+                <h2 data-i18n="pos.productSearch">Product Search</h2>
+                <span class="scan-input-row">
+                  <input id="posSearch" type="search" placeholder="Search products" data-i18n-placeholder="pos.searchPlaceholder" data-i18n-aria-label="a11y.posSearch" />
+                  <button class="ghost-button compact" type="button" id="scanPosBarcodeButton" data-i18n="pos.scanBarcode">Scan Barcode</button>
+                </span>
+              </div>
+              <div class="pos-products" id="posProducts"></div>
+            </article>
+            <article class="panel cart-panel">
+              <div class="panel-head">
+                <h2 data-i18n="pos.currentSale">Current Sale</h2>
+                <span class="count-badge" id="cartCount">0</span>
+              </div>
+              <div id="cartItems" class="cart-items"></div>
+              <div class="button-row end">
+                <button class="ghost-button compact" id="undoCartButton" type="button" disabled data-i18n="pos.undoAction">Undo Last Action</button>
+                <button class="ghost-button compact" id="clearCartButton" type="button" data-i18n="pos.clearCart">Clear Cart</button>
+              </div>
+              <div class="discount-controls">
+                <label><span data-i18n="pos.discountLabel">Discount</span>
+                  <select id="discountTypeSelect">
+                    <option value="none" data-i18n="pos.discountNone">No discount</option>
+                    <option value="percent" data-i18n="pos.discountPercent">Percentage (%)</option>
+                    <option value="fixed" data-i18n="pos.discountFixed">Fixed amount (TZS)</option>
+                  </select>
+                </label>
+                <div class="discount-value-row" id="discountValueRow" hidden>
+                  <input id="discountValueInput" type="number" min="0" step="0.01" placeholder="Enter value" data-i18n-placeholder="pos.discountValuePlaceholder" data-i18n-aria-label="a11y.discountValue" />
+                  <button class="ghost-button compact" id="applyDiscountButton" type="button" data-i18n="pos.applyDiscount">Apply</button>
+                  <button class="ghost-button compact danger" id="clearDiscountButton" type="button" hidden data-i18n="pos.clearDiscount">Clear</button>
+                </div>
+              </div>
+              <div class="cart-total" id="cartSubtotalRow" hidden>
+                <span data-i18n="pos.subtotal">Subtotal</span>
+                <strong id="cartSubtotalValue">TZS 0</strong>
+              </div>
+              <div class="cart-total" id="cartDiscountRow" hidden>
+                <span data-i18n="pos.discountAppliedLabel">Discount</span>
+                <strong id="cartDiscountValue">- TZS 0</strong>
+              </div>
+              <div class="cart-total">
+                <span data-i18n="pos.total">Total</span>
+                <strong id="cartTotal">TZS 0</strong>
+              </div>
+              <!-- The seller is the signed-in account. This replaced a dropdown
+                   of names the owner kept by hand, which could be left on the
+                   wrong person and mis-attribute a sale. -->
+              <div class="staff-controls">
+                <span class="pos-staff-identity">
+                  <span data-i18n="pos.servedByLabel">Served by</span>
+                  <strong id="posStaffIdentity"></strong>
+                </span>
+                <button class="ghost-button compact" id="staffRosterButton" type="button" data-i18n="staff.rosterButton">Staff Roster</button>
+              </div>
+              <label><span data-i18n="pos.customerName">Customer name (optional)</span>
+                <input id="posCustomerName" type="text" maxlength="80" placeholder="e.g. Amina" data-i18n-placeholder="pos.customerNamePlaceholder" />
+              </label>
+              <label><span data-i18n="pos.customerPhone">Customer phone (optional)</span>
+                <input id="posCustomerPhone" type="tel" maxlength="20" placeholder="e.g. 07XXXXXXXX" data-i18n-placeholder="pos.customerPhonePlaceholder" />
+              </label>
+              <label><span data-i18n="pos.orderNumberLabel">Order number (optional)</span>
+                <input id="posOrderNumber" type="text" inputmode="numeric" pattern="[0-9]{1,10}" maxlength="10" placeholder="Leave blank to auto-generate" data-i18n-placeholder="pos.orderNumberPlaceholder" />
+              </label>
+              <div class="payment-grid" id="paymentGrid">
+                <button class="ghost-button payment-option active" data-payment="cash" type="button" data-i18n="pos.cash">Cash</button>
+                <button class="ghost-button payment-option" data-payment="mobile" type="button" data-i18n="pos.mobile">Mobile Money</button>
+                <button class="ghost-button payment-option" data-payment="card" type="button" data-i18n="pos.card">Card</button>
+                <button class="ghost-button payment-option" data-payment="credit" type="button" data-i18n="pos.credit">Credit</button>
+              </div>
+              <div class="cash-tender-row" id="cashTenderRow">
+                <label><span data-i18n="pos.amountTendered">Amount tendered</span><input id="cashTendered" type="number" min="0" placeholder="Enter cash received" data-i18n-placeholder="pos.tenderedPlaceholder" /></label>
+                <div class="change-due"><span data-i18n="pos.changeDue">Change due</span><strong id="changeDue">TZS 0</strong></div>
+              </div>
+              <div class="cash-tender-row" id="creditAmountPaidRow" hidden>
+                <label><span data-i18n="pos.amountPaidNow">Amount paid now (optional)</span><input id="creditAmountPaidInput" type="number" min="0" placeholder="0 if fully on credit" data-i18n-placeholder="pos.amountPaidPlaceholder" /></label>
+                <label><span data-i18n="pos.amountPaidMethod">Method for amount paid now</span>
+                  <select id="creditAmountPaidMethod">
+                    <option value="cash" data-i18n="pos.cash">Cash</option>
+                    <option value="mobile" data-i18n="pos.mobile">Mobile Money</option>
+                    <option value="card" data-i18n="pos.card">Card</option>
+                  </select>
+                </label>
+              </div>
+              <button class="primary-button full-width" id="completeSaleButton" data-i18n="pos.completeSale">Complete Sale</button>
+              <button class="ghost-button full-width" id="undoSaleButton" type="button" disabled data-i18n="pos.undoSale">Undo Last Sale</button>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" id="reports">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow" data-i18n="reports.eyebrow">Business intelligence</p>
+              <h1 data-i18n="reports.title">Reports</h1>
+            </div>
+          </div>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.financialEyebrow">Financial tracking</p>
+                <h2 data-i18n="reports.salesTitle">Sales &amp; Payment Reports</h2>
+              </div>
+              <select id="salesRangePreset" aria-label="Date range">
+                <option value="today" data-i18n="reports.rangeToday">Today</option>
+                <option value="week" data-i18n="reports.rangeWeek">This week</option>
+                <option value="month" selected data-i18n="reports.rangeMonth">This month</option>
+                <option value="all" data-i18n="reports.rangeAll">All time</option>
+                <option value="custom" data-i18n="reports.rangeCustom">Custom range</option>
+              </select>
+            </div>
+            <div class="sales-range-custom" id="salesRangeCustom" hidden>
+              <label><span data-i18n="reports.from">From</span><input id="salesRangeFrom" type="date" /></label>
+              <label><span data-i18n="reports.to">To</span><input id="salesRangeTo" type="date" /></label>
+            </div>
+            <div class="payment-method-grid" id="paymentMethodGrid"></div>
+            <div class="payment-summary" id="paymentSummary"></div>
+            <div class="store-breakdown" id="storeBreakdown" hidden></div>
+            <div class="button-row end">
+              <button class="ghost-button compact" id="exportPaymentCsvButton" type="button" data-i18n="reports.exportCsv">Export CSV</button>
+              <button class="ghost-button compact" id="exportPaymentPdfButton" type="button" data-i18n="reports.exportPdf">Export PDF</button>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.financialEyebrow">Financial tracking</p>
+                <h2 data-i18n="reports.staffBreakdownTitle">Sales by Staff</h2>
+              </div>
+              <input id="orderNumberSearch" type="search" placeholder="Search order number" data-i18n-placeholder="reports.searchOrderPlaceholder" data-i18n-aria-label="a11y.orderNumberSearch" />
+            </div>
+            <div id="orderNumberSearchResult" class="muted" hidden></div>
+            <div class="table-panel" style="box-shadow:none;border:none">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="reports.staffColumn">Staff</th>
+                    <th data-i18n="pos.cash">Cash</th>
+                    <th data-i18n="pos.mobile">Mobile Money</th>
+                    <th data-i18n="pos.card">Card</th>
+                    <th data-i18n="pos.total">Total</th>
+                    <th data-i18n="reports.ordersColumn">Orders</th>
+                  </tr>
+                </thead>
+                <tbody id="staffBreakdownTable"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="customers.sectionEyebrow">Accounts receivable</p>
+                <h2 data-i18n="customers.sectionTitle">Customer Accounts (Credit)</h2>
+              </div>
+              <strong id="customerAccountsTotal"></strong>
+            </div>
+            <div class="table-panel" style="box-shadow:none;border:none">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="customers.colName">Customer</th>
+                    <th data-i18n="customers.colPhone">Phone</th>
+                    <th data-i18n="customers.colBalance">Balance Owed</th>
+                    <th data-i18n="customers.colDaysOutstanding">Days Outstanding</th>
+                    <th data-i18n="customers.colCreditLimit">Credit Alert At</th>
+                    <th data-i18n="customers.colActions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="customerAccountsTable"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.financialEyebrow">Financial tracking</p>
+                <h2 data-i18n="reports.topCustomersTitle">Top Customers</h2>
+              </div>
+            </div>
+            <div class="table-panel" style="box-shadow:none;border:none">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="reports.colCustomerName">Customer</th>
+                    <th data-i18n="reports.colCustomerPhone">Phone</th>
+                    <th data-i18n="reports.ordersColumn">Orders</th>
+                    <th data-i18n="reports.colTotalSpent">Total Spent</th>
+                    <th data-i18n="reports.colLastVisit">Last Visit</th>
+                  </tr>
+                </thead>
+                <tbody id="topCustomersTable"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.financialEyebrow">Financial tracking</p>
+                <h2 data-i18n="reports.staffOrderLookupTitle">Order Lookup</h2>
+              </div>
+            </div>
+            <div class="form-grid">
+              <label><span data-i18n="pos.staffLabel">Staff member</span>
+                <select id="staffOrderLookupStaff"></select>
+              </label>
+              <label><span data-i18n="reports.staffOrderLookupOrderLabel">Order number</span>
+                <select id="staffOrderLookupOrderNumber"></select>
+              </label>
+              <label><span data-i18n="reports.from">From</span>
+                <input id="staffOrderLookupDateFrom" type="date" />
+              </label>
+              <label><span data-i18n="reports.to">To</span>
+                <input id="staffOrderLookupDateTo" type="date" />
+              </label>
+            </div>
+            <p class="muted" data-i18n="reports.staffOrderLookupDateHint">Leave both dates blank to see every order for this staff member.</p>
+            <div class="button-row end">
+              <button class="ghost-button compact" id="staffOrderLookupAllButton" type="button" data-i18n="reports.staffOrderLookupAllButton">Generate All Orders</button>
+              <button class="primary-button compact" id="staffOrderLookupButton" type="button" data-i18n="reports.staffOrderLookupButton">Find Order</button>
+            </div>
+            <div id="staffOrderLookupResult" class="staff-order-result"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.financialEyebrow">Financial tracking</p>
+                <h2 data-i18n="reports.dailyStaffReportTitle">Daily Staff Report</h2>
+              </div>
+              <div class="button-row" style="gap:8px">
+                <input id="dailyStaffReportDate" type="date" data-i18n-aria-label="a11y.staffReportDate" />
+                <button class="primary-button compact" id="dailyStaffReportButton" type="button" data-i18n="reports.dailyStaffReportButton">Generate Daily Report</button>
+              </div>
+            </div>
+            <div id="dailyStaffReportResult" class="daily-staff-report"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="monthlyReport.sectionEyebrow">AI-generated</p>
+                <h2 data-i18n="monthlyReport.sectionTitle">Monthly Reports</h2>
+              </div>
+              <div class="button-row" style="gap:8px">
+                <label style="flex-direction:row;align-items:center;gap:6px;color:inherit"><span data-i18n="monthlyReport.monthLabel">Month</span><input id="monthlyReportMonth" type="month" /></label>
+                <button class="primary-button compact" id="generateMonthlyReportButton" type="button" data-i18n="monthlyReport.generateButton">Generate Report</button>
+              </div>
+            </div>
+            <div class="report-grid" id="monthlyReportsList"></div>
+          </article>
+
+          <div class="report-grid" id="reportGrid"></div>
+        </section>
+
+        <section class="view" id="ai">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow" data-i18n="ai.eyebrow">Anthropic powered</p>
+              <h1 data-i18n="ai.title">AI Business Advisor</h1>
+            </div>
+          </div>
+          <div class="ai-layout">
+            <article class="panel">
+              <div class="question-grid" id="aiSmartQuestions"></div>
+              <div class="question-grid">
+                <button data-question="How do I use the POS?">Guide: POS</button>
+                <button data-question="How do I manage inventory?">Guide: Inventory</button>
+                <button data-question="How do I read my reports?">Guide: Reports</button>
+                <button data-question="How do I use multiple stores?">Guide: Multi-store</button>
+              </div>
+              <textarea id="aiQuestion" rows="5" placeholder="Ask about your inventory, stock levels, sales, or forecasts..." data-i18n-placeholder="ai.questionPlaceholder" maxlength="700" data-i18n-aria-label="a11y.aiQuestion"></textarea>
+              <button class="primary-button" id="askAiButton" data-i18n="ai.askButton">Ask AI Advisor</button>
+            </article>
+            <article class="panel ai-answer">
+              <div class="panel-head">
+                <h2 data-i18n="ai.conversation">Conversation</h2>
+                <div class="button-row" style="gap:8px">
+                  <span id="aiMode" class="count-badge">Local</span>
+                  <button class="ghost-button compact" id="clearChatButton" type="button" data-i18n="ai.clear">Clear</button>
+                </div>
+              </div>
+              <div id="aiAnswer" class="chat-log"></div>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="stockAlertDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="stockAlert.title">Stock Alert</h2>
+        <button class="icon-button" type="button" id="stockAlertPopupClose" aria-label="Close">&times;</button>
+      </div>
+      <p><strong id="stockAlertProductName"></strong></p>
+      <p id="stockAlertDetail" class="muted"></p>
+      <p id="stockAlertSuggestion" class="muted"></p>
+      <p id="stockAlertQueueNote" class="muted"></p>
+      <div class="button-row end">
+        <button class="primary-button" type="button" id="stockAlertPopupOk" data-i18n="stockAlert.ok">OK</button>
+      </div>
+    </dialog>
+
+    <dialog id="monthlyReportDialog">
+      <div class="dialog-head">
+        <h2 id="monthlyReportDialogTitle"></h2>
+        <button class="icon-button" type="button" id="closeMonthlyReportDialog" aria-label="Close">&times;</button>
+      </div>
+      <div class="kpi-grid" id="monthlyReportDetailKpis"></div>
+      <p class="muted" data-i18n="monthlyReport.detailSummaryLabel" style="margin-top:14px">Summary</p>
+      <p id="monthlyReportDetailSummary" style="white-space:pre-line;line-height:1.6"></p>
+      <div class="button-row end">
+        <button class="ghost-button compact" type="button" id="exportMonthlyReportPdfButton" data-i18n="monthlyReport.exportPdfButton">Export PDF</button>
+        <button class="ghost-button" type="button" id="closeMonthlyReportDialogBottom" data-i18n="product.cancel">Cancel</button>
+      </div>
+    </dialog>
+
+    <dialog id="productDialog">
+      <form method="dialog" id="productForm">
+        <div class="dialog-head">
+          <h2 id="productDialogTitle">Add Inventory Product</h2>
+          <button class="icon-button" type="button" id="closeProductDialog" aria-label="Close">&times;</button>
+        </div>
+        <input name="id" type="hidden" />
+        <div class="form-grid">
+          <label><span data-i18n="product.nameLabel">Product name</span><input name="name" required maxlength="120" /></label>
+         <label><span data-i18n="product.categoryLabel">Category</span><input name="category" list="categorySuggestions" required maxlength="60" /></label>
+          <datalist id="categorySuggestions"></datalist>
+          <label><span data-i18n="product.brandLabel">Brand</span><input name="brand" maxlength="60" /></label>
+          <label><span data-i18n="product.supplierLabel">Suppliers</span><input name="supplier" maxlength="60" /></label>
+          <label><span data-i18n="product.barcodeLabel">Barcode</span>
+            <span class="scan-input-row">
+              <input name="barcode" maxlength="64" />
+              <button class="ghost-button compact" type="button" id="scanProductBarcodeButton" data-i18n="product.scanButton">Scan</button>
+            </span>
+          </label>
+          <label><span data-i18n="product.quantityLabel">Quantity</span><input name="quantity" type="number" min="0" required max="1000000" /></label>
+          <label><span data-i18n="product.priceLabel">Selling price (TZS)</span> <input name="sellingPrice" type="number" min="0" step="1" required max="1000000000" /></label>
+          <label><span data-i18n="product.priceTypeLabel">Price type</span>
+            <select name="priceType">
+              <option value="fixed" data-i18n="product.priceFixed">Fixed price</option>
+              <option value="dynamic" data-i18n="product.priceDynamic">Flexible / dynamic price</option>
+            </select>
+          </label>
+          <label><span data-i18n="product.reorderLabel">Low stock threshold</span><input name="reorderLevel" type="number" min="0" placeholder="e.g. 10" data-i18n-placeholder="product.reorderPlaceholder" max="1000000" /></label>
+          <label><span data-i18n="product.expiryLabel">Expiry date (optional)</span><input name="expiryDate" type="date" /></label>
+        </div>
+        <div class="button-row end">
+          <button class="ghost-button" type="button" id="cancelProductDialog" data-i18n="product.cancel">Cancel</button>
+          <button class="primary-button" value="default" data-i18n="product.save">Save Product</button>
+        </div>
+
+      </form>
+    </dialog>
+
+    <dialog id="transferDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="dialog.transferTitle">Transfer Stock</h2>
+        <button class="icon-button" type="button" id="closeTransferDialog" aria-label="Close">&times;</button>
+      </div>
+      <p id="transferProductLabel" class="muted"></p>
+      <div class="form-grid">
+        <label><span data-i18n="dialog.transferDestinationLabel">Destination store</span>
+          <select id="transferDestinationSelect"></select>
+        </label>
+        <label><span data-i18n="dialog.transferStaffLabel">Name of the person making this transfer</span>
+          <input id="transferStaffNameInput" type="text" list="transferStaffSuggestions" maxlength="80" placeholder="e.g. Juma Ally" data-i18n-placeholder="dialog.transferStaffPlaceholder" />
+          <datalist id="transferStaffSuggestions"></datalist>
+        </label>
+        <label><span data-i18n="dialog.transferQuantityLabel">Quantity to transfer</span>
+          <input id="transferQuantityInput" type="number" min="1" step="1" />
+        </label>
+      </div>
+      <div class="button-row end">
+        <button class="ghost-button" type="button" id="cancelTransferDialog" data-i18n="product.cancel">Cancel</button>
+        <button class="primary-button" type="button" id="confirmTransferButton" data-i18n="dialog.transferConfirm">Transfer</button>
+      </div>
+    </dialog>
+
+    <dialog id="restockDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="restock.dialogTitle">Restock Product</h2>
+        <button class="icon-button" type="button" id="closeRestockDialog" aria-label="Close">&times;</button>
+      </div>
+      <p id="restockProductLabel" class="muted"></p>
+      <div class="form-grid">
+        <label><span data-i18n="restock.qtyLabel">Quantity received</span>
+          <input id="restockQuantityInput" type="number" min="1" step="1" placeholder="e.g. 20" data-i18n-placeholder="restock.qtyPlaceholder" />
+        </label>
+      </div>
+      <div class="button-row end">
+        <button class="ghost-button" type="button" id="cancelRestockDialog" data-i18n="product.cancel">Cancel</button>
+        <button class="primary-button" type="button" id="confirmRestockButton" data-i18n="restock.confirmButton">Add to Stock</button>
+      </div>
+    </dialog>
+
+    <dialog id="productMovementDialog" style="max-width:640px">
+      <div class="dialog-head">
+        <h2 id="productMovementDialogTitle" data-i18n="movement.title">Product Movement</h2>
+        <button class="icon-button" type="button" id="closeProductMovementDialog" aria-label="Close">&times;</button>
+      </div>
+      <div id="productMovementContent"></div>
+      <div class="button-row end">
+        <button class="primary-button" type="button" id="doneProductMovementDialog" data-i18n="movement.close">Close</button>
+      </div>
+    </dialog>
+
+    <dialog id="paymentDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="payment.dialogTitle">Record Payment</h2>
+        <button class="icon-button" type="button" id="closePaymentDialog" aria-label="Close">&times;</button>
+      </div>
+      <p class="muted"><strong id="paymentCustomerName"></strong></p>
+      <p class="muted"><span data-i18n="payment.currentBalanceLabel">Current balance</span>: <strong id="paymentCurrentBalance"></strong></p>
+      <div class="form-grid">
+        <label><span data-i18n="payment.amountLabel">Payment amount (TZS)</span>
+          <input id="paymentAmountInput" type="number" min="0" step="1" />
+        </label>
+        <label><span data-i18n="payment.methodLabel">Paid by</span>
+          <select id="paymentMethodSelect">
+            <option value="cash" data-i18n="pos.cash">Cash</option>
+            <option value="mobile" data-i18n="pos.mobile">Mobile Money</option>
+            <option value="card" data-i18n="pos.card">Card</option>
+          </select>
+        </label>
+        <label><span data-i18n="payment.noteLabel">Note (optional)</span>
+          <input id="paymentNoteInput" type="text" maxlength="200" />
+        </label>
+      </div>
+      <div class="button-row end">
+        <button class="ghost-button" type="button" id="cancelPaymentDialog" data-i18n="product.cancel">Cancel</button>
+        <button class="primary-button" type="button" id="confirmPaymentButton" data-i18n="payment.confirmButton">Record Payment</button>
+      </div>
+    </dialog>
+
+    <dialog id="purchaseOrderDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="po.dialogTitle">Draft Purchase Orders</h2>
+        <button class="icon-button" type="button" id="closePurchaseOrderDialog" aria-label="Close">&times;</button>
+      </div>
+      <div id="purchaseOrderGroups"></div>
+      <div class="button-row end">
+        <button class="primary-button" type="button" id="donePurchaseOrderDialog" data-i18n="receipt.close">Close</button>
+      </div>
+    </dialog>
+
+    <dialog id="returnDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="returns.title">Process Return / Refund</h2>
+        <button class="icon-button" type="button" id="closeReturnDialog" aria-label="Close">&times;</button>
+      </div>
+      <p class="muted"><span data-i18n="reports.staffOrderLookupOrderLabel">Order number</span> <strong id="returnOrderLabel"></strong></p>
+      <div class="return-item-row return-item-header">
+        <strong data-i18n="returns.colItem">Item</strong>
+        <strong data-i18n="returns.colAvailable">Available to return</strong>
+        <strong data-i18n="returns.colQty">Qty</strong>
+      </div>
+      <div id="returnItemsList"></div>
+      <div class="button-row end">
+        <button class="ghost-button" type="button" id="cancelReturnDialog" data-i18n="product.cancel">Cancel</button>
+        <button class="primary-button" type="button" id="confirmReturnButton" data-i18n="returns.confirmButton">Process Refund</button>
+      </div>
+    </dialog>
+
+    <dialog id="barcodeScannerDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="barcodeScanner.title">Scan Barcode</h2>
+        <button class="icon-button" type="button" id="closeBarcodeScannerDialog" aria-label="Close">&times;</button>
+      </div>
+      <p class="muted" data-i18n="barcodeScanner.hint">Point your camera at the barcode.</p>
+      <div id="barcodeReaderRegion"></div>
+      <p id="barcodeScannerStatus" class="muted"></p>
+      <div class="button-row end">
+        <button class="ghost-button" type="button" id="cancelBarcodeScannerDialog" data-i18n="barcodeScanner.cancel">Cancel</button>
+      </div>
+    </dialog>
+
+    <dialog id="receiptDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="receipt.title">Receipt</h2>
+        <button class="icon-button" type="button" id="closeReceiptDialog" aria-label="Close">&times;</button>
+      </div>
+      <div id="receiptContent" class="receipt"></div>
+      <div class="button-row end">
+        <button class="ghost-button compact" type="button" id="printReceiptButton" data-i18n="receipt.printButton">Print</button>
+        <button class="ghost-button compact" type="button" id="downloadReceiptPdfButton" data-i18n="receipt.downloadButton">Download PDF</button>
+        <button class="ghost-button compact" type="button" id="shareReceiptWhatsAppButton" data-i18n="receipt.whatsappButton">Share via WhatsApp</button>
+        <button class="primary-button compact" type="button" id="closeReceiptDialogBottom" data-i18n="receipt.close">Close</button>
+      </div>
+    </dialog>
+
+    <dialog id="overridePasswordDialog">
+      <div class="dialog-head">
+        <!-- Title, description and the save button have no data-i18n: their text
+             is set by applyOverridePasswordDialogMode() so it can differ between
+             first-time creation and changing an existing password. A data-i18n
+             attribute here would let translateStaticDom() overwrite that. -->
+        <h2 id="overridePasswordDialogTitle">Create Discount Password</h2>
+        <button class="icon-button" type="button" id="closeOverridePasswordDialog" aria-label="Close">&times;</button>
+      </div>
+      <p class="muted" id="overridePasswordDescription">Choose a password your staff must enter to apply a discount or price override. Only you can change it.</p>
+      <label id="overridePasswordCurrentRow" hidden><span data-i18n="settings.overridePasswordCurrentLabel">Current discount password</span>
+        <input id="overridePasswordCurrentInput" type="password" autocomplete="off" minlength="4" maxlength="64" />
+      </label>
+      <label><span data-i18n="settings.overridePasswordNewLabel">New password</span>
+        <input id="overridePasswordNewInput" type="password" autocomplete="new-password" minlength="4" maxlength="64" />
+      </label>
+      <label><span data-i18n="settings.overridePasswordConfirmLabel">Confirm password</span>
+        <input id="overridePasswordConfirmInput" type="password" autocomplete="new-password" minlength="4" maxlength="64" />
+      </label>
+      <label><span data-i18n="settings.overridePasswordReauthLabel">Your account password</span>
+        <input id="overridePasswordReauthInput" type="password" autocomplete="current-password" />
+      </label>
+      <span class="field-error" id="overridePasswordError"></span>
+      <div class="button-row end">
+        <button class="ghost-button" type="button" id="cancelOverridePasswordDialog" data-i18n="product.cancel">Cancel</button>
+        <button class="primary-button" type="button" id="saveOverridePasswordButton">Create Password</button>
+      </div>
+    </dialog>
+
+    <dialog id="staffRosterDialog" style="max-width:640px">
+      <div class="dialog-head">
+        <h2 data-i18n="staff.rosterTitle">Staff Roster</h2>
+        <button class="icon-button" type="button" id="closeStaffRosterDialog" aria-label="Close">&times;</button>
+      </div>
+      <div class="button-row end">
+        <button class="primary-button compact" type="button" id="openInviteStaffButton" data-i18n="staff.inviteButton">Invite Staff</button>
+      </div>
+      <div class="table-panel" style="box-shadow:none;border:none">
+        <table>
+          <thead>
+            <tr>
+              <th data-i18n="staff.colName">Name</th>
+              <th data-i18n="staff.colEmail">Email</th>
+              <th data-i18n="staff.colRole">Role</th>
+              <th data-i18n="staff.colStores">Stores</th>
+              <th data-i18n="staff.colActions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="staffRosterTable"></tbody>
+        </table>
+      </div>
+    </dialog>
+
+    <dialog id="inviteStaffDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="staff.inviteDialogTitle">Invite Staff Member</h2>
+        <button class="icon-button" type="button" id="closeInviteStaffDialog" aria-label="Close">&times;</button>
+      </div>
+      <div id="inviteStaffFormSection">
+        <div class="form-grid">
+          <label><span data-i18n="staff.inviteEmailLabel">Staff email</span>
+            <input id="inviteStaffEmail" type="email" autocomplete="off" maxlength="254" />
+          </label>
+          <label><span data-i18n="pos.staffLabel">Staff member</span>
+            <select id="inviteStaffRole">
+              <option value="cashier" data-i18n="staff.roleCashier">Cashier</option>
+              <option value="manager" data-i18n="staff.roleManager">Manager</option>
+            </select>
+          </label>
+        </div>
+        <p class="muted" data-i18n="staff.inviteStoresLabel">Store access</p>
+        <label class="checkbox-row"><input type="checkbox" id="inviteStaffAllStores" /> <span data-i18n="staff.inviteAllStores">All stores (roaming access)</span></label>
+        <div id="inviteStaffStoreList" class="store-checkbox-list"></div>
+        <span class="field-error" id="inviteStaffError"></span>
+        <div class="button-row end">
+          <button class="ghost-button" type="button" id="cancelInviteStaffDialog" data-i18n="product.cancel">Cancel</button>
+          <button class="primary-button" type="button" id="sendInviteStaffButton" data-i18n="staff.sendInviteButton">Send Invite</button>
+        </div>
+      </div>
+      <div id="inviteStaffResultSection" hidden>
+        <p class="muted" id="inviteStaffResultText"></p>
+        <div class="button-row end">
+          <button class="ghost-button compact" type="button" id="copyInviteLinkButton" data-i18n="staff.copyLinkButton">Copy Link</button>
+          <button class="primary-button compact" type="button" id="sendInviteWhatsAppButton" data-i18n="staff.sendWhatsAppButton">Send via WhatsApp</button>
+          <button class="ghost-button" type="button" id="doneInviteStaffDialog" data-i18n="receipt.close">Close</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="deleteAccountDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="deleteAccount.title">Delete Account</h2>
+        <button class="icon-button" type="button" id="closeDeleteAccountDialog" aria-label="Close">&times;</button>
+      </div>
+      <p class="muted" data-i18n="deleteAccount.warning">This permanently closes your account and signs you out everywhere. You will no longer be able to log in. Your past sales and financial records are kept for accounting purposes, as described in the Terms &amp; Conditions.</p>
+      <label><span data-i18n="deleteAccount.passwordLabel">Confirm your password</span>
+        <input id="deleteAccountPassword" type="password" autocomplete="current-password" />
+      </label>
+      <label><span data-i18n="deleteAccount.typeDeleteLabel">Type DELETE to confirm</span>
+        <input id="deleteAccountConfirmText" type="text" autocomplete="off" />
+      </label>
+      <span class="field-error" id="deleteAccountError"></span>
+      <div class="button-row end">
+        <button class="ghost-button" type="button" id="cancelDeleteAccountDialog" data-i18n="product.cancel">Cancel</button>
+        <button class="ghost-button compact danger" type="button" id="confirmDeleteAccountButton" data-i18n="deleteAccount.confirmButton">Permanently Delete Account</button>
+      </div>
+    </dialog>
+
+    <div class="auth-gate" id="authGate" aria-live="polite">
+      <!-- Split into a brand side and a form side. Purely structural: every
+           input keeps its id and stays inside <form>, so submission and every
+           handler are untouched. Nothing in CSS or JS reached these by
+           position, which is what made the wrap safe to do at all. -->
+      <form class="auth-panel" id="authForm" novalidate>
+        <div class="auth-brand">
+        <div>
+          <p class="eyebrow" data-i18n="auth.eyebrow">Account access</p>
+          <h1>Savia Smart ERP</h1>
+          <p class="auth-copy" data-i18n="auth.copy">Create an account or sign in to manage your own inventory, stock levels, sales, and AI recommendations.</p>
+          <p class="auth-copy"><a href="./" data-i18n="auth.aboutLink">What Savia does &rarr;</a></p>
+        </div>
+        <div class="auth-why">
+          <p class="eyebrow" data-i18n="auth.whyTitle">Why Savia</p>
+          <ul class="auth-why-list">
+            <li data-i18n="auth.whyMultiStore">Track inventory across every branch from one dashboard.</li>
+            <li data-i18n="auth.whyOffline">Keep selling even when the internet drops — it syncs automatically once you're back online.</li>
+            <li data-i18n="auth.whyReceipts">Print or share receipts on WhatsApp, with cash, mobile money, and card tracking built in.</li>
+            <li data-i18n="auth.whyAi">Ask the built-in AI Advisor which products to reorder, in English or Swahili.</li>
+          </ul>
+        </div>
+
+        <!-- The same close-of-day figures the landing page opens with, so the
+             thing someone was sold is the first thing they see on arriving. -->
+        <div class="auth-ledger" aria-hidden="true">
+          <div class="auth-ledger-row"><span data-i18n="auth.ledgerExpected">Should be in the drawer</span><b>213,000</b></div>
+          <div class="auth-ledger-row"><span data-i18n="auth.ledgerCounted">Counted at close</span><b>211,500</b></div>
+          <div class="auth-ledger-row short"><span data-i18n="auth.ledgerDiff">Difference</span><b>1,500</b></div>
+        </div>
+        </div>
+
+        <div class="auth-fields">
+        <label><span data-i18n="auth.businessName">Business name</span><input id="businessName" name="businessName" autocomplete="organization" maxlength="120" /></label>
+        <label><span data-i18n="auth.email">Email</span><input id="authEmail" name="email" type="email" autocomplete="email" required maxlength="254" /><span class="field-error" id="authEmailError"></span></label>
+        <label><span data-i18n="auth.password">Password</span><input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="6" required /><span class="field-error" id="authPasswordError"></span></label>
+        <button class="link-button" id="authForgotPasswordButton" type="button" data-i18n="auth.forgotPassword">Forgot password?</button>
+        <label id="authConfirmPasswordRow"><span data-i18n="auth.confirmPassword">Confirm password</span><input id="authConfirmPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="6" /><span class="field-error" id="authConfirmPasswordError"></span></label>
+        <label class="auth-consent-row" id="authConsentRow">
+          <input id="authConsent" name="consent" type="checkbox" required />
+          <span>
+            <span data-i18n="auth.consentPrefix">I agree to the</span>
+            <a href="./terms.html" target="_blank" rel="noopener" data-i18n="auth.consentTerms">Terms &amp; Conditions</a>
+            <span data-i18n="auth.consentAnd">and</span>
+            <a href="./privacy-policy.html" target="_blank" rel="noopener" data-i18n="auth.consentPrivacy">Privacy Policy</a><span data-i18n="auth.consentSuffix">.</span>
+          </span>
+        </label>
+        <span class="field-error" id="authConsentError"></span>
+        <button class="primary-button full-width" id="authSubmitButton" type="submit">Create account</button>
+        <button class="ghost-button full-width" id="authModeButton" type="button">I already have an account</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <div class="command-palette" id="commandPalette" aria-hidden="true">
+      <div class="command-box">
+        <input id="commandInput" placeholder="Type a command or module name" data-i18n-placeholder="command.placeholder" data-i18n-aria-label="a11y.commandInput" />
+        <div id="commandResults"></div>
+      </div>
+    </div>
+
+    <script type="module" src="./app.js?v=20260802f"></script>
+  </body>
+</html>

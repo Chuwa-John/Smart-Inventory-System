@@ -47,7 +47,7 @@ const server = createServer(async (req, res) => {
   try {
     // Strip the ?v= cache-busting query, and refuse to escape the project root.
     const rel = normalize(decodeURIComponent(req.url.split("?")[0])).replace(/^(\.\.[/\\])+/, "");
-    const file = join(ROOT, rel === "/" ? "index.html" : rel);
+    const file = join(ROOT, rel === "/" ? "app.html" : rel);
     if (!file.startsWith(ROOT)) { res.writeHead(403).end(); return; }
     const body = await readFile(file);
     res.writeHead(200, { "content-type": TYPES[extname(file)] || "application/octet-stream" });
@@ -65,7 +65,7 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 await page.route("**/*", (route) =>
   route.request().url().startsWith(base) ? route.continue() : route.abort());
 page.on("pageerror", () => {});   // app.js cannot reach its backend here, by design
-await page.goto(`${base}/index.html`, { waitUntil: "load" });
+await page.goto(`${base}/app.html`, { waitUntil: "load" });
 
 // --- the measurement, run inside the page ----------------------------------
 const measure = async (theme) => page.evaluate(async (theme) => {

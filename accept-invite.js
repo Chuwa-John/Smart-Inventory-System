@@ -231,7 +231,7 @@ async function finishAcceptance(user) {
   qs("#acceptInviteFormFields").hidden = true;
   qs("#inviteVerifySection").hidden = true;
   window.setTimeout(() => {
-    window.location.href = "./index.html";
+    window.location.href = "./app.html";
   }, 1500);
 }
 

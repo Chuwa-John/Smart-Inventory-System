@@ -42,15 +42,15 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           BASE="origin/${{ github.base_ref }}"
-          if git diff --quiet "$BASE"...HEAD -- app.js index.html; then
-            echo "No app.js/index.html change; version bump not required."
+          if git diff --quiet "$BASE"...HEAD -- app.js app.html; then
+            echo "No app.js/app.html change; version bump not required."
             exit 0
           fi
-          echo "app.js or index.html changed; both versions must be bumped."
-          git diff "$BASE"...HEAD -- index.html | grep -q '^+.*app\.js?v=' \
-            || { echo "::error::index.html changed app.js but the ?v= query string was not bumped."; exit 1; }
+          echo "app.js or app.html changed; both versions must be bumped."
+          git diff "$BASE"...HEAD -- app.html | grep -q '^+.*app\.js?v=' \
+            || { echo "::error::app.html changed app.js but the ?v= query string was not bumped."; exit 1; }
           git diff "$BASE"...HEAD -- sw.js | grep -q '^+const CACHE_NAME' \
-            || { echo "::error::app.js/index.html changed but sw.js CACHE_NAME was not bumped."; exit 1; }
+            || { echo "::error::app.js/app.html changed but sw.js CACHE_NAME was not bumped."; exit 1; }
           echo "Both app.js?v= and sw.js CACHE_NAME were bumped."
 
       - name: Install locked proxy dependencies

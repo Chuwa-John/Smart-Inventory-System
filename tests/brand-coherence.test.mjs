@@ -18,8 +18,8 @@
 import { readFileSync } from "node:fs";
 
 const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
-const landing = readFileSync(new URL("../landing.html", import.meta.url), "utf8");
-const index = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+const landing = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+const index = readFileSync(new URL("../app.html", import.meta.url), "utf8");
 const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 
 const results = [];
@@ -68,16 +68,16 @@ console.log("\n=== the two pages reach each other ===");
   check("every landing call to action enters the app",
     !/href="#start"/.test(landing),
     "a CTA pointing at an anchor on its own page goes nowhere");
-  check("there is a way to start", /href="\.\/index\.html"/.test(landing));
+  check("there is a way to start", /href="\.\/app\.html"/.test(landing));
   check("there is a separate way in for people who already have an account",
-    /href="\.\/index\.html\?mode=signin"/.test(landing));
+    /href="\.\/app\.html\?mode=signin"/.test(landing));
   check("the app can be deep-linked into sign-in",
     /URLSearchParams\(location\.search\)\.get\("mode"\) === "signin"/.test(app),
     "otherwise the Sign in link lands on a signup form");
   check("signup is still the default for a bare visit",
     /\? "signin" : "signup"/.test(app));
   check("the app links back to what the product is",
-    /href="\.\/landing\.html"/.test(index));
+    /href="\.\/"/.test(index));
   check("that link is translated like everything else",
     /data-i18n="auth\.aboutLink"/.test(index) &&
     (app.match(/"auth\.aboutLink":/g) || []).length === 2);

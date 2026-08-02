@@ -3,14 +3,15 @@
 // instantly on repeat visits. This does NOT cache Firestore/Firebase
 // traffic or any cross-origin requests \u2014 those always go to the network.
 // Bump this on every deploy so old clients pick up new files.
-const CACHE_NAME = "savia-shell-v65";
+const CACHE_NAME = "savia-shell-v66";
 
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=20260802e",
+  "./app.html",
+  "./styles.css?v=20260802f",
   "./app.js",
-  "./boot.js?v=20260802e",
+  "./boot.js?v=20260802f",
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
@@ -45,8 +46,10 @@ self.addEventListener("fetch", (event) => {
   }
 
   // Navigation requests: try the network first so users always get the
-  // latest app.js/index.html when online, falling back to the cached
-  // shell when offline.
+  // latest app.js/app.html when online, falling back to the cached shell
+  // when offline. The last-resort fallback is app.html, not index.html:
+  // index.html is the marketing page now, and someone offline in a shop
+  // wants the till, not the pitch.
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
@@ -63,7 +66,7 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         })
-        .catch(() => caches.match(request).then((cached) => cached || caches.match("./index.html")))
+        .catch(() => caches.match(request).then((cached) => cached || caches.match("./app.html")))
     );
     return;
   }

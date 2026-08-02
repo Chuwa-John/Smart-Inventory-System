@@ -1,4 +1,4 @@
-// Clears the .js-pending flag that index.html ships with, revealing the app and
+// Clears the .js-pending flag that app.html ships with, revealing the app and
 // hiding the "this browser cannot run Savia" notice.
 //
 // This is a separate file rather than an inline <script> for one reason: the

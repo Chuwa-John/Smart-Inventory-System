@@ -2,7 +2,7 @@
 //
 //   node compatibility.headless.mjs
 //
-// Every view's markup lives in index.html and is shown or hidden by JavaScript.
+// Every view's markup lives in app.html and is shown or hidden by JavaScript.
 // So a browser that never runs it rendered SIX views stacked on top of each
 // other, complete with 18 buttons and 9 form fields that responded to nothing,
 // and no explanation anywhere. That reads as a broken product rather than an
@@ -54,7 +54,7 @@ const hostingHeaders = (() => {
 const server = createServer(async (req, res) => {
   try {
     const rel = normalize(decodeURIComponent(req.url.split("?")[0])).replace(/^(\.\.[/\\])+/, "");
-    const file = join(ROOT, rel === "/" ? "index.html" : rel);
+    const file = join(ROOT, rel === "/" ? "app.html" : rel);
     if (!file.startsWith(ROOT)) { res.writeHead(403).end(); return; }
     const body = await readFile(file);
     res.writeHead(200, { ...hostingHeaders, "content-type": TYPES[extname(file)] || "application/octet-stream" });
@@ -71,7 +71,7 @@ async function render(javaScriptEnabled) {
   // Nothing external: this must not depend on Firebase or a CDN being up.
   await page.route("**/*", (r) => r.request().url().startsWith(base) ? r.continue() : r.abort());
   page.on("pageerror", () => {});
-  await page.goto(`${base}/index.html`, { waitUntil: "load" });
+  await page.goto(`${base}/app.html`, { waitUntil: "load" });
   await page.waitForTimeout(900);      // past the fallback's reveal delay
   const out = await page.evaluate(() => {
     const vis = (el) => {
@@ -125,7 +125,7 @@ console.log("\n=== a browser that can run it is unaffected ===");
 
 console.log("\n=== the flag is cleared the only way the CSP permits ===");
 {
-  const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  const html = await readFile(new URL("../app.html", import.meta.url), "utf8");
   const boot = await readFile(new URL("../boot.js", import.meta.url), "utf8");
 
   // Inline is what caused the outage: script-src 'self' with no unsafe-inline
