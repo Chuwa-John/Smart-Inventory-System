@@ -81,6 +81,30 @@ console.log("=== a sale is written in one transaction, which is why it cannot qu
     "reconciliation would read as theft");
 }
 
+console.log("=== staff keep their employer's data when the network drops ===");
+{
+  // resolveBusinessOwnerUid forces an ID token refresh, which needs the
+  // network. Offline it throws, and falling straight to user.uid points a
+  // STAFF member's whole session at their own uid -- a tree they own nothing
+  // in. Every subscription then reads an empty shop, which looks exactly like
+  // a shop with no stock. The owner never saw it because their uid IS the
+  // business. The cached token already carries the claim.
+  const fn = noComments.slice(noComments.indexOf("async function resolveBusinessOwnerUid("));
+  const body = fn.slice(0, fn.indexOf("\n}") + 2);
+  check("a forced refresh is still tried first",
+    /getIdTokenResult\(\s*true\s*\)/.test(body),
+    "a freshly invited staff member needs the claim set seconds ago, which a cached token predates");
+  check("a failed refresh falls back to the cached token before giving up",
+    /getIdTokenResult\(\s*false\s*\)/.test(body),
+    "without this, offline staff are silently rerouted to their own empty tree");
+  check("the cached token's claim is actually used",
+    (body.match(/claims\?\.businessOwnerUid/g) || []).length >= 2);
+  check("own uid remains the last resort, not the second step",
+    body.lastIndexOf("return user.uid;") > body.indexOf("getIdTokenResult( false )".replace(/ /g, "")) ||
+    body.lastIndexOf("return user.uid;") > body.indexOf("forceRefresh */ false"),
+    "the fallback must sit after the cached-token attempt");
+}
+
 console.log("=== the F-4 premise is flagged where it is stated ===");
 {
   // A wrong premise in a security audit is worse than a wrong conclusion,

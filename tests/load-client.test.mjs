@@ -122,9 +122,16 @@ console.log("=== the render pass scales with the data, not with its square ===")
 
 console.log("\n=== the sales pass itself is linear in the sales ===");
 {
-  const t1 = timeIt(() => api.unitsSoldByProduct(makeSales(2000, 500), NOW - 30 * DAY, NOW), 3);
-  const t2 = timeIt(() => api.unitsSoldByProduct(makeSales(8000, 500), NOW - 30 * DAY, NOW), 3);
-  const ratio = t2 / Math.max(t1, 0.01);
+  // Fixtures built OUTSIDE the timing. Constructing 8,000 sale objects inside
+  // the timed closure measured allocation and garbage collection rather than
+  // the function under test, and flaked roughly one run in three. A performance
+  // test that fails intermittently gets ignored, which costs more than not
+  // having it.
+  const smallSales = makeSales(2000, 500);
+  const largeSales = makeSales(8000, 500);
+  const t1 = timeIt(() => api.unitsSoldByProduct(smallSales, NOW - 30 * DAY, NOW), 9);
+  const t2 = timeIt(() => api.unitsSoldByProduct(largeSales, NOW - 30 * DAY, NOW), 9);
+  const ratio = t2 / Math.max(t1, 0.05);
   check("4x the sales costs well under 16x the time", ratio < 10,
     `2000 sales ${t1.toFixed(2)}ms, 8000 sales ${t2.toFixed(2)}ms, ratio ${ratio.toFixed(1)}x`);
 }
@@ -152,9 +159,12 @@ console.log("\n=== stock reconciliation scales with the catalogue ===");
 
 console.log("\n=== the ledger index is one pass over the entries ===");
 {
-  const t1 = timeIt(() => api.latestMovementByProduct(makeMovements(500, 200)));
-  const t2 = timeIt(() => api.latestMovementByProduct(makeMovements(5000, 2000)));
-  const ratio = t2 / Math.max(t1, 0.01);
+  // Fixtures outside the timing, for the same reason as the sales pass above.
+  const smallLedger = makeMovements(500, 200);
+  const largeLedger = makeMovements(5000, 2000);
+  const t1 = timeIt(() => api.latestMovementByProduct(smallLedger), 9);
+  const t2 = timeIt(() => api.latestMovementByProduct(largeLedger), 9);
+  const ratio = t2 / Math.max(t1, 0.05);
   check("10x the ledger costs well under 100x the time", ratio < 30,
     `500 ${t1.toFixed(2)}ms, 5000 ${t2.toFixed(2)}ms, ratio ${ratio.toFixed(1)}x`);
 }

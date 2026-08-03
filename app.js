@@ -5468,14 +5468,35 @@ async function resolveQueryStoreIds() {
 }
 
 async function resolveBusinessOwnerUid(user) {
+  // Forced refresh first, because a staff member who has just accepted an
+  // invite needs the businessOwnerUid claim that was set seconds ago, and a
+  // cached token predates it.
   try {
     const tokenResult = await user.getIdTokenResult(/* forceRefresh */ true);
     const claimOwnerUid = tokenResult.claims?.businessOwnerUid;
-    return typeof claimOwnerUid === "string" && claimOwnerUid ? claimOwnerUid : user.uid;
-  } catch (error) {
-    console.warn("Could not resolve business owner uid; defaulting to own uid.", error);
+    if (typeof claimOwnerUid === "string" && claimOwnerUid) return claimOwnerUid;
     return user.uid;
+  } catch (error) {
+    console.warn("Could not refresh the ID token; falling back to the cached one.", error);
   }
+
+  // A forced refresh needs the network. Offline it throws, and falling straight
+  // through to user.uid quietly points a STAFF member's entire session at their
+  // own uid -- a tree they own nothing in. Every subscription then reads an
+  // empty shop, which is indistinguishable from a shop with no stock: the
+  // cashier is told their inventory is gone, offline, with no way to check.
+  // The owner never saw this because their uid IS the business.
+  //
+  // The cached token already carries the claim. Ask for it without forcing a
+  // refresh before giving up on it.
+  try {
+    const cached = await user.getIdTokenResult(/* forceRefresh */ false);
+    const claimOwnerUid = cached.claims?.businessOwnerUid;
+    if (typeof claimOwnerUid === "string" && claimOwnerUid) return claimOwnerUid;
+  } catch (cachedError) {
+    console.warn("Could not read the cached ID token either.", cachedError);
+  }
+  return user.uid;
 }
 
 // Phase 4: role-aware UI gating needs the CURRENT user's role, not just the
