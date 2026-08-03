@@ -219,18 +219,38 @@ console.log("\n=== a still-loading catalogue is not reported as an empty one ===
   // an owner to re-enter stock they already have. That is a trust failure, not
   // a slow-loading screen.
   const noComments = src.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
-  check("the inventory empty state is gated on the first snapshot having landed",
-    /state\.productsInitialized \? t\("inventory\.emptyState"\) : t\("inventory\.loadingState"\)/.test(noComments),
-    "an unqualified empty state tells a loading shop that its stock is gone");
+
+  // Four distinct meanings, four distinct messages. Only the last should ever
+  // invite an owner to start adding products.
+  const msg = noComments.slice(noComments.indexOf("function inventoryEmptyMessage("));
+  check("a failed load says so, rather than claiming to still be loading",
+    /state\.productsLoadFailed\) return t\("inventory\.loadFailedState"\)/.test(msg),
+    "a listener that errored is not loading; a permanent spinner is a lie");
+  check("an unfinished load says loading",
+    /!state\.productsInitialized\) return t\("inventory\.loadingState"\)/.test(msg));
+  check("a filter that excluded everything says so",
+    /inventoryFiltersActive\(\)\) return t\("inventory\.noMatchesState"\)/.test(msg),
+    "telling someone holding 500 products that they have none is the same lie as the loading case");
+  check("only a genuinely empty shop is invited to add its first product",
+    /return t\("inventory\.emptyState"\);/.test(msg));
+  check("the inventory table uses that decision", /inventoryEmptyMessage\(\)/.test(noComments));
+  check("the failure flag is cleared when a load starts and when one succeeds",
+    (noComments.match(/state\.productsLoadFailed = false;/g) || []).length >= 2,
+    "a stale failure flag would strand the table on the error message");
+  check("the failure flag re-renders, not just toasts",
+    /state\.productsLoadFailed = true;\s*scheduleRenderAll\(\);/.test(noComments),
+    "the toast is seen once; the table is what someone stares at");
   check("the POS says something while the catalogue is still arriving",
     /state\.productsInitialized \? "" : `<p class="muted">\$\{esc\(t\("inventory\.loadingState"\)\)\}/.test(noComments),
     "silence at the till during first sync");
   check("a genuinely empty search result stays blank",
     /\.join\(""\) \|\| \(state\.productsInitialized \? ""/.test(noComments),
     "the loading message must not appear for a search that simply matched nothing");
-  check("the loading string exists in both languages",
-    (src.match(/"inventory\.loadingState"/g) || []).length >= 3,
-    "found fewer than two dictionary entries plus a usage");
+  for (const key of ["inventory.loadingState", "inventory.loadFailedState", "inventory.noMatchesState"]) {
+    check(`${key} exists in both languages`,
+      (src.match(new RegExp(`"${key.replace(".", "\\.")}"`, "g")) || []).length >= 3,
+      "expected two dictionary entries plus at least one usage");
+  }
 }
 
 const failed = results.filter((r) => !r.pass);

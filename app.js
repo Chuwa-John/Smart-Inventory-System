@@ -86,6 +86,9 @@ const state = {
   overridePasswordSet: false,
   overridePasswordNudgeDismissed: false,
   productsInitialized: false,
+  // Distinct from productsInitialized: a listener that errored is not still
+  // loading, and a table that says so forever is a lie with a spinner on it.
+  productsLoadFailed: false,
   stockAlertQueue: [],
   stockAlertPopupOpen: false,
   language: localStorage.getItem("savia:lang") || localStorage.getItem("sanitaryflow:lang") || "en",
@@ -540,6 +543,8 @@ const DICTIONARY = {
     "inventory.edit": "Edit", "inventory.transfer": "Transfer", "inventory.restock": "Restock", "inventory.delete": "Delete",
     "inventory.emptyState": "No inventory yet. Add your first material or product to start tracking stock.",
     "inventory.loadingState": "Loading your stock\u2026 a large catalogue can take a moment on the first sign-in from a device.",
+    "inventory.loadFailedState": "Your stock could not be loaded. Check the connection and reload \u2014 nothing has been lost.",
+    "inventory.noMatchesState": "No products match this search or filter. Clear it to see the rest of your stock.",
     "toast.incorrectPassword": "Incorrect password. Price change cancelled.",
     "toast.overrideNotConfigured": "Price overrides aren't set up yet. Ask your admin to configure them.",
     "toast.overrideNetworkError": "Couldn't reach the override service. Check your connection and try again.",
@@ -1179,6 +1184,8 @@ const DICTIONARY = {
     "inventory.edit": "Hariri", "inventory.transfer": "Hamisha", "inventory.restock": "Ongeza Hisa", "inventory.delete": "Futa",
     "inventory.emptyState": "Hakuna hisa bado. Ongeza bidhaa yako ya kwanza kuanza kufuatilia hisa.",
     "inventory.loadingState": "Inapakia hisa zako\u2026 orodha kubwa inaweza kuchukua muda kidogo unapoingia mara ya kwanza kwenye kifaa.",
+    "inventory.loadFailedState": "Hisa zako hazikuweza kupakiwa. Angalia muunganisho kisha upakie upya \u2014 hakuna kilichopotea.",
+    "inventory.noMatchesState": "Hakuna bidhaa zinazolingana na utafutaji huu. Ondoa kichujio ili kuona hisa zako zote.",
     "toast.incorrectPassword": "Nenosiri si sahihi. Mabadiliko ya bei yamesitishwa.",
     "toast.overrideNotConfigured": "Mabadiliko ya bei ya ziada bado hayajawekwa. Muulize msimamizi wako ayaweke.",
     "toast.overrideNetworkError": "Imeshindwa kufikia huduma ya ruhusa. Angalia muunganisho wako na ujaribu tena.",
@@ -2006,6 +2013,28 @@ function renderFilters() {
   qs("#categoryFilter").value = categories.includes(selectedCategory) ? selectedCategory : "all";
 }
 
+// Whether the inventory list is being narrowed by anything the user chose.
+// An empty table means something different when a filter is on: there IS stock,
+// it just does not match. Telling someone "no inventory yet, add your first
+// product" while they hold five hundred is the same class of lie as saying it
+// while the catalogue is still loading.
+function inventoryFiltersActive() {
+  return Boolean(qs("#globalSearch")?.value.trim())
+    || (qs("#categoryFilter")?.value || "all") !== "all"
+    || (qs("#stockFilter")?.value || "all") !== "all";
+}
+
+// The four things an empty inventory table can mean, which are not the same
+// thing and must not share a message: the load failed, the load has not
+// finished, a filter excluded everything, or the shop genuinely has no stock.
+// Only the last one should invite an owner to start adding products.
+function inventoryEmptyMessage() {
+  if (state.productsLoadFailed) return t("inventory.loadFailedState");
+  if (!state.productsInitialized) return t("inventory.loadingState");
+  if (inventoryFiltersActive()) return t("inventory.noMatchesState");
+  return t("inventory.emptyState");
+}
+
 function filteredProducts() {
   const term = qs("#globalSearch").value.trim().toLowerCase();
   const category = qs("#categoryFilter")?.value || "all";
@@ -2053,9 +2082,7 @@ function renderInventory() {
     // is tens of seconds of an owner being told their stock is gone and invited
     // to re-enter it. Distinguish the two: until the first snapshot lands,
     // nothing is known, and saying so is the honest answer.
-    .join("") || `<tr><td colspan="8" class="empty-state">${
-      state.productsInitialized ? t("inventory.emptyState") : t("inventory.loadingState")
-    }</td></tr>`;
+    .join("") || `<tr><td colspan="8" class="empty-state">${esc(inventoryEmptyMessage())}</td></tr>`;
 }
 
 function renderPosProducts() {
@@ -6863,6 +6890,7 @@ async function subscribeToProducts() {
   if (!state.db || !state.user || !state.businessOwnerUid) return;
   if (state.unsubscribeProducts) state.unsubscribeProducts();
   state.productsInitialized = false;
+  state.productsLoadFailed = false;
   try {
     const { collection, onSnapshot, query, where } = state.firebaseApi.firestore;
     const productsRef = collection(state.db, "users", state.businessOwnerUid, "products");
@@ -6884,15 +6912,22 @@ async function subscribeToProducts() {
         detectStockAlertCrossings(state.products, nextProducts);
         state.products = nextProducts;
         state.productsInitialized = true;
+        state.productsLoadFailed = false;
         scheduleRenderAll();
       },
       (error) => {
         console.error("[products listener]", error.code || error, "queryStoreIds=", queryStoreIds);
         showToast(t("toast.couldNotLoadInventory"));
+        // The toast is seen once and then gone; the table is what someone
+        // stares at. Say the load failed rather than pretending it continues.
+        state.productsLoadFailed = true;
+        scheduleRenderAll();
       }
     );
   } catch (error) {
     console.warn(error);
+    state.productsLoadFailed = true;
+    scheduleRenderAll();
     showToast(t("toast.couldNotLoadInventory"));
   }
 }
