@@ -694,7 +694,9 @@ const DICTIONARY = {
     "toast.discountPercentTooHigh": "Percentage discount cannot exceed 100%.",
     "toast.discountExceedsSubtotal": "Fixed discount cannot exceed the subtotal.",
     "toast.discountApplied": "Discount applied.",
-    "offline.bannerText": "No internet connection. You can keep browsing, but sales cannot be recorded until the connection returns.",
+    "offline.bannerText": "No internet connection. Cash sales are saved on this device and will sync when you reconnect.",
+    "toast.offlineCashOnly": "Only cash sales can be recorded while offline. Credit sales need a connection.",
+    "toast.saleQueuedOffline": "Sale saved on this device. It will sync when the connection returns.",
     "error.offline": "No internet connection, so this was not saved. Check your signal and try again.",
     "error.timeout": "The connection is too slow to finish this. Please try again.",
     "error.permissionDenied": "Your account is not allowed to do this. Ask the business owner.",
@@ -1338,7 +1340,9 @@ const DICTIONARY = {
     "toast.discountPercentTooHigh": "Punguzo la asilimia haliwezi kuzidi 100%.",
     "toast.discountExceedsSubtotal": "Punguzo maalum haliwezi kuzidi jumla ndogo.",
     "toast.discountApplied": "Punguzo limetumika.",
-    "offline.bannerText": "Hakuna muunganisho wa intaneti. Unaweza kuendelea kuangalia, lakini mauzo hayawezi kurekodiwa hadi muunganisho urudi.",
+    "offline.bannerText": "Hakuna muunganisho wa intaneti. Mauzo ya taslimu yanahifadhiwa kwenye kifaa hiki na yatasawazishwa muunganisho utakaporudi.",
+    "toast.offlineCashOnly": "Ni mauzo ya taslimu pekee yanayoweza kurekodiwa bila mtandao. Mauzo ya mkopo yanahitaji muunganisho.",
+    "toast.saleQueuedOffline": "Mauzo yamehifadhiwa kwenye kifaa hiki. Yatasawazishwa muunganisho utakaporudi.",
     "error.offline": "Hakuna muunganisho wa intaneti, hivyo hii haikuhifadhiwa. Angalia mtandao kisha jaribu tena.",
     "error.timeout": "Muunganisho ni wa polepole sana kukamilisha hili. Tafadhali jaribu tena.",
     "error.permissionDenied": "Akaunti yako hairuhusiwi kufanya hili. Muulize mmiliki wa biashara.",
@@ -5750,6 +5754,124 @@ function recordStockMovement(transaction, fields) {
 // shop with 1000 sales, 1.2s at 2000 products, 6s at 10000 -- per render, on a
 // desktop, with renderAll() firing on every snapshot. This is O(sales) once
 // instead, whatever the catalogue size.
+function isOfflineNow() {
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
+// Only cash sales are queued offline (L-9 phase C). A credit sale needs the
+// customer's real balance and, past the limit, an override the proxy has to
+// authorise -- offline it could silently blow a credit limit with no trail. It
+// is refused with its own message rather than left to fail as a generic error.
+function shouldQueueSaleOffline(paymentMethod) {
+  return isOfflineNow() && paymentMethod === "cash";
+}
+
+// A sale made with no connection, written as queued relative updates instead of
+// a transaction (L-9 phase C).
+//
+// Three things here are deliberate and easy to undo by accident:
+//
+// 1. NOTHING IS AWAITED. Firestore resolves a write's promise when the server
+//    acknowledges it, so awaiting offline hangs until the connection returns --
+//    the cashier would watch a spinner instead of serving the next customer.
+//    The write lands in the local cache immediately and the snapshot listeners
+//    fire from it, so the UI is correct straight away; the promise is only
+//    useful for learning that a replay was ultimately REJECTED, which is what
+//    the catch is for.
+//
+// 2. increment() rather than read-then-write. The client never reads the shelf,
+//    so two tills that both sold during the outage merge on replay instead of
+//    one overwriting the other. This is why the transaction is not merely
+//    unnecessary here but wrong.
+//
+// 3. The ledger entry carries `offline: true`, a delta, and no chain. Offline
+//    the shelf is a possibly-stale cache, and a chain built on it would be a
+//    guess wearing the authority of a measurement -- phase B teaches the
+//    reconciliation to treat these products as unknown until their next online
+//    movement re-anchors them.
+//
+// Replay safety comes free from the existing deterministic sale id: a queue
+// flushed twice resolves to the same document path, and the rules' create
+// semantics refuse the second.
+function queueOfflineSale(args) {
+  const { doc, collection, setDoc, updateDoc, increment, serverTimestamp } = state.firebaseApi.firestore;
+  const root = ["users", state.businessOwnerUid];
+  const dedupeSaleId = `ord_${args.staffId}_${args.orderNumber}`;
+  const saleId = args.duplicate ? `${dedupeSaleId}_dup${Date.now()}` : dedupeSaleId;
+
+  // A rejection arrives at replay time, long after the cashier has moved on, so
+  // it goes to the fault log rather than a toast nobody will connect to it.
+  const onReplayFailure = (what) => (error) => {
+    console.warn(`Offline ${what} was rejected on replay.`, error);
+    try { reportFault("rejection", `offline ${what} rejected: ${error?.code || error}`, "queueOfflineSale"); }
+    catch (reportError) { console.warn(reportError); }
+  };
+
+  setDoc(doc(state.db, ...root, "sales", saleId), {
+    items: args.items,
+    subtotal: args.subtotal,
+    discountType: args.discountType,
+    discountValue: args.discountValue,
+    discountAmount: args.discountAmount,
+    total: args.total,
+    paymentMethod: "cash",
+    cashTendered: args.cashTendered,
+    changeDue: args.changeDue,
+    customerId: null,
+    amountPaid: null,
+    amountPaidMethod: null,
+    balanceDue: null,
+    branchId: args.storeId,
+    storeId: args.storeId,
+    cashierUid: state.user?.uid || null,
+    staffId: args.staffId,
+    staffName: args.staffName,
+    orderNumber: args.orderNumber,
+    customerName: args.customerName,
+    customerPhone: args.customerPhone,
+    voided: false,
+    // Marks the sale itself, so the owner's "sold while offline" view and any
+    // later investigation can tell which sales were rung up blind.
+    madeOffline: true,
+    createdAt: serverTimestamp()
+  }).catch(onReplayFailure("sale"));
+
+  for (const item of args.items) {
+    updateDoc(doc(state.db, ...root, "products", item.productId), {
+      quantity: increment(-item.qty),
+      sold30: increment(item.qty),
+      sold90: increment(item.qty),
+      updatedAt: serverTimestamp(),
+      movementReason: "sale"
+    }).catch(onReplayFailure("stock movement"));
+
+    setDoc(doc(collection(state.db, ...root, "stockMovements")), {
+      productId: item.productId,
+      productName: item.name,
+      storeId: args.storeId,
+      reason: "sale",
+      delta: -item.qty,
+      offline: true,
+      saleId,
+      uid: state.user?.uid || null,
+      createdAt: serverTimestamp()
+    }).catch(onReplayFailure("ledger entry"));
+  }
+
+  setDoc(doc(collection(state.db, ...root, "auditLogs")), {
+    action: "SALE_COMPLETED",
+    total: args.total,
+    paymentMethod: "cash",
+    itemCount: args.items.length,
+    discountType: args.discountType,
+    discountAmount: args.discountAmount,
+    uid: state.user?.uid || null,
+    createdAt: serverTimestamp()
+  }).catch(onReplayFailure("audit entry"));
+
+  return saleId;
+}
+
 function unitsSoldByProduct(sales, fromMs, toMs) {
   const totals = new Map();
   const add = (id, qty) => {
@@ -8705,7 +8827,35 @@ function bindEvents() {
       return;
     }
 
-    if (state.db && state.user && state.businessOwnerUid) {
+    // Offline and paying by anything other than cash: refused with a reason of
+    // its own rather than dropped into the transaction below to fail as a
+    // generic error. See shouldQueueSaleOffline().
+    if (state.db && state.user && state.businessOwnerUid && isOfflineNow() && paymentMethod !== "cash") {
+      showToast(t("toast.offlineCashOnly"));
+      return;
+    }
+
+    if (state.db && state.user && state.businessOwnerUid && shouldQueueSaleOffline(paymentMethod)) {
+      const saleId = queueOfflineSale({
+        items: saleItems,
+        subtotal,
+        discountType,
+        discountValue: Number(state.discountValue || 0),
+        discountAmount,
+        total,
+        cashTendered,
+        changeDue,
+        storeId: state.currentStoreId,
+        staffId: seller.id,
+        staffName: seller.name,
+        orderNumber,
+        customerName,
+        customerPhone,
+        duplicate
+      });
+      state.lastSale = { mode: "firestore", saleId, items: saleItems, paymentMethod, total };
+      showToast(t("toast.saleQueuedOffline"));
+    } else if (state.db && state.user && state.businessOwnerUid) {
       try {
         const { collection, doc, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
         // Idempotency: key the sale document deterministically on staffId + the

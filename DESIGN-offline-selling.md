@@ -1,6 +1,6 @@
 # Design — offline selling (L-9)
 
-Status: **phases A and B built, C–E proposed.** Written 2026-08-02.
+Status: **phases A, B and C built. D and E proposed.** Written 2026-08-02.
 
 Phase A (rules only) landed 2026-08-02: `stockCountInRange` permits bounded
 negative `products.quantity`, and `stockMovements` accepts an `offline: true`
@@ -12,9 +12,15 @@ product whose newest ledger entry was made offline as **unknown**, never as a
 discrepancy. Checking the newest entry alone is sufficient — see §5 for why a
 chained entry anchors everything behind it.
 
-Nothing writes an offline entry or a negative quantity yet, so the running app
-still behaves exactly as it did before phase A. The boundary and the reader are
-both in place ahead of the writer, which is the point of this ordering.
+Phase C (the writer) landed 2026-08-02: offline **cash** sales are queued with
+`increment()` rather than refused. The transaction path is untouched and still
+serves every online sale, keeping atomicity and the oversell guard. Non-cash
+sales offline are refused with their own message. The offline banner was
+rewritten in the same change — it said sales could not be recorded, which
+became untrue the moment the queue existed.
+
+Still to come: D (owner's "sold while offline" view, unsynced count at the
+till) and E (end-to-end replay tests).
 Decisions taken: oversell policy = *sell anyway, flag it* (owner's call).
 
 This touches `completeSale()`, which is the most dangerous function in the
@@ -238,7 +244,7 @@ Each is independently shippable and independently safe.
 |---|---|---|
 | A | Rules: `offline` ledger entries, bounded negative `products.quantity`, plus tests | Nothing writes either yet — **DONE 2026-08-02** |
 | B | Reconciliation becomes chain-aware — treats offline entries as `unknown` | Must land **before** anything writes an offline entry, or the first outage accuses someone — **DONE 2026-08-02** |
-| C | Client: `increment()` on the sale path, queued writes, offline ledger entry | The boundary is already proven by A and B |
+| C | Client: `increment()` on the sale path, queued writes, offline ledger entry | The boundary is already proven by A and B — **DONE 2026-08-02** |
 | D | UX: banner, per-sale offline marker, unsynced count, "sold while offline" report | The policy's "flag it" half |
 | E | End-to-end and load tests, then the excluded paths re-verified | — |
 

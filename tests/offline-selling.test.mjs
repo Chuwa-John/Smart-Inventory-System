@@ -59,9 +59,13 @@ console.log("=== a failed sale stops, it does not quietly become a local one ===
 
 console.log("=== the user is told the truth about it ===");
 {
-  check("the offline banner says sales cannot be recorded",
-    /"offline\.bannerText": "[^"]*sales cannot be recorded/.test(src),
-    "if this softens, check the behaviour softened with it");
+  // Changed in L-9 phase C. The banner used to say sales could not be recorded,
+  // which was true and is now false for cash: they are queued on the device.
+  // A banner that still claimed refusal would be the same class of lie as the
+  // inventory table telling a loading shop its stock was gone.
+  check("the offline banner says cash sales are held on the device",
+    /"offline\.bannerText": "[^"]*saved on this device/.test(src),
+    "the banner must match what the sale path actually does");
   check("the banner exists in Kiswahili too",
     (src.match(/"offline\.bannerText"/g) || []).length >= 2);
   check("being offline outranks whatever code the SDK returned",
@@ -79,6 +83,69 @@ console.log("=== a sale is written in one transaction, which is why it cannot qu
     /recordStockMovement\(transaction/.test(noComments),
     "if the ledger ever moves outside the transaction, a crash between the two produces a gap the " +
     "reconciliation would read as theft");
+}
+
+console.log("=== a cash sale is queued offline, not refused (L-9 phase C) ===");
+{
+  const q = noComments.slice(noComments.indexOf("function queueOfflineSale("));
+  const body = q.slice(0, q.indexOf("\nfunction ", 10));
+
+  check("only cash is queued offline",
+    /isOfflineNow\(\) && paymentMethod === "cash"/.test(noComments),
+    "a credit sale offline could blow a limit with no authorisation trail");
+  check("a non-cash sale offline is refused with its own reason",
+    /isOfflineNow\(\) && paymentMethod !== "cash"[\s\S]{0,120}toast\.offlineCashOnly/.test(noComments),
+    "otherwise it falls into the transaction and fails as a generic error");
+  // Both anchored inside completeSale. shouldQueueSaleOffline is defined far
+  // earlier in the file and runTransaction is first used by returns, so a bare
+  // indexOf on either compares the wrong two places.
+  {
+    const saleEnd = noComments.indexOf('describeOperationError(error, "toast.saleFailedGeneric")');
+    const saleStart = noComments.lastIndexOf("if (!seller.id", saleEnd);
+    const region = noComments.slice(saleStart, saleEnd);
+    check("the offline branch is taken before the transaction one",
+      region.indexOf("shouldQueueSaleOffline(paymentMethod)") !== -1 &&
+      region.indexOf("shouldQueueSaleOffline(paymentMethod)") < region.indexOf("await runTransaction("),
+      "the transaction must be the else, or an offline sale still hits a path that cannot queue");
+    check("the non-cash refusal comes before both",
+      region.indexOf("toast.offlineCashOnly") < region.indexOf("shouldQueueSaleOffline(paymentMethod)"));
+  }
+
+  // The three properties that make this correct rather than merely working.
+  check("stock moves by increment(), never read-then-write",
+    /quantity: increment\(-item\.qty\)/.test(body),
+    "reading first is what makes two tills clobber each other on replay");
+  check("nothing in the queued path is awaited",
+    !/await /.test(body),
+    "awaiting a queued write hangs until the connection returns -- the cashier watches a spinner");
+  check("the ledger entry is marked offline and carries no chain",
+    /offline: true/.test(body) && !/quantityBefore/.test(body),
+    "a chain built on a stale cache is a guess wearing the authority of a measurement");
+
+  check("the sale keeps its deterministic id, so a double flush cannot double-record",
+    /ord_\$\{args\.staffId\}_\$\{args\.orderNumber\}/.test(body));
+  check("the sale is marked as made offline",
+    /madeOffline: true/.test(body),
+    "the owner needs to know which sales were rung up blind");
+  check("a replay rejection is reported rather than swallowed",
+    /onReplayFailure/.test(body) && /reportFault/.test(body),
+    "a rejection arrives hours later; a toast then would connect to nothing");
+  check("all four writes are queued",
+    (body.match(/setDoc\(/g) || []).length >= 3 && /updateDoc\(/.test(body),
+    "sale, stock, ledger and audit");
+}
+
+console.log("=== the online path is untouched ===");
+{
+  // Phase C adds a branch; it does not rewrite the transaction. Online sales
+  // keep atomicity and the oversell guard that lives inside it.
+  check("the transaction still exists for online sales",
+    /await runTransaction\(state\.db, async \(transaction\)/.test(noComments));
+  check("the online oversell guard is still inside it",
+    /txerror\.notEnoughStockItem/.test(noComments),
+    "this is what refuses to oversell while connected");
+  check("the online ledger write still carries its chain",
+    /recordStockMovement\(transaction,[\s\S]{0,220}quantityBefore: currentQuantity/.test(noComments));
 }
 
 console.log("=== staff keep their employer's data when the network drops ===");
