@@ -87,18 +87,37 @@ const NOT_WRITTEN_BY_APP_JS = {
   // entirely. Listed in the enum for completeness, not necessity.
   ACCOUNT_DELETION_REQUESTED: "proxy, Admin SDK",
   ACCOUNT_DELETION_CANCELLED: "proxy, Admin SDK",
-  // Nothing writes this. firestore.rules and DATA-DELETION.md both describe an
-  // access-during-grace evidence trail, and rules-deletion.test.mjs asserts the
-  // audit log stays writable while a tenant is frozen -- but no production code
-  // ever emits the entry, so the trail the policy promises does not exist. The
-  // permission is real and the writer is missing. Tracked as L-6 in
-  // KNOWN-LIMITATIONS.md; remove this line once app.js emits it.
-  ACCOUNT_ACCESS_DURING_GRACE: "documented but unimplemented -- see L-6"
+  // ACCOUNT_ACCESS_DURING_GRACE used to sit here as "documented but
+  // unimplemented" -- the permission existed, DATA-DELETION.md described the
+  // trail, and no production code emitted it. app.js now writes it once per
+  // sign-in to a frozen tenant (L-6 closed), so it is expected in `emitted`
+  // below and needs no excuse.
 };
 const orphans = [...allowed].filter((a) => !emitted.has(a) && !(a in NOT_WRITTEN_BY_APP_JS));
 check("no unexplained actions in the rules enum", orphans.length === 0,
   `allowed but never written by app.js or the proxy: ${orphans.join(", ")}\n` +
   `      Either the client stopped writing it (remove it) or it belongs in NOT_WRITTEN_BY_APP_JS with a reason.`);
+
+console.log("\n=== the access-during-grace trail is actually written (L-6) ===");
+{
+  const noComments = app.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  check("app.js emits ACCOUNT_ACCESS_DURING_GRACE", emitted.has("ACCOUNT_ACCESS_DURING_GRACE"),
+    "the deletion policy describes this trail; without a writer it does not exist");
+  check("it fires when a pending deletion is detected",
+    /state\.deletionScheduledFor\) await recordGraceAccess\(\)/.test(noComments),
+    "written but never called");
+  check("it is latched to once per sign-in",
+    /if \(state\.graceAccessLogged\) return;/.test(noComments),
+    "an entry per render turns an evidence trail into a flood");
+  check("the latch is cleared on sign-in", /state\.graceAccessLogged = false;/.test(noComments),
+    "a latch that never resets records only the first session ever");
+  check("it is owner-only",
+    /recordGraceAccess[\s\S]{0,400}state\.user\.uid !== state\.businessOwnerUid\) return;/.test(noComments),
+    "the action is owner-scoped in the rules enum, so staff would only be denied");
+  check("a failure to record never blocks the owner",
+    /recordGraceAccess[\s\S]{0,900}catch[\s\S]{0,200}console\.warn/.test(noComments),
+    "an evidence entry must not be why someone cannot get back into their account");
+}
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);

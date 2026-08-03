@@ -62,6 +62,9 @@ const state = {
   // One-shot latch so a membership that ends cannot fire the sign-out path
   // repeatedly as the listener settles.
   membershipEnded: false,
+  // Latch for the access-during-grace evidence entry (L-6): one per sign-in,
+  // not one per render. Cleared alongside membershipEnded.
+  graceAccessLogged: false,
   pendingInviteLinkToken: "",
   pendingInviteRoleLabel: "",
   businessOwnerUid: "",
@@ -6731,6 +6734,7 @@ async function initFirebase() {
         // Cleared here, not on sign-out: a member who was revoked and later
         // reinstated must be able to sign in again without a page reload.
         state.membershipEnded = false;
+        state.graceAccessLogged = false;
         state.businessOwnerUid = await resolveBusinessOwnerUid(user);
         state.currentUserRole = await resolveCurrentUserRole(user, state.businessOwnerUid);
         state.currentUserName = await resolveCurrentUserName(user, state.businessOwnerUid);
@@ -7336,6 +7340,42 @@ function nextAutoOrderNumber() {
   return String(Date.now()).slice(-10);
 }
 
+// The access-during-grace entry (L-6).
+//
+// firestore.rules deliberately exempts auditLogs from tenantNotFrozen() so that
+// "the deletion request itself, the restore, and any access attempt during the
+// grace period" stay recordable while everything else is frozen, and
+// DATA-DELETION.md describes that trail as policy. Nothing ever wrote the third
+// one: the action existed in the rules and in a test that supplied its own
+// name, and no production code emitted it. The permission was built and the
+// writer never was.
+//
+// Once per sign-in, not once per render. The alternative -- an entry every time
+// the app reloads a frozen tenant -- turns an evidence trail into a flood, and
+// the thing worth evidencing is that someone came back during the grace period,
+// which one entry per session says exactly.
+//
+// Owner-only, because a staff account under a frozen tenant has already been
+// disabled and had its tokens revoked by the deletion request, and because the
+// action is owner-scoped in the rules enum.
+async function recordGraceAccess() {
+  if (state.graceAccessLogged) return;
+  if (!state.db || !state.user || state.user.uid !== state.businessOwnerUid) return;
+  state.graceAccessLogged = true;
+  try {
+    const { doc, collection, setDoc, serverTimestamp } = state.firebaseApi.firestore;
+    await setDoc(doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs")), {
+      action: "ACCOUNT_ACCESS_DURING_GRACE",
+      uid: state.user.uid,
+      createdAt: serverTimestamp()
+    });
+  } catch (error) {
+    // Never surfaced: a failed evidence entry must not be the reason an owner
+    // cannot get back into the account they are trying to recover.
+    console.warn("Could not record grace-period access.", error);
+  }
+}
+
 async function loadUserSettings(user) {
   if (!state.db) return;
   try {
@@ -7349,6 +7389,7 @@ async function loadUserSettings(user) {
     // period is told, rather than silently hitting a frozen tenant.
     const scheduled = data && data.status === "pending_deletion" ? data.deletionScheduledFor : null;
     state.deletionScheduledFor = scheduled?.toMillis?.() ?? (scheduled ? new Date(scheduled).getTime() : null);
+    if (state.deletionScheduledFor) await recordGraceAccess();
   } catch (error) {
     console.warn(error);
     state.stockAlertPopupEnabled = true;

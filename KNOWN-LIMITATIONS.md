@@ -211,7 +211,7 @@ go looking for a network bug.
 
 ---
 
-## L-6 The access-during-grace audit entry is documented but never written — **OPEN**
+## L-6 The access-during-grace audit entry is documented but never written — **CLOSED 2026-08-02**
 
 **Limitation.** `firestore.rules` explains that `auditLogs` is deliberately not
 gated on `tenantNotFrozen()` because "the deletion request itself, the restore,
@@ -229,23 +229,26 @@ Found by `tests/audit-actions-agree.test.mjs` on its first run, comparing the
 rules enum against what the client can actually emit. It was invisible before
 that, because the test asserting the capability supplied the action name itself.
 
-**Why not fixed now.** It needs a decision rather than a patch: what counts as
-"access" worth recording (every app open while frozen? every write attempt? the
-first per session?), and how to avoid a frozen tenant's client writing an audit
-entry on a loop. That is a small design, not a one-liner, and it touches
-`app.js`, so it carries a version bump and a Hosting deploy.
+**Fixed.** `recordGraceAccess()` writes the entry once per sign-in when the
+owner's profile carries `status: "pending_deletion"`, latched so a reload does
+not turn an evidence trail into a flood. Owner-only, matching the rules enum —
+staff accounts under a frozen tenant have already been disabled and had their
+tokens revoked by the deletion request. A failure to record is swallowed with a
+warning: an evidence entry must never be the reason someone cannot get back into
+the account they are trying to recover.
 
-**Risk: Low** operationally — nothing is broken and no data is wrong. It is a
-**documentation-accuracy** risk: `DATA-DELETION.md` describes a control that
-does not exist, and the gap survived a security audit because a test named the
-action for it. If the deletion policy is ever shown to a regulator or a customer
-as evidence of practice, it currently overstates what happens.
+**The decision taken, recorded for review.** "Access" means *a sign-in while
+frozen*, not every write attempt and not every render. One entry per session
+answers the question the trail exists to answer — did someone come back during
+the grace period — without volume. If an auditor ever needs finer granularity,
+that is a deliberate change rather than a gap.
 
-**Workaround.** None needed. Deletion, freezing and restoration all work and are
-audited; only the access-attempt trail is absent.
-
-**Planned:** Phase 5, alongside the admin dashboard's audit log viewer — the
-entry is only useful once there is somewhere to read it.
+**How it hid.** `rules-deletion.test.mjs` asserts a frozen owner can append an
+audit entry, and passes — because the test supplied the action name itself.
+Coverage of the permission looked like coverage of the behaviour.
+`tests/audit-actions-agree.test.mjs` now compares the rules enum against what
+`app.js` can actually emit, which is what surfaced it, and it fails if a writer
+disappears again.
 
 ---
 
