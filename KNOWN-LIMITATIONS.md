@@ -299,16 +299,53 @@ can be truncated — the POS searches it, the inventory table pages through it,
 stock alerts scan it. Bounding it means paging or server-side search, which is
 a design change to several screens rather than adding an argument to a query.
 
-**Risk: Medium, and the first ceiling this system will hit.** The render cost is
-now flat (see L-5), so the pressure is the initial snapshot, not per-frame work.
-Measured in `load-volume.test.mjs`: **2,049 ms to read 800 products** against a
-local emulator, with no network in the path. That is the floor, not the figure a
-shop will see — a real catalogue carries more fields, and a Tanzanian mobile
-connection adds the rest. Extrapolating linearly, 5,000 products is roughly 13
-seconds of staring at an empty till before the first sale can be rung up.
+**Measured, not estimated.** Against a local emulator with **no network in the
+path**, a catalogue of 10,000 products carrying realistic fields (name,
+category, brand, supplier, sku, barcode, description, prices, levels):
 
-A few thousand products is survivable-but-slow; the QA brief's 250,000-product
-scenario is not survivable at all on a phone.
+| catalogue | cold read | payload |
+|---|---|---|
+| 800 products | 2,049 ms | — |
+| **10,000 products** | **6,604 ms** | **4.55 MB of JSON** |
+
+4.55 MB is the number that matters. On a Tanzanian mobile connection that is
+tens of seconds — plausibly 30–60 — before the till can ring up its first sale.
+
+**What softens it:** `initializeFirestore` enables `persistentLocalCache` with
+multi-tab support, so this is a **cold-start cost, not a per-open cost**. A
+device that has synced before serves from IndexedDB and pulls only deltas. The
+cost lands on first sign-in on a device, after a cache clear, and on a new
+staff phone.
+
+**What does not soften it:** the product owner's stated target is **over 10,000
+SKUs per branch**. This limitation is therefore above, not below, the intended
+market.
+
+**Risk: HIGH.** Deliberately not recorded as Medium. Every other entry in this
+file describes something unlikely or bounded; this one describes the expected
+customer.
+
+**Fixed in part (2026-08-02).** Not the load — the lie. While the catalogue was
+arriving, the inventory table displayed *"No inventory yet. Add your first
+material or product to start tracking stock."* For the full cold-start window an
+owner was told their stock was gone and invited to re-enter it. That is a trust
+failure and a data-corruption invitation, not a slow screen. Both the inventory
+table and the POS list now distinguish "not loaded yet" from "genuinely empty",
+and `tests/load-client.test.mjs` fails if the unqualified empty state returns.
+
+**The real fix, and its trigger.** A server-maintained per-store summary
+document — counts and alert lists computed on write — so the client can page
+products instead of holding all of them. Roughly 15 call sites currently depend
+on having the whole catalogue (low-stock and expiry alerts, movement
+classification, dashboard recommendations, restock ranking, barcode lookup, POS
+search, ledger-gap reconciliation, AI snapshot selection); paging without the
+summary does not degrade those, it breaks them. It also adds a write on every
+stock change and needs its own reconciliation against drift, exactly as the
+stock ledger did.
+
+**Do this before onboarding any customer above ~3,000 SKUs per branch.** That
+threshold is a decision, not a measurement: it is where cold start passes
+roughly ten seconds on a decent mobile connection.
 
 **Workaround.** None in-product. Practically, the shops this serves hold
 hundreds to low thousands of SKUs.

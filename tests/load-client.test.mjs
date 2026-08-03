@@ -210,6 +210,29 @@ console.log("\n=== the working set is small enough to send and to hold ===");
   console.log(`      measured: ${mb.toFixed(2)} MB serialized working set`);
 }
 
+console.log("\n=== a still-loading catalogue is not reported as an empty one ===");
+{
+  // Measured: 10,000 realistic products is 6.6s and 4.55 MB from a local
+  // emulator with no network in the path. On a mobile link that is tens of
+  // seconds. For all of it, the inventory table used to say "No inventory yet.
+  // Add your first material or product" -- which reads as data loss and invites
+  // an owner to re-enter stock they already have. That is a trust failure, not
+  // a slow-loading screen.
+  const noComments = src.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  check("the inventory empty state is gated on the first snapshot having landed",
+    /state\.productsInitialized \? t\("inventory\.emptyState"\) : t\("inventory\.loadingState"\)/.test(noComments),
+    "an unqualified empty state tells a loading shop that its stock is gone");
+  check("the POS says something while the catalogue is still arriving",
+    /state\.productsInitialized \? "" : `<p class="muted">\$\{esc\(t\("inventory\.loadingState"\)\)\}/.test(noComments),
+    "silence at the till during first sync");
+  check("a genuinely empty search result stays blank",
+    /\.join\(""\) \|\| \(state\.productsInitialized \? ""/.test(noComments),
+    "the loading message must not appear for a search that simply matched nothing");
+  check("the loading string exists in both languages",
+    (src.match(/"inventory\.loadingState"/g) || []).length >= 3,
+    "found fewer than two dictionary entries plus a usage");
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) {

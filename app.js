@@ -539,6 +539,7 @@ const DICTIONARY = {
     "product.editTitle": "Edit Inventory Product", "product.addTitle": "Add Inventory Product",
     "inventory.edit": "Edit", "inventory.transfer": "Transfer", "inventory.restock": "Restock", "inventory.delete": "Delete",
     "inventory.emptyState": "No inventory yet. Add your first material or product to start tracking stock.",
+    "inventory.loadingState": "Loading your stock\u2026 a large catalogue can take a moment on the first sign-in from a device.",
     "toast.incorrectPassword": "Incorrect password. Price change cancelled.",
     "toast.overrideNotConfigured": "Price overrides aren't set up yet. Ask your admin to configure them.",
     "toast.overrideNetworkError": "Couldn't reach the override service. Check your connection and try again.",
@@ -1177,6 +1178,7 @@ const DICTIONARY = {
     "product.editTitle": "Hariri Bidhaa ya Hisa", "product.addTitle": "Ongeza Bidhaa ya Hisa",
     "inventory.edit": "Hariri", "inventory.transfer": "Hamisha", "inventory.restock": "Ongeza Hisa", "inventory.delete": "Futa",
     "inventory.emptyState": "Hakuna hisa bado. Ongeza bidhaa yako ya kwanza kuanza kufuatilia hisa.",
+    "inventory.loadingState": "Inapakia hisa zako\u2026 orodha kubwa inaweza kuchukua muda kidogo unapoingia mara ya kwanza kwenye kifaa.",
     "toast.incorrectPassword": "Nenosiri si sahihi. Mabadiliko ya bei yamesitishwa.",
     "toast.overrideNotConfigured": "Mabadiliko ya bei ya ziada bado hayajawekwa. Muulize msimamizi wako ayaweke.",
     "toast.overrideNetworkError": "Imeshindwa kufikia huduma ya ruhusa. Angalia muunganisho wako na ujaribu tena.",
@@ -2045,7 +2047,15 @@ function renderInventory() {
         </td>
       </tr>`;
     })
-    .join("") || `<tr><td colspan="8" class="empty-state">${t("inventory.emptyState")}</td></tr>`;
+    // "No inventory yet. Add your first product" is the correct message for an
+    // empty shop and a badly wrong one for a shop still loading. A 10,000-SKU
+    // catalogue is 4.55 MB on the wire (measured, L-8), which on a mobile link
+    // is tens of seconds of an owner being told their stock is gone and invited
+    // to re-enter it. Distinguish the two: until the first snapshot lands,
+    // nothing is known, and saying so is the honest answer.
+    .join("") || `<tr><td colspan="8" class="empty-state">${
+      state.productsInitialized ? t("inventory.emptyState") : t("inventory.loadingState")
+    }</td></tr>`;
 }
 
 function renderPosProducts() {
@@ -2062,7 +2072,11 @@ function renderPosProducts() {
         <button class="ghost-button compact" data-add-cart="${product.id}" type="button">${t("pos.addButton")}</button>
       </div>
     </div>`)
-    .join("");
+    // A blank POS during first sync is not misleading the way the inventory
+    // empty state was, but it is still silence at the moment a cashier is
+    // waiting to ring something up. Only while the catalogue is still arriving:
+    // a genuinely empty search result stays blank, as it should.
+    .join("") || (state.productsInitialized ? "" : `<p class="muted">${esc(t("inventory.loadingState"))}</p>`);
 }
 
 function cartSubtotal() {
