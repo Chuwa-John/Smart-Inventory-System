@@ -631,6 +631,54 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      // The stock ledger (L-2). One append-only document per movement of
+      // stock, written in the same transaction as the movement itself.
+      //
+      // F-4 records that rules cannot bind a stock decrement to a sale: they
+      // authorise one write at a time and cannot see the sale document created
+      // alongside. That stays true here -- a client can still decline to write
+      // the ledger entry. What changes is that declining becomes VISIBLE.
+      //
+      // The mechanism is quantityBefore/quantityAfter. Each entry records the
+      // shelf on both sides of the movement, and the rule below requires them
+      // to agree with the delta. So the ledger is a chain: replayed forward, the
+      // last quantityAfter for a product must equal that product's current
+      // quantity. Stock that moved without an entry leaves a gap between the
+      // two, and the gap is exactly the amount that went missing. That is a
+      // detective control, which is all F-4 ever claimed was reachable -- but
+      // it is one an owner can read, rather than one that requires a physical
+      // stocktake to notice.
+      //
+      // Append-only and owner-read, like auditLogs: staff write what they did
+      // and cannot read the collection back or tidy it afterwards. Bounded so a
+      // loop cannot write unbounded documents.
+      match /stockMovements/{movementId} {
+        function validStockMovement() {
+          let d = request.resource.data;
+          return d.productId is string && d.productId.size() > 0 && d.productId.size() <= 120
+            && d.storeId is string && d.storeId.size() > 0 && d.storeId.size() <= 120
+            && d.reason in ['sale', 'restock', 'return', 'void', 'transfer-in', 'transfer-out', 'adjustment']
+            && d.delta is number && d.delta >= -1000000 && d.delta <= 1000000
+            && countInRange(d.quantityBefore)
+            && countInRange(d.quantityAfter)
+            // The chain link. Without this an entry could claim any resulting
+            // shelf and the replay would agree with whatever it was told.
+            && d.quantityAfter == d.quantityBefore + d.delta
+            && d.uid == request.auth.uid
+            && (!('productName' in d) || (d.productName is string && d.productName.size() <= 120))
+            && (!('saleId' in d) || (d.saleId is string && d.saleId.size() <= 120))
+            && (!('transferId' in d) || (d.transferId is string && d.transferId.size() <= 120))
+            && (!('staffName' in d) || (d.staffName is string && d.staffName.size() <= 80));
+        }
+        allow read: if isOwner(userId);
+        allow create: if tenantNotFrozen(userId)
+          && isOwnerOrRole(userId, ["manager", "cashier"])
+          && validStockMovement()
+          && (isOwner(userId) || memberCanAccessStore(userId, request.resource.data.storeId));
+        // A ledger that can be edited or removed is not a ledger.
+        allow update, delete: if false;
+      }
+
       match /transfers/{transferId} {
         function validTransfer() {
           let d = request.resource.data;

@@ -115,8 +115,38 @@ replayed and compared against a physical count. It is a schema addition and a
 write on every stock change, so it is a deliberate piece of work rather than a
 view someone can add to a panel.
 
-**Planned:** `stockMovements` ledger, unscheduled. Until then the honest
-compensating control is the physical stocktake F-4 already names — not a screen.
+**Compensating control — BUILT 2026-08-02.** The `stockMovements` ledger now
+exists. Every one of the seven paths that moves stock — sale, restock, return,
+void, transfer out, transfer in, and an owner's counted correction — writes an
+append-only entry recording the shelf on both sides of the movement, inside the
+same transaction as the movement itself.
+
+The chain is what makes it a control rather than a log: `firestore.rules`
+requires `quantityAfter == quantityBefore + delta`, so the newest entry for a
+product states what should be on the shelf. Stock that moved without an entry
+leaves the product's own quantity disagreeing with the ledger by exactly the
+amount that went missing, and the owner's movement panel names it.
+
+Prevention is still not reachable, exactly as F-4 says — a client can decline to
+write the entry. What it can no longer do is decline invisibly.
+
+Three limits worth stating:
+
+- **Everything predates the ledger.** On the day this ships no product has an
+  entry, so the whole catalogue reads as unchecked and stays that way until each
+  item next moves. "No entry" renders as nothing, never as a finding.
+- **The view reads the newest 500 entries.** A product whose last movement falls
+  outside that window is unchecked, not discrepant.
+- **It is detective, and only as good as the reading.** Nothing forces an owner
+  to look.
+
+**Remaining risk: Low**, down from Low-but-unmitigated. The physical stocktake
+F-4 names is still the ultimate check; this makes the common case visible
+without one.
+
+**Planned:** nothing outstanding. A future refinement would replay the full
+delta chain rather than comparing only the newest entry, which would locate
+*when* a shelf diverged rather than only that it has.
 
 ---
 

@@ -51,6 +51,10 @@ const state = {
   members: [],
   unsubscribeMembers: null,
   unsubscribeOwnMembership: null,
+  unsubscribeStockLedger: null,
+  // Newest ledger entry per product id. Empty means "nothing checked yet",
+  // which is what the whole catalogue reads as until stock next moves.
+  stockLedgerLatest: null,
   // Owner-only shift reconciliation results, keyed by shift id. See
   // reconcileShiftCash() -- absence of an entry means "not checked", which is
   // rendered as nothing rather than as a clean bill of health.
@@ -504,6 +508,7 @@ const DICTIONARY = {
     "rec.reorderNow": "Reorder {qty} units now.", "rec.estimatedStockout": "Estimated stockout in {days} days.",
     "movement.fastMoving": "Fast-moving products", "movement.slowMoving": "Slow-moving products",
     "movement.noSales": "No sales recorded", "movement.healthyCoverage": "Healthy stock coverage",
+    "movement.ledgerGaps": "shelves disagree with the stock ledger (worst: {name}, {units} units)",
     "pos.available": "{quantity} available", "pos.qtyAriaLabel": "Quantity for {name}",
     "pos.pricePerUnitPlaceholder": "Price/unit", "pos.addButton": "Add",
     "cart.editPrice": "Edit price", "cart.decreaseAriaLabel": "Decrease quantity",
@@ -1141,6 +1146,7 @@ const DICTIONARY = {
     "rec.reorderNow": "Agiza vitengo {qty} sasa.", "rec.estimatedStockout": "Inakadiriwa kuisha kwa siku {days}.",
     "movement.fastMoving": "Bidhaa zinazouzwa haraka", "movement.slowMoving": "Bidhaa zinazouzwa polepole",
     "movement.noSales": "Hakuna mauzo yaliyorekodiwa", "movement.healthyCoverage": "Hisa iliyo katika hali nzuri",
+    "movement.ledgerGaps": "rafu hazilingani na leja ya hisa (mbaya zaidi: {name}, vipande {units})",
     "pos.available": "{quantity} zinapatikana", "pos.qtyAriaLabel": "Kiasi cha {name}",
     "pos.pricePerUnitPlaceholder": "Bei/kitengo", "pos.addButton": "Ongeza",
     "cart.editPrice": "Hariri bei", "cart.decreaseAriaLabel": "Punguza kiasi",
@@ -1959,7 +1965,26 @@ function renderMovement() {
   ];
   qs("#movementList").innerHTML = classes
     .map(([label, value, color]) => `<div class="movement-row"><strong style="color:${color}">${value}</strong><span>${label}</span></div>`)
-    .join("");
+    .join("") + stockLedgerSummaryHtml();
+}
+
+// The L-2 control, surfaced. Owner-only, and silent when there is nothing to
+// say: no ledger loaded, or nothing checked, renders nothing at all rather than
+// a reassuring tick. A shelf that has not moved since the ledger began cannot
+// be verified, and saying so in a dashboard tile would be noise -- the finding
+// is the disagreement, and only the disagreement.
+function stockLedgerSummaryHtml() {
+  if (!isOwnerRole()) return "";
+  const gaps = stockLedgerDiscrepancies();
+  if (gaps === null) return "";
+  if (!gaps.length) return "";
+  const worst = [...gaps].sort((a, b) => Math.abs(b.result.gap) - Math.abs(a.result.gap))[0];
+  return `<div class="movement-row"><strong style="color:#ef6666">${gaps.length}</strong><span>${
+    esc(t("movement.ledgerGaps", {
+      name: worst.product.name || "",
+      units: Math.abs(Math.round(worst.result.gap))
+    }))
+  }</span></div>`;
 }
 
 function renderFilters() {
@@ -2983,6 +3008,11 @@ async function confirmProcessReturn() {
             sold90: Math.max(0, currentSold90 - item.qty),
             updatedAt: serverTimestamp(),
             movementReason: "return"
+          });
+          recordStockMovement(transaction, {
+            productId: item.productId, productName: item.name,
+            storeId: sale.storeId, reason: "return",
+            delta: item.qty, quantityBefore: currentQuantity, saleId
           });
         });
 
@@ -4490,6 +4520,26 @@ async function saveProduct(product) {
         payload,
         { merge: true }
       );
+      // An owner correcting a counted shelf is a real stock movement, and one
+      // the ledger has to carry: without it a legitimate correction reads as
+      // stock that moved with nothing to explain it, which is precisely the
+      // false accusation the reconciliation view must never make. Only when the
+      // count actually changed -- quantityUntouched saves are not movements.
+      // recordStockMovement() only needs something with .set(), and setDoc has
+      // the same shape as transaction.set, so the non-transactional path reuses
+      // it rather than growing a second copy of the chain arithmetic.
+      if (!quantityUntouched && existing) {
+        try {
+          recordStockMovement({ set: setDoc }, {
+            productId: product.id, productName: product.name,
+            storeId: product.storeId, reason: "adjustment",
+            delta: safeNumber(product.quantity) - safeNumber(existing.quantity),
+            quantityBefore: safeNumber(existing.quantity)
+          });
+        } catch (ledgerError) {
+          console.warn("Could not record stock correction in the ledger.", ledgerError);
+        }
+      }
       try {
         const auditRef = doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs"));
         await setDoc(auditRef, {
@@ -4590,6 +4640,19 @@ async function confirmTransfer() {
       }
 
       transaction.update(sourceRef, { quantity: sourceQty - qty, updatedAt: serverTimestamp() });
+      recordStockMovement(transaction, {
+        productId: product.id, productName: product.name,
+        storeId: productStoreId(product), reason: "transfer-out",
+        delta: -qty, quantityBefore: sourceQty, transferId: transferRef.id
+      });
+      // Logged against the destination product id, which for a first transfer
+      // into a branch is the document being created on the next line -- the
+      // ledger has to name the shelf the stock lands on, not the one it left.
+      recordStockMovement(transaction, {
+        productId: destinationRef.id, productName: product.name,
+        storeId: destinationStore.id, reason: "transfer-in",
+        delta: qty, quantityBefore: destinationQty, transferId: transferRef.id
+      });
 
       if (destinationExisted) {
         transaction.update(destinationRef, { quantity: destinationQty + qty, updatedAt: serverTimestamp() });
@@ -4656,6 +4719,10 @@ async function confirmRestock() {
         if (!snap.exists()) throw new Error(t("txerror.itemGone", { name: product.name }));
         const currentQuantity = Number(snap.data().quantity || 0);
         transaction.update(productRef, { quantity: currentQuantity + qty, updatedAt: serverTimestamp(), movementReason: "restock" });
+        recordStockMovement(transaction, {
+          productId, productName: product.name, storeId: productStoreId(product),
+          reason: "restock", delta: qty, quantityBefore: currentQuantity
+        });
 
         const auditRef = doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs"));
         transaction.set(auditRef, {
@@ -5168,6 +5235,11 @@ async function undoLastSale() {
           const currentQuantity = Number(snap.data().quantity || 0);
           const currentSold30 = Number(snap.data().sold30 || 0);
           const currentSold90 = Number(snap.data().sold90 || 0);
+          recordStockMovement(transaction, {
+            productId: item.productId, productName: item.name,
+            storeId: saleData.storeId, reason: "void",
+            delta: netQty, quantityBefore: currentQuantity, saleId: sale.saleId
+          });
           transaction.update(productRefs[index], {
             quantity: currentQuantity + netQty,
             sold30: Math.max(0, currentSold30 - netQty),
@@ -5571,6 +5643,39 @@ const SALES_HISTORY_LIMIT = 1000;
 //
 // Voided sales are skipped whole; returns are netted off, floored at zero so a
 // product can never read as sold a negative number of times.
+// Appends one entry to the stock ledger inside the caller's transaction (L-2).
+//
+// Every path that moves stock calls this, and it is deliberately part of the
+// same transaction as the movement: a ledger written separately could be
+// skipped by a crash, and a ledger with holes in it cannot be replayed. The
+// cost of that choice is that a rejected entry rolls back the sale it
+// travelled with, which is why every shape this produces is asserted against
+// the real rules in tests/rules-stock-ledger.test.mjs before it ships.
+//
+// quantityAfter is computed here rather than passed in, so the chain the rule
+// checks (after == before + delta) can only ever be consistent with what the
+// caller actually did to the shelf.
+function recordStockMovement(transaction, fields) {
+  const { doc, collection, serverTimestamp } = state.firebaseApi.firestore;
+  const quantityBefore = safeNumber(fields.quantityBefore);
+  const delta = safeNumber(fields.delta);
+  const ref = doc(collection(state.db, "users", state.businessOwnerUid, "stockMovements"));
+  const entry = {
+    productId: String(fields.productId || ""),
+    storeId: String(fields.storeId || ""),
+    reason: fields.reason,
+    delta,
+    quantityBefore,
+    quantityAfter: quantityBefore + delta,
+    uid: state.user?.uid || null,
+    createdAt: serverTimestamp()
+  };
+  if (fields.productName) entry.productName = String(fields.productName).slice(0, 120);
+  if (fields.saleId) entry.saleId = String(fields.saleId).slice(0, 120);
+  if (fields.transferId) entry.transferId = String(fields.transferId).slice(0, 120);
+  transaction.set(ref, entry);
+}
+
 function unitsSoldInWindow(sales, productId, fromMs, toMs) {
   let units = 0;
   for (const sale of sales || []) {
@@ -5682,6 +5787,51 @@ function shiftReconciliationCell(shift) {
   return `<span class="danger" title="${esc(t("shift.reconcileMismatchHelp"))}">${
     esc(t("shift.reconcileMismatch", { amount: money(Math.abs(result.unaccounted)) }))
   }</span>`;
+}
+
+// Owner-side reconciliation of one shelf against the stock ledger (L-2).
+//
+// The ledger records quantityBefore/quantityAfter on every movement and the
+// rule requires them to agree with the delta, so the newest entry for a product
+// states what the shelf should hold. If the product's own quantity differs,
+// stock moved without an entry -- and the difference is exactly how much.
+//
+// F-4 says rules cannot bind a stock decrement to a sale, and that remains
+// true: a client can still decline to write the ledger entry. What it cannot do
+// is decline invisibly.
+//
+// The same restraint as reconcileShiftCash(): a product with no ledger entry in
+// the loaded window is "unknown", never a discrepancy. Everything predates the
+// ledger, so on the day this ships every product is unknown and stays that way
+// until it next moves. A view that read that as theft would be wrong about the
+// entire catalogue at once.
+function reconcileProductStock(product, latestMovement) {
+  if (!product) return { status: "unknown", reason: "no-product", gap: null };
+  if (!latestMovement) return { status: "unknown", reason: "no-ledger-entry", gap: null };
+
+  const onShelf = safeNumber(product.quantity);
+  const expected = safeNumber(latestMovement.quantityAfter);
+  const gap = onShelf - expected;
+  return {
+    // Whole units only: these are counts, and a fractional gap is noise from a
+    // malformed document rather than stock anybody moved.
+    status: Math.abs(gap) < 1 ? "matched" : "mismatch",
+    onShelf,
+    expected,
+    gap
+  };
+}
+
+// The newest ledger entry per product, from entries ordered newest-first.
+// One pass, first occurrence wins -- the alternative is a query per product,
+// which for a real catalogue is hundreds of reads to render one column.
+function latestMovementByProduct(movements) {
+  const latest = new Map();
+  for (const movement of movements || []) {
+    if (!movement?.productId) continue;
+    if (!latest.has(movement.productId)) latest.set(movement.productId, movement);
+  }
+  return latest;
 }
 
 function reconcileShiftCash(shift, actual, coverageFromMs) {
@@ -6387,6 +6537,56 @@ function isManagerOrOwnerRole() {
 // One document, which the rules already let a member read on their own doc.
 // The owner is skipped: they have no member document and their role cannot
 // change.
+// The stock ledger, owner-only (L-2). firestore.rules makes this collection
+// owner-read, so a manager or cashier subscribing would only ever be denied --
+// the reconciliation this feeds is an owner's check on their own shop.
+//
+// Newest-first with a bound, because the ledger grows forever and the view only
+// needs each product's most recent entry. Products whose last movement falls
+// outside the window read as unchecked rather than as discrepancies.
+const STOCK_LEDGER_LIMIT = 500;
+
+function subscribeToStockLedger() {
+  if (state.unsubscribeStockLedger) state.unsubscribeStockLedger();
+  state.unsubscribeStockLedger = null;
+  state.stockLedgerLatest = null;
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
+  if (!isOwnerRole()) return;
+
+  try {
+    const { collection, onSnapshot, orderBy, query, limit } = state.firebaseApi.firestore;
+    state.unsubscribeStockLedger = onSnapshot(
+      query(
+        collection(state.db, "users", state.businessOwnerUid, "stockMovements"),
+        orderBy("createdAt", "desc"),
+        limit(STOCK_LEDGER_LIMIT)
+      ),
+      (snapshot) => {
+        state.stockLedgerLatest = latestMovementByProduct(snapshot.docs.map((entry) => entry.data()));
+        renderAll();
+      },
+      (error) => {
+        // Fails quiet and unchecked, never as a finding: an unreadable ledger
+        // is not evidence that stock is missing.
+        console.warn("Could not read the stock ledger.", error);
+        state.stockLedgerLatest = null;
+        renderAll();
+      }
+    );
+  } catch (error) {
+    console.warn("Could not subscribe to the stock ledger.", error);
+  }
+}
+
+// Products whose shelf disagrees with the ledger. Only ever counts entries that
+// were actually checked -- "unknown" is not a finding.
+function stockLedgerDiscrepancies() {
+  if (!state.stockLedgerLatest) return null;
+  return storeProducts()
+    .map((product) => ({ product, result: reconcileProductStock(product, state.stockLedgerLatest.get(product.id)) }))
+    .filter((row) => row.result.status === "mismatch");
+}
+
 function subscribeToOwnMembership() {
   if (state.unsubscribeOwnMembership) state.unsubscribeOwnMembership();
   state.unsubscribeOwnMembership = null;
@@ -6546,6 +6746,7 @@ async function initFirebase() {
         subscribeToStaff();
         subscribeToMembers();
         subscribeToOwnMembership();
+        subscribeToStockLedger();
         subscribeToMonthlyReports();
         subscribeToCustomers();
         subscribeToTransfers();
@@ -6563,6 +6764,9 @@ async function initFirebase() {
         state.unsubscribeMembers = null;
         if (state.unsubscribeOwnMembership) state.unsubscribeOwnMembership();
         state.unsubscribeOwnMembership = null;
+        if (state.unsubscribeStockLedger) state.unsubscribeStockLedger();
+        state.unsubscribeStockLedger = null;
+        state.stockLedgerLatest = null;
         if (state.unsubscribeMonthlyReports) state.unsubscribeMonthlyReports();
         state.unsubscribeMonthlyReports = null;
         if (state.unsubscribeCustomers) state.unsubscribeCustomers();
@@ -8381,6 +8585,11 @@ function bindEvents() {
               sold90: currentSold90 + cartItem.qty,
               updatedAt: serverTimestamp(),
               movementReason: "sale"
+            });
+            recordStockMovement(transaction, {
+              productId: cartItem.productId, productName: cartItem.name,
+              storeId: state.currentStoreId, reason: "sale",
+              delta: -cartItem.qty, quantityBefore: currentQuantity, saleId
             });
           });
 
