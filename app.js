@@ -3058,8 +3058,15 @@ async function confirmProcessReturn() {
             movementReason: "return"
           });
           recordStockMovement(transaction, {
+            // Sales predating the storeId requirement still exist -- the void
+            // and return rules both tolerate its absence with
+            // `!('storeId' in before)`. Without this fallback a legitimate
+            // return on an old sale cannot write its ledger entry, and the
+            // entry is inside the transaction, so the return itself fails.
+            // The current store is the best attribution available and is
+            // certainly better than refusing the customer their refund.
             productId: item.productId, productName: item.name,
-            storeId: sale.storeId, reason: "return",
+            storeId: sale.storeId || state.currentStoreId, reason: "return",
             delta: item.qty, quantityBefore: currentQuantity, saleId
           });
         });
@@ -5284,8 +5291,10 @@ async function undoLastSale() {
           const currentSold30 = Number(snap.data().sold30 || 0);
           const currentSold90 = Number(snap.data().sold90 || 0);
           recordStockMovement(transaction, {
+            // Same fallback as the return path: a sale old enough to predate
+            // storeId must still be voidable.
             productId: item.productId, productName: item.name,
-            storeId: saleData.storeId, reason: "void",
+            storeId: saleData.storeId || state.currentStoreId, reason: "void",
             delta: netQty, quantityBefore: currentQuantity, saleId: sale.saleId
           });
           transaction.update(productRefs[index], {
@@ -5726,6 +5735,19 @@ const SALES_HISTORY_LIMIT = 1000;
 // caller actually did to the shelf.
 function recordStockMovement(transaction, fields) {
   const { doc, collection, serverTimestamp } = state.firebaseApi.firestore;
+
+  // Fail here, loudly, rather than at the rules layer. A missing productId or
+  // storeId produced an empty string, which the rule refuses for size() > 0 --
+  // and because this write rides inside the sale transaction, that rejection
+  // took the entire sale down with it and surfaced as a bare permission error
+  // with nothing pointing at the cause. That is exactly how a mis-named field
+  // (cartItem.productId, where a cart entry only has id) stayed invisible.
+  if (!fields.productId || !fields.storeId) {
+    throw new Error(
+      `recordStockMovement: missing ${!fields.productId ? "productId" : "storeId"} for reason "${fields.reason}"`
+    );
+  }
+
   const quantityBefore = safeNumber(fields.quantityBefore);
   const delta = safeNumber(fields.delta);
   const ref = doc(collection(state.db, "users", state.businessOwnerUid, "stockMovements"));
@@ -8905,8 +8927,15 @@ function bindEvents() {
               updatedAt: serverTimestamp(),
               movementReason: "sale"
             });
+            // cartItem.id, not cartItem.productId. A cart entry is
+            // { ...product, qty, sellingPrice }, and a product document carries
+            // `id` -- there is no `productId` on it. This read undefined, the
+            // ledger wrote an empty productId, the rule requires size() > 0,
+            // and the rejection took the whole sale transaction down with it.
+            // productRefs above has always used cartItem.id; these two must
+            // name the same product or the entry describes the wrong shelf.
             recordStockMovement(transaction, {
-              productId: cartItem.productId, productName: cartItem.name,
+              productId: cartItem.id, productName: cartItem.name,
               storeId: state.currentStoreId, reason: "sale",
               delta: -cartItem.qty, quantityBefore: currentQuantity, saleId
             });

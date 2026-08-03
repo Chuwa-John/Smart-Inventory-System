@@ -8,8 +8,14 @@ This exists so nobody promises a shopkeeper something the software does not do.
 A retailer who is told "it works offline", loses signal at 4pm on a Friday and
 cannot serve a queue will not care which sentence was technically true.
 
-**The one-line version: SaviaSmart keeps working offline for everything except
-recording new activity. It cannot take a sale without a connection.**
+**The one-line version: a cashier can keep taking CASH sales with no
+connection, and they sync when it returns. Everything else that records new
+activity still needs a connection.**
+
+> Changed 2026-08-02 (L-9 phase C). This document previously said no sale could
+> be taken offline. That was true until cash sales began queueing on the device.
+> Credit sales, returns, voids, transfers and shift open/close are still
+> refused offline.
 
 ---
 
@@ -17,6 +23,7 @@ recording new activity. It cannot take a sale without a connection.**
 
 | Capability | Why it works |
 |---|---|
+| **Taking a cash sale** | Queued on the device with relative stock updates and replayed on reconnect. Stock may go negative if another till sold the same item meanwhile — that is the agreed policy, and the owner is shown it. |
 | The app opens and runs with no connection | The service worker caches the app shell (`sw.js`, `CACHE_NAME`), so the interface loads from the device. |
 | Yesterday's and today's data is still there | Firestore `persistentLocalCache` with multi-tab support is enabled, so products, sales, customers, stores and shifts are served from the device. |
 | Browsing stock, prices and stock levels | Reads come from that local cache. |
@@ -31,11 +38,11 @@ recording new activity. It cannot take a sale without a connection.**
 
 ## Must NOT be promised
 
-**Taking a sale is the headline. Everything else in this table is secondary.**
+**A cash sale is no longer on this list. Everything else here still is.**
 
 | Capability | What actually happens |
 |---|---|
-| **Completing a sale** | **Refused.** The banner reads *"No internet connection. You can keep browsing, but sales cannot be recorded until the connection returns."* |
+| **Completing a CREDIT sale** | **Refused**, with its own message: credit needs the customer's real balance, and exceeding a limit needs an authorisation the proxy has to give. |
 | Restocking | Refused until the connection returns. |
 | Processing a return or refund | Refused. |
 | Voiding a sale | Refused. |
@@ -45,18 +52,20 @@ recording new activity. It cannot take a sale without a connection.**
 | Signing in for the first time on a device | Requires a connection. An existing session survives; a new one cannot be created. |
 | A staff member's first sync | Requires a connection. A new cashier's phone cannot be set up offline. |
 
-### Why sales specifically cannot queue
+### Why the rest specifically cannot queue
 
 Every operation above is written inside a Firestore **transaction**. Transactions
-require a live connection — unlike plain writes, they do not queue and replay.
-That is a deliberate design consequence, not an oversight: a sale must decrement
-stock, write the sale, write the audit entry and write the stock-ledger entry
-together or not at all. Making it queue means designing an offline queue with
-conflict resolution for stock that moved on another till meanwhile.
+need a live connection — unlike plain writes, they do not queue and replay — and
+each of them genuinely needs what the transaction gives it. A return must not
+restore stock unless the refund is recorded. A shift close computes expected cash
+from the sales it is reconciling against, which offline is unknowable. A credit
+sale needs the customer's real balance.
 
-`completeSale()` catches the failure, shows the message and **returns**. It does
-not fall back to recording the sale locally. That is the correct behaviour today
-— see the warning below for why a naive fallback would be worse than the refusal.
+A cash sale was moved off that path deliberately (L-9 phase C): it queues as
+relative stock updates rather than a read-then-write transaction, so two tills
+that both sell during an outage merge instead of overwriting each other. The
+online path still uses the transaction, and still refuses to oversell while
+connected.
 
 ---
 
@@ -86,19 +95,21 @@ reconnect. Do not rely on it."*
 
 ## What to say to a customer
 
-**Accurate, and still a good product:**
+**Accurate, and now a much better story:**
 
-> "SaviaSmart keeps working when your internet drops — you can look up stock,
-> check prices, find a customer's balance and see your reports. What it will not
-> do is take a sale while you are offline, because it will not record a sale it
-> cannot guarantee. The moment your connection is back, you carry on."
+> "If your internet drops, your till keeps selling. Cash sales are saved on the
+> device and sync the moment you reconnect. You can also still look up stock,
+> check prices, find a customer's balance and see your reports. Credit sales,
+> refunds and closing a shift do need a connection."
 
-**Do not say:** "it works offline", "you can sell offline", "it syncs your sales
-later", "your staff can keep selling during an outage."
+**Still do not say:** "everything works offline", "you can do anything offline",
+"stock counts stay accurate offline."
 
-**If asked directly whether they can sell during an outage: the answer is no.**
-Say it plainly. A shopkeeper who hears "no" up front will plan around it. One who
-discovers it mid-queue on a Friday afternoon will tell other shopkeepers.
+**If asked what happens to stock during an outage, answer honestly:** two tills
+selling the same item offline can both succeed, so a count can go negative. The
+system shows the owner exactly which sales were made offline so the shelf can be
+checked. That is a deliberate choice — a refused sale costs real money, a wrong
+count costs a stocktake.
 
 ---
 
@@ -132,19 +143,26 @@ data through an outage.
 
 ---
 
-## What would have to be built for "works offline" to be true
+## What has been built, and what has not
 
-Not small, and not a switch:
+Built (L-9 phases A–C, `DESIGN-offline-selling.md`):
 
-1. An offline sale queue that survives a page reload.
-2. Conflict resolution for stock that moved on another till during the outage.
-3. Queued `stockMovements` ledger entries, replayed in order — **critical**: a
-   local sale that never writes a ledger entry makes the L-2 stock
-   reconciliation report the difference as unaccounted stock. A fallback bolted
-   onto today's paths would accuse cashiers of theft for every sale made during
-   an outage.
-4. Reconciliation that understands a replay is pending.
-5. A decision on what a cashier is allowed to do when the shelf count cannot be
-   trusted — sell into negative stock, or refuse.
+1. A queue that survives a page reload — Firestore's own, already enabled.
+2. Merge rather than overwrite when two tills sell the same item offline.
+3. Ledger entries marked `offline`, carrying a delta and no shelf claim.
+4. Reconciliation that reads those products as *unknown* rather than as theft.
+5. The oversell decision: sell anyway and flag it.
 
-Tracked as L-9. Scope it properly before starting; it touches the revenue path.
+Not built yet:
+
+- **Phase D** — the owner's "sold while offline" view, and an unsynced count at
+  the till. Until it exists, the flagging half of *sell anyway, flag it* is only
+  in the data, not on a screen. Both are needed before this is sold as a feature.
+- **Phase E** — end-to-end replay tests, and a real-device trial with airplane
+  mode. Everything asserted so far is structural: that the code queues, does not
+  await, and marks entries correctly. **No test yet proves Firestore actually
+  replays a queue after a genuine outage on a real phone.** Do that before it
+  reaches a shop.
+
+One thing no design fixes: Firestore's queue survives reload and restart, but
+**not** an uninstall or a wiped device. Sales unsynced at that moment are gone.

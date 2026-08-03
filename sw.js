@@ -3,19 +3,19 @@
 // instantly on repeat visits. This does NOT cache Firestore/Firebase
 // traffic or any cross-origin requests \u2014 those always go to the network.
 // Bump this on every deploy so old clients pick up new files.
-const CACHE_NAME = "savia-shell-v85";
+const CACHE_NAME = "savia-shell-v86";
 
 const APP_SHELL = [
   "./",
   "./index.html",
   "./app.html",
-  "./styles.css?v=20260802y",
+  "./styles.css?v=20260802z",
   // Must carry the same ?v= as app.html requests: a cache key includes the
   // query string, so a bare "./app.js" here is a second, unread entry and the
   // 406 KB file gets fetched twice per install. tests/asset-versions.test.mjs
   // fails if this drifts from app.html again.
-  "./app.js?v=20260802y",
-  "./boot.js?v=20260802y",
+  "./app.js?v=20260802z",
+  "./boot.js?v=20260802z",
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",

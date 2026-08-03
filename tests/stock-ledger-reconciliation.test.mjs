@@ -224,6 +224,48 @@ console.log("\n=== every path that moves stock writes to the ledger ===");
     "a ledger written outside the transaction can be lost by the crash that makes it matter");
 }
 
+console.log("\n=== every ledger call names a product that actually exists ===");
+{
+  // This exists because of a real bug that shipped and that nothing caught.
+  //
+  // The sale path passed `cartItem.productId`. A cart entry is
+  // { ...product, qty, sellingPrice } and a product document carries `id` --
+  // there is no productId on it. So the field read undefined, the ledger wrote
+  // an empty productId, the rule refused it for size() > 0, and because the
+  // entry rides inside the sale transaction the rejection took EVERY ONLINE
+  // SALE down with it.
+  //
+  // No test noticed. The emulator suites assert the write SHAPE against the
+  // rules using fixtures they build themselves; they never execute the client's
+  // sale code, which lives in a DOM event handler and cannot be imported.
+  // Structural checks on the call sites are the only cheap defence.
+  const noComments = src.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+
+  check("no call site reads .productId off a cart entry",
+    !/productId: cartItem\.productId/.test(noComments),
+    "cart entries have id, not productId -- this is the exact bug");
+
+  // The sale's product refs and its ledger entry must name the same thing. If
+  // they ever disagree the entry describes a different shelf than the one that
+  // moved, which is worse than no entry at all.
+  check("the sale's product refs and ledger entry use the same identifier",
+    /productRefs = state\.cart\.map\(\(cartItem\) => doc\([^)]*cartItem\.id\)\)/.test(noComments) &&
+    /recordStockMovement\(transaction, \{\s*productId: cartItem\.id/.test(noComments),
+    "productRefs uses cartItem.id; the ledger entry must too");
+
+  check("recordStockMovement refuses a missing product or store outright",
+    /if \(!fields\.productId \|\| !fields\.storeId\)[\s\S]{0,120}throw new Error/.test(noComments),
+    "failing at the rules layer surfaces as a bare permission error with nothing pointing at the cause");
+
+  // Legacy sales predate the storeId requirement -- the void and return rules
+  // both tolerate its absence. Without a fallback those paths cannot write a
+  // ledger entry, and the entry is inside the transaction, so the refund fails.
+  check("returns fall back to the current store for legacy sales",
+    /storeId: sale\.storeId \|\| state\.currentStoreId/.test(noComments));
+  check("voids fall back the same way",
+    /storeId: saleData\.storeId \|\| state\.currentStoreId/.test(noComments));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) {
