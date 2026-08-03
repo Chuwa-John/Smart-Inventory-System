@@ -127,16 +127,35 @@ proxy against the emulator. They pass locally but were not executed during the
 2026-08-02 QA pass, because the sandbox running it had no egress and
 `proxy/server.js` never reached `app.listen`.
 
-**Risk: Low but structural.** Everything else in the suite runs on any machine;
-these two need a specific environment, and a test that is awkward to run is a
-test that quietly stops being run. They cover the unauthenticated invite-preview
-endpoint — which is the one route that answers to strangers.
+**Cause — corrected 2026-08-02.** An earlier version of this entry blamed
+blocked egress and proposed deferring "whatever network call blocks
+`app.listen`". That was wrong, and would have sent someone hunting a bug that
+does not exist. The proxy makes no network call at startup: the credential
+branch only warns when `FIREBASE_SERVICE_ACCOUNT_KEY_BASE64` is absent, and
+`createRemoteJWKSet` is lazy.
+
+The real cause is disk latency. When `proxy/node_modules` is read across a
+cloud-synced mount, module loading alone takes `express` 15s, `firebase-admin`
+11s, `jose` 10s — the imports complete, but not before the test's readiness
+wait gives up, so the proxy looks hung when it is merely slow. On any normal
+local filesystem — a developer machine, or the CI runner — it boots and both
+files pass.
+
+**Risk: Low.** Lower than first recorded. These two are the only files needing
+a spawned proxy, and they are coupled to the rest of the codebase by a handful
+of static string assertions (that `app.js` still destructures `authorized`,
+that `accept-invite.js` still branches on `ok`/`code`, that the proxy still
+emits those discriminators). Those can be, and have been, checked directly
+without booting anything.
 
 **Compensating control:** run `cd tests && npm test` in full on a developer
-machine before every rules or proxy deploy, not just the non-emulator subset.
+machine or via CI before every rules or proxy deploy — never judge a change on
+the non-emulator subset alone. Push regularly rather than in batches, so CI is
+verifying one change at a time instead of six.
 
-**Planned:** make the proxy's startup tolerate no egress (defer whatever
-network call blocks `app.listen`), so the whole suite runs anywhere.
+**Planned:** nothing. This is an environment property, not a defect. Recorded so
+the next person who sees the proxy "hang" recognises it as slow I/O and does not
+go looking for a network bug.
 
 ---
 
