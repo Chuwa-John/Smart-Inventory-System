@@ -287,16 +287,68 @@ to reading the raw counter.
 
 ---
 
-## L-5 No load, stress or chaos testing — **OPEN**
+## L-8 The products subscription is unbounded — **OPEN**
+
+**Limitation.** Every other collection the client subscribes to carries a
+`limit()` — sales 1000, transfers 2000, shifts 20, the stock ledger 500, audit
+history 300. Products has none: `subscribeToProducts()` streams the whole
+catalogue and holds it in memory, and every render walks it.
+
+**Why not fixed now.** Unlike the others, the product list is not a feed that
+can be truncated — the POS searches it, the inventory table pages through it,
+stock alerts scan it. Bounding it means paging or server-side search, which is
+a design change to several screens rather than adding an argument to a query.
+
+**Risk: Medium, and the first ceiling this system will hit.** The render cost is
+now flat (see L-5), so the pressure is memory and the initial snapshot, not
+per-frame work. A few thousand products is unremarkable; the QA brief's
+250,000-product scenario is not survivable on a phone.
+
+**Workaround.** None in-product. Practically, the shops this serves hold
+hundreds to low thousands of SKUs.
+
+**Planned:** paged inventory and server-side product search, before onboarding
+any catalogue materially past a few thousand.
+
+---
+
+## L-5 Load and stress testing — **PARTIALLY ADDRESSED**
 
 Carried from `SECURITY-AUDIT.md`, which marks this a GAP. Correctness under
 concurrency is covered by `concurrency-integrity.test.mjs` and
-`sync-integrity.test.mjs`; behaviour under volume is not tested at all. Nobody
-has measured what happens at 250,000 products, a million sales, or fifty tills
-against one tenant.
+`sync-integrity.test.mjs`; behaviour under volume was not tested at all.
 
-**Risk: Medium and unquantified**, which is the problem with it. The first
-customer large enough to find the ceiling will find it in production.
+**First measurement, 2026-08-02 — and it found a real regression.** The movement
+classification and dashboard counts were rewritten to compute true 30- and
+90-day figures from the sales record (see L-7). That replaced an O(1) counter
+read with a full scan of the sales for *each* product, and both panels classify
+every product three times. Measured cost of one render pass:
 
-**Planned:** before onboarding any business materially larger than the current
-pilot.
+| catalogue | before | after |
+|---|---|---|
+| 200 products × 1000 sales | 201 ms | 15 ms |
+| 2,000 | 1,239 ms | 6.6 ms |
+| 10,000 | 6,073 ms | 14.3 ms |
+| 50,000 | ~30 s (unusable) | 71 ms |
+
+`renderAll()` fires on every snapshot, so at 2,000 products the app would have
+spent over a second rebuilding two panels on every product, sale, customer or
+transfer change — on a desktop. On the phones this actually runs on, several
+times worse. Fixed by computing the whole map in one pass over the sales and
+caching it per snapshot; `tests/stock-movement-window.test.mjs` now asserts the
+map and the per-product read agree, and that no classification site rescans.
+
+Worth noting how it got in: the change that caused it was correct, tested, and
+shipped green. Nothing in a correctness suite notices an algorithm going
+quadratic.
+
+**Still not measured:** Firestore query and index behaviour at a million sales,
+snapshot sizes over a slow link, memory over a long-lived till session, many
+tills against one tenant, and anything resembling chaos testing. The ceiling
+this system will actually hit first is L-8, the unbounded products subscription.
+
+**Risk: Medium**, no longer unquantified for render cost, still unquantified for
+the data layer.
+
+**Planned:** measure the data layer before onboarding any business materially
+larger than the current pilot.

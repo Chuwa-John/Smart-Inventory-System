@@ -41,10 +41,11 @@ function extract(name) {
   return src.slice(start, i + 1);
 }
 
-const { unitsSoldInWindow } = new Function(
+const { unitsSoldInWindow, unitsSoldByProduct } = new Function(
   `${extract("safeNumber")}
+   ${extract("unitsSoldByProduct")}
    ${extract("unitsSoldInWindow")}
-   return { unitsSoldInWindow };`
+   return { unitsSoldInWindow, unitsSoldByProduct };`
 )();
 
 const results = [];
@@ -124,6 +125,56 @@ console.log("\n=== the mislabelled counters are no longer what decisions read ==
   check("the sale path still maintains the stored counter",
     /sold30: currentSold30 \+ cartItem\.qty/.test(noComments),
     "validStockMovementUpdate in firestore.rules expects these fields to keep moving");
+}
+
+console.log("\n=== one pass over the sales, not one per product ===");
+{
+  // The movement panel and the dashboard each classify every product three
+  // times. When that meant rescanning every sale per product, a 200-product
+  // shop with 1000 sales cost 201ms per render and 2000 products cost 1.2s --
+  // with renderAll() firing on every snapshot. The map version is O(sales)
+  // regardless of catalogue size, so the two must agree exactly.
+  const DAY2 = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const many = Array.from({ length: 400 }, (_, i) => ({
+    voided: i % 17 === 0,
+    createdAt: { toDate: () => new Date(now - (i % 45) * DAY2) },
+    items: [{ productId: `p${i % 25}`, qty: 2 }, { productId: `p${(i * 3) % 25}`, qty: 1 }],
+    returns: i % 11 === 0 ? [{ items: [{ productId: `p${i % 25}`, qty: 1 }] }] : []
+  }));
+  const from = now - 30 * DAY2;
+  const map = unitsSoldByProduct(many, from, now);
+  let agreed = true;
+  for (let i = 0; i < 25; i++) {
+    const id = `p${i}`;
+    if (Math.max(0, map.get(id) || 0) !== unitsSoldInWindow(many, id, from, now)) agreed = false;
+  }
+  check("the map and the single-product read agree on every product", agreed,
+    "the two must not be able to drift about what a return or a void means");
+  check("products never sold are simply absent", !map.has("p_never_sold"));
+
+  // Guards the O(sales) property itself: 40x the catalogue must not cost 40x.
+  const products = Array.from({ length: 40 }, (_, i) => `p${i % 25}`);
+  const t0 = performance.now();
+  const m = unitsSoldByProduct(many, from, now);
+  for (const id of products) m.get(id);
+  const oncePass = performance.now() - t0;
+  const t1 = performance.now();
+  for (const id of products) unitsSoldInWindow(many, id, from, now);
+  const perProduct = performance.now() - t1;
+  check("reading 40 products from one map beats 40 rescans", oncePass < perProduct,
+    `map ${oncePass.toFixed(1)}ms vs rescan ${perProduct.toFixed(1)}ms`);
+}
+
+console.log("\n=== the classification sites use the cached read ===");
+{
+  const noComments = src.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  check("productUnitsSold caches per sales snapshot",
+    /unitsSoldCache/.test(noComments) && /unitsSoldCache\.sales !== sales/.test(noComments),
+    "without a cache each classification rebuilds the map from scratch");
+  check("no classification site calls unitsSoldInWindow in a loop",
+    !/filter\(\(p\) => unitsSoldInWindow/.test(noComments),
+    "unitsSoldInWindow builds a whole map per call and must not be used per product");
 }
 
 const failed = results.filter((r) => !r.pass);
