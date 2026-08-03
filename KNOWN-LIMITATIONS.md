@@ -186,9 +186,20 @@ sale made during an outage. Offline selling and the stock ledger must be
 designed together: queued sales need queued ledger entries, replayed in order,
 with the reconciliation aware that a replay is pending.
 
-**Planned:** unscheduled, and genuinely large — it needs an offline queue,
-conflict resolution for stock that moved on another till meanwhile, and the
-ledger interaction above. Worth scoping properly rather than starting.
+**Planned:** designed 2026-08-02 — see `DESIGN-offline-selling.md`. Scope is
+cash sales only; returns, voids, transfers, shift close and credit sales stay
+online-only and refuse honestly. Oversell policy agreed with the owner: sell
+anyway and flag it, because a refused sale costs money a wrong count does not.
+
+The design surfaced a blocker that would have made a naive attempt worse than
+no attempt: `countInRange` forbids negative stock, so a queued offline sale
+taking stock below zero is rejected **at replay time**, silently, hours after
+the customer has left. Selling offline therefore requires a bounded-negative
+`products.quantity`, taken knowingly.
+
+Phase order is load-bearing: reconciliation must learn to treat offline ledger
+entries as *unknown* **before** anything writes one, or the first outage
+produces a screen accusing a cashier of theft.
 
 ---
 
