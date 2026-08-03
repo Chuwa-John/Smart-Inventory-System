@@ -50,6 +50,10 @@ const state = {
   unsubscribeStaff: null,
   members: [],
   unsubscribeMembers: null,
+  unsubscribeOwnMembership: null,
+  // One-shot latch so a membership that ends cannot fire the sign-out path
+  // repeatedly as the listener settles.
+  membershipEnded: false,
   pendingInviteLinkToken: "",
   pendingInviteRoleLabel: "",
   businessOwnerUid: "",
@@ -350,6 +354,7 @@ const DICTIONARY = {
     "product.reorderLabel": "Low stock threshold", "product.reorderPlaceholder": "e.g. 10",
     "product.cancel": "Cancel", "product.save": "Save Product",
     "auth.eyebrow": "Account access",
+    "auth.accessRemoved": "Your access to this business was removed. Ask the owner if you think this is a mistake.",
     "auth.copy": "Create an account or sign in to manage your own inventory, stock levels, sales, and AI recommendations.",
     "auth.businessName": "Business name", "auth.email": "Email", "auth.password": "Password", "auth.forgotPassword": "Forgot password?",
     "auth.confirmPassword": "Confirm password",
@@ -981,6 +986,7 @@ const DICTIONARY = {
     "product.reorderLabel": "Kiwango cha chini cha hisa", "product.reorderPlaceholder": "mfano, 10",
     "product.cancel": "Ghairi", "product.save": "Hifadhi Bidhaa",
     "auth.eyebrow": "Ufikiaji wa akaunti",
+    "auth.accessRemoved": "Ufikiaji wako kwa biashara hii umeondolewa. Muulize mmiliki kama unadhani ni makosa.",
     "auth.copy": "Fungua akaunti au ingia ili kusimamia hisa yako, viwango vya bidhaa, mauzo, na mapendekezo ya AI.",
     "auth.businessName": "Jina la biashara", "auth.email": "Barua pepe", "auth.password": "Nenosiri", "auth.forgotPassword": "Umesahau nenosiri?",
     "auth.confirmPassword": "Thibitisha nenosiri",
@@ -6171,6 +6177,74 @@ function isManagerOrOwnerRole() {
   return state.currentUserRole === "owner" || state.currentUserRole === "manager";
 }
 
+// The signed-in member's own role, watched rather than read once.
+//
+// resolveCurrentUserRole() ran only at sign-in, so an owner who demoted a
+// manager mid-shift changed nothing that browser could see. firestore.rules
+// refused the writes from the very next request -- proved end to end on one
+// unchanged token by tests/rules-role-propagation.test.mjs -- but the till went
+// on showing void, return and credit-limit controls until someone happened to
+// reload. That inverts "hide, don't disable" at the exact moment a trust
+// decision has just been made, and a POS tab can stay open all day.
+//
+// One document, which the rules already let a member read on their own doc.
+// The owner is skipped: they have no member document and their role cannot
+// change.
+function subscribeToOwnMembership() {
+  if (state.unsubscribeOwnMembership) state.unsubscribeOwnMembership();
+  state.unsubscribeOwnMembership = null;
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
+  if (state.user.uid === state.businessOwnerUid) return;
+
+  try {
+    const { doc, onSnapshot } = state.firebaseApi.firestore;
+    state.unsubscribeOwnMembership = onSnapshot(
+      doc(state.db, "users", state.businessOwnerUid, "members", state.user.uid),
+      (snapshot) => {
+        const data = snapshot.exists() ? snapshot.data() : null;
+        // Revoked or suspended. Access is already gone at the rules layer, so
+        // ending the session is the honest outcome -- the alternative is a till
+        // that looks alive and refuses every touch, which reads as "the app is
+        // broken" rather than "your access was removed".
+        if (!data || data.status !== "active") {
+          handleMembershipEnded();
+          return;
+        }
+        const nextRole = data.role || "cashier";
+        if (nextRole !== state.currentUserRole) {
+          state.currentUserRole = nextRole;
+          clearMemberDocCache();
+          renderAll();
+        }
+      },
+      (error) => {
+        // Fails closed. A dead listener cannot be told apart from a demotion,
+        // so drop to the most restrictive role rather than trusting a cached
+        // one -- the same reasoning as resolveCurrentUserRole()'s default.
+        console.warn("Could not watch membership; assuming least privilege.", error);
+        state.currentUserRole = "cashier";
+        renderAll();
+      }
+    );
+  } catch (error) {
+    console.warn("Could not subscribe to membership.", error);
+  }
+}
+
+async function handleMembershipEnded() {
+  if (state.membershipEnded) return;
+  state.membershipEnded = true;
+  state.currentUserRole = null;
+  renderAll();
+  showToast(t("auth.accessRemoved"));
+  try {
+    const { signOut } = state.firebaseApi.auth;
+    await signOut(state.auth);
+  } catch (error) {
+    console.warn("Could not sign out after access removal.", error);
+  }
+}
+
 // A cashier counts down the drawer they opened, and no one else's; a manager or
 // the owner may close any shift on a till they can reach, so a cashier who goes
 // home without closing cannot strand it. Mirrors the shifts update rule in
@@ -6257,6 +6331,9 @@ async function initFirebase() {
       updateAuthUi();
       if (user) {
         clearMemberDocCache();
+        // Cleared here, not on sign-out: a member who was revoked and later
+        // reinstated must be able to sign in again without a page reload.
+        state.membershipEnded = false;
         state.businessOwnerUid = await resolveBusinessOwnerUid(user);
         state.currentUserRole = await resolveCurrentUserRole(user, state.businessOwnerUid);
         state.currentUserName = await resolveCurrentUserName(user, state.businessOwnerUid);
@@ -6271,6 +6348,7 @@ async function initFirebase() {
         subscribeToStores();
         subscribeToStaff();
         subscribeToMembers();
+        subscribeToOwnMembership();
         subscribeToMonthlyReports();
         subscribeToCustomers();
         subscribeToTransfers();
@@ -6286,6 +6364,8 @@ async function initFirebase() {
         state.unsubscribeStaff = null;
         if (state.unsubscribeMembers) state.unsubscribeMembers();
         state.unsubscribeMembers = null;
+        if (state.unsubscribeOwnMembership) state.unsubscribeOwnMembership();
+        state.unsubscribeOwnMembership = null;
         if (state.unsubscribeMonthlyReports) state.unsubscribeMonthlyReports();
         state.unsubscribeMonthlyReports = null;
         if (state.unsubscribeCustomers) state.unsubscribeCustomers();
