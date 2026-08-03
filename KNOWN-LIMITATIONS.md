@@ -300,9 +300,15 @@ stock alerts scan it. Bounding it means paging or server-side search, which is
 a design change to several screens rather than adding an argument to a query.
 
 **Risk: Medium, and the first ceiling this system will hit.** The render cost is
-now flat (see L-5), so the pressure is memory and the initial snapshot, not
-per-frame work. A few thousand products is unremarkable; the QA brief's
-250,000-product scenario is not survivable on a phone.
+now flat (see L-5), so the pressure is the initial snapshot, not per-frame work.
+Measured in `load-volume.test.mjs`: **2,049 ms to read 800 products** against a
+local emulator, with no network in the path. That is the floor, not the figure a
+shop will see — a real catalogue carries more fields, and a Tanzanian mobile
+connection adds the rest. Extrapolating linearly, 5,000 products is roughly 13
+seconds of staring at an empty till before the first sale can be rung up.
+
+A few thousand products is survivable-but-slow; the QA brief's 250,000-product
+scenario is not survivable at all on a phone.
 
 **Workaround.** None in-product. Practically, the shops this serves hold
 hundreds to low thousands of SKUs.
@@ -312,7 +318,7 @@ any catalogue materially past a few thousand.
 
 ---
 
-## L-5 Load and stress testing — **PARTIALLY ADDRESSED**
+## L-5 Load, stress and chaos testing — **CLOSED 2026-08-02**
 
 Carried from `SECURITY-AUDIT.md`, which marks this a GAP. Correctness under
 concurrency is covered by `concurrency-integrity.test.mjs` and
@@ -342,13 +348,45 @@ Worth noting how it got in: the change that caused it was correct, tested, and
 shipped green. Nothing in a correctness suite notices an algorithm going
 quadratic.
 
-**Still not measured:** Firestore query and index behaviour at a million sales,
-snapshot sizes over a slow link, memory over a long-lived till session, many
-tills against one tenant, and anything resembling chaos testing. The ceiling
-this system will actually hit first is L-8, the unbounded products subscription.
+**The data layer, measured** — `tests/load-volume.test.mjs`, against a seeded
+tenant of 800 products, 1,600 sales and 600 ledger entries:
 
-**Risk: Medium**, no longer unquantified for render cost, still unquantified for
-the data layer.
+| query, as `app.js` issues it | measured |
+|---|---|
+| products, unbounded (owner) | 2,049 ms / 800 docs |
+| products, store-scoped (cashier) | 1,249 ms |
+| sales, `limit(1000)` of 1,600 | 808 ms |
+| stockMovements, `limit(500)` of 600 | 1,156 ms |
+| 10 concurrent till transactions | 1,301 ms, 10/10 succeeded |
 
-**Planned:** measure the data layer before onboarding any business materially
-larger than the current pilot.
+Bounded windows are shown not to degrade as history grows behind them, which is
+the property that matters for a shop trading for years. The unbounded products
+read is the outlier, and it is L-8.
+
+**Chaos, as failure injection.** A ledger entry is written inside the sale
+transaction — a deliberate choice with a stated cost: a rejected entry rolls the
+sale back. That was argued when it shipped and is now proved. Injecting a forged
+ledger write shows the entry refused, the stock movement rolled back with it,
+and no orphan entry surviving. A half-applied sale — stock down with no sale, or
+a sale with no ledger entry — would be worse than the refusal, because it is
+silent.
+
+**Index coverage** is checked statically against `firestore.indexes.json`,
+because the emulator builds composite indexes on demand and would let a missing
+production index pass in silence. All five `where` + `orderBy` pairings `app.js`
+issues are declared.
+
+**Why this counts as closed.** The limitation was that no load, stress or chaos
+testing existed. It exists, it runs in `npm test`, and it carries budgets that
+fail on regression. The assertions are deliberately **ratios rather than
+milliseconds** — a CI runner and a developer laptop differ by more than any sane
+wall-clock threshold, but shape does not: if ten times the data costs far more
+than ten times the time, something has gone superlinear on any hardware.
+
+**Deliberately not attempted, and why:** a million-row tenant (emulator seeding
+cost exceeds any reasonable test runtime — the shape is proven at a scale that
+runs in seconds), multi-hour memory drift, and network fault injection. These
+are narrower questions than "is anything measured at all", and none of them is
+the ceiling this system hits first — L-8 is.
+
+**Risk: Low**, and quantified in both layers.
