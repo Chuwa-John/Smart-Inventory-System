@@ -94,7 +94,29 @@ Direction-coupling (rejecting a "restock" that decreases stock) was implemented,
 tested, found to be both evadable and outage-prone, and removed. See F-4 for the
 full reasoning — it is a good record of why the obvious fix was the wrong one.
 
-**Planned:** owner-facing stock reconciliation view, Phase 5 admin dashboard.
+**Why there is still no reconciliation view — investigated 2026-08-02.** L-1's
+equivalent was buildable because a shift carries its own opening float and a
+closing count, so the sales record can be compared against a stated figure.
+Stock has no such anchor. A product document holds a current `quantity` and
+nothing else: no opening balance, no movement history, no snapshot. Expected
+stock is `baseline + restocks - sales + returns ± transfers`, and there is no
+baseline to start the sum from, so "what should be on the shelf" is not
+derivable from the data that exists.
+
+`sold30`/`sold90` cannot substitute. They move in lockstep with `quantity` under
+the same `validStockMovementUpdate()` rule, so anyone writing stock down to
+cover a shortfall adjusts both in one write and the two still agree. Comparing
+them proves nothing about the shelf.
+
+Closing this properly needs an append-only `stockMovements` collection — one
+document per movement, carrying delta, reason, actor and a link to the sale or
+transfer that caused it. That turns the shelf into a running total that can be
+replayed and compared against a physical count. It is a schema addition and a
+write on every stock change, so it is a deliberate piece of work rather than a
+view someone can add to a panel.
+
+**Planned:** `stockMovements` ledger, unscheduled. Until then the honest
+compensating control is the physical stocktake F-4 already names — not a screen.
 
 ---
 
@@ -194,6 +216,41 @@ audited; only the access-attempt trail is absent.
 
 **Planned:** Phase 5, alongside the admin dashboard's audit log viewer — the
 entry is only useful once there is somewhere to read it.
+
+---
+
+## L-7 `sold30` and `sold90` are lifetime counters with windowed names — **OPEN**
+
+**Limitation.** The stored fields are named for 30- and 90-day windows they have
+never had. Every write adds on a sale and subtracts on a return or a void;
+nothing decays them, anywhere. As lifetime net-sold totals they are correct —
+only the names lie.
+
+**Fixed where it mattered (2026-08-02).** Everything that made a decision on
+them now computes the real window from the sales record via
+`unitsSoldInWindow()`: the movement chart, the dashboard fast/slow/no-sales
+counts, restock ranking, and the product snapshot sent to the AI advisor. That
+last one mattered most — the model was being handed a multi-year total under
+the name `sold30` and asked about recent demand.
+
+Before the fix, "fast moving" (`sold30 >= 50`) was a label a product could only
+ever gain, so given enough trading every product earned it and the chart stopped
+distinguishing anything. It failed worst for the shops trading longest.
+
+**What remains.** The field names in Firestore still say `sold30`/`sold90`.
+Renaming means a migration and a `firestore.rules` change, since
+`validStockMovementUpdate()` names these fields explicitly. The counters also
+stay in the documents deliberately — the rules validate stock writes against
+them.
+
+**Risk: Low.** No live decision reads them as windows any more. The risk is that
+the next person to use them believes the name.
+
+**Workaround.** Use `productUnitsSold(product, days)` for anything time-based.
+`tests/stock-movement-window.test.mjs` fails if a classification site goes back
+to reading the raw counter.
+
+**Planned:** rename to `soldTotal`/`soldTotalNet` with a migration, unscheduled.
 
 ---
 

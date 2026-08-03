@@ -1952,9 +1952,9 @@ function renderAlertsAndRecommendations() {
 function renderMovement() {
   const products = storeProducts();
   const classes = [
-    [t("movement.fastMoving"), products.filter((p) => Number(p.sold30 || 0) >= 50).length, "#5ed08f"],
-    [t("movement.slowMoving"), products.filter((p) => Number(p.sold30 || 0) > 0 && Number(p.sold30 || 0) < 12).length, "#f1b44c"],
-    [t("movement.noSales"), products.filter((p) => Number(p.sold90 || 0) === 0).length, "#ef6666"],
+    [t("movement.fastMoving"), products.filter((p) => productUnitsSold(p, 30) >= 50).length, "#5ed08f"],
+    [t("movement.slowMoving"), products.filter((p) => productUnitsSold(p, 30) > 0 && productUnitsSold(p, 30) < 12).length, "#f1b44c"],
+    [t("movement.noSales"), products.filter((p) => productUnitsSold(p, 90) === 0).length, "#ef6666"],
     [t("movement.healthyCoverage"), products.filter((p) => stockStatus(p) === "healthy").length, "#6aa7ff"]
   ];
   qs("#movementList").innerHTML = classes
@@ -3305,9 +3305,9 @@ function localAiAnswerText(question) {
     .map((product) => ({ product, rec: reorderRecommendation(product) }))
     .sort((a, b) => a.rec.daysUntilStockout - b.rec.daysUntilStockout);
 
-  const fastMoving = products.filter((p) => Number(p.sold30 || 0) >= 50).length;
-  const slowMoving = products.filter((p) => Number(p.sold30 || 0) > 0 && Number(p.sold30 || 0) < 12).length;
-  const noSales = products.filter((p) => Number(p.sold90 || 0) === 0).length;
+  const fastMoving = products.filter((p) => productUnitsSold(p, 30) >= 50).length;
+  const slowMoving = products.filter((p) => productUnitsSold(p, 30) > 0 && productUnitsSold(p, 30) < 12).length;
+  const noSales = products.filter((p) => productUnitsSold(p, 90) === 0).length;
 
   const tipEntry = BUSINESS_TIPS[currentBusinessType()] || BUSINESS_TIPS.general;
   const tip = tipEntry[state.language] || tipEntry.en;
@@ -3480,8 +3480,14 @@ async function callAiProxy(historyForRequest) {
         category: product.category,
         quantity: Number(product.quantity || 0),
         reorderLevel: Number(product.reorderLevel || 0),
-        sold30: Number(product.sold30 || 0),
-        sold90: Number(product.sold90 || 0),
+        // Real windows, not the lifetime counters: the advisor is asked about
+        // recent demand and these arrive under 30- and 90-day names. Feeding it
+        // a three-year total labelled "sold30" is how a model ends up
+        // confidently recommending a restock nobody needs. aiProductPriority()
+        // ranks on these same values, so the 80 products that travel are now
+        // chosen on real movement too.
+        sold30: productUnitsSold(product, 30),
+        sold90: productUnitsSold(product, 90),
         leadTimeDays: Number(product.leadTimeDays || 10)
       }))
       // Out of stock first, then at-or-below reorder level, then fastest
@@ -5546,6 +5552,53 @@ const SHIFT_HISTORY_LIMIT = 20;
 // number, and a literal in one place and a comparison in another would drift
 // into accusing cashiers of theft the day someone changed it.
 const SALES_HISTORY_LIMIT = 1000;
+
+// Units of one product actually sold in a time window, from the sales record.
+//
+// products.sold30 and sold90 are named for windows they have never had. Every
+// write to them adds on a sale and subtracts on a return or a void, and nothing
+// anywhere decays them -- so they are lifetime net-sold counters, and reading
+// them as "the last 30 days" quietly degrades every decision built on top:
+// "fast moving" (sold30 >= 50) is a label a product can only ever gain, so
+// given enough trading every product earns it and the movement chart stops
+// distinguishing anything. The shops it fails hardest for are the ones trading
+// longest.
+//
+// The stored counters are deliberately left in place. firestore.rules validates
+// stock writes against them (validStockMovementUpdate), and as a lifetime total
+// they are perfectly true -- they were mislabelled, not wrong. This computes the
+// windowed figure from the only place the real answer lives.
+//
+// Voided sales are skipped whole; returns are netted off, floored at zero so a
+// product can never read as sold a negative number of times.
+function unitsSoldInWindow(sales, productId, fromMs, toMs) {
+  let units = 0;
+  for (const sale of sales || []) {
+    if (!sale || sale.voided) continue;
+    const at = sale.createdAt?.toDate ? sale.createdAt.toDate().getTime() : null;
+    if (at === null || at < fromMs || at > toMs) continue;
+
+    for (const item of Array.isArray(sale.items) ? sale.items : []) {
+      if (item?.productId === productId) units += safeNumber(item.qty);
+    }
+    for (const entry of Array.isArray(sale.returns) ? sale.returns : []) {
+      for (const item of Array.isArray(entry?.items) ? entry.items : []) {
+        if (item?.productId === productId) units -= safeNumber(item.qty);
+      }
+    }
+  }
+  return Math.max(0, units);
+}
+
+// The windowed figures the UI and the AI payload should be reading instead of
+// product.sold30 / product.sold90. Defined against state.sales, which holds the
+// newest SALES_HISTORY_LIMIT sales -- for a window longer than that history the
+// figure is a floor rather than an exact count, which understates movement
+// rather than inventing it.
+function productUnitsSold(product, days) {
+  const now = Date.now();
+  return unitsSoldInWindow(state.sales || [], product?.id, now - days * 24 * 60 * 60 * 1000, now);
+}
 
 function shiftCashFromSales(sales, storeId, fromMs, toMs) {
   let cashSales = 0;
