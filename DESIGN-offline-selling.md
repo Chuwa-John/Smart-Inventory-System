@@ -1,12 +1,20 @@
 # Design — offline selling (L-9)
 
-Status: **phase A built, B–E proposed.** Written 2026-08-02.
+Status: **phases A and B built, C–E proposed.** Written 2026-08-02.
 
 Phase A (rules only) landed 2026-08-02: `stockCountInRange` permits bounded
 negative `products.quantity`, and `stockMovements` accepts an `offline: true`
-entry carrying a delta and no chain. Nothing writes either yet, so the
-behaviour of the app is unchanged. Three pre-existing assertions asserted the
+entry carrying a delta and no chain. Three pre-existing assertions asserted the
 old guard and were updated deliberately — see §12.
+
+Phase B (reader only) landed 2026-08-02: `reconcileProductStock()` treats a
+product whose newest ledger entry was made offline as **unknown**, never as a
+discrepancy. Checking the newest entry alone is sufficient — see §5 for why a
+chained entry anchors everything behind it.
+
+Nothing writes an offline entry or a negative quantity yet, so the running app
+still behaves exactly as it did before phase A. The boundary and the reader are
+both in place ahead of the writer, which is the point of this ordering.
 Decisions taken: oversell policy = *sell anyway, flag it* (owner's call).
 
 This touches `completeSale()`, which is the most dangerous function in the
@@ -229,7 +237,7 @@ Each is independently shippable and independently safe.
 | # | Work | Ships safely because |
 |---|---|---|
 | A | Rules: `offline` ledger entries, bounded negative `products.quantity`, plus tests | Nothing writes either yet — **DONE 2026-08-02** |
-| B | Reconciliation becomes chain-aware — treats offline entries as `unknown` | Must land **before** anything writes an offline entry, or the first outage accuses someone |
+| B | Reconciliation becomes chain-aware — treats offline entries as `unknown` | Must land **before** anything writes an offline entry, or the first outage accuses someone — **DONE 2026-08-02** |
 | C | Client: `increment()` on the sale path, queued writes, offline ledger entry | The boundary is already proven by A and B |
 | D | UX: banner, per-sale offline marker, unsynced count, "sold while offline" report | The policy's "flag it" half |
 | E | End-to-end and load tests, then the excluded paths re-verified | — |

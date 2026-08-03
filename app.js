@@ -5910,6 +5910,28 @@ function reconcileProductStock(product, latestMovement) {
   if (!product) return { status: "unknown", reason: "no-product", gap: null };
   if (!latestMovement) return { status: "unknown", reason: "no-ledger-entry", gap: null };
 
+  // An entry made offline carries a delta and no chain (L-9 phase A), because
+  // offline its idea of the shelf is a possibly-stale cache. There is nothing
+  // here to compare the shelf against, and guessing would mean reporting the
+  // outage itself as unaccounted stock -- this control accusing a cashier for
+  // every sale rung up while the connection was down.
+  //
+  // Checking only the NEWEST entry is sufficient, and worth explaining. Entries
+  // are ordered newest-first by server time, and a queued write is stamped when
+  // it lands rather than when it was made. A chained entry is written online,
+  // inside a transaction that read the real shelf, so it anchors everything
+  // before it -- including offline entries that had already been applied. So a
+  // chained newest entry is authoritative even with offline entries behind it,
+  // and an offline newest entry means the shelf has moved since the last
+  // anchor by an amount nothing has verified.
+  //
+  // The chain re-establishes itself at the product's next online movement. No
+  // repair job, and no rewriting of records the rules make immutable.
+  const chainMissing = latestMovement.quantityAfter === undefined || latestMovement.quantityAfter === null;
+  if (latestMovement.offline === true || chainMissing) {
+    return { status: "unknown", reason: "offline-entry-pending", gap: null };
+  }
+
   const onShelf = safeNumber(product.quantity);
   const expected = safeNumber(latestMovement.quantityAfter);
   const gap = onShelf - expected;

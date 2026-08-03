@@ -135,6 +135,79 @@ console.log("\n=== picking the newest entry per product ===");
     latestMovementByProduct([{ quantityAfter: 3 }, { productId: "p9", quantityAfter: 4 }]).size, 1);
 }
 
+console.log("\n=== an outage is not evidence of theft (L-9 phase B) ===");
+{
+  // The single most important assertion in the offline work. An offline entry
+  // carries a delta and no chain, so there is nothing to compare the shelf
+  // against. Reporting that as a gap would mean this control -- built to catch
+  // stock leaving without a sale -- firing on every legitimate sale made while
+  // the connection was down.
+  const offline = { productId: "p1", delta: -3, offline: true, saleId: "s1" };
+
+  const r = reconcileProductStock(product(9), offline);
+  eq("a product whose newest entry was made offline is unknown", r.status, "unknown");
+  eq("and says why", r.reason, "offline-entry-pending");
+  check("no gap figure is offered", r.gap === null, `gap was ${r.gap}`);
+
+  // The shelf has genuinely moved since the last anchor. That is expected, not
+  // suspicious, and must not be reported as a discrepancy however large.
+  eq("a wildly different shelf is still only unknown",
+    reconcileProductStock(product(-40), offline).status, "unknown");
+
+  // Defensive: the rules forbid an offline entry carrying a chain, but a
+  // reader that trusted one anyway would reintroduce exactly the false
+  // accusation this exists to prevent.
+  eq("an offline entry claiming a chain is still not trusted",
+    reconcileProductStock(product(2), { ...offline, quantityBefore: 20, quantityAfter: 17 }).status,
+    "unknown");
+
+  // A malformed entry missing its chain is unknown rather than NaN-driven.
+  eq("an entry with no quantityAfter at all is unknown",
+    reconcileProductStock(product(9), { productId: "p1", delta: -3 }).status, "unknown");
+}
+
+console.log("\n=== the chain re-anchors at the next online movement ===");
+{
+  // Entries arrive newest-first, and a queued write is stamped when it lands.
+  // A chained entry is written inside a transaction that read the real shelf,
+  // so it anchors everything before it -- including offline entries already
+  // applied to that shelf. Checking the newest entry alone is therefore enough.
+  const movements = [
+    { productId: "p1", quantityBefore: 6, delta: 10, quantityAfter: 16 }, // online restock, newest
+    { productId: "p1", delta: -3, offline: true },                        // offline sale, older
+    { productId: "p1", quantityBefore: 12, delta: -3, quantityAfter: 9 }
+  ];
+  const latest = latestMovementByProduct(movements);
+  eq("an online movement after an outage restores checking",
+    reconcileProductStock(product(16), latest.get("p1")).status, "matched");
+  eq("and catches a real discrepancy again",
+    reconcileProductStock(product(11), latest.get("p1")).status, "mismatch");
+  eq("the discrepancy is measured from the new anchor",
+    reconcileProductStock(product(11), latest.get("p1")).gap, -5);
+
+  // The reverse order: the outage is the most recent thing that happened.
+  const during = latestMovementByProduct([
+    { productId: "p1", delta: -3, offline: true },
+    { productId: "p1", quantityBefore: 12, delta: -3, quantityAfter: 9 }
+  ]);
+  eq("while the newest entry is offline, the product stays unknown",
+    reconcileProductStock(product(6), during.get("p1")).status, "unknown");
+}
+
+console.log("\n=== a mixed catalogue reports only what it can stand behind ===");
+{
+  const products = [product(9), { id: "p2", quantity: 5 }, { id: "p3", quantity: 40 }];
+  const latest = latestMovementByProduct([
+    { productId: "p1", delta: -3, offline: true },
+    { productId: "p2", quantityBefore: 8, delta: -3, quantityAfter: 5 },
+    { productId: "p3", quantityBefore: 50, delta: -3, quantityAfter: 47 }
+  ]);
+  const statuses = products.map((p) => reconcileProductStock(p, latest.get(p.id)).status);
+  check("offline product unknown, clean product matched, short product mismatch",
+    statuses[0] === "unknown" && statuses[1] === "matched" && statuses[2] === "mismatch",
+    statuses.join(", "));
+}
+
 console.log("\n=== every path that moves stock writes to the ledger ===");
 {
   const noComments = src.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
