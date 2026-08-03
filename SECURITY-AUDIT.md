@@ -105,12 +105,36 @@ either form: anyone writing stock down to cover theft simply omits the field or
 labels the write `"sale"`. It would have imposed real outage risk on the revenue
 path to deter nobody.
 
-**Why prevention is not reachable at all.** Binding the decrement to a sale
+**Why prevention is not reachable *in rules*.** Binding the decrement to a sale
 would require the sale to be committed *before* the stock write so a rule could
 `get()` it. That breaks transactional atomicity — a sale could be recorded with
-no stock movement — and it breaks offline selling, which is a headline feature
-of this product. A server-mediated sale endpoint has the same problem: it cannot
-work offline.
+no stock movement.
+
+**Correction, 2026-08-02.** This entry previously continued: *"and it breaks
+offline selling, which is a headline feature of this product. A server-mediated
+sale endpoint has the same problem: it cannot work offline."*
+
+**That premise is false, and it ruled out a real option.** This product does not
+sell offline. `completeSale()` requires a Firestore transaction; transactions do
+not queue the way plain writes do, and the catch toasts and returns rather than
+falling through to anything. The offline banner states it plainly in both
+languages: *"sales cannot be recorded until the connection returns."* The
+`local-` sale path exists only for the case where Firestore is absent entirely —
+no config, or signed out — which is demo mode, not offline mode. Pinned by
+`tests/offline-selling.test.mjs`.
+
+So a server-mediated sale endpoint is **not** excluded by offline support,
+because there is none to break. It remains excluded by other things worth
+weighing on their own merits — latency on the revenue path, a new outage mode
+between till and proxy, and the fact that the till already stops when the
+connection does — but "it cannot work offline" is not one of them, and should
+not be quoted as though it were.
+
+This does not change what was built. The stock ledger (L-2 in
+KNOWN-LIMITATIONS.md) makes an unrecorded decrement visible rather than
+impossible, which is the right control for the cost. It does mean the door F-4
+closed was never locked, and a future decision to bind stock to sale
+server-side is open on its actual merits.
 
 **What is in place.** `movementReason` is retained and validated as an enum
 (`sale` / `restock` / `return` / `void`), stamped by all four client stock paths.

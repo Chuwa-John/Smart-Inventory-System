@@ -150,6 +150,48 @@ delta chain rather than comparing only the newest entry, which would locate
 
 ---
 
+## L-9 The till cannot sell without a connection — **OPEN**
+
+**Limitation.** A sale requires a Firestore transaction. Transactions do not
+queue offline the way plain writes do, so when the connection drops the sale is
+refused: the banner reads *"No internet connection. You can keep browsing, but
+sales cannot be recorded until the connection returns."* The `local-` sale path
+in `app.js` is not an offline mode — it exists for the case where Firestore is
+absent entirely (no config, signed out), which is demo mode.
+
+**Why this entry did not exist until now.** It was not merely undocumented — it
+was documented backwards. `SECURITY-AUDIT.md` F-4 described offline selling as
+"a headline feature of this product" and used that to rule out a server-mediated
+sale endpoint. Corrected there on 2026-08-02, and pinned by
+`tests/offline-selling.test.mjs` so the claim cannot drift back.
+
+**Risk: HIGH for the market this serves.** Tanzanian mobile connectivity is
+intermittent by default. A queue of customers and a till that will not ring up a
+sale is the most visible failure this product can have, and it is the one
+failure a shopkeeper cannot work around — they can count cash by hand, but they
+cannot reconstruct what the app refused to record.
+
+**What is right about it as it stands.** The refusal is honest and immediate:
+the message names the real cause ("no internet connection", not the SDK's
+"unavailable"), the banner is in both languages, and nothing is silently lost.
+An offline mode that recorded sales locally would be worse than this until it is
+designed properly — see the trap below.
+
+**The trap for whoever builds offline selling.** Local sales never reach
+Firestore, so they write no `stockMovements` entry. The L-2 reconciliation
+compares a product's quantity against the newest ledger entry and reports the
+difference as unaccounted stock. A well-meant offline fallback bolted onto the
+existing paths would therefore start **accusing cashiers of theft** for every
+sale made during an outage. Offline selling and the stock ledger must be
+designed together: queued sales need queued ledger entries, replayed in order,
+with the reconciliation aware that a replay is pending.
+
+**Planned:** unscheduled, and genuinely large — it needs an offline queue,
+conflict resolution for stock that moved on another till meanwhile, and the
+ledger interaction above. Worth scoping properly rather than starting.
+
+---
+
 ## L-3 The audit log is append-only but not tamper-evident — **OPEN**
 
 Carried from `SECURITY-AUDIT.md`. Rules forbid update and delete, and as of the
