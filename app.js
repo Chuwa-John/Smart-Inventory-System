@@ -51,6 +51,10 @@ const state = {
   members: [],
   unsubscribeMembers: null,
   unsubscribeOwnMembership: null,
+  // Owner-only shift reconciliation results, keyed by shift id. See
+  // reconcileShiftCash() -- absence of an entry means "not checked", which is
+  // rendered as nothing rather than as a clean bill of health.
+  shiftReconciliation: {},
   // One-shot latch so a membership that ends cannot fire the sign-out path
   // repeatedly as the listener settles.
   membershipEnded: false,
@@ -762,6 +766,11 @@ const DICTIONARY = {
     "shift.short": "short",
     "shift.variance": "Variance",
     "shift.historyHeading": "Recent shifts",
+    "shift.reconciled": "Against sales",
+    "shift.reconcileOk": "Checks out",
+    "shift.reconcileMismatch": "{amount} unaccounted",
+    "shift.reconcileMismatchHelp": "The sales record for this shift does not agree with the figures it was closed on. Worth asking about before assuming anything.",
+    "shift.reconcileUnknown": "Not checked — this shift is older than the sales history loaded here.",
     "shift.balanced": "Balanced",
     "shift.selectStore": "Choose a single branch to run a shift",
     "toast.selectStoreBeforeShift": "Choose a single branch before opening a shift.",
@@ -1397,6 +1406,11 @@ const DICTIONARY = {
     "shift.short": "pungufu",
     "shift.variance": "Tofauti",
     "shift.historyHeading": "Zamu za hivi karibuni",
+    "shift.reconciled": "Dhidi ya mauzo",
+    "shift.reconcileOk": "Inalingana",
+    "shift.reconcileMismatch": "{amount} hazijaelezwa",
+    "shift.reconcileMismatchHelp": "Kumbukumbu ya mauzo ya zamu hii hailingani na takwimu zilizotumika kuifunga. Inafaa kuuliza kabla ya kuhitimisha lolote.",
+    "shift.reconcileUnknown": "Haijakaguliwa — zamu hii ni ya zamani kuliko historia ya mauzo iliyopakiwa hapa.",
     "shift.balanced": "Sawa kabisa",
     "shift.selectStore": "Chagua tawi moja ili kuendesha zamu",
     "toast.selectStoreBeforeShift": "Chagua tawi moja kabla ya kufungua zamu.",
@@ -5526,6 +5540,13 @@ async function loadCreditOverrideCount() {
 
 const SHIFT_HISTORY_LIMIT = 20;
 
+// How many sales subscribeToSales() holds. Named because salesCoverageFromMs()
+// has to know it: the reconciliation below decides whether a shift is old
+// enough to be outside the loaded window by comparing against this exact
+// number, and a literal in one place and a comparison in another would drift
+// into accusing cashiers of theft the day someone changed it.
+const SALES_HISTORY_LIMIT = 1000;
+
 function shiftCashFromSales(sales, storeId, fromMs, toMs) {
   let cashSales = 0;
   let cashRefunds = 0;
@@ -5571,6 +5592,126 @@ async function shiftCashRepayments(storeId, fromMs, toMs) {
     total += safeNumber(row.amount);
   }
   return total;
+}
+
+// Owner-side reconciliation of a closed shift against the sales record.
+//
+// This is the compensating control L-1 names in KNOWN-LIMITATIONS.md.
+// firestore.rules can force a shift's closing numbers to agree with each other
+// -- expectedCash must equal the float plus cash sales less refunds plus
+// repayments, and variance must equal counted minus expected -- but it cannot
+// prove cashSales, because rules authorise one write at a time and cannot
+// aggregate a shift's sales. A cashier can still understate cashSales, write
+// the matching expectedCash, and close a short drawer as balanced. The rules
+// change did not close that; it moved the lie into a field the owner can check
+// against the sales collection. This is that check.
+//
+// Restraint is the hard part, not detection. The sales subscription is
+// limit(1000), so a shift older than the loaded window is not evidence of
+// anything. Reporting it as a discrepancy would accuse a cashier of theft
+// because the app had not loaded far enough back -- and a tool that does that
+// spends the owner's trust on false positives, then gets ignored on the true
+// one. coverageFromMs is the earliest moment the supplied sales are known to
+// be complete from; anything opening before it returns "unknown", never
+// "mismatch".
+//
+// Pure and side-effect free so tests/shift-reconciliation.test.mjs can
+// exercise the real function rather than a copy of its arithmetic.
+// Renders one reconciliation verdict. "unknown" and "not checked" both show a
+// neutral dash, never a tick: a shift we could not verify must not read as one
+// that passed, or the column becomes a rubber stamp.
+function shiftReconciliationCell(shift) {
+  const result = state.shiftReconciliation?.[shift.id];
+  if (!result || result.status === "unknown" || result.status === "not-closed") {
+    return `<span class="muted" title="${esc(t("shift.reconcileUnknown"))}">&mdash;</span>`;
+  }
+  if (result.status === "matched") return `<span class="muted">${esc(t("shift.reconcileOk"))}</span>`;
+  return `<span class="danger" title="${esc(t("shift.reconcileMismatchHelp"))}">${
+    esc(t("shift.reconcileMismatch", { amount: money(Math.abs(result.unaccounted)) }))
+  }</span>`;
+}
+
+function reconcileShiftCash(shift, actual, coverageFromMs) {
+  if (!shift || shift.status !== "closed") return { status: "not-closed" };
+
+  const openedAt = shift.openedAt?.toDate ? shift.openedAt.toDate().getTime() : null;
+  const closedAt = shift.closedAt?.toDate ? shift.closedAt.toDate().getTime() : null;
+  const unknown = (reason) => ({ status: "unknown", reason, unaccounted: null });
+  if (openedAt === null || closedAt === null) return unknown("no-timestamps");
+  if (coverageFromMs !== null && coverageFromMs !== undefined && openedAt < coverageFromMs) {
+    return unknown("outside-loaded-history");
+  }
+
+  const openingFloat = safeNumber(shift.openingFloat);
+  const actualExpected = openingFloat
+    + safeNumber(actual?.cashSales)
+    - safeNumber(actual?.cashRefunds)
+    + safeNumber(actual?.cashRepayments);
+  const recordedExpected = safeNumber(shift.expectedCash);
+  const counted = safeNumber(shift.countedCash);
+
+  // Positive means the sales record says more should have been in the drawer
+  // than the shift accounted for -- the direction that hides a shortfall.
+  const unaccounted = actualExpected - recordedExpected;
+
+  return {
+    // Sub-unit differences are float noise, not findings. A whole unit is a
+    // finding: these are shillings, and the arithmetic is over integers.
+    status: Math.abs(unaccounted) < 1 ? "matched" : "mismatch",
+    recordedExpected,
+    actualExpected,
+    recordedVariance: safeNumber(shift.variance),
+    actualVariance: counted - actualExpected,
+    unaccounted
+  };
+}
+
+// How far back the loaded sales can be trusted to be complete.
+//
+// subscribeToSales() asks for the newest SALES_HISTORY_LIMIT sales. If it came
+// back full, older sales exist that we do not hold, and the oldest one we DO
+// hold is the boundary: before it, absence of a sale is not evidence there was
+// none. If it came back short, we have everything and there is no boundary.
+// Returning null means "no boundary" -- see reconcileShiftCash().
+function salesCoverageFromMs() {
+  const sales = state.sales || [];
+  if (sales.length < SALES_HISTORY_LIMIT) return null;
+  let oldest = null;
+  for (const sale of sales) {
+    const at = sale.createdAt?.toDate ? sale.createdAt.toDate().getTime() : null;
+    if (at === null) continue;
+    if (oldest === null || at < oldest) oldest = at;
+  }
+  return oldest;
+}
+
+// Owner-only, and deliberately so: auditLogs is owner-read by rule, so a
+// manager running this would only produce "unknown" rows. Kept off the close
+// path -- this reconciles history, it never gates a till.
+async function computeShiftReconciliations() {
+  state.shiftReconciliation = {};
+  if (!isOwnerRole()) return;
+  const coverage = salesCoverageFromMs();
+  for (const shift of state.shifts || []) {
+    if (shift.status !== "closed") continue;
+    const from = shift.openedAt?.toDate ? shift.openedAt.toDate().getTime() : null;
+    const to = shift.closedAt?.toDate ? shift.closedAt.toDate().getTime() : null;
+    if (from === null || to === null) {
+      state.shiftReconciliation[shift.id] = reconcileShiftCash(shift, null, coverage);
+      continue;
+    }
+    try {
+      const { cashSales, cashRefunds } = shiftCashFromSales(state.sales || [], shift.storeId, from, to);
+      const cashRepayments = await shiftCashRepayments(shift.storeId, from, to);
+      state.shiftReconciliation[shift.id] =
+        reconcileShiftCash(shift, { cashSales, cashRefunds, cashRepayments }, coverage);
+    } catch (error) {
+      // An unreadable source is not a discrepancy. Say nothing rather than
+      // something wrong -- see the restraint note on reconcileShiftCash().
+      console.warn("Could not reconcile shift.", error);
+      state.shiftReconciliation[shift.id] = { status: "unknown", reason: "lookup-failed", unaccounted: null };
+    }
+  }
 }
 
 async function computeShiftExpectedCash(shift) {
@@ -5709,6 +5850,7 @@ async function loadShifts() {
     ));
     state.shifts = snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
     state.openShift = state.shifts.find((row) => row.status === "open") || null;
+    await computeShiftReconciliations();
   } catch (error) {
     // Fails quiet, like the credit-override history: the panel beside this one
     // shows the day's cash and must not go down with it.
@@ -5785,6 +5927,7 @@ function renderShiftPanel() {
       <td class="num">${esc(money(row.expectedCash))}</td>
       <td class="num">${esc(money(row.countedCash))}</td>
       <td class="num ${tone}">${esc(label)}</td>
+      ${isOwnerRole() ? `<td class="num">${shiftReconciliationCell(row)}</td>` : ""}
     </tr>`;
   }).join("");
 
@@ -5799,6 +5942,7 @@ function renderShiftPanel() {
           <th>${esc(t("shift.expected"))}</th>
           <th>${esc(t("shift.countedLabel"))}</th>
           <th>${esc(t("shift.variance"))}</th>
+          ${isOwnerRole() ? `<th>${esc(t("shift.reconciled"))}</th>` : ""}
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -6459,8 +6603,8 @@ async function subscribeToSales() {
     // appears the first time a staff account runs this, includes a direct
     // link to create it; click it once and the query works from then on.
     const salesQuery = queryStoreIds === null
-      ? query(salesRef, orderBy("createdAt", "desc"), limit(1000))
-      : query(salesRef, where("storeId", "in", queryStoreIds), orderBy("createdAt", "desc"), limit(1000));
+      ? query(salesRef, orderBy("createdAt", "desc"), limit(SALES_HISTORY_LIMIT))
+      : query(salesRef, where("storeId", "in", queryStoreIds), orderBy("createdAt", "desc"), limit(SALES_HISTORY_LIMIT));
     state.unsubscribeSales = onSnapshot(
       salesQuery,
       (snapshot) => {

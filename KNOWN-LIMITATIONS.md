@@ -50,16 +50,31 @@ holding it, and no other record disagreed. Now any concealment must be spent in
 `cashSales`, which is reconcilable against the `sales` collection for the same
 store and window. The attack moved from invisible to detectable.
 
-**Compensating control.** Owner-facing shift reconciliation view: for each
-closed shift, show recorded `cashSales` beside the actual sum of cash sales for
-that store between `openedAt` and `closedAt`, and flag any divergence. Until
-that view exists the data is present and correct but nobody is looking at it,
-which is the weak point of this entry — a detective control nobody reads is not
-a control.
+**Compensating control — BUILT.** The owner's shift history now carries an
+"Against sales" column: for each closed shift it recomputes the expected cash
+from the sales record between `openedAt` and `closedAt` and names any
+divergence (`reconcileShiftCash()`, `tests/shift-reconciliation.test.mjs`).
+A shift closed on understated figures reads *"50,000 unaccounted"* rather than
+*"Balanced"*.
 
-**Planned:** Phase 5 admin dashboard, alongside the F-4 stock reconciliation
-view, which is the same shape of report over a different collection. Build both
-at once.
+Two things bound what this proves:
+
+- **It only reports what it can see.** The sales subscription holds the newest
+  `SALES_HISTORY_LIMIT` sales, so a shift older than that window shows "not
+  checked", never a discrepancy. A tool that accused a cashier because the app
+  had not loaded far enough back would spend the owner's trust on false
+  positives and then be ignored on the true one. Both states render the same
+  neutral mark deliberately — an unverified shift must never read as a
+  verified one.
+- **It is detective, not preventive, and it is only as good as the reading.**
+  Nothing forces an owner to look at the column.
+
+**Remaining risk: Low**, down from Medium. Concealment now requires
+understating `cashSales`, which leaves a visible divergence against the sales
+collection on the owner's own screen.
+
+**Planned:** the equivalent stock view for L-2 — same report shape, different
+collection.
 
 ---
 
