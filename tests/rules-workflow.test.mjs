@@ -93,8 +93,25 @@ await check("cashier CAN restock (quantity only)", true,
 await check("manager CAN restore stock on a return/void", true,
   () => updateDoc(doc(manager, "users", OWNER, "products", "p1"), { quantity: 51, sold30: 0, sold90: 0, updatedAt: new Date() }));
 
-await check("cashier CANNOT drive stock negative", false,
+// Changed deliberately in L-9 phase A, and worth reading rather than skimming:
+// this is a guard that was loosened on purpose.
+//
+// Stock may now land below zero. Offline selling works against a cached count,
+// so a cashier can legitimately sell the last unit twice across two tills, and
+// the agreed policy is to take the sale and flag it rather than refuse a paying
+// customer. While the rules forbade it, that queued sale was rejected at REPLAY
+// time -- silently, hours later, after the customer had gone and the cash was
+// in the drawer. Discarding a completed sale without telling anyone is worse
+// than the negative number.
+//
+// Negative stock is a signal: more was sold than the system believed was there.
+// What has NOT changed is everything around it -- the bound still applies, the
+// field whitelist still applies, and a cashier still cannot touch price.
+await check("cashier CAN drive stock negative (offline oversell lands here)", true,
   () => updateDoc(doc(cashier, "users", OWNER, "products", "p1"), { quantity: -5, updatedAt: new Date() }));
+
+await check("cashier still CANNOT drive stock past the bound", false,
+  () => updateDoc(doc(cashier, "users", OWNER, "products", "p1"), { quantity: -99999999, updatedAt: new Date() }));
 
 await check("cashier CANNOT smuggle a price change into a stock movement", false,
   () => updateDoc(doc(cashier, "users", OWNER, "products", "p1"), { quantity: 8, sellingPrice: 1, updatedAt: new Date() }));

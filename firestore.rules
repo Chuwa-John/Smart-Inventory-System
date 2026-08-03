@@ -89,6 +89,26 @@ service cloud.firestore {
     function countInRange(v) {
       return v is number && v >= 0 && v <= 1000000;
     }
+
+    // Stock on a shelf, which may legitimately be negative (L-9, phase A).
+    //
+    // Everything else counted here stays non-negative: a reorder level, a
+    // number of units sold, a transfer quantity. A shelf is different. Once
+    // offline selling exists a cashier can sell stock the cached count said was
+    // there and the server already knew was gone, and the agreed policy is to
+    // take the sale and flag it rather than refuse a paying customer.
+    //
+    // Without this, that sale is rejected at REPLAY time -- silently, hours
+    // later, after the customer has left and the money is in the drawer. A
+    // guard that discards completed sales without telling anyone is worse than
+    // the negative number it was protecting against.
+    //
+    // Negative stock is a signal, not corruption: it means more was sold than
+    // the system believed was there, which is exactly what an owner needs to
+    // see. It is still bounded, so a typo or a loop cannot write nonsense.
+    function stockCountInRange(v) {
+      return v is number && v >= -1000000 && v <= 1000000;
+    }
     function moneyInRange(v) {
       return v is number && v >= 0 && v <= 1000000000;
     }
@@ -109,7 +129,7 @@ service cloud.firestore {
         && d.category is string && d.category.size() <= 60
         && d.brand is string && d.brand.size() <= 60
         && d.supplier is string && d.supplier.size() <= 60
-        && countInRange(d.quantity)
+        && stockCountInRange(d.quantity)
         && d.storeId is string && d.storeId.size() > 0
         && (!('barcode' in d) || (d.barcode is string && d.barcode.size() <= 64))
         && (!('description' in d) || (d.description is string && d.description.size() <= 500))
@@ -177,7 +197,7 @@ service cloud.firestore {
 
     function validStockMovementUpdate() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['quantity', 'sold30', 'sold90', 'updatedAt', 'movementReason'])
-        && countInRange(request.resource.data.quantity)
+        && stockCountInRange(request.resource.data.quantity)
         && (!('sold30' in request.resource.data) || countInRange(request.resource.data.sold30))
         && (!('sold90' in request.resource.data) || countInRange(request.resource.data.sold90))
         && validMovementReason();
@@ -653,17 +673,47 @@ service cloud.firestore {
       // and cannot read the collection back or tidy it afterwards. Bounded so a
       // loop cannot write unbounded documents.
       match /stockMovements/{movementId} {
+        // An entry made offline cannot honestly carry the chain (L-9, phase A).
+        //
+        // quantityBefore is read from a cache that may be stale by the time a
+        // queued write lands. Recording it anyway would produce a chain that
+        // does not match the shelf, and reconcileProductStock() would report
+        // that difference as unaccounted stock -- the anti-theft control
+        // accusing a cashier for every sale made during an outage.
+        //
+        // So an offline entry states LESS rather than something false: the
+        // delta, which is always known, and nothing about the shelf either side
+        // of it. The reconciliation treats such products as unknown until their
+        // next online movement re-anchors the chain.
+        //
+        // The two shapes are mutually exclusive and both are enforced. An entry
+        // may not claim to be offline while carrying a chain (that would be a
+        // guess wearing the authority of a measurement), and it may not omit the
+        // chain without saying why.
+        function movementIsOffline() {
+          return 'offline' in request.resource.data && request.resource.data.offline == true;
+        }
+
+        function validMovementShape() {
+          let d = request.resource.data;
+          return movementIsOffline()
+            ? (!('quantityBefore' in d) && !('quantityAfter' in d))
+            : (stockCountInRange(d.quantityBefore)
+               && stockCountInRange(d.quantityAfter)
+               // The chain link. Without this an entry could claim any
+               // resulting shelf and the replay would agree with whatever it
+               // was told.
+               && d.quantityAfter == d.quantityBefore + d.delta);
+        }
+
         function validStockMovement() {
           let d = request.resource.data;
           return d.productId is string && d.productId.size() > 0 && d.productId.size() <= 120
             && d.storeId is string && d.storeId.size() > 0 && d.storeId.size() <= 120
             && d.reason in ['sale', 'restock', 'return', 'void', 'transfer-in', 'transfer-out', 'adjustment']
             && d.delta is number && d.delta >= -1000000 && d.delta <= 1000000
-            && countInRange(d.quantityBefore)
-            && countInRange(d.quantityAfter)
-            // The chain link. Without this an entry could claim any resulting
-            // shelf and the replay would agree with whatever it was told.
-            && d.quantityAfter == d.quantityBefore + d.delta
+            && (!('offline' in d) || d.offline is bool)
+            && validMovementShape()
             && d.uid == request.auth.uid
             && (!('productName' in d) || (d.productName is string && d.productName.size() <= 120))
             && (!('saleId' in d) || (d.saleId is string && d.saleId.size() <= 120))

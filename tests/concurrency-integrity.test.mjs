@@ -16,7 +16,7 @@
 // handler and cannot be imported. So this proves the DESIGN holds under
 // contention and that the rules refuse the corrupt outcomes; sale-lifecycle
 // covers the client's arithmetic separately.
-import { initializeTestEnvironment, assertFails } from "@firebase/rules-unit-testing";
+import { initializeTestEnvironment, assertFails, assertSucceeds } from "@firebase/rules-unit-testing";
 import { doc, setDoc, getDoc, runTransaction, updateDoc } from "firebase/firestore";
 import { readFileSync } from "node:fs";
 
@@ -119,15 +119,34 @@ console.log("\n=== a sale for more than is on the shelf ===");
   check("stock is untouched by the refusal", (await stockNow()) === 2);
 }
 
-console.log("\n=== rules refuse negative stock even without the client check ===");
+console.log("\n=== negative stock is permitted by rules, refused by the sale path ===");
 {
   await seed(1);
-  // The client guard is one layer. If it were bypassed, the rules must still
-  // refuse: countInRange requires quantity >= 0.
-  await checkAsync("a direct write to negative quantity is denied",
-    assertFails(updateDoc(doc(as(CASHIER_A), "users", OWNER, "products", "p1"),
+  // Changed deliberately in L-9 phase A. This previously asserted that the
+  // rules were a second line of defence against negative stock, on the basis
+  // that the client guard might be bypassed.
+  //
+  // That layer had to go, and it is worth being precise about what was traded.
+  // Offline selling works against a cached count, so a queued sale can land on
+  // stock the server already knows is gone. While the rules refused it, that
+  // sale was rejected at REPLAY time -- silently, hours later, after the
+  // customer had left with the goods and the cash was in the drawer. The agreed
+  // policy is to take the sale and flag it.
+  //
+  // What still protects stock ONLINE is the sale path itself, asserted above:
+  // "a five-unit sale against two in stock is refused" runs inside a
+  // transaction that reads the real quantity first. That is the guard that
+  // matters while connected, and it is unchanged.
+  await checkAsync("a direct write to negative quantity is now permitted",
+    assertSucceeds(updateDoc(doc(as(CASHIER_A), "users", OWNER, "products", "p1"),
       { quantity: -1, movementReason: "sale" })));
-  check("stock is still one after the denied write", (await stockNow()) === 1);
+  check("the negative value is what was actually stored", (await stockNow()) === -1);
+
+  await seed(1);
+  await checkAsync("the bound still holds, so a typo or a loop cannot write nonsense",
+    assertFails(updateDoc(doc(as(CASHIER_A), "users", OWNER, "products", "p1"),
+      { quantity: -99999999, movementReason: "sale" })));
+  check("stock is untouched by the refusal", (await stockNow()) === 1);
 }
 
 console.log("\n=== two managers editing the same product ===");

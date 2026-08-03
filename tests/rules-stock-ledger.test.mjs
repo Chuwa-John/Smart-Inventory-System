@@ -44,6 +44,14 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, "users", OWNER, "members", CASHIER), { role: "cashier", status: "active", storeIds: [STORE_A] });
   await setDoc(doc(db, "users", OWNER, "members", MANAGER), { role: "manager", status: "active", storeIds: [STORE_A, STORE_B] });
   await setDoc(doc(db, "users", OWNER, "members", OUTSIDER), { role: "cashier", status: "active", storeIds: [STORE_B] });
+  // A real product to move stock on -- an updateDoc against a document that
+  // does not exist fails regardless of the rules, which would make the negative
+  // stock assertions below pass or fail for the wrong reason.
+  await setDoc(doc(db, "users", OWNER, "products", "p1"), {
+    name: "Sugar", category: "Food", brand: "X", supplier: "Y",
+    quantity: 20, storeId: STORE_A, sellingPrice: 100, sold30: 0, sold90: 0,
+    reorderLevel: 5, createdAt: new Date()
+  });
   await setDoc(doc(db, "users", OWNER, "stockMovements", "seeded"), {
     productId: "p1", storeId: STORE_A, reason: "sale", delta: -1,
     quantityBefore: 10, quantityAfter: 9, uid: CASHIER, createdAt: new Date()
@@ -93,8 +101,16 @@ await check("an entry cannot understate what it took", false,
 await check("a delta of the wrong sign is caught", false,
   () => write(CASHIER, { delta: 3, quantityBefore: 20, quantityAfter: 17 }));
 await check("a non-numeric delta is refused", false, () => write(CASHIER, { delta: "three" }));
-await check("stock cannot go negative", false,
+// Changed deliberately in L-9 phase A. This previously asserted that a ledger
+// entry could not record a negative shelf, which was right while stock could
+// not go negative. Offline selling against a stale count can drive it below
+// zero, and the agreed policy is to take the sale and flag it -- so the ledger
+// has to be able to record what actually happened. Still bounded, and the
+// chain arithmetic is still enforced.
+await check("a ledger entry may record stock driven below zero", true,
   () => write(CASHIER, { delta: -30, quantityBefore: 20, quantityAfter: -10 }));
+await check("but the chain must still add up when it goes negative", false,
+  () => write(CASHIER, { delta: -30, quantityBefore: 20, quantityAfter: -11 }));
 await check("Infinity is refused", false,
   () => write(CASHIER, { delta: Infinity, quantityBefore: 0, quantityAfter: Infinity }));
 
@@ -113,6 +129,74 @@ await check("an outsider cannot log into a branch they do not hold", false,
   () => write(OUTSIDER, { storeId: STORE_A }));
 await check("a manager can log in either branch they hold", true,
   () => write(MANAGER, { storeId: STORE_B }));
+
+console.log("\n=== an offline entry states less, never something false (L-9 phase A) ===");
+{
+  // Offline, quantityBefore is a guess read from a possibly-stale cache.
+  // Recording it would produce a chain that does not match the shelf, and the
+  // reconciliation would report the difference as unaccounted stock -- the
+  // anti-theft control firing on innocent cashiers for every sale made during
+  // an outage. An offline entry therefore carries the delta and nothing about
+  // the shelf either side of it.
+  const offlineEntry = (over = {}) =>
+    setDoc(doc(as(CASHIER), "users", OWNER, "stockMovements", `off_${n++}`), {
+      productId: "p1", productName: "Sugar", storeId: STORE_A,
+      reason: "sale", delta: -3, offline: true,
+      uid: CASHIER, createdAt: new Date(), saleId: "s_offline", ...over
+    });
+
+  await check("an offline entry with only a delta is accepted", true, () => offlineEntry());
+  await check("an offline entry may still name the sale it belongs to", true,
+    () => offlineEntry({ saleId: "s_1234" }));
+
+  // The two shapes are mutually exclusive, and both directions are enforced.
+  await check("an offline entry may NOT carry a chain", false,
+    () => offlineEntry({ quantityBefore: 20, quantityAfter: 17 }));
+  await check("an offline entry may not carry half a chain either", false,
+    () => offlineEntry({ quantityBefore: 20 }));
+  await check("an online entry may NOT omit the chain", false,
+    () => write(CASHIER, { quantityBefore: null, quantityAfter: null }));
+  await check("offline: false still requires the chain", false,
+    () => offlineEntry({ offline: false, quantityBefore: null, quantityAfter: null }));
+  await check("offline must be a boolean, not a string", false,
+    () => offlineEntry({ offline: "true" }));
+
+  // A guess wearing the authority of a measurement is the thing to prevent.
+  await check("an entry cannot escape the chain check by omitting the flag", false,
+    () => write(CASHIER, { quantityBefore: 20, quantityAfter: 99 }));
+}
+
+console.log("\n=== a shelf may go negative, but only a shelf (L-9 phase A) ===");
+{
+  // Selling offline against a stale count can drive stock below zero. The
+  // agreed policy is to take the sale and flag it, so the rules must accept the
+  // result -- otherwise the write is rejected at replay time, hours later,
+  // after the customer has gone.
+  await check("stock may land negative after an oversell", true,
+    () => updateDoc(doc(as(CASHIER), "users", OWNER, "products", "p1"),
+      { quantity: -4, sold30: 30, sold90: 30, updatedAt: new Date(), movementReason: "sale" }));
+  await check("a ledger entry may record a negative shelf either side", true,
+    () => write(CASHIER, { reason: "restock", delta: 10, quantityBefore: -4, quantityAfter: 6 }));
+  await check("stock is still bounded", false,
+    () => updateDoc(doc(as(CASHIER), "users", OWNER, "products", "p1"),
+      { quantity: -99999999, updatedAt: new Date(), movementReason: "sale" }));
+
+  // Everything else that counts things stays non-negative: a negative reorder
+  // level or a negative number of units sold is nonsense, not a signal.
+  await check("units sold may NOT go negative", false,
+    () => updateDoc(doc(as(CASHIER), "users", OWNER, "products", "p1"),
+      { quantity: 5, sold30: -1, updatedAt: new Date(), movementReason: "sale" }));
+  await check("an owner may not set a negative reorder level", false,
+    () => setDoc(doc(as(OWNER), "users", OWNER, "products", "pneg"), {
+      name: "Sugar", category: "Food", brand: "X", supplier: "Y",
+      quantity: 5, storeId: STORE_A, reorderLevel: -3, createdAt: new Date()
+    }));
+  await check("an owner may still create a product with negative stock on hand", true,
+    () => setDoc(doc(as(OWNER), "users", OWNER, "products", "pneg2"), {
+      name: "Sugar", category: "Food", brand: "X", supplier: "Y",
+      quantity: -2, storeId: STORE_A, reorderLevel: 3, createdAt: new Date()
+    }));
+}
 
 console.log("\n=== the ledger is append-only and owner-read ===");
 await check("nobody may edit an entry", false,

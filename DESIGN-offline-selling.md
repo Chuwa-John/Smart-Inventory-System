@@ -1,6 +1,12 @@
 # Design — offline selling (L-9)
 
-Status: **proposed, not built.** Written 2026-08-02.
+Status: **phase A built, B–E proposed.** Written 2026-08-02.
+
+Phase A (rules only) landed 2026-08-02: `stockCountInRange` permits bounded
+negative `products.quantity`, and `stockMovements` accepts an `offline: true`
+entry carrying a delta and no chain. Nothing writes either yet, so the
+behaviour of the app is unchanged. Three pre-existing assertions asserted the
+old guard and were updated deliberately — see §12.
 Decisions taken: oversell policy = *sell anyway, flag it* (owner's call).
 
 This touches `completeSale()`, which is the most dangerous function in the
@@ -82,9 +88,17 @@ function stockCountInRange(v) {
 }
 ```
 
-Applied **only** to `products.quantity`. Every other count (`reorderLevel`,
-ledger `quantityBefore`/`quantityAfter`, sale quantities) keeps `countInRange`
-and stays non-negative — a sale line of −3 units remains nonsense.
+Applied to `products.quantity` **and to the ledger's `quantityBefore` /
+`quantityAfter`**. The second was not in the first draft of this design and was
+found while building phase A: once a shelf can be negative, the very next
+*online* movement legitimately starts from a negative `quantityBefore`. A
+restock of 10 onto a shelf of −4 must be recordable, or the chain cannot
+re-anchor after an outage and L-2 stays suspended forever.
+
+Everything else keeps `countInRange` and stays non-negative: `reorderLevel`,
+`sold30`/`sold90`, and transfer quantities. A sale line of −3 units, a negative
+reorder level, or a negative number of units sold all remain nonsense rather
+than signal.
 
 This is a real loosening of a guard, taken knowingly because the alternative is
 silently discarding completed sales. Negative stock is a *signal*, not a
@@ -214,7 +228,7 @@ Each is independently shippable and independently safe.
 
 | # | Work | Ships safely because |
 |---|---|---|
-| A | Rules: `offline` ledger entries, bounded negative `products.quantity`, plus tests | Nothing writes either yet |
+| A | Rules: `offline` ledger entries, bounded negative `products.quantity`, plus tests | Nothing writes either yet — **DONE 2026-08-02** |
 | B | Reconciliation becomes chain-aware — treats offline entries as `unknown` | Must land **before** anything writes an offline entry, or the first outage accuses someone |
 | C | Client: `increment()` on the sale path, queued writes, offline ledger entry | The boundary is already proven by A and B |
 | D | UX: banner, per-sale offline marker, unsynced count, "sold while offline" report | The policy's "flag it" half |
@@ -233,3 +247,34 @@ needs — but it is on the revenue path, and the failure modes are the kind that
 lose a customer permanently rather than annoy them.
 
 Until then, `OFFLINE-CAPABILITIES.md` is the honest sales position.
+
+
+---
+
+## 12. Phase A record — guards deliberately loosened
+
+Three tests failed when phase A landed. All three were correct before it and
+wrong after it, and each was updated with the reasoning inline rather than
+quietly flipped:
+
+| Test | Asserted | Now |
+|---|---|---|
+| `rules-stock-ledger` | a ledger entry cannot record a negative shelf | it can — a restock *after* an oversell legitimately starts from a negative `quantityBefore`. The chain arithmetic is still enforced. |
+| `rules-workflow` | a cashier cannot drive stock negative | they can. The field whitelist, the bound, and the price-change guard are unchanged. |
+| `concurrency-integrity` | rules are a second line of defence against negative stock | they are not, deliberately. The transactional sale path still refuses to oversell **while online**, which is asserted immediately above it in the same file. |
+
+That last one is the real cost of phase A and should not be glossed: a
+defence-in-depth layer was removed. It was removed because it did not defend
+anything a connected till was not already refusing, and because offline it
+silently discarded completed sales at replay time. But an attacker with a valid
+cashier token can now write negative stock directly, where previously the rules
+refused it.
+
+What still stands between that and a corrupted shelf: the write is bounded, it
+is confined to `quantity`/`sold30`/`sold90`/`updatedAt`/`movementReason` by
+`hasOnly`, it is store-scoped, and — from phase C onward — it leaves a
+`stockMovements` entry. The compensating control is detection, not prevention,
+which is the same conclusion F-4 reached about stock generally.
+
+Revisit if the threat model ever includes a cashier willing to use developer
+tools, rather than one willing to pocket cash.
