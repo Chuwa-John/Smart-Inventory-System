@@ -766,6 +766,8 @@ const DICTIONARY = {
     "report.vatOutsideNote": "{count} sale(s) in this range were recorded before VAT was switched on and are not part of the return.",
     "toast.reportPeriodBeyondHistory": "This period starts before the {date} sales this device has loaded. Generating it would under-report. Narrow the store or period, or generate it earlier in the following month.",
     "report.vatCoverageIncomplete": "Incomplete: this device holds sales back to {date} only. Older sales in this range are not counted and this is not a filing figure.",
+    "reports.collectedColumn": "Collected",
+    "reports.netSalesColumn": "Net sales",
     "offline.saleMarker": "Rung up offline",
     "offline.salePending": "Not yet synced",
     "offlineReport.eyebrow": "Sold during an outage",
@@ -1462,6 +1464,8 @@ const DICTIONARY = {
     "report.vatOutsideNote": "Mauzo {count} katika kipindi hiki yalirekodiwa kabla ya VAT kuwashwa na hayahusiki katika marejesho.",
     "toast.reportPeriodBeyondHistory": "Kipindi hiki kinaanza kabla ya mauzo ya {date} yaliyopakiwa kwenye kifaa hiki. Kutengeneza ripoti kutapunguza takwimu. Punguza duka au kipindi, au itengeneze mapema mwezi unaofuata.",
     "report.vatCoverageIncomplete": "Haijakamilika: kifaa hiki kina mauzo tangu {date} pekee. Mauzo ya zamani katika kipindi hiki hayajahesabiwa na hii si takwimu ya kuwasilisha.",
+    "reports.collectedColumn": "Zilizopokelewa",
+    "reports.netSalesColumn": "Mauzo halisi",
     "offline.saleMarker": "Yaliuzwa bila mtandao",
     "offline.salePending": "Bado hayajasawazishwa",
     "offlineReport.eyebrow": "Yaliyouzwa wakati wa hitilafu ya mtandao",
@@ -2533,6 +2537,22 @@ function filteredSales() {
   });
 }
 
+// What a sale ultimately contributed, after anything given back.
+//
+// Three surfaces netted refunds out and eight did not, so the same trading day
+// read differently depending on which tab you were looking at: sell 100,000,
+// refund 40,000, and the owner's control panel said 60,000 while the revenue
+// chart on the next tab said 100,000. Voids were already excluded everywhere,
+// which is what made the inconsistency hard to spot -- the obvious case behaved.
+//
+// Every revenue figure now comes through here. summariseSales() keeps its own
+// gross/net pair because it reports both deliberately; this is the same
+// arithmetic, named once.
+function saleNetTotal(sale) {
+  if (!sale || sale.voided) return 0;
+  return safeNumber(sale.total) - safeNumber(sale.refundedAmount);
+}
+
 function saleAmountForMethod(sale, method) {
   const paymentMethod = sale.paymentMethod || "cash";
   if (paymentMethod === "credit") {
@@ -2540,9 +2560,13 @@ function saleAmountForMethod(sale, method) {
     // cash/mobile/card bucket; the remaining balanceDue is a receivable,
     // tracked separately in Customer Accounts, not "revenue by method".
     const paidMethod = sale.amountPaidMethod || "cash";
-    return paidMethod === method ? Number(sale.amountPaid || 0) : 0;
+    return paidMethod === method ? safeNumber(sale.amountPaid) : 0;
   }
-  return paymentMethod === method ? Number(sale.total || 0) : 0;
+  // Netted: the money went back the way it came. Credit above deliberately does
+  // not net, because a refund there reduces the receivable rather than the cash
+  // that was handed over -- the same choice summariseSales() makes for
+  // drawerCash, mirrored rather than reinvented.
+  return paymentMethod === method ? saleNetTotal(sale) : 0;
 }
 
 function computeMethodBreakdown(sales, method) {
@@ -2591,7 +2615,7 @@ function computeMonthlyMetrics(monthKey, storeId) {
     return date && date >= periodStart && date <= periodEnd;
   });
 
-  const revenue = scopedSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
+  const revenue = scopedSales.reduce((sum, sale) => sum + saleNetTotal(sale), 0);
   const transactionCount = scopedSales.length;
   const avgSale = transactionCount ? revenue / transactionCount : 0;
   const unitsSold = scopedSales.reduce((sum, sale) => sum + (sale.items || []).reduce((itemSum, item) => itemSum + Number(item.qty || 0), 0), 0);
@@ -3138,7 +3162,7 @@ function computeStoreBreakdown() {
   return state.stores
     .map((store) => {
       const storeSales = sales.filter((sale) => saleStoreId(sale) === store.id);
-      const total = storeSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
+      const total = storeSales.reduce((sum, sale) => sum + saleNetTotal(sale), 0);
       return { store, total, count: storeSales.length };
     })
     .sort((a, b) => b.total - a.total);
@@ -3155,7 +3179,7 @@ function computeRevenueTrend() {
     const key = groupByMonth
       ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
       : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-    buckets.set(key, (buckets.get(key) || 0) + Number(sale.total || 0));
+    buckets.set(key, (buckets.get(key) || 0) + saleNetTotal(sale));
   });
 
   const sortedKeys = [...buckets.keys()].sort();
@@ -3182,26 +3206,24 @@ function computeStaffBreakdown() {
   sales.forEach((sale) => {
     const key = sale.staffId || "unassigned";
     if (!byStaff.has(key)) {
-      byStaff.set(key, { staffName: sale.staffName || t("report.none"), cash: 0, mobile: 0, card: 0, total: 0, orders: 0 });
+      byStaff.set(key, { staffName: sale.staffName || t("report.none"), cash: 0, mobile: 0, card: 0, collected: 0, net: 0, orders: 0 });
     }
     const entry = byStaff.get(key);
-    const method = sale.paymentMethod || "cash";
-    if (method === "credit") {
-      const paidAmount = Number(sale.amountPaid || 0);
-      const paidMethod = sale.amountPaidMethod || "cash";
-      if (paidMethod === "cash") entry.cash += paidAmount;
-      else if (paidMethod === "mobile") entry.mobile += paidAmount;
-      else if (paidMethod === "card") entry.card += paidAmount;
-    } else {
-      const amount = Number(sale.total || 0);
-      if (method === "cash") entry.cash += amount;
-      else if (method === "mobile") entry.mobile += amount;
-      else if (method === "card") entry.card += amount;
+    // Two different questions, and collapsing them into one "Total" column was
+    // read as an arithmetic error: the row's total counted the whole value of a
+    // credit sale while its cash/mobile/card columns held only the deposit, so
+    // the row visibly did not add up. It is a real distinction -- sold is not
+    // collected -- so it is now two columns rather than one ambiguous number.
+    for (const method of ["cash", "mobile", "card"]) {
+      entry[method] += saleAmountForMethod(sale, method);
     }
-    entry.total += Number(sale.total || 0);
+    entry.collected = entry.cash + entry.mobile + entry.card;
+    // Net of anything given back. Judged on the gross figure, a commission
+    // rewarded goods that came back.
+    entry.net += saleNetTotal(sale);
     entry.orders += 1;
   });
-  return [...byStaff.values()].sort((a, b) => b.total - a.total);
+  return [...byStaff.values()].sort((a, b) => b.net - a.net);
 }
 
 function renderStaffBreakdown() {
@@ -3213,10 +3235,11 @@ function renderStaffBreakdown() {
       cash: acc.cash + row.cash,
       mobile: acc.mobile + row.mobile,
       card: acc.card + row.card,
-      total: acc.total + row.total,
+      collected: acc.collected + row.collected,
+      net: acc.net + row.net,
       orders: acc.orders + row.orders
     }),
-    { cash: 0, mobile: 0, card: 0, total: 0, orders: 0 }
+    { cash: 0, mobile: 0, card: 0, collected: 0, net: 0, orders: 0 }
   );
 
   const bodyRows = rows
@@ -3226,7 +3249,8 @@ function renderStaffBreakdown() {
         <td>${money(row.cash)}</td>
         <td>${money(row.mobile)}</td>
         <td>${money(row.card)}</td>
-        <td><strong>${money(row.total)}</strong></td>
+        <td>${money(row.collected)}</td>
+        <td><strong>${money(row.net)}</strong></td>
         <td>${row.orders}</td>
       </tr>`
     )
@@ -3238,12 +3262,13 @@ function renderStaffBreakdown() {
         <td><strong>${money(totals.cash)}</strong></td>
         <td><strong>${money(totals.mobile)}</strong></td>
         <td><strong>${money(totals.card)}</strong></td>
-        <td><strong>${money(totals.total)}</strong></td>
+        <td><strong>${money(totals.collected)}</strong></td>
+        <td><strong>${money(totals.net)}</strong></td>
         <td><strong>${totals.orders}</strong></td>
       </tr>`
     : "";
 
-  tbody.innerHTML = bodyRows + totalRow || `<tr><td colspan="6" class="empty-state">${t("cart.empty")}</td></tr>`;
+  tbody.innerHTML = bodyRows + totalRow || `<tr><td colspan="7" class="empty-state">${t("cart.empty")}</td></tr>`;
 }
 
 function computeCustomerBreakdown() {
@@ -9453,6 +9478,11 @@ function bindEvents() {
       }
     }
 
+    // Read once, before anything uses it. Declared further down with the tax
+    // computation, the read inside saleItems below sat in the temporal dead
+    // zone and threw ReferenceError on EVERY sale, registered or not.
+    const vatConfig = vatSettings();
+
     const saleItems = state.cart.map((cartItem) => ({
       productId: cartItem.id,
       name: cartItem.name,
@@ -9461,7 +9491,16 @@ function bindEvents() {
       supplier: cartItem.supplier || "",
       qty: cartItem.qty,
       sellingPrice: Number(cartItem.sellingPrice || 0),
-      lineTotal: cartItem.qty * Number(cartItem.sellingPrice || 0)
+      lineTotal: cartItem.qty * Number(cartItem.sellingPrice || 0),
+      // The class this line was SOLD under, recorded on the line rather than
+      // looked up from the product later -- a product reclassified next year
+      // must not retrospectively re-rate a sale already made.
+      //
+      // DESIGN-vat.md claimed this from the start and it was not implemented,
+      // which is why the VAT owed on a refund cannot be computed for any sale
+      // rung up before this build (see L-12). Written only for a registered
+      // business, like every other tax field.
+      ...(vatConfig.registered ? { taxClass: taxClassOf(cartItem) } : {})
     }));
     const subtotal = saleItems.reduce((sum, item) => sum + item.lineTotal, 0);
     const discountType = state.discountType || "none";
@@ -9477,7 +9516,6 @@ function bindEvents() {
     // but the rules enforce netTotal + taxTotal == total, and a divergence would
     // not be a wrong report, it would be a REJECTED sale and a till that has
     // stopped selling. Deriving it makes that impossible rather than unlikely.
-    const vatConfig = vatSettings();
     let taxFields = {};
     if (vatConfig.registered) {
       const computed = computeSaleTax(

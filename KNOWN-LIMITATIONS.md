@@ -552,3 +552,41 @@ the period is still inside the window. Narrowing to a single store also helps,
 since the subscription is store-scoped for branch-assigned members.
 
 **Milestone:** with the L-8 summary-document work.
+
+---
+
+## L-12 A refund does not reduce the VAT owed on it — **OPEN, conservative**
+
+Found while closing QA-103 on 2026-08-07.
+
+Revenue surfaces now all net refunds out (`saleNetTotal()`), so the control
+panel, the monthly report, the trend chart, per-store and per-staff figures and
+the payment-method report agree on a day's takings. The **VAT return does not**:
+it sums the tax each sale was rung up with and never reduces it when goods come
+back.
+
+**Why it is not simply fixed.** VAT owed on a refund depends on the tax class of
+the lines actually returned. Until this build, `saleItems` did not record a
+class per line — `DESIGN-vat.md` described one from the start and it was never
+implemented, so for any sale rung up before 2026-08-07 the class of a returned
+line is unknowable from the sale document. Per-line `taxClass` is now written,
+which makes a correct fix possible for sales from here on.
+
+Apportioning the refund pro rata across classes would be a plausible-looking
+approximation and wrong for any mixed basket — and wrong on a figure that gets
+filed. A tax return also has to be internally consistent: netting refunds only
+for sales new enough to carry the data would make the return depend on when each
+sale happened, which is worse than a uniform, explainable position.
+
+**Direction of the error.** It **overstates** VAT owed — the shop pays more than
+it should, never less. That is the safe direction, and it is why this is
+acceptable to carry rather than rush.
+
+**Risk: Medium.** Wrong figure, safe direction, and it grows with refund volume.
+
+**Workaround:** deduct VAT on refunds manually at filing. The Returns column on
+the payment report gives the refunded totals for the period.
+
+**Milestone:** once enough trading has happened under per-line `taxClass` that a
+consistent period can be computed from it — realistically the first full month
+after 2026-08-07.

@@ -91,6 +91,32 @@ console.log("=== the sale is computed once, from what it is actually charging ==
     "cart items are {...product, qty}; productId is undefined on them");
 }
 
+console.log("\n=== nothing is read before it exists ===");
+{
+  // `const` is hoisted but not initialised, so a read above its declaration
+  // throws ReferenceError at runtime and parses perfectly — node --check is
+  // silent on it. Adding taxClass to the sale lines put a read of vatConfig
+  // above its declaration and would have thrown on EVERY sale, registered or
+  // not, with a customer at the till.
+  //
+  // Checked for the handler's own const bindings rather than in general: these
+  // are the ones the sale path dies on.
+  const code = handler.replace(/\/\/[^\n]*/g, "");
+  for (const name of ["vatConfig", "saleItems", "subtotal", "discountAmount", "total", "taxFields"]) {
+    // Compare like with like: the position of the NAME inside its own
+    // declaration, not the position of the `const` keyword. The first version
+    // compared those two and so reported every binding as broken, including the
+    // correct ones — a guard that always fires is no guard.
+    const decl = code.match(new RegExp(`\\b(?:const|let)\\s+${name}\\b`));
+    const nameInDecl = decl ? decl.index + decl[0].length - name.length : -1;
+    const firstMention = code.search(new RegExp(`\\b${name}\\b`));
+    check(`${name} is declared before it is read`,
+      nameInDecl !== -1 && firstMention === nameInDecl,
+      `first mentioned at ${firstMention}, declared at ${nameInDecl} — a read above a `
+      + "const declaration throws ReferenceError at runtime and parses cleanly");
+  }
+}
+
 console.log("\n=== net is derived from the total being written ===");
 {
   check("netTotal is a subtraction from total", /netTotal: total - taxTotal/.test(handler),
