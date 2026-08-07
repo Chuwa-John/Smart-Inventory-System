@@ -9,7 +9,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260807d" />
+    <link rel="stylesheet" href="./styles.css?v=20260807e" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#0b0d10" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -29,7 +29,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260807d"></script>
+    <script type="module" src="./boot.js?v=20260807e"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -157,6 +157,7 @@
                <button class="ghost-button compact" id="renameStoreButton" type="button" data-i18n="dashboard.renameStore">Rename</button>
               <button class="ghost-button compact" id="setBusinessTypeButton" type="button" data-i18n="dashboard.setBusinessType">Business Type</button>
               <button class="ghost-button compact" id="setCurrencyButton" type="button" data-i18n="dashboard.setCurrency">Currency</button>
+              <button class="ghost-button compact" id="vatSettingsButton" type="button" data-i18n="dashboard.vatSettings">VAT</button>
               <button class="ghost-button compact" id="archiveStoreButton" type="button" data-i18n="dashboard.archiveStore">Archive</button>            </div>
           </div>
 
@@ -706,6 +707,17 @@
               <option value="dynamic" data-i18n="product.priceDynamic">Flexible / dynamic price</option>
             </select>
           </label>
+          <!-- Hidden entirely unless the business is VAT registered. A shop
+               under the TZS 200m threshold should never be asked to classify
+               its stock for a tax it does not collect. Absent means standard-
+               rated, which is what taxClassOf() defaults to. -->
+          <label id="productTaxClassField" hidden><span data-i18n="product.taxClassLabel">VAT treatment</span>
+            <select name="taxClass">
+              <option value="standard" data-i18n="product.taxStandard">Standard rated (18%)</option>
+              <option value="zeroRated" data-i18n="product.taxZeroRated">Zero rated (0%)</option>
+              <option value="exempt" data-i18n="product.taxExempt">Exempt</option>
+            </select>
+          </label>
           <label><span data-i18n="product.reorderLabel">Low stock threshold</span><input name="reorderLevel" type="number" min="0" placeholder="e.g. 10" data-i18n-placeholder="product.reorderPlaceholder" max="1000000" /></label>
           <label><span data-i18n="product.expiryLabel">Expiry date (optional)</span><input name="expiryDate" type="date" /></label>
         </div>
@@ -715,6 +727,35 @@
         </div>
 
       </form>
+    </dialog>
+
+    <!-- VAT registration. Business-wide, owner only, and off by default: most
+         Tanzanian dukas are under the TZS 200m turnover threshold and must not
+         charge VAT at all. Turning it on is forward-only -- sales already
+         recorded are never reinterpreted. See DESIGN-vat.md. -->
+    <dialog id="vatSettingsDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="vat.dialogTitle">VAT registration</h2>
+        <button class="icon-button" type="button" id="closeVatSettingsDialog" aria-label="Close">&times;</button>
+      </div>
+      <p class="muted" data-i18n="vat.dialogHelp">Only switch this on if this business is registered for VAT with the TRA. Sales already recorded are not changed.</p>
+      <div class="form-grid">
+        <label class="checkbox-row">
+          <input type="checkbox" id="vatRegisteredInput" />
+          <span data-i18n="vat.registeredLabel">This business is registered for VAT</span>
+        </label>
+        <label><span data-i18n="vat.vrnLabel">VAT registration number (VRN)</span>
+          <input id="vatVrnInput" type="text" maxlength="20" placeholder="e.g. 40-123456-A" data-i18n-placeholder="vat.vrnPlaceholder" />
+        </label>
+        <label><span data-i18n="vat.tinLabel">Taxpayer identification number (TIN)</span>
+          <input id="vatTinInput" type="text" maxlength="20" placeholder="e.g. 123-456-789" data-i18n-placeholder="vat.tinPlaceholder" />
+        </label>
+      </div>
+      <p class="muted" data-i18n="vat.fiscalNote">This does not replace your EFD. Fiscal receipts still come from your TRA-registered device.</p>
+      <div class="button-row end">
+        <button class="ghost-button" type="button" id="cancelVatSettingsDialog" data-i18n="product.cancel">Cancel</button>
+        <button class="primary-button" type="button" id="saveVatSettingsButton" data-i18n="vat.save">Save</button>
+      </div>
     </dialog>
 
     <dialog id="transferDialog">
@@ -1024,6 +1065,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260807d"></script>
+    <script type="module" src="./app.js?v=20260807e"></script>
   </body>
 </html>

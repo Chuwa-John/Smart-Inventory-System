@@ -393,7 +393,8 @@ service cloud.firestore {
     function ownerAuditActions() {
       return managerAuditActions().concat(
         ['PRODUCT_CREATED', 'PRODUCT_EDITED', 'PRODUCT_DELETED', 'STORE_CURRENCY_CHANGED', 'STORE_ARCHIVED',
-         'ACCOUNT_DELETION_REQUESTED', 'ACCOUNT_DELETION_CANCELLED', 'ACCOUNT_ACCESS_DURING_GRACE']);
+         'ACCOUNT_DELETION_REQUESTED', 'ACCOUNT_DELETION_CANCELLED', 'ACCOUNT_ACCESS_DURING_GRACE',
+         'VAT_REGISTRATION_ENABLED', 'VAT_REGISTRATION_DISABLED']);
     }
 
     // The union of every field the 12 auditLogs write sites in app.js emit.
@@ -407,12 +408,14 @@ service cloud.firestore {
               'previousLimit', 'newLimit', 'limit', 'previousBalance', 'projectedTotal', 'authorised',
               'productId', 'name', 'sellingPrice', 'qtyAdded',
               'previousCode', 'newCode',
+              'vrn', 'previouslyRegistered', 'storeCount',
               'paymentMethod', 'discountType', 'discountAmount'];
     }
 
     function auditStringsBounded() {
       let d = request.resource.data;
       return (!('name' in d) || (d.name is string && d.name.size() <= 120))
+        && (!('vrn' in d) || (d.vrn is string && d.vrn.size() <= 20))
         && (!('customerName' in d) || (d.customerName is string && d.customerName.size() <= 120))
         && (!('method' in d) || (d.method is string && d.method.size() <= 40))
         && (!('paymentMethod' in d) || (d.paymentMethod is string && d.paymentMethod.size() <= 40))
@@ -438,7 +441,19 @@ service cloud.firestore {
       let d = request.resource.data;
       return d.name is string && d.name.size() > 0 && d.name.size() <= 60
         && (!('archived' in d) || d.archived is bool)
-        && (!('currencyCode' in d) || (d.currencyCode is string && d.currencyCode.matches('^[A-Z]{3}$')));
+        && (!('currencyCode' in d) || (d.currencyCode is string && d.currencyCode.matches('^[A-Z]{3}$')))
+        // VAT registration is a BUSINESS fact, denormalised onto every store
+        // for the same reason currencyCode is: the owner document is
+        // owner-read-only, and a cashier's till has to know whether it is
+        // charging VAT. The store doc is already loaded before the POS renders,
+        // so this arrives with data the till already waits for rather than
+        // adding a subscription that could fail on the sale path.
+        // setVatRegistration() writes every store in one batch to stop the
+        // copies drifting.
+        && (!('vatRegistered' in d) || d.vatRegistered is bool)
+        && (!('vrn' in d) || (d.vrn is string && d.vrn.size() <= 20))
+        && (!('tin' in d) || (d.tin is string && d.tin.size() <= 20))
+        && (!('vatEnabledAt' in d) || d.vatEnabledAt is timestamp);
     }
 
     function validStaff() {

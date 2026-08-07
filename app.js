@@ -731,6 +731,23 @@ const DICTIONARY = {
     "offline.unsyncedMany": "{count} sales are saved on this device and have not reached the server yet. Keep this app installed until they sync.",
     "update.readyText": "A new version of the app is ready. Reload when you are not mid-sale.",
     "update.reloadButton": "Reload now",
+    "dashboard.vatSettings": "VAT",
+    "vat.dialogTitle": "VAT registration",
+    "vat.dialogHelp": "Only switch this on if this business is registered for VAT with the TRA. Sales already recorded are not changed.",
+    "vat.registeredLabel": "This business is registered for VAT",
+    "vat.vrnLabel": "VAT registration number (VRN)",
+    "vat.vrnPlaceholder": "e.g. 40-123456-A",
+    "vat.tinLabel": "Taxpayer identification number (TIN)",
+    "vat.tinPlaceholder": "e.g. 123-456-789",
+    "vat.fiscalNote": "This does not replace your EFD. Fiscal receipts still come from your TRA-registered device.",
+    "vat.save": "Save",
+    "product.taxClassLabel": "VAT treatment",
+    "product.taxStandard": "Standard rated (18%)",
+    "product.taxZeroRated": "Zero rated (0%)",
+    "product.taxExempt": "Exempt",
+    "toast.vatVrnRequired": "Enter the VAT registration number before switching VAT on.",
+    "toast.vatSaved": "VAT settings saved.",
+    "toast.vatNeedsStore": "Add a store before setting up VAT.",
     "offline.saleMarker": "Rung up offline",
     "offline.salePending": "Not yet synced",
     "offlineReport.eyebrow": "Sold during an outage",
@@ -1392,6 +1409,23 @@ const DICTIONARY = {
     "offline.unsyncedMany": "Mauzo {count} yamehifadhiwa kwenye kifaa hiki na bado hayajafika kwenye seva. Usiondoe programu hii hadi yasawazishwe.",
     "update.readyText": "Toleo jipya la programu lipo tayari. Pakia upya wakati hauko katikati ya mauzo.",
     "update.reloadButton": "Pakia upya sasa",
+    "dashboard.vatSettings": "VAT",
+    "vat.dialogTitle": "Usajili wa VAT",
+    "vat.dialogHelp": "Washa hii tu kama biashara hii imesajiliwa kwa VAT na TRA. Mauzo yaliyokwisha rekodiwa hayabadilishwi.",
+    "vat.registeredLabel": "Biashara hii imesajiliwa kwa VAT",
+    "vat.vrnLabel": "Namba ya usajili wa VAT (VRN)",
+    "vat.vrnPlaceholder": "mfano, 40-123456-A",
+    "vat.tinLabel": "Namba ya utambulisho wa mlipakodi (TIN)",
+    "vat.tinPlaceholder": "mfano, 123-456-789",
+    "vat.fiscalNote": "Hii haibadilishi EFD yako. Risiti za kodi bado zinatoka kwenye kifaa chako kilichosajiliwa TRA.",
+    "vat.save": "Hifadhi",
+    "product.taxClassLabel": "Aina ya VAT",
+    "product.taxStandard": "Kiwango cha kawaida (18%)",
+    "product.taxZeroRated": "Kiwango sifuri (0%)",
+    "product.taxExempt": "Haihusiki na VAT",
+    "toast.vatVrnRequired": "Weka namba ya usajili wa VAT (VRN) kabla ya kuwasha VAT.",
+    "toast.vatSaved": "Mipangilio ya VAT imehifadhiwa.",
+    "toast.vatNeedsStore": "Ongeza duka kabla ya kuweka VAT.",
     "offline.saleMarker": "Yaliuzwa bila mtandao",
     "offline.salePending": "Bado hayajasawazishwa",
     "offlineReport.eyebrow": "Yaliyouzwa wakati wa hitilafu ya mtandao",
@@ -4821,6 +4855,10 @@ async function saveProduct(product) {
   product.sold90 = Number(existing?.sold90 ?? product.sold90 ?? 0);
   product.leadTimeDays = Number(existing?.leadTimeDays ?? product.leadTimeDays ?? 10);
   product.priceType = product.priceType === "dynamic" ? "dynamic" : "fixed";
+  // The select still submits while hidden, so a shop that is not registered
+  // would otherwise stamp taxClass onto stock for a tax it does not collect.
+  if (!vatSettings().registered) delete product.taxClass;
+  else product.taxClass = taxClassOf(product);
 
   const localProduct = { ...existing, ...product };
   state.products = existing
@@ -7219,6 +7257,7 @@ function applyStoreOwnerControlsVisibility() {
   const ownerOnly = isOwnerRole();
   [
     "renameStoreButton", "setBusinessTypeButton", "setCurrencyButton", "archiveStoreButton", "overridePasswordSettingsButton",
+    "vatSettingsButton",
     // Whole-business data export (downloadBackupButton) and monthlyReports
     // generation (no manager/cashier branch in the rules at all, and a
     // non-owner click would still trigger a billed AI proxy call before
@@ -7621,6 +7660,90 @@ function populateCategorySuggestions() {
   const existingCategories = [...new Set(state.products.map((product) => String(product.category || "").trim()).filter(Boolean))];
   const merged = [...new Set([...templateCategories, ...existingCategories])];
   datalist.innerHTML = merged.map((category) => `<option value="${esc(category)}"></option>`).join("");
+}
+
+// VAT registration is a business-wide fact stored on every store document, for
+// the reason given in firestore.rules: the owner document is owner-read-only
+// and a cashier's till has to know whether it is charging VAT. The store the
+// till is transacting against is the copy that decides -- a branch-scoped
+// member may not be able to read any of the others at all.
+function vatSettings() {
+  const store = state.stores.find((item) => item.id === state.currentStoreId) || state.stores[0];
+  return {
+    registered: store?.vatRegistered === true,
+    vrn: String(store?.vrn || ""),
+    tin: String(store?.tin || "")
+  };
+}
+
+function renderVatControls() {
+  // A shop under the TZS 200m threshold should never be asked to classify its
+  // stock for a tax it does not collect. The VAT button's own owner-only
+  // visibility is handled by applyStoreOwnerControlsVisibility() with the rest
+  // of the store controls.
+  const field = qs("#productTaxClassField");
+  if (field) field.hidden = !vatSettings().registered;
+}
+
+function openVatSettingsDialog() {
+  if (!isOwnerRole()) return;
+  if (!state.stores.length) return showToast(t("toast.vatNeedsStore"));
+  const current = vatSettings();
+  qs("#vatRegisteredInput").checked = current.registered;
+  qs("#vatVrnInput").value = current.vrn;
+  qs("#vatTinInput").value = current.tin;
+  qs("#vatSettingsDialog").showModal();
+}
+
+async function saveVatSettings() {
+  if (!isOwnerRole() || !state.db || !state.user) return;
+  const registered = qs("#vatRegisteredInput").checked;
+  const vrn = qs("#vatVrnInput").value.trim();
+  const tin = qs("#vatTinInput").value.trim();
+  // A registered business without its VRN cannot produce a compliant record,
+  // and a half-configured one is worse than one that is plainly off.
+  if (registered && !vrn) return showToast(t("toast.vatVrnRequired"));
+
+  try {
+    const { doc, collection, setDoc, serverTimestamp, writeBatch } = state.firebaseApi.firestore;
+    const previous = vatSettings();
+    const batch = writeBatch(state.db);
+
+    // Every store in one batch. The copies exist so a till can read them; the
+    // batch is what stops them drifting apart, because a sale stamped with the
+    // wrong VRN is a bad record on a document the shop is audited on.
+    state.stores.forEach((store) => {
+      const payload = { vatRegistered: registered, vrn, tin };
+      // Stamped once, when VAT is first switched on, so reports can say from
+      // when the scheme applies. Re-stamping on every save would move the
+      // boundary and make older taxed sales look like they predate it.
+      if (registered && !previous.registered && !store.vatEnabledAt) {
+        payload.vatEnabledAt = serverTimestamp();
+      }
+      batch.set(doc(state.db, "users", state.user.uid, "stores", store.id), payload, { merge: true });
+    });
+    await batch.commit();
+
+    try {
+      await setDoc(doc(collection(state.db, "users", state.user.uid, "auditLogs")), {
+        action: registered ? "VAT_REGISTRATION_ENABLED" : "VAT_REGISTRATION_DISABLED",
+        vrn,
+        previouslyRegistered: previous.registered,
+        storeCount: state.stores.length,
+        uid: state.user?.uid || null,
+        createdAt: serverTimestamp()
+      });
+    } catch (auditError) {
+      console.warn(auditError);
+    }
+
+    qs("#vatSettingsDialog").close();
+    showToast(t("toast.vatSaved"));
+    renderAll();
+  } catch (error) {
+    console.warn(error);
+    showToast(describeOperationError(error));
+  }
 }
 
 async function setStoreCurrency() {
@@ -8672,6 +8795,7 @@ function renderAll() {
   renderCards();
   renderPaymentReports();
   renderAiQuestionSuggestions();
+  renderVatControls();
 }
 
 // Firestore may deliver several initial snapshots in the same event loop.
@@ -8751,6 +8875,10 @@ function bindEvents() {
   qs("#archiveStoreButton")?.addEventListener("click", archiveStore);
   qs("#setBusinessTypeButton")?.addEventListener("click", setStoreBusinessType);
   qs("#setCurrencyButton")?.addEventListener("click", setStoreCurrency);
+  qs("#vatSettingsButton")?.addEventListener("click", openVatSettingsDialog);
+  qs("#saveVatSettingsButton")?.addEventListener("click", saveVatSettings);
+  qs("#closeVatSettingsDialog")?.addEventListener("click", () => qs("#vatSettingsDialog").close());
+  qs("#cancelVatSettingsDialog")?.addEventListener("click", () => qs("#vatSettingsDialog").close());
   qs("#staffRosterButton")?.addEventListener("click", () => { renderStaffRoster(); qs("#staffRosterDialog").showModal(); });
   qs("#closeStaffRosterDialog")?.addEventListener("click", () => qs("#staffRosterDialog").close());
   qs("#openInviteStaffButton")?.addEventListener("click", openInviteStaffDialog);
