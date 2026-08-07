@@ -44,10 +44,22 @@ function extractFn(name) {
 // The report, run against sales it can see. money()/t() are stubbed because
 // what is being tested is the arithmetic, not the formatting.
 const state = { sales: [], stores: [{ id: "s1", vatRegistered: true }], currentStoreId: "s1" };
-const { computeVatReport } = new Function("state", "filteredSales", "safeNumber", `
+
+// Coverage is injected so it can be driven from the tests. QA-102 added a
+// boundary to this function: null means "we hold the whole history", a number
+// means sales older than it exist that this device has never loaded.
+const coverage = { boundary: null, rangeStart: new Date(0) };
+const { computeVatReport } = new Function(
+  "state", "filteredSales", "safeNumber", "salesCoverageFromMs", "getSalesRangeBounds", `
   ${extractFn("computeVatReport")}
   return { computeVatReport };
-`)(state, () => state.sales, (v) => (Number.isFinite(Number(v)) ? Number(v) : 0));
+`)(
+  state,
+  () => state.sales,
+  (v) => (Number.isFinite(Number(v)) ? Number(v) : 0),
+  () => coverage.boundary,
+  () => ({ start: coverage.rangeStart, end: null })
+);
 
 const taxed = (over = {}) => ({
   vatRegistered: true, voided: false, total: 1180, netTotal: 1000, taxTotal: 180,
@@ -117,6 +129,42 @@ console.log("\n=== missing or malformed figures cannot poison the return ===");
   check("every figure stays a finite number", finite, JSON.stringify(r));
   check("nothing became NaN", !Number.isNaN(r.taxTotal) && !Number.isNaN(r.netTotal),
     "one bad row must not blank the whole return");
+}
+
+console.log("\n=== the return knows how far back it can see (QA-102) ===");
+{
+  state.sales = [taxed()];
+
+  coverage.boundary = null;
+  coverage.rangeStart = new Date("2026-08-01");
+  check("with the whole history loaded, the return is complete",
+    computeVatReport().coverageComplete === true);
+
+  // A boundary the requested range starts AFTER: everything asked for is held.
+  coverage.boundary = new Date("2026-07-01").getTime();
+  check("a range starting after the boundary is complete",
+    computeVatReport().coverageComplete === true);
+
+  // A boundary the range starts BEFORE: older sales exist and are not counted.
+  coverage.boundary = new Date("2026-08-05").getTime();
+  const partial = computeVatReport();
+  check("a range reaching past the boundary is incomplete", partial.coverageComplete === false,
+    "this is the figure an owner would otherwise file, understated and confident");
+  check("...and names the date it can see back to", partial.coverageBoundary === coverage.boundary);
+
+  // All-time. This is the preset an owner is most likely to file from, and with
+  // any boundary at all it cannot be complete.
+  coverage.rangeStart = null;
+  check("an open-ended range with a boundary is incomplete",
+    computeVatReport().coverageComplete === false,
+    "all-time must not report itself as complete merely because it has no start");
+
+  coverage.boundary = null;
+  check("...but is complete when nothing is missing",
+    computeVatReport().coverageComplete === true);
+
+  // Restore for anything after this block.
+  coverage.rangeStart = new Date(0);
 }
 
 console.log("\n=== the return is read off the sales, not recomputed ===");

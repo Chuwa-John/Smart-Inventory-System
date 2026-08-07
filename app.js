@@ -764,6 +764,8 @@ const DICTIONARY = {
     "report.vatSalesOutsideScheme": "Sales before VAT was switched on",
     "report.vatNotRegistered": "This business is not registered for VAT.",
     "report.vatOutsideNote": "{count} sale(s) in this range were recorded before VAT was switched on and are not part of the return.",
+    "toast.reportPeriodBeyondHistory": "This period starts before the {date} sales this device has loaded. Generating it would under-report. Narrow the store or period, or generate it earlier in the following month.",
+    "report.vatCoverageIncomplete": "Incomplete: this device holds sales back to {date} only. Older sales in this range are not counted and this is not a filing figure.",
     "offline.saleMarker": "Rung up offline",
     "offline.salePending": "Not yet synced",
     "offlineReport.eyebrow": "Sold during an outage",
@@ -1458,6 +1460,8 @@ const DICTIONARY = {
     "report.vatSalesOutsideScheme": "Mauzo kabla ya VAT kuwashwa",
     "report.vatNotRegistered": "Biashara hii haijasajiliwa kwa VAT.",
     "report.vatOutsideNote": "Mauzo {count} katika kipindi hiki yalirekodiwa kabla ya VAT kuwashwa na hayahusiki katika marejesho.",
+    "toast.reportPeriodBeyondHistory": "Kipindi hiki kinaanza kabla ya mauzo ya {date} yaliyopakiwa kwenye kifaa hiki. Kutengeneza ripoti kutapunguza takwimu. Punguza duka au kipindi, au itengeneze mapema mwezi unaofuata.",
+    "report.vatCoverageIncomplete": "Haijakamilika: kifaa hiki kina mauzo tangu {date} pekee. Mauzo ya zamani katika kipindi hiki hayajahesabiwa na hii si takwimu ya kuwasilisha.",
     "offline.saleMarker": "Yaliuzwa bila mtandao",
     "offline.salePending": "Bado hayajasawazishwa",
     "offlineReport.eyebrow": "Yaliyouzwa wakati wa hitilafu ya mtandao",
@@ -2849,6 +2853,27 @@ async function generateMonthlyReport(monthKey, storeIdOverride) {
   if (!storeId || storeId === "all") return showToast(t("toast.selectStoreBeforeSale"));
 
   const metrics = computeMonthlyMetrics(monthKey, storeId);
+
+  // Checked BEFORE the empty-month check, because an uncovered month reports
+  // zero transactions and "no sales data" would be a confident lie about a
+  // month the shop traded.
+  //
+  // subscribeToSales() holds the newest SALES_HISTORY_LIMIT sales. At 50 sales
+  // a day that is twenty trading days, so by the 25th of a busy month the
+  // previous month has already fallen out of view. What made this urgent rather
+  // than untidy is what happens next: the metrics are narrated by the AI and
+  // written to monthlyReports as an authoritative record, so an understated
+  // revenue figure -- and the understated VAT liability filed against it --
+  // becomes the stored truth, and the owner has no way to tell.
+  //
+  // salesCoverageFromMs() was built for exactly this and only the shift
+  // reconciliation was asking it.
+  const coverage = salesCoverageFromMs();
+  if (coverage !== null && metrics.periodStart.getTime() < coverage) {
+    return showToast(t("toast.reportPeriodBeyondHistory",
+      { date: new Date(coverage).toLocaleDateString() }));
+  }
+
   if (metrics.transactionCount === 0) return showToast(t("monthlyReport.noSalesData"));
 
   // Keep the button showing progress for the whole async chain, not just the
@@ -2938,10 +2963,19 @@ function computeVatReport() {
     taxTotal += safeNumber(sale.taxTotal);
   }
 
+  // The same boundary, stated rather than enforced. A VAT panel that refused to
+  // render would be worse than one that renders and says what it cannot see --
+  // the owner still needs the figure for the part that IS covered.
+  const boundary = salesCoverageFromMs();
+  const { start } = getSalesRangeBounds();
+  const coverageComplete = boundary === null || (start !== null && start.getTime() >= boundary);
+
   return {
     totals,
     netTotal,
     taxTotal,
+    coverageComplete,
+    coverageBoundary: boundary,
     // What TRA asks for: standard-rated plus zero-rated. Exempt supplies are
     // not taxable turnover and are excluded here on purpose.
     taxableTurnover: totals.standard.net + totals.zeroRated.net,
@@ -2972,6 +3006,9 @@ function renderVatReport() {
     <div class="payment-summary-row"><span>${t("report.totalTransactions")}</span><span>${r.saleCount}</span></div>
     ${r.outsideScheme > 0
       ? `<div class="payment-summary-row muted"><span>${t("report.vatOutsideNote", { count: String(r.outsideScheme) })}</span><span></span></div>`
+      : ""}
+    ${!r.coverageComplete
+      ? `<div class="payment-summary-row"><strong>${t("report.vatCoverageIncomplete", { date: new Date(r.coverageBoundary).toLocaleDateString() })}</strong><span></span></div>`
       : ""}
   `;
 }

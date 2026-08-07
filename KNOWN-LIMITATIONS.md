@@ -512,3 +512,43 @@ are narrower questions than "is anything measured at all", and none of them is
 the ceiling this system hits first — L-8 is.
 
 **Risk: Low**, and quantified in both layers.
+
+---
+
+## L-11 Reports see only the newest 1,000 sales — **GUARDED, not solved**
+
+Found by an external QA pass on 2026-08-07 (QA-102), recorded the day it was
+found per this file's convention.
+
+`subscribeToSales()` asks for the newest `SALES_HISTORY_LIMIT` (1,000) sales.
+At fifty sales a day that is twenty trading days, so by the 25th of a busy
+month the previous month has already fallen out of the loaded set.
+
+**What made this urgent rather than untidy.** `computeMonthlyMetrics()` fed an
+AI narrative and was then written to `monthlyReports` as an authoritative
+record, and `computeVatReport()` fed a VAT return. Reporting on the visible
+remainder therefore stored an understated revenue figure and an understated VAT
+liability filed against it — a penalty exposure the owner had no way to detect,
+because the report looked complete. A month entirely outside the window
+reported zero transactions, so the owner was told "no sales data" for a month
+they had traded.
+
+**What is fixed.** `salesCoverageFromMs()` already existed and answered exactly
+this question; only `reconcileShiftCash()` was asking it. The monthly report now
+refuses, with a named reason, when the requested period starts before the
+boundary — before the AI is paid to narrate it and before anything is
+persisted. The VAT panel still renders, because refusing would leave the owner
+with nothing, but states the date it can see back to and that the figure is not
+for filing.
+
+**What is not.** Complete history needs server-side aggregation — the same work
+L-8 describes. Until then a shop with more than 1,000 sales in a period cannot
+produce a full report from this client at all, only an honest partial one.
+
+**Risk: Medium.** The silent under-report is closed; the ceiling is not.
+
+**Workaround:** generate month-end reports early in the following month, while
+the period is still inside the window. Narrowing to a single store also helps,
+since the subscription is store-scoped for branch-assigned members.
+
+**Milestone:** with the L-8 summary-document work.
