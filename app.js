@@ -122,6 +122,25 @@ const state = {
 };
 
 const MAX_CHAT_HISTORY = 20;
+
+// MAX_CHAT_HISTORY bounds what is SENT to the model. This bounds what is KEPT,
+// which is a separate cost and the one that grows with the length of a shift:
+// renderChatLog() rebuilds the panel from the whole array on every turn, so an
+// uncapped log means the owner's twentieth question re-renders the previous
+// nineteen exchanges, and the fortieth re-renders thirty-nine. The array was
+// only ever emptied by the Clear button or a reload, neither of which a device
+// left on all day gets.
+//
+// Trimming from the FRONT is load-bearing: askAi() writes its answer over the
+// last entry by index (the "analyzing" placeholder), so nothing may be removed
+// from the end while a request is in flight.
+const MAX_CHAT_LOG_MESSAGES = 60;
+
+function pushChatMessage(message) {
+  state.chatHistory.push(message);
+  const excess = state.chatHistory.length - MAX_CHAT_LOG_MESSAGES;
+  if (excess > 0) state.chatHistory.splice(0, excess);
+}
 let cachedStoreProducts = null;
 let cachedStoreProductsSource = null;
 let cachedStoreProductsStoreId = null;
@@ -2543,7 +2562,15 @@ function loadScriptOnce(spec) {
     script.onload = () => resolve();
     // Fires for a network failure AND for an SRI hash mismatch, which is the
     // case worth caring about: a tampered file is refused rather than run.
-    script.onerror = () => reject(new Error(`Could not load ${spec.url}`));
+    //
+    // The dead tag is taken back out because the load is deliberately retried
+    // (see loadExternalLibrary). A shop that keeps trying to export while the
+    // connection is down would otherwise leave one more unusable <script> in
+    // the head on every attempt, for the life of the session.
+    script.onerror = () => {
+      script.remove();
+      reject(new Error(`Could not load ${spec.url}`));
+    };
     document.head.appendChild(script);
   });
 }
@@ -3748,17 +3775,17 @@ async function askAi() {
   }
   qs("#aiQuestion").value = "";
 
-  state.chatHistory.push({ role: "user", content: question });
+  pushChatMessage({ role: "user", content: question });
 
   const tutorialTopic = matchTutorialTopic(question);
   if (tutorialTopic) {
-    state.chatHistory.push({ role: "assistant", content: tutorialGuideText(tutorialTopic) });
+    pushChatMessage({ role: "assistant", content: tutorialGuideText(tutorialTopic) });
     qs("#aiMode").textContent = t("ai.modeGuide");
     renderChatLog();
     return;
   }
 
-  state.chatHistory.push({ role: "assistant", content: t("ai.analyzing") });
+  pushChatMessage({ role: "assistant", content: t("ai.analyzing") });
   renderChatLog();
 
   const historyForRequest = state.chatHistory.slice(0, -1).slice(-MAX_CHAT_HISTORY);
