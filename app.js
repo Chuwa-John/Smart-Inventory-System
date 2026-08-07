@@ -118,7 +118,8 @@ const state = {
   unsubscribeTransfers: null,
   productMovementProductId: null,
   lastActivityAt: Date.now(),
-  idleCheckIntervalId: null
+  idleCheckIntervalId: null,
+  updateReady: false
 };
 
 const MAX_CHAT_HISTORY = 20;
@@ -728,6 +729,8 @@ const DICTIONARY = {
     "toast.saleQueuedOffline": "Sale saved on this device. It will sync when the connection returns.",
     "offline.unsyncedOne": "1 sale is saved on this device and has not reached the server yet. Keep this app installed until it syncs.",
     "offline.unsyncedMany": "{count} sales are saved on this device and have not reached the server yet. Keep this app installed until they sync.",
+    "update.readyText": "A new version of the app is ready. Reload when you are not mid-sale.",
+    "update.reloadButton": "Reload now",
     "offline.saleMarker": "Rung up offline",
     "offline.salePending": "Not yet synced",
     "offlineReport.eyebrow": "Sold during an outage",
@@ -1387,6 +1390,8 @@ const DICTIONARY = {
     "toast.saleQueuedOffline": "Mauzo yamehifadhiwa kwenye kifaa hiki. Yatasawazishwa muunganisho utakaporudi.",
     "offline.unsyncedOne": "Mauzo 1 yamehifadhiwa kwenye kifaa hiki na bado hayajafika kwenye seva. Usiondoe programu hii hadi yasawazishwe.",
     "offline.unsyncedMany": "Mauzo {count} yamehifadhiwa kwenye kifaa hiki na bado hayajafika kwenye seva. Usiondoe programu hii hadi yasawazishwe.",
+    "update.readyText": "Toleo jipya la programu lipo tayari. Pakia upya wakati hauko katikati ya mauzo.",
+    "update.reloadButton": "Pakia upya sasa",
     "offline.saleMarker": "Yaliuzwa bila mtandao",
     "offline.salePending": "Bado hayajasawazishwa",
     "offlineReport.eyebrow": "Yaliyouzwa wakati wa hitilafu ya mtandao",
@@ -8760,6 +8765,7 @@ function bindEvents() {
   qs("#resendVerificationButton")?.addEventListener("click", handleResendVerification);
   qs("#overridePasswordSettingsButton")?.addEventListener("click", openOverridePasswordDialog);
   qs("#overridePasswordNudgeSetButton")?.addEventListener("click", openOverridePasswordDialog);
+  qs("#updateReloadButton")?.addEventListener("click", () => location.reload());
   qs("#overridePasswordNudgeDismissButton")?.addEventListener("click", dismissOverridePasswordNudge);
   qs("#closeOverridePasswordDialog")?.addEventListener("click", () => qs("#overridePasswordDialog").close());
   qs("#cancelOverridePasswordDialog")?.addEventListener("click", () => qs("#overridePasswordDialog").close());
@@ -9467,11 +9473,53 @@ renderChatLog();
 warmUpAiProxy();
 initFirebase();
 
+// How often an open till asks whether a new build exists. The browser only
+// re-checks sw.js on navigation, and a shop navigates once a day -- when it
+// opens. Without this, a deploy reaches the tills that reload and nobody else,
+// which is tolerable for a feature and not tolerable for a fix or a rollback:
+// the shop worst affected by a bad build is the one least likely to reload.
+const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
+
+function watchForAppUpdate(registration) {
+  const check = () => { registration.update().catch(() => {}); };
+
+  window.setInterval(check, UPDATE_CHECK_INTERVAL_MS);
+  // The cheap opportunistic checks: coming back to the tab, and regaining a
+  // connection. A shop that has been offline for an hour is precisely the one
+  // that may be several builds behind.
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
+  window.addEventListener("online", check);
+  check();
+}
+
+function renderUpdateReadyBanner() {
+  const banner = qs("#updateReadyBanner");
+  if (banner) banner.hidden = !state.updateReady;
+}
+
 if ("serviceWorker" in navigator) {
+  // Captured BEFORE registering. On a first-ever load there is no controller,
+  // the worker installs and claims the page, and controllerchange fires for a
+  // version nobody was running -- prompting there would offer to reload a page
+  // that is already current.
+  const hadController = Boolean(navigator.serviceWorker.controller);
+
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController) return;
+    // sw.js calls skipWaiting() and clients.claim(), so by here the NEW worker
+    // is already serving fetches -- but this page is still running the code it
+    // loaded this morning. Only a reload changes that, and only the person at
+    // the till knows whether now is a safe moment for one.
+    state.updateReady = true;
+    renderUpdateReadyBanner();
+  });
+
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch((error) => {
-      console.warn("Service worker registration failed.", error);
-    });
+    navigator.serviceWorker.register("./sw.js")
+      .then((registration) => watchForAppUpdate(registration))
+      .catch((error) => {
+        console.warn("Service worker registration failed.", error);
+      });
   });
 }
 //When this code was written only God knew if it would work, but it did. I am still in shock.
