@@ -61,10 +61,6 @@ jobs:
         working-directory: proxy
         run: node --check server.js
 
-      - name: Fail on known-vulnerable dependencies
-        working-directory: proxy
-        run: npm audit --audit-level=high
-
       - name: Proxy security tests
         run: node tests/proxy-security.test.mjs
 
@@ -106,3 +102,19 @@ jobs:
       # browser too old for ES modules all land there.
       - name: Graceful failure without JavaScript
         run: node tests/compatibility.headless.mjs
+
+      # Deliberately last, and the reason is worth keeping. This step used to sit
+      # directly after the proxy install, where it did real damage: a new advisory
+      # against a transitive dependency turned the whole workflow red, and because
+      # steps stop at the first failure, the six behind it -- the proxy security
+      # suite, the Firestore rules suites, contrast, and the no-JavaScript check --
+      # were silently SKIPPED. Four commits merged against a red X that looked like
+      # a dependency warning and actually meant no test had run at all.
+      #
+      # An advisory should still fail the build; it should not decide whether the
+      # test suite executes. A new CVE published overnight is not evidence that the
+      # sale path broke, and it must not stop us finding out that it did. Last is
+      # the only position where this step enforces without blinding anything.
+      - name: Fail on known-vulnerable dependencies
+        working-directory: proxy
+        run: npm audit --audit-level=high

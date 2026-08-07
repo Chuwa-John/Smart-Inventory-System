@@ -7,6 +7,18 @@
 - Source of truth: GitHub `main`.
 - CI: GitHub Actions validates syntax, locked proxy dependencies, and high-severity dependency advisories. It has no deployment credentials and cannot deploy production.
 
+  Reading a red CI run: the workflow is a single job, so **steps stop at the
+  first failure and every step behind it is reported `skipped`, not failed**. A
+  red X therefore does not tell you how much was verified. Open the run and
+  check which steps actually executed before concluding anything passed. On
+  2026-08-07 four commits merged against a red X that read as a dependency
+  warning and in fact meant the proxy security suite, the Firestore rules
+  suites, contrast and the no-JavaScript check had not run at all.
+
+  The advisory check is pinned LAST for that reason. It still fails the build,
+  but a CVE published overnight against a transitive dependency can no longer
+  decide whether the test suite runs. Do not move it earlier for tidiness.
+
 Do not enable Firebase Functions, Firebase Storage, or a Firebase billing upgrade for this application. The Anthropic API is the only paid integration.
 
 ## Release procedure
