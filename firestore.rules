@@ -283,6 +283,7 @@ service cloud.firestore {
         // feature is judged on. Enforcing it here means a client bug cannot
         // write a sale whose VAT return fails to reconcile to its own takings.
         && (!('vatRegistered' in d) || d.vatRegistered is bool)
+        && (!('vrn' in d) || (d.vrn is string && d.vrn.size() <= 20))
         && (!('vatRate' in d) || (d.vatRate is number && d.vatRate >= 0 && d.vatRate <= 1))
         && (!('taxTotal' in d) || totalInRange(d.taxTotal))
         && (!('netTotal' in d) || totalInRange(d.netTotal))

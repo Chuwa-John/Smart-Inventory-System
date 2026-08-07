@@ -748,6 +748,22 @@ const DICTIONARY = {
     "toast.vatVrnRequired": "Enter the VAT registration number before switching VAT on.",
     "toast.vatSaved": "VAT settings saved.",
     "toast.vatNeedsStore": "Add a store before setting up VAT.",
+    "receipt.vatNetLabel": "Net of VAT",
+    "receipt.vatLabel": "VAT at {rate}%",
+    "receipt.vatZeroRatedLabel": "Zero rated",
+    "receipt.vatExemptLabel": "Exempt",
+    "receipt.vrnLabel": "VRN",
+    "receipt.vatInclusiveNote": "Prices include VAT",
+    "report.vatTitle": "VAT summary",
+    "report.vatNet": "Net of VAT",
+    "report.vatDue": "VAT",
+    "report.vatStandard": "Standard rated (18%)",
+    "report.vatZeroRated": "Zero rated",
+    "report.vatExempt": "Exempt",
+    "report.vatTaxableTurnover": "Taxable turnover",
+    "report.vatSalesOutsideScheme": "Sales before VAT was switched on",
+    "report.vatNotRegistered": "This business is not registered for VAT.",
+    "report.vatOutsideNote": "{count} sale(s) in this range were recorded before VAT was switched on and are not part of the return.",
     "offline.saleMarker": "Rung up offline",
     "offline.salePending": "Not yet synced",
     "offlineReport.eyebrow": "Sold during an outage",
@@ -1426,6 +1442,22 @@ const DICTIONARY = {
     "toast.vatVrnRequired": "Weka namba ya usajili wa VAT (VRN) kabla ya kuwasha VAT.",
     "toast.vatSaved": "Mipangilio ya VAT imehifadhiwa.",
     "toast.vatNeedsStore": "Ongeza duka kabla ya kuweka VAT.",
+    "receipt.vatNetLabel": "Kabla ya VAT",
+    "receipt.vatLabel": "VAT kwa {rate}%",
+    "receipt.vatZeroRatedLabel": "Kiwango sifuri",
+    "receipt.vatExemptLabel": "Haihusiki na VAT",
+    "receipt.vrnLabel": "VRN",
+    "receipt.vatInclusiveNote": "Bei zimejumuisha VAT",
+    "report.vatTitle": "Muhtasari wa VAT",
+    "report.vatNet": "Kabla ya VAT",
+    "report.vatDue": "VAT",
+    "report.vatStandard": "Kiwango cha kawaida (18%)",
+    "report.vatZeroRated": "Kiwango sifuri",
+    "report.vatExempt": "Haihusiki na VAT",
+    "report.vatTaxableTurnover": "Mauzo yanayotozwa kodi",
+    "report.vatSalesOutsideScheme": "Mauzo kabla ya VAT kuwashwa",
+    "report.vatNotRegistered": "Biashara hii haijasajiliwa kwa VAT.",
+    "report.vatOutsideNote": "Mauzo {count} katika kipindi hiki yalirekodiwa kabla ya VAT kuwashwa na hayahusiki katika marejesho.",
     "offline.saleMarker": "Yaliuzwa bila mtandao",
     "offline.salePending": "Bado hayajasawazishwa",
     "offlineReport.eyebrow": "Yaliyouzwa wakati wa hitilafu ya mtandao",
@@ -2875,6 +2907,75 @@ async function generateMonthlyReport(monthKey, storeIdOverride) {
   }
 }
 
+// The VAT return, over whatever range the reports view is showing.
+//
+// Two things this deliberately does NOT do. It does not recompute tax from the
+// items: each sale carries the tax it was rung up with, at the rate in force
+// then, and re-deriving it would silently re-rate last year's trading if TRA
+// ever moves the rate. And it does not treat a sale from before registration as
+// zero-rated -- those sales are OUTSIDE the scheme, not taxed at nothing, so
+// they are counted and named separately rather than folded into the return.
+//
+// Zero-rated and exempt are reported apart because they are different lines:
+// zero-rated supplies are taxable at 0% and belong in taxable turnover, exempt
+// supplies do not.
+function computeVatReport() {
+  const sales = filteredSales().filter((sale) => !sale.voided);
+  const inScheme = sales.filter((sale) => sale.vatRegistered === true);
+  const outsideScheme = sales.length - inScheme.length;
+
+  const totals = { standard: { net: 0, vat: 0 }, zeroRated: { net: 0 }, exempt: { net: 0 } };
+  let netTotal = 0;
+  let taxTotal = 0;
+
+  for (const sale of inScheme) {
+    const b = sale.taxBreakdown || {};
+    totals.standard.net += safeNumber(b.standard?.net);
+    totals.standard.vat += safeNumber(b.standard?.vat);
+    totals.zeroRated.net += safeNumber(b.zeroRated?.net);
+    totals.exempt.net += safeNumber(b.exempt?.net);
+    netTotal += safeNumber(sale.netTotal);
+    taxTotal += safeNumber(sale.taxTotal);
+  }
+
+  return {
+    totals,
+    netTotal,
+    taxTotal,
+    // What TRA asks for: standard-rated plus zero-rated. Exempt supplies are
+    // not taxable turnover and are excluded here on purpose.
+    taxableTurnover: totals.standard.net + totals.zeroRated.net,
+    saleCount: inScheme.length,
+    outsideScheme
+  };
+}
+
+function renderVatReport() {
+  const panel = qs("#vatReportPanel");
+  if (!panel) return;
+  panel.hidden = !vatSettings().registered;
+  if (panel.hidden) return;
+
+  const r = computeVatReport();
+  const due = qs("#vatReportDue");
+  if (due) due.textContent = money(r.taxTotal);
+
+  const summary = qs("#vatReportSummary");
+  if (!summary) return;
+  summary.innerHTML = `
+    <div class="payment-summary-row"><strong>${t("report.vatDue")}</strong><strong>${money(r.taxTotal)}</strong></div>
+    <div class="payment-summary-row"><span>${t("report.vatNet")}</span><span>${money(r.netTotal)}</span></div>
+    <div class="payment-summary-row"><span>${t("report.vatStandard")}</span><span>${money(r.totals.standard.net)}</span></div>
+    <div class="payment-summary-row"><span>${t("report.vatZeroRated")}</span><span>${money(r.totals.zeroRated.net)}</span></div>
+    <div class="payment-summary-row"><span>${t("report.vatExempt")}</span><span>${money(r.totals.exempt.net)}</span></div>
+    <div class="payment-summary-row"><strong>${t("report.vatTaxableTurnover")}</strong><strong>${money(r.taxableTurnover)}</strong></div>
+    <div class="payment-summary-row"><span>${t("report.totalTransactions")}</span><span>${r.saleCount}</span></div>
+    ${r.outsideScheme > 0
+      ? `<div class="payment-summary-row muted"><span>${t("report.vatOutsideNote", { count: String(r.outsideScheme) })}</span><span></span></div>`
+      : ""}
+  `;
+}
+
 function renderPaymentReports() {
   const grid = qs("#paymentMethodGrid");
   const summary = qs("#paymentSummary");
@@ -2903,6 +3004,7 @@ function renderPaymentReports() {
   renderStoreBreakdown();
   renderStaffBreakdown();
   renderOfflineSalesReport();
+  renderVatReport();
   renderTopCustomers();
   renderStaffOrderLookupSelect();
   renderCustomerAccounts();
@@ -5270,6 +5372,28 @@ function receiptMeta(sale) {
   return { storeName, businessName, date };
 }
 
+// The tax lines on a receipt. Only rendered for a sale that was actually rung
+// up under the scheme -- a sale from before the business registered carries no
+// tax fields, and showing it a confident "VAT 0" would be a false statement on
+// a document a shop is audited on. Silence is the honest rendering there.
+//
+// Because prices are inclusive, the total is stated FIRST and the tax shown as
+// a decomposition beneath it. Printing net and VAT above the total invites the
+// customer to add them up expecting a larger number.
+function receiptVatRows(sale) {
+  if (sale?.vatRegistered !== true) return "";
+  const rate = Math.round(Number(sale.vatRate || 0) * 100);
+  const breakdown = sale.taxBreakdown || {};
+  const zeroRated = Number(breakdown.zeroRated?.net || 0);
+  const exempt = Number(breakdown.exempt?.net || 0);
+  return `
+    <div class="receipt-row muted"><span>${t("receipt.vatNetLabel")}</span><span>${money(sale.netTotal)}</span></div>
+    <div class="receipt-row muted"><span>${t("receipt.vatLabel", { rate: String(rate) })}</span><span>${money(sale.taxTotal)}</span></div>
+    ${zeroRated > 0 ? `<div class="receipt-row muted"><span>${t("receipt.vatZeroRatedLabel")}</span><span>${money(zeroRated)}</span></div>` : ""}
+    ${exempt > 0 ? `<div class="receipt-row muted"><span>${t("receipt.vatExemptLabel")}</span><span>${money(exempt)}</span></div>` : ""}
+    <div class="receipt-center muted">${t("receipt.vatInclusiveNote")}</div>`;
+}
+
 function buildReceiptHtml(sale) {
   const { storeName, businessName, date } = receiptMeta(sale);
   const itemRows = (sale.items || [])
@@ -5282,6 +5406,7 @@ function buildReceiptHtml(sale) {
   return `
     <div class="receipt-center"><strong>${esc(businessName)}</strong></div>
     <div class="receipt-center muted">${esc(storeName)}</div>
+    ${sale.vatRegistered === true && sale.vrn ? `<div class="receipt-center muted">${t("receipt.vrnLabel")}: ${esc(sale.vrn)}</div>` : ""}
     <div class="receipt-divider"></div>
     <div class="receipt-row"><span>${t("receipt.dateLabel")}</span><span>${date.toLocaleString()}</span></div>
     ${sale.staffName ? `<div class="receipt-row"><span>${t("pos.staffLabel")}</span><span>${esc(sale.staffName)}</span></div>` : ""}
@@ -5298,6 +5423,7 @@ function buildReceiptHtml(sale) {
         : ""
     }
     <div class="receipt-row"><strong>${t("pos.total")}</strong><strong>${money(sale.total)}</strong></div>
+    ${receiptVatRows(sale)}
     ${
       sale.paymentMethod === "cash" && sale.cashTendered != null
         ? `<div class="receipt-row"><span>${t("pos.amountTendered")}</span><span>${money(sale.cashTendered)}</span></div>
@@ -6183,6 +6309,10 @@ function queueOfflineSale(args) {
     // Marks the sale itself, so the owner's "sold while offline" view and any
     // later investigation can tell which sales were rung up blind.
     madeOffline: true,
+    // A sale rung up offline by a registered business is still a taxed sale.
+    // Omitting these here would make the VAT return disagree with the takings
+    // by exactly the outage.
+    ...(args.taxFields || {}),
     createdAt: serverTimestamp()
   }).catch(onReplayFailure("sale"));
 
@@ -9276,6 +9406,41 @@ function bindEvents() {
     const discountType = state.discountType || "none";
     const discountAmount = computeDiscountAmount(subtotal);
     const total = Math.round(Math.max(0, subtotal - discountAmount));
+    // VAT (DESIGN-vat.md), computed once here so the online path, the offline
+    // path and the receipt agree by construction rather than by three copies of
+    // the same arithmetic.
+    //
+    // netTotal is derived from the total ACTUALLY being written, not from the
+    // tax helper's own idea of it. The two agree today -- prices are whole
+    // shillings, so every lineTotal is an integer and the sums cannot diverge --
+    // but the rules enforce netTotal + taxTotal == total, and a divergence would
+    // not be a wrong report, it would be a REJECTED sale and a till that has
+    // stopped selling. Deriving it makes that impossible rather than unlikely.
+    const vatConfig = vatSettings();
+    let taxFields = {};
+    if (vatConfig.registered) {
+      const computed = computeSaleTax(
+        state.cart.map((cartItem) => ({
+          inclusive: cartItem.qty * Number(cartItem.sellingPrice || 0),
+          taxClass: taxClassOf(cartItem)
+        })),
+        discountAmount
+      );
+      const taxTotal = Math.min(Math.max(computed.taxTotal, 0), total);
+      taxFields = {
+        vatRegistered: true,
+        // Stamped onto the sale rather than read live at print time: a receipt
+        // reprinted next year is a document the shop is audited on, and it must
+        // show the number that was in force when the sale happened, not the one
+        // configured today.
+        vrn: vatConfig.vrn,
+        vatRate: computed.vatRate,
+        taxTotal,
+        netTotal: total - taxTotal,
+        taxBreakdown: computed.breakdown
+      };
+    }
+
     const paymentMethod = state.paymentMethod || "cash";
     const cashTendered = Number(qs("#cashTendered")?.value || 0);
 
@@ -9335,9 +9500,10 @@ function bindEvents() {
         orderNumber,
         customerName,
         customerPhone,
-        duplicate
+        duplicate,
+        taxFields
       });
-      state.lastSale = { mode: "firestore", saleId, items: saleItems, paymentMethod, total };
+      state.lastSale = { mode: "firestore", saleId, items: saleItems, paymentMethod, total, ...taxFields };
       showToast(t("toast.saleQueuedOffline"));
     } else if (state.db && state.user && state.businessOwnerUid) {
       try {
@@ -9426,6 +9592,7 @@ function bindEvents() {
             customerName,
             customerPhone,
             voided: false,
+            ...taxFields,
             createdAt: serverTimestamp()
           });
 

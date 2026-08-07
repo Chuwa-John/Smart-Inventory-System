@@ -1,6 +1,7 @@
 # VAT — design before any of it is written
 
-Status: design agreed 2026-08-07. Phase 24's remaining half.
+Status: design agreed 2026-08-07; all five steps built, tested and deployed the
+same day. Phase 24's remaining half.
 
 Rounding was settled earlier in phase 24 and is not revisited here. This is
 about whether tax is modelled at all, and the four decisions below were taken
@@ -74,10 +75,19 @@ is what `tests/vat.test.mjs` exists to hold down.
 Written at the time of sale, never recomputed later:
 
 - `vatRegistered: true` — this sale was rung up by a registered business
+- `vrn` — the registration number in force then, so a receipt reprinted next
+  year shows the number the sale was actually made under
 - `vatRate` — the rate in force at that moment
 - `taxTotal`, `netTotal`
 - `taxBreakdown` — `{ standard: {net, vat}, zeroRated: {net}, exempt: {net} }`
 - per line: the class it was sold under
+
+`netTotal` is derived at the sale from the total **actually being written**,
+not from the tax helper's own total. The two agree today because prices are
+whole shillings, but the rules enforce `netTotal + taxTotal == total`, so a
+divergence would not be a wrong figure someone notices at month end — it would
+be a rejected write and a till that has stopped selling with a customer
+standing there. Deriving it makes that impossible rather than unlikely.
 
 A sale from before the business registered carries none of these. It is not
 untaxed-at-zero; it is outside the scheme, and reports must say so rather than
@@ -125,3 +135,21 @@ not what it does about numbering.
 Step 1 comes first because the sale path is where this project has been bitten
 before, and because a tax calculation that is wrong is worse than absent: it is
 wrong on a document a shop is audited on.
+
+## What it cost, in hindsight
+
+All five steps landed on 2026-08-07. Three things were caught by tests rather
+than by review, and all three would have failed quietly in production:
+
+- The audit action enum and the closed audit field allowlist in
+  `firestore.rules` did not know about `VAT_REGISTRATION_ENABLED` or the fields
+  the entry carries. The setting would have saved while its audit record was
+  silently rejected, because that write sits in a `try/catch`.
+- A version stamp was committed unchanged over a changed bundle, on the
+  reasoning that the new code was inert. It is not a deploy marker; see
+  OPERATIONS.md.
+- `vat-sale-path.test.mjs` shipped with an assertion loose enough to pass when
+  the discount was removed from the tax call. Mutation testing found it; the
+  check now reads the call's own arguments.
+
+The arithmetic itself, written first and exhaustively, needed no correction.
