@@ -1,6 +1,7 @@
 # Design — offline selling (L-9)
 
-Status: **phases A, B, C and D built. E proposed.** Written 2026-08-02.
+Status: **phases A–E built, tested and deployed.** Written 2026-08-02,
+completed 2026-08-04. The only step outstanding is the handset trial in §15.
 
 Phase A (rules only) landed 2026-08-02: `stockCountInRange` permits bounded
 negative `products.quantity`, and `stockMovements` accepts an `offline: true`
@@ -395,3 +396,90 @@ the SDK's persistence layer is assumed, not exercised. The phase C bug — a
 sale-breaking defect that shipped with every emulator suite green, because they
 assert write shapes against the rules and never execute the client's sale code —
 is the standing argument for why that trial is not optional.
+
+---
+
+## 15. The handset trial — the procedure, and what counts as a pass
+
+Everything else in this document is done. This is the only step left, and it is
+the one no suite substitutes for: every write in `offline-replay.test.mjs` is
+issued directly, so Firestore's own persistence layer is *assumed* to queue and
+replay. Nothing has watched it actually do so on a phone that lost signal.
+
+Run it on a real Android handset on mobile data, not on a desktop with the
+network panel throttled. The failure modes that matter here — the SDK evicting a
+queue under memory pressure, a background tab being killed mid-queue, a captive
+portal answering requests with a login page — do not reproduce on a laptop.
+
+**Before starting.** Confirm the device is on the current build: open the app,
+and in the browser menu use Find on Page for the version, or check that the
+Sold While Offline panel exists in the owner view at all. The live build as of
+2026-08-04 is `app.js?v=20260804b` / `savia-shell-v88`. Sign in as a **cashier**,
+not the owner — the cashier is who this is for, and the role gating is part of
+what is being tested.
+
+Note the shelf count of one product before you begin. Call it *P*.
+
+### The sequence
+
+1. **Sell one unit of P while connected.** Confirm the shelf count drops by one
+   and no offline banner appears. This is the control: if this fails, stop —
+   nothing after it means anything.
+
+2. **Turn on airplane mode.** Within a few seconds the red banner should appear
+   saying the connection is gone. Wait for it before continuing; if it never
+   appears, `watchConnection()` is not firing and the rest of the trial is
+   testing something other than what you think.
+
+3. **Sell two units of P, cash, as two separate sales.** Each should complete —
+   a receipt, a cleared cart, no error. The shelf count should drop by two.
+   **A spinner that never resolves is a failure**, and specifically the failure
+   `queueOfflineSale()` was written to avoid by not awaiting the write.
+
+4. **Try a credit sale.** It must be refused, with a message naming credit as
+   the reason rather than a generic error. Same for a return and for opening a
+   shift. These are excluded by design; a silent failure here is a defect.
+
+5. **Check the queue count.** The unsynced banner should say two. Close the
+   browser entirely — not just the tab — and reopen the app, still in airplane
+   mode. **The count must still say two.** If it resets to zero, the queue did
+   not survive the process being killed, and the feature does not work in the
+   only situation that matters.
+
+6. **Turn airplane mode off.** Watch the unsynced count. It should fall to zero
+   within seconds of the connection returning. The red banner should clear.
+
+7. **Reload, and check the shelf count of P.** It must be exactly three lower
+   than where it started. Four would mean the queue was replayed twice; two
+   would mean a sale was lost.
+
+8. **Open the owner view.** *Sold While Offline* should name P with two units.
+   The two sales should carry the offline marker. The stock reconciliation must
+   **not** report P as a discrepancy — that is phase B's whole purpose, and
+   reporting it would be the app accusing the cashier of theft for selling
+   during an outage.
+
+### Pass
+
+Steps 3, 5, 6 and 7 all behave as written. Step 7 is the one that decides it:
+**three lower, not two, not four.**
+
+### If it fails
+
+Capture, in this order: which step, what the screen said, and the browser
+console if reachable (`chrome://inspect` from a desktop with the phone on USB).
+The fault log in the owner view may also have caught it — that is what phase 30
+built it for, and a fault there with a build stamp is worth more than a
+description from memory.
+
+Do not retry before capturing. A second attempt with a queue already in an
+unknown state produces evidence about nothing.
+
+### What a pass does and does not establish
+
+A pass means the queue survives a real outage and a real process death on one
+device, on one network. It does not establish behaviour across a multi-hour
+outage, across two tills queueing simultaneously against the same shelf, or
+under the storage pressure of a phone that is nearly full. Those are worth
+knowing before this is sold to a customer whose branches run on mobile data,
+and none of them are blocking for a pilot with a shop you can telephone.

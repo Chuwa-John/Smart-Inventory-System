@@ -152,7 +152,7 @@ delta chain rather than comparing only the newest entry, which would locate
 
 ## L-9 The till cannot sell without a connection — **LARGELY CLOSED, unproven on a real device**
 
-**Status 2026-08-04.** Phases A–D of `DESIGN-offline-selling.md` have shipped. A
+**Status 2026-08-04.** Phases A–E of `DESIGN-offline-selling.md` have shipped. A
 **cash** sale is now queued on the device and replayed on reconnect; the cashier
 sees a count of sales still waiting to reach the server, and the owner gets a
 *Sold While Offline* report naming the products whose counts can no longer be
@@ -160,17 +160,20 @@ trusted. Credit sales, returns, voids, transfers and shift open/close are still
 refused offline, honestly and by design.
 
 **What keeps this entry open rather than resolved.** Phase E's replay,
-idempotency, bound and load tests are now written
-(`tests/offline-replay.test.mjs`) but have **not been run** — the environment
-they were written in cannot reach the emulator jar host. Run `npm test` in
-`tests/` before treating them as evidence.
+idempotency, bound, load and `madeOffline` tests are written and have now **run
+and passed** (`tests/offline-replay.test.mjs`, 14/14). They sat unproven for a
+period because the environment they were written in could not reach the emulator
+jar host; that is resolved.
 
-And even once they pass, **nothing has proved that Firestore replays a real
+**What remains is the only thing left.** Nothing has proved that Firestore replays a real
 queue after a real outage on a real phone.** Every write in that suite is issued
 directly; the SDK's persistence layer is assumed rather than exercised. That
 trial is the difference between "the code is shaped correctly" and "the feature
 works". Until it is done, do not sell this to a customer whose branches run on
-mobile data.
+mobile data. The procedure and its pass criteria are written out in
+`DESIGN-offline-selling.md` §15 — follow it as a checklist rather than
+improvising, because step 7 (the shelf exactly three lower) is the one that
+decides it and is easy to eyeball wrongly.
 
 **The original limitation, for context.** A sale required a Firestore
 transaction. Transactions do not queue offline the way plain writes do, so when
