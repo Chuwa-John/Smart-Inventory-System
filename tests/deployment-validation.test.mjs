@@ -199,13 +199,25 @@ console.log("\n=== a withdrawn version string is never reissued ===");
 
   // The working tree counts as one more datapoint: shipping today's bytes under
   // a stamp history already used for different bytes is the same defect.
+  //
+  // This hashes the files ON DISK rather than the ones at HEAD, and the
+  // difference is not academic. Written the first way, it compared HEAD against
+  // history and so only noticed after the bad commit existed -- which is
+  // exactly how it caught its author committing an app.js change under an
+  // unchanged stamp, one commit too late to be useful. Hashing the tree fails
+  // while the mistake is still a working-tree change.
   const current = appHtml.match(/app\.js\?v=([0-9a-z]+)/)?.[1];
   const priorContents = contentsFor.get(current);
-  const currentBlobs = blobs("HEAD");
+  const treeBlobs = ["app.js", "styles.css", "boot.js"].map((f) => {
+    try {
+      return execFileSync("git", ["hash-object", f], { cwd, encoding: "utf8" }).trim();
+    } catch { return "-"; }
+  }).join("/");
+
   check("the working tree does not reuse a stamp for new bytes",
-    !priorContents || priorContents.size === 0 || priorContents.has(currentBlobs)
-      || !log.length,
-    `${current} was committed with different app.js/styles.css/boot.js than the tree now holds`);
+    !priorContents || priorContents.size === 0 || priorContents.has(treeBlobs),
+    `${current} already means different bytes in history — bump the stamp before this ships, `
+      + `even if you are not deploying yet: the stamp is the bundle's identity, not a deploy marker`);
 }
 
 const failed = results.filter((r) => !r.pass);

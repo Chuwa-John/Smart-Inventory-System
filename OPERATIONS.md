@@ -30,6 +30,16 @@ Do not enable Firebase Functions, Firebase Storage, or a Firebase billing upgrad
    - `sw.js`: `CACHE_NAME`, and the `app.js`, `boot.js` and `styles.css` entries
      in `APP_SHELL`.
 
+   **Bump on the change, not on the deploy.** Any edit to `app.js`,
+   `styles.css` or `boot.js` moves the stamp, even when you do not intend to
+   deploy yet — the stamp is the bundle's identity, not a deploy marker. Commit
+   a changed bundle under an unchanged stamp and that stamp now means two
+   different builds; deploy later and every browser holding the old one under
+   `immutable` keeps it for a year. This was got wrong on 2026-08-07 within
+   hours of the rule being written, on the reasoning that the new code was inert
+   and not being deployed. `tests/deployment-validation.test.mjs` hashes the
+   working tree and fails while it is still a working-tree change.
+
    Note `index.html` is NOT in that list. It is the landing page, its CSS is
    inline, and it references no versioned asset — this procedure named it three
    times and never named `app.html` until 2026-08-07, which is the file that
