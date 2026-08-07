@@ -21,6 +21,16 @@ const state = {
   paymentMethod: "cash",
   // Connectivity as the app currently understands it; see watchConnection.
   online: true,
+  // Sales written on this device that the server has not acknowledged yet
+  // (L-9 phase D). Derived from Firestore's own hasPendingWrites rather than
+  // counted by us: the SDK owns the queue, and a tally we maintained ourselves
+  // would drift the first time a replay was rejected. See subscribeToSales.
+  unsyncedSaleCount: 0,
+  pendingSaleIds: new Set(),
+  // Whether the sales listener has rendered at least once. Without it, a shop
+  // with no sales yet never renders the reports' empty state, because the
+  // first snapshot of an empty collection reports no document changes.
+  salesRenderedOnce: false,
   discountType: "none",
   discountValue: 0,
   // Subtotal a fixed discount was authorised against; see revalidateDiscountForCart.
@@ -697,6 +707,19 @@ const DICTIONARY = {
     "offline.bannerText": "No internet connection. Cash sales are saved on this device and will sync when you reconnect.",
     "toast.offlineCashOnly": "Only cash sales can be recorded while offline. Credit sales need a connection.",
     "toast.saleQueuedOffline": "Sale saved on this device. It will sync when the connection returns.",
+    "offline.unsyncedOne": "1 sale is saved on this device and has not reached the server yet. Keep this app installed until it syncs.",
+    "offline.unsyncedMany": "{count} sales are saved on this device and have not reached the server yet. Keep this app installed until they sync.",
+    "offline.saleMarker": "Rung up offline",
+    "offline.salePending": "Not yet synced",
+    "offlineReport.eyebrow": "Sold during an outage",
+    "offlineReport.title": "Sold While Offline",
+    "offlineReport.none": "No sales were recorded offline in this period.",
+    "offlineReport.note": "Stock counts for these products are unverified until each one's next movement while online. A negative count means more was sold than the shelf was thought to hold.",
+    "offlineReport.colProduct": "Product",
+    "offlineReport.colUnits": "Units sold offline",
+    "offlineReport.colValue": "Value",
+    "offlineReport.colOnHand": "Counted on hand now",
+    "offlineReport.salesCount": "{count} offline sale(s)",
     "error.offline": "No internet connection, so this was not saved. Check your signal and try again.",
     "error.timeout": "The connection is too slow to finish this. Please try again.",
     "error.permissionDenied": "Your account is not allowed to do this. Ask the business owner.",
@@ -1343,6 +1366,19 @@ const DICTIONARY = {
     "offline.bannerText": "Hakuna muunganisho wa intaneti. Mauzo ya taslimu yanahifadhiwa kwenye kifaa hiki na yatasawazishwa muunganisho utakaporudi.",
     "toast.offlineCashOnly": "Ni mauzo ya taslimu pekee yanayoweza kurekodiwa bila mtandao. Mauzo ya mkopo yanahitaji muunganisho.",
     "toast.saleQueuedOffline": "Mauzo yamehifadhiwa kwenye kifaa hiki. Yatasawazishwa muunganisho utakaporudi.",
+    "offline.unsyncedOne": "Mauzo 1 yamehifadhiwa kwenye kifaa hiki na bado hayajafika kwenye seva. Usiondoe programu hii hadi yasawazishwe.",
+    "offline.unsyncedMany": "Mauzo {count} yamehifadhiwa kwenye kifaa hiki na bado hayajafika kwenye seva. Usiondoe programu hii hadi yasawazishwe.",
+    "offline.saleMarker": "Yaliuzwa bila mtandao",
+    "offline.salePending": "Bado hayajasawazishwa",
+    "offlineReport.eyebrow": "Yaliyouzwa wakati wa hitilafu ya mtandao",
+    "offlineReport.title": "Yaliyouzwa Bila Mtandao",
+    "offlineReport.none": "Hakuna mauzo yaliyorekodiwa bila mtandao katika kipindi hiki.",
+    "offlineReport.note": "Hesabu za hisa za bidhaa hizi hazijathibitishwa hadi kila moja itakapokuwa na mwendo mwingine ikiwa mtandaoni. Hesabu hasi inamaanisha kuwa kiasi kilichouzwa kilizidi kile kilichodhaniwa kuwepo rafuni.",
+    "offlineReport.colProduct": "Bidhaa",
+    "offlineReport.colUnits": "Vipimo vilivyouzwa bila mtandao",
+    "offlineReport.colValue": "Thamani",
+    "offlineReport.colOnHand": "Zilizopo sasa",
+    "offlineReport.salesCount": "Mauzo {count} bila mtandao",
     "error.offline": "Hakuna muunganisho wa intaneti, hivyo hii haikuhifadhiwa. Angalia mtandao kisha jaribu tena.",
     "error.timeout": "Muunganisho ni wa polepole sana kukamilisha hili. Tafadhali jaribu tena.",
     "error.permissionDenied": "Akaunti yako hairuhusiwi kufanya hili. Muulize mmiliki wa biashara.",
@@ -1871,7 +1907,11 @@ function reorderRecommendation(product) {
   const quantity = Number(product.quantity || 0);
   const targetStock = reorderLevel + expectedDemandDuringLeadTime + safetyStock;
   const recommendedQty = Math.max(0, targetStock - quantity);
-  const daysUntilStockout = quantity === 0 ? 0 : Math.floor(quantity / Math.max(dailyDemand, 0.1));
+  // <= 0, not === 0. Since phase A a shelf can hold a negative count, and
+  // dividing a negative quantity by demand produced a NEGATIVE number of days
+  // until stockout -- for the one product that has most certainly already run
+  // out. The shelf being past empty is still "no days left", not "-3 days".
+  const daysUntilStockout = quantity <= 0 ? 0 : Math.floor(quantity / Math.max(dailyDemand, 0.1));
   return { recommendedQty, daysUntilStockout, expectedDemandDuringLeadTime };
 }
 
@@ -2717,9 +2757,96 @@ function renderPaymentReports() {
   `;
   renderStoreBreakdown();
   renderStaffBreakdown();
+  renderOfflineSalesReport();
   renderTopCustomers();
   renderStaffOrderLookupSelect();
   renderCustomerAccounts();
+}
+
+// Sales rung up during an outage, grouped by the product whose count they made
+// doubtful (L-9 phase D).
+//
+// Grouped by product rather than listed by sale because the product is what the
+// owner can act on: the answer to this report is walking to that shelf and
+// counting it. A list of sales would say the same thing in a form nobody can
+// use.
+//
+// One pass over the filtered sales, accumulating into a Map, rather than a
+// per-product scan. The movement panel's O(products x sales) regression is the
+// reason that distinction is spelled out here instead of left to taste.
+function computeOfflineSalesReport() {
+  const offlineSales = filteredSales().filter((sale) => sale.madeOffline === true);
+  const byProduct = new Map();
+  let total = 0;
+
+  offlineSales.forEach((sale) => {
+    total += Number(sale.total || 0);
+    (sale.items || []).forEach((item) => {
+      // Cart items carry the product's own id (see the note on productRefs in
+      // completeSale) -- a sale item's productId is written from it, so the
+      // fallback keeps a legacy item joinable rather than dropping it.
+      const productId = item.productId || item.id || "";
+      if (!byProduct.has(productId)) {
+        byProduct.set(productId, { productId, name: item.name || t("report.none"), units: 0, value: 0 });
+      }
+      const entry = byProduct.get(productId);
+      entry.units += Number(item.qty || 0);
+      entry.value += Number(item.lineTotal || 0);
+    });
+  });
+
+  const rows = [...byProduct.values()]
+    .map((entry) => {
+      const product = state.products.find((candidate) => candidate.id === entry.productId);
+      // null, not 0, when the product is unknown to this device: a shelf we
+      // cannot see is not a shelf holding nothing, and the same distinction the
+      // inventory table now makes for a loading shop applies here.
+      return { ...entry, onHand: product ? Number(product.quantity || 0) : null };
+    })
+    .sort((a, b) => b.units - a.units);
+
+  return { rows, total, saleCount: offlineSales.length };
+}
+
+function renderOfflineSalesReport() {
+  const container = qs("#offlineSalesReport");
+  const totalLabel = qs("#offlineSalesTotal");
+  if (!container) return;
+
+  const { rows, total, saleCount } = computeOfflineSalesReport();
+  if (totalLabel) totalLabel.textContent = rows.length ? money(total) : "";
+
+  if (!rows.length) {
+    container.innerHTML = `<p class="muted">${t("offlineReport.none")}</p>`;
+    return;
+  }
+
+  const body = rows
+    .map((row) => `<tr>
+      <td>${esc(row.name)}</td>
+      <td>${row.units}</td>
+      <td>${money(row.value)}</td>
+      <td>${row.onHand === null ? "-" : row.onHand}</td>
+    </tr>`)
+    .join("");
+
+  container.innerHTML = `
+    <p class="muted">${t("offlineReport.salesCount", { count: saleCount })}</p>
+    <div class="table-panel" style="box-shadow:none;border:none">
+      <table>
+        <thead>
+          <tr>
+            <th>${t("offlineReport.colProduct")}</th>
+            <th>${t("offlineReport.colUnits")}</th>
+            <th>${t("offlineReport.colValue")}</th>
+            <th>${t("offlineReport.colOnHand")}</th>
+          </tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>
+    <p class="muted">${t("offlineReport.note")}</p>
+  `;
 }
 
 function computeStoreBreakdown() {
@@ -2946,8 +3073,25 @@ function buildStaffOrderCard(sale) {
       <td>${money(item.lineTotal)}</td>
     </tr>`)
     .join("");
+  // Two different facts, and collapsing them would hide the one that matters
+  // longer (L-9 phase D). madeOffline is permanent: this sale was rung up
+  // against a stock count nobody could verify, and it stays worth knowing for
+  // as long as the record exists. pendingSync is temporary: it clears itself
+  // the moment the server acknowledges the write. A sale can be either, both,
+  // or -- once a queue has drained -- offline but fully synced.
+  //
+  // === true rather than truthiness: the rules do not constrain madeOffline's
+  // type (see OFFLINE-CAPABILITIES.md), so a document could carry a string
+  // there. Only the value this app actually writes earns the marker.
+  const offlineMarker = sale.madeOffline === true
+    ? `<div class="payment-summary-row"><span>${t("offline.saleMarker")}</span><span aria-hidden="true">&#9679;</span></div>`
+    : "";
+  const pendingMarker = state.pendingSaleIds.has(sale.id)
+    ? `<div class="payment-summary-row"><span>${t("offline.salePending")}</span><span aria-hidden="true">&#9679;</span></div>`
+    : "";
   return `<div class="staff-order-card">
     <div class="payment-summary-row"><strong>${t("reports.staffOrderLookupOrderLabel")}</strong><span>#${esc(sale.orderNumber || "")}</span></div>
+    ${offlineMarker}${pendingMarker}
     <div class="payment-summary-row"><span>${t("reports.staffOrderLookupTimeLabel")}</span><span>${date ? date.toLocaleString() : "-"}</span></div>
     <div class="payment-summary-row"><span>${t("reports.staffOrderLookupPaymentLabel")}</span><span>${paymentMethodLabel(sale.paymentMethod || "cash")}</span></div>
     <table>
@@ -3083,7 +3227,14 @@ async function confirmProcessReturn() {
       });
     } catch (error) {
       console.warn(error);
-      showToast(t("toast.returnFailed"));
+      // describeOperationError, not the bare string (L-9 phase E). A return is
+      // one of the paths that deliberately stays online-only, and the promise
+      // made in OFFLINE-CAPABILITIES.md is that those refuse *honestly* -- the
+      // message names the real cause. This one said "could not process the
+      // return" whatever went wrong, so the single most likely cause in this
+      // market, no signal, was the one it never mentioned. A cashier told that
+      // in front of a customer retries it, and retries it again.
+      showToast(describeOperationError(error, "toast.returnFailed"));
       return;
     }
   } else {
@@ -3662,10 +3813,38 @@ function renderOfflineBanner() {
   if (banner) banner.hidden = state.online !== false;
 }
 
+// The count of sales still sitting in the device's queue (L-9 phase D).
+//
+// This is deliberately NOT the same signal as the offline banner, and folding
+// the two together would recreate the gap it exists to close. Connection state
+// answers "can I sell right now"; the queue answers "did my earlier sales
+// actually land". They separate in both directions -- a device can be back
+// online with a queue still draining, and a long outage can end with nothing
+// queued at all. The second case is the dangerous one: the cashier reconnects,
+// the red banner disappears, and nothing ever confirms the six sales they rang
+// up blind. A cashier who cannot answer that question stops trusting the till
+// and starts keeping a paper list, which is the failure this whole feature was
+// meant to prevent.
+//
+// It counts sales only, not the stock/ledger/audit writes that ride along with
+// them, because a sale is the unit the cashier actually rang up and can count
+// back. The four writes queue and replay together.
+function renderUnsyncedSalesBanner() {
+  const banner = qs("#unsyncedSalesBanner");
+  const text = qs("#unsyncedSalesText");
+  if (!banner || !text) return;
+  const count = Number(state.unsyncedSaleCount || 0);
+  banner.hidden = count <= 0;
+  if (count > 0) {
+    text.textContent = count === 1 ? t("offline.unsyncedOne") : t("offline.unsyncedMany", { count });
+  }
+}
+
 function watchConnection() {
   const sync = () => {
     state.online = typeof navigator === "undefined" ? true : navigator.onLine !== false;
     renderOfflineBanner();
+    renderUnsyncedSalesBanner();
   };
   window.addEventListener("online", sync);
   window.addEventListener("offline", sync);
@@ -7044,6 +7223,12 @@ async function initFirebase() {
         state.products = [];
         state.cart = [];
         state.sales = [];
+        // Cleared with the sales they described, or the banner outlives the
+        // session it belonged to and greets the next sign-in with a warning
+        // about somebody else's queue.
+        state.unsyncedSaleCount = 0;
+        state.pendingSaleIds = new Set();
+        state.salesRenderedOnce = false;
         state.stores = [];
         state.staff = [];
         state.members = [];
@@ -7128,6 +7313,10 @@ async function subscribeToSales() {
     const queryStoreIds = await resolveQueryStoreIds();
     if (queryStoreIds !== null && queryStoreIds.length === 0) {
       state.sales = [];
+      state.unsyncedSaleCount = 0;
+      state.pendingSaleIds = new Set();
+      state.salesRenderedOnce = true;
+      renderUnsyncedSalesBanner();
       renderPaymentReports();
       return;
     }
@@ -7138,11 +7327,44 @@ async function subscribeToSales() {
     const salesQuery = queryStoreIds === null
       ? query(salesRef, orderBy("createdAt", "desc"), limit(SALES_HISTORY_LIMIT))
       : query(salesRef, where("storeId", "in", queryStoreIds), orderBy("createdAt", "desc"), limit(SALES_HISTORY_LIMIT));
+    // includeMetadataChanges is what makes the unsynced count able to reach
+    // zero (L-9 phase D). A queued write's acknowledgement changes no document
+    // DATA, only its metadata, so without this the listener never fires again
+    // after the replay and the banner would sit there claiming sales are still
+    // held long after they landed -- worse than not showing it at all.
+    //
+    // The cost of asking for those extra callbacks is paid back immediately
+    // below: docChanges() excludes metadata-only changes by default, so a
+    // metadata-only wake-up updates the count and stops, rather than dragging
+    // the whole reports render (chart, breakdowns, customer accounts) through
+    // a second pass for a snapshot whose contents are identical.
     state.unsubscribeSales = onSnapshot(
       salesQuery,
+      { includeMetadataChanges: true },
       (snapshot) => {
-        state.sales = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-        renderPaymentReports();
+        // Which sales are still queued is tracked in its own Set rather than as
+        // a field on each sale, and that is load-bearing rather than tidiness.
+        // productUnitsSold() caches on state.sales by ARRAY IDENTITY, on the
+        // stated grounds that the array is replaced wholesale only when the data
+        // changes. Rebuilding it on every metadata wake-up would quietly break
+        // that premise and hand the cache a miss per acknowledged write -- a
+        // full pass over the sales history for a snapshot whose contents are
+        // identical. state.sales is therefore still replaced only when something
+        // really changed.
+        const pendingIds = new Set();
+        snapshot.docs.forEach((docSnap) => {
+          if (docSnap.metadata.hasPendingWrites === true) pendingIds.add(docSnap.id);
+        });
+        state.pendingSaleIds = pendingIds;
+        state.unsyncedSaleCount = pendingIds.size;
+        renderUnsyncedSalesBanner();
+        // docChanges() excludes metadata-only changes by default -- that is what
+        // makes asking for them affordable.
+        if (snapshot.docChanges().length > 0 || !state.salesRenderedOnce) {
+          state.sales = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+          state.salesRenderedOnce = true;
+          renderPaymentReports();
+        }
       },
       (error) => console.error("[sales listener]", error.code || error, "queryStoreIds=", queryStoreIds)
     );

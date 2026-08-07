@@ -1,6 +1,6 @@
 # Design — offline selling (L-9)
 
-Status: **phases A, B and C built. D and E proposed.** Written 2026-08-02.
+Status: **phases A, B, C and D built. E proposed.** Written 2026-08-02.
 
 Phase A (rules only) landed 2026-08-02: `stockCountInRange` permits bounded
 negative `products.quantity`, and `stockMovements` accepts an `offline: true`
@@ -19,8 +19,18 @@ sales offline are refused with their own message. The offline banner was
 rewritten in the same change — it said sales could not be recorded, which
 became untrue the moment the queue existed.
 
-Still to come: D (owner's "sold while offline" view, unsynced count at the
-till) and E (end-to-end replay tests).
+Phase D (UX, client only) landed 2026-08-04: the *flag it* half. An unsynced
+count with its own banner separate from the connection one, a per-sale
+`madeOffline` marker distinct from a transient `pendingSync` marker, and an
+owner's "Sold while offline" report grouped by product. Two things were found
+while building it and are recorded in §13.
+
+Phase E (2026-08-07) is **written but not yet run**: `tests/offline-replay.test.mjs`
+covers replay, idempotency, the bound and load against the emulator, and the
+excluded-path regression landed in `tests/offline-selling.test.mjs`. The
+emulator cannot run in the environment it was written in, so the replay suite is
+unproven until `npm test` is run on a developer machine. The airplane-mode trial
+on a real handset is still owed and is the part no suite substitutes for.
 Decisions taken: oversell policy = *sell anyway, flag it* (owner's call).
 
 This touches `completeSale()`, which is the most dangerous function in the
@@ -245,8 +255,8 @@ Each is independently shippable and independently safe.
 | A | Rules: `offline` ledger entries, bounded negative `products.quantity`, plus tests | Nothing writes either yet — **DONE 2026-08-02** |
 | B | Reconciliation becomes chain-aware — treats offline entries as `unknown` | Must land **before** anything writes an offline entry, or the first outage accuses someone — **DONE 2026-08-02** |
 | C | Client: `increment()` on the sale path, queued writes, offline ledger entry | The boundary is already proven by A and B — **DONE 2026-08-02** |
-| D | UX: banner, per-sale offline marker, unsynced count, "sold while offline" report | The policy's "flag it" half |
-| E | End-to-end and load tests, then the excluded paths re-verified | — |
+| D | UX: banner, per-sale offline marker, unsynced count, "sold while offline" report | The policy's "flag it" half — **DONE 2026-08-04** |
+| E | End-to-end and load tests, then the excluded paths re-verified | **WRITTEN 2026-08-07, replay suite not yet run** — see §14 |
 
 **B before C is not negotiable.** Shipping the writer before the reader means the
 first outage produces a screen accusing a cashier of stealing.
@@ -292,3 +302,76 @@ which is the same conclusion F-4 reached about stock generally.
 
 Revisit if the threat model ever includes a cashier willing to use developer
 tools, rather than one willing to pocket cash.
+
+
+---
+
+## 13. Phase D record — what building the UX turned up
+
+**`madeOffline` is unconstrained by the rules.** Phase C added the field to the
+sale document; `validSale()` has no `hasOnly` on sales, so the write passes —
+but nothing constrains its *type* either. A client writing `madeOffline: "no"`
+would be accepted, and a truthiness check in the report would then mark a normal
+sale as rung up blind. Every read of the field in phase D therefore tests
+`=== true` explicitly, which closes the practical hole.
+
+The tidier fix is a rule — `!('madeOffline' in d) || d.madeOffline is bool` —
+and it is deliberately **not** in this phase. Phase D is client-only, so no
+emulator suite needed re-running; adding a rule would have meant shipping a
+`firestore.rules` change without running the 15 suites that exist to check
+exactly that. Filed rather than smuggled in. It tightens a field every existing
+client already writes correctly, so it is safe whenever an emulator run is
+available.
+
+**Negative stock had a second consequence nobody had followed.** Phase A allowed
+`products.quantity < 0`; `reorderRecommendation()` still read `quantity === 0`
+as the empty case, so a shelf at −6 divided straight through and reported a
+*negative* number of days until stockout — for the one product most certainly
+already out. Fixed to `<= 0`. Worth noting as a pattern rather than a typo: a
+loosened bound propagates to every arithmetic that assumed the old one, and
+those call sites do not announce themselves.
+
+**The banner's static fallback still carried the phase C lie.** The i18n string
+was corrected when the queue landed; the hard-coded English in `app.html` — what
+a user sees before `translateStaticDom()` runs, and permanently if it fails —
+still said sales could not be recorded. Both are now pinned by test.
+
+
+---
+
+## 14. Phase E record — written, partly unproven
+
+`tests/offline-replay.test.mjs` covers the four categories that needed a server:
+a queued sale landing against a shelf that moved under it (asserting
+`increment()` gives 3 where a read-then-write replay would write 7 and restore
+four genuinely sold units); two tills both selling the last unit offline, where
+**both** writes must land and the shelf must read −1 rather than 0; the
+deterministic sale id refusing a queue drained twice; 150 queued writes draining
+without stalling or losing any; and the negative bound still holding at replay
+time, which is the one place an absent bound would surface since nothing on the
+client re-checks it.
+
+**It has not been run.** The environment it was written in cannot reach the npm
+registry (403) or the emulator jar host (`blocked-by-allowlist`), so
+`firebase-tools` cannot be installed for Linux and the Firestore emulator binary
+cannot be fetched at all. The suite is therefore in the same category as the
+`madeOffline` rule filed in §13 — written honestly, marked unproven, and owed a
+run on a developer machine rather than quietly counted as passing.
+
+**The regression half found a real defect.** `confirmProcessReturn()` caught its
+transaction error and toasted a flat "could not process the return" whatever had
+gone wrong, so the likeliest cause in this market — no signal — was the one
+message it never produced. Every other online-only path already routed through
+`describeOperationError()`; this one had been missed. Fixed, and the check that
+found it now scans **catch blocks specifically** rather than the whole file: the
+first version flagged two bare-string toasts that were entirely correct (a
+missing dialog in the markup, an order number that failed validation before
+anything was attempted), and a check that cries wolf gets deleted rather than
+heeded.
+
+**What no suite here proves.** That Firestore's own queue survives a genuine
+outage on a real handset. Every write in the replay suite is issued directly;
+the SDK's persistence layer is assumed, not exercised. The phase C bug — a
+sale-breaking defect that shipped with every emulator suite green, because they
+assert write shapes against the rules and never execute the client's sale code —
+is the standing argument for why that trial is not optional.

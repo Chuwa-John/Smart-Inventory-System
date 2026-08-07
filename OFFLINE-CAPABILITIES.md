@@ -16,6 +16,12 @@ activity still needs a connection.**
 > be taken offline. That was true until cash sales began queueing on the device.
 > Credit sales, returns, voids, transfers and shift open/close are still
 > refused offline.
+>
+> Changed 2026-08-04 (L-9 phase D). The flagging half is now on screen, not just
+> in the data: an unsynced-sales count at the till and a "Sold While Offline"
+> report for the owner. This is what makes the honest answer below — *"the
+> system shows the owner exactly which sales were made offline"* — something a
+> salesperson can now say without qualification.
 
 ---
 
@@ -145,19 +151,22 @@ data through an outage.
 
 ## What has been built, and what has not
 
-Built (L-9 phases A–C, `DESIGN-offline-selling.md`):
+Built (L-9 phases A–D, `DESIGN-offline-selling.md`):
 
 1. A queue that survives a page reload — Firestore's own, already enabled.
 2. Merge rather than overwrite when two tills sell the same item offline.
 3. Ledger entries marked `offline`, carrying a delta and no shelf claim.
 4. Reconciliation that reads those products as *unknown* rather than as theft.
 5. The oversell decision: sell anyway and flag it.
+6. The flagging itself (phase D, 2026-08-04) — a count of sales still waiting to
+   reach the server, shown until it is zero rather than until the signal
+   returns; each sale marked as rung up offline, separately from whether it has
+   synced yet; and an owner's **Sold While Offline** report, grouped by product,
+   saying plainly that those counts are unverified until each product's next
+   online movement.
 
 Not built yet:
 
-- **Phase D** — the owner's "sold while offline" view, and an unsynced count at
-  the till. Until it exists, the flagging half of *sell anyway, flag it* is only
-  in the data, not on a screen. Both are needed before this is sold as a feature.
 - **Phase E** — end-to-end replay tests, and a real-device trial with airplane
   mode. Everything asserted so far is structural: that the code queues, does not
   await, and marks entries correctly. **No test yet proves Firestore actually

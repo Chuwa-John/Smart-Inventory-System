@@ -9,7 +9,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260802z" />
+    <link rel="stylesheet" href="./styles.css?v=20260804b" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#0b0d10" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -29,7 +29,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260802z"></script>
+    <script type="module" src="./boot.js?v=20260804b"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -103,11 +103,23 @@
           <button class="ghost-button compact" id="resendVerificationButton" type="button" data-i18n="verifyEmail.resendButton">Resend verification email</button>
         </div>
 
-        <!-- Selling uses a Firestore transaction, and transactions cannot run
-             offline however good the local cache is. Without this the till just
-             failed with an SDK string and no explanation. -->
+        <!-- Since L-9 phase C a cash sale is queued on the device rather than
+             refused, so this banner tells the cashier the sale was taken and is
+             being held. The static text here is the pre-i18n fallback and must
+             say the same thing as offline.bannerText -- a fallback that still
+             claimed refusal would be read as truth for the moment before
+             translation applies. Credit and card still need the network. -->
         <div class="verify-banner danger-banner" id="offlineBanner" hidden role="status">
-          <span data-i18n="offline.bannerText">No internet connection. You can keep browsing, but sales cannot be recorded until the connection returns.</span>
+          <span data-i18n="offline.bannerText">No internet connection. Cash sales are saved on this device and will sync when you reconnect.</span>
+        </div>
+
+        <!-- Separate from the banner above, and deliberately not folded into it:
+             the queue outlives the outage. Sales stay unsynced for as long as
+             the replay takes, which is precisely the window in which a cashier
+             wonders whether the sale took. This stays up until the count is
+             zero, online or not (L-9 phase D). -->
+        <div class="verify-banner danger-banner" id="unsyncedSalesBanner" hidden role="status">
+          <span id="unsyncedSalesText"></span>
         </div>
 
         <div class="verify-banner danger-banner" id="deletionPendingBanner" hidden role="alert">
@@ -467,6 +479,22 @@
                 <tbody id="staffBreakdownTable"></tbody>
               </table>
             </div>
+          </article>
+
+          <!-- The "flag it" half of sell-anyway-flag-it (L-9 phase D). Without
+               this view the policy is just overselling: stock went out during an
+               outage and nothing told the owner which products are no longer
+               trustworthy. Grouped by product because that is the unit the
+               owner acts on -- they go and count that shelf. -->
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="offlineReport.eyebrow">Sold during an outage</p>
+                <h2 data-i18n="offlineReport.title">Sold While Offline</h2>
+              </div>
+              <strong id="offlineSalesTotal"></strong>
+            </div>
+            <div id="offlineSalesReport"></div>
           </article>
 
           <article class="panel">
@@ -984,6 +1012,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260802z"></script>
+    <script type="module" src="./app.js?v=20260804b"></script>
   </body>
 </html>

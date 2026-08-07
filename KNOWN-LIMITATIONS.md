@@ -150,14 +150,35 @@ delta chain rather than comparing only the newest entry, which would locate
 
 ---
 
-## L-9 The till cannot sell without a connection — **OPEN**
+## L-9 The till cannot sell without a connection — **LARGELY CLOSED, unproven on a real device**
 
-**Limitation.** A sale requires a Firestore transaction. Transactions do not
-queue offline the way plain writes do, so when the connection drops the sale is
-refused: the banner reads *"No internet connection. You can keep browsing, but
-sales cannot be recorded until the connection returns."* The `local-` sale path
-in `app.js` is not an offline mode — it exists for the case where Firestore is
-absent entirely (no config, signed out), which is demo mode.
+**Status 2026-08-04.** Phases A–D of `DESIGN-offline-selling.md` have shipped. A
+**cash** sale is now queued on the device and replayed on reconnect; the cashier
+sees a count of sales still waiting to reach the server, and the owner gets a
+*Sold While Offline* report naming the products whose counts can no longer be
+trusted. Credit sales, returns, voids, transfers and shift open/close are still
+refused offline, honestly and by design.
+
+**What keeps this entry open rather than resolved.** Phase E's replay,
+idempotency, bound and load tests are now written
+(`tests/offline-replay.test.mjs`) but have **not been run** — the environment
+they were written in cannot reach the emulator jar host. Run `npm test` in
+`tests/` before treating them as evidence.
+
+And even once they pass, **nothing has proved that Firestore replays a real
+queue after a real outage on a real phone.** Every write in that suite is issued
+directly; the SDK's persistence layer is assumed rather than exercised. That
+trial is the difference between "the code is shaped correctly" and "the feature
+works". Until it is done, do not sell this to a customer whose branches run on
+mobile data.
+
+**The original limitation, for context.** A sale required a Firestore
+transaction. Transactions do not queue offline the way plain writes do, so when
+the connection dropped the sale was refused: the banner read *"No internet
+connection. You can keep browsing, but sales cannot be recorded until the
+connection returns."* The `local-` sale path in `app.js` was never an offline
+mode — it exists for the case where Firestore is absent entirely (no config,
+signed out), which is demo mode, and it still is.
 
 **Why this entry did not exist until now.** It was not merely undocumented — it
 was documented backwards. `SECURITY-AUDIT.md` F-4 described offline selling as
@@ -199,7 +220,15 @@ the customer has left. Selling offline therefore requires a bounded-negative
 
 Phase order is load-bearing: reconciliation must learn to treat offline ledger
 entries as *unknown* **before** anything writes one, or the first outage
-produces a screen accusing a cashier of theft.
+produces a screen accusing a cashier of theft. It was built in that order.
+
+**Built 2026-08-02 to 08-04.** A (rules), B (reader), C (writer), D (the
+flagging UX). Phase C shipped alongside a genuinely sale-breaking bug in the
+stock ledger that no suite caught, because the emulator suites verify write
+shapes against the rules and never execute the client's sale code — see the
+2026-08-04 entry in `DESIGN-offline-selling.md` §13 and the structural guards
+now in `tests/offline-selling.test.mjs`. That blind spot is itself an argument
+for phase E rather than a reason to consider this closed.
 
 ---
 
