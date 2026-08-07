@@ -149,8 +149,52 @@ console.log("\n=== both paths carry it, or the return disagrees with the takings
 
 console.log("\n=== the receipt is given what it needs ===");
 {
-  check("lastSale carries the tax fields", /state\.lastSale = \{ mode: "firestore", saleId, items: saleItems, paymentMethod, total, \.\.\.taxFields \}/.test(handler),
-    "otherwise the receipt would have to recompute, and two copies of tax arithmetic disagree eventually");
+  // This block previously asserted that state.lastSale carried the tax fields.
+  // state.lastSale drives the UNDO control. The receipt reads
+  // state.lastReceiptSale, which openReceiptDialog() sets from its argument —
+  // so the assertion was green while every customer receipt printed no VAT at
+  // all. The regex also happened to match the offline branch only, so the
+  // online branch was missing the spread too and the suite still passed.
+  //
+  // The lesson is the one L-6 already named: coverage of a component is not
+  // coverage of its connection. These assertions therefore read the ARGUMENT at
+  // the call site, which is the thing the receipt actually receives.
+  const callStart = handler.indexOf("openReceiptDialog({");
+  check("the receipt dialog is opened from this handler", callStart !== -1);
+  let depth = 0, end = handler.indexOf("(", callStart);
+  for (let i = end; i < handler.length; i++) {
+    if (handler[i] === "(") depth++;
+    else if (handler[i] === ")") { depth--; if (depth === 0) { end = i; break; } }
+  }
+  const receiptArg = handler.slice(callStart, end + 1);
+
+  check("the object handed to the receipt carries the tax fields", /\.\.\.taxFields,/.test(receiptArg),
+    "receiptVatRows() tests sale.vatRegistered === true; without this it reads undefined "
+    + "and a VAT-registered shop hands the customer a receipt with no tax invoice on it");
+  check("...and the total it prints", /\btotal,/.test(receiptArg));
+
+  // Every assignment, not whichever one a regex happened to land on.
+  const lastSaleAssignments = [...handler.matchAll(/state\.lastSale = \{[^}]*\}/g)].map((m) => m[0]);
+  check("every sale path was found", lastSaleAssignments.length >= 3, `${lastSaleAssignments.length} found`);
+  const withoutTax = lastSaleAssignments.filter((a) => !a.includes("...taxFields"));
+  check("every branch's lastSale carries the tax fields", withoutTax.length === 0,
+    `${withoutTax.length} branch(es) omit it: ${withoutTax.map((a) => a.slice(0, 60)).join(" | ")}`);
+}
+
+console.log("\n=== the printed, PDF and WhatsApp copies carry it too ===");
+{
+  // The ones the customer keeps. Fixing only the dialog leaves these blank.
+  const textLines = extractFn("buildReceiptTextLines");
+  check("the text receipt emits tax lines", /receiptVatTextLines\(sale\)/.test(textLines),
+    "the PDF and WhatsApp copies are the ones a customer keeps and a TRA inspection asks for");
+  check("...after the total, not before", textLines.indexOf("receiptVatTextLines") > textLines.indexOf('t("pos.total")'));
+
+  const vatText = extractFn("receiptVatTextLines");
+  check("a sale outside the scheme emits nothing", /sale\?\.vatRegistered !== true\) return \[\]/.test(vatText));
+  check("it prints the stored rate", /sale\.vatRate/.test(vatText));
+  check("it prints net and VAT", /netTotal/.test(vatText) && /taxTotal/.test(vatText));
+  check("it prints the VRN", /sale\.vrn/.test(vatText),
+    "a tax invoice must carry the registration number it was issued under");
 }
 
 console.log("\n=== nothing about the existing sale changed ===");

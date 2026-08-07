@@ -149,6 +149,24 @@ console.log("\n=== the receipt states tax honestly ===");
   check("...and only for a scheme sale", /sale\.vatRegistered === true && sale\.vrn/.test(receipt));
 }
 
+console.log("\n=== the renderer is actually reached ===");
+{
+  // Proving receiptVatRows() correct proved nothing about whether a customer
+  // ever sees it: the call site handed it an object with no tax fields, so it
+  // returned "" on every sale. These assert the last link — that what
+  // openReceiptDialog is given is what gets rendered. The link before it (the
+  // sale handing over its tax fields) is asserted in vat-sale-path.test.mjs,
+  // at the call site rather than on a variable the receipt does not read.
+  const open = extractFn("openReceiptDialog");
+  check("the dialog stores the sale it was handed", /state\.lastReceiptSale = sale;/.test(open));
+  check("...and renders from that same object", /buildReceiptHtml\(sale\)/.test(open),
+    "rendering from anything else would reintroduce the gap between what was computed and what is shown");
+
+  const html = extractFn("buildReceiptHtml");
+  check("the renderer calls the tax block", /\$\{receiptVatRows\(sale\)\}/.test(html),
+    "a correct function nobody calls is the exact shape of QA-101");
+}
+
 console.log("\n=== the panel is hidden from a shop with no return to file ===");
 {
   check("the VAT panel starts hidden", /id="vatReportPanel" hidden/.test(appHtml));

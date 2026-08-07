@@ -5466,6 +5466,26 @@ function printReceipt() {
   printWindow.close();
 }
 
+// Text twin of receiptVatRows(). Same rule: a sale from before the business
+// registered prints nothing, because it is outside the scheme rather than taxed
+// at zero.
+function receiptVatTextLines(sale) {
+  if (sale?.vatRegistered !== true) return [];
+  const rate = Math.round(Number(sale.vatRate || 0) * 100);
+  const breakdown = sale.taxBreakdown || {};
+  const zeroRated = Number(breakdown.zeroRated?.net || 0);
+  const exempt = Number(breakdown.exempt?.net || 0);
+  const lines = [
+    `${t("receipt.vatNetLabel")}: ${money(sale.netTotal)}`,
+    `${t("receipt.vatLabel", { rate: String(rate) })}: ${money(sale.taxTotal)}`
+  ];
+  if (zeroRated > 0) lines.push(`${t("receipt.vatZeroRatedLabel")}: ${money(zeroRated)}`);
+  if (exempt > 0) lines.push(`${t("receipt.vatExemptLabel")}: ${money(exempt)}`);
+  if (sale.vrn) lines.push(`${t("receipt.vrnLabel")}: ${sale.vrn}`);
+  lines.push(t("receipt.vatInclusiveNote"));
+  return lines;
+}
+
 function buildReceiptTextLines(sale) {
   const { storeName, businessName, date } = receiptMeta(sale);
   const lines = [businessName, storeName, "", `${t("receipt.dateLabel")}: ${date.toLocaleString()}`];
@@ -5483,6 +5503,10 @@ function buildReceiptTextLines(sale) {
     lines.push(`${t("receipt.discountLabel")}: - ${money(sale.discountAmount)}`);
   }
   lines.push(`${t("pos.total")}: ${money(sale.total)}`);
+  // The same decomposition the on-screen receipt shows. Without it the PDF and
+  // the WhatsApp copy -- the ones a customer actually keeps -- were tax-free
+  // even once the dialog was fixed.
+  lines.push(...receiptVatTextLines(sale));
   if (sale.paymentMethod === "cash" && sale.cashTendered != null) {
     lines.push(`${t("pos.amountTendered")}: ${money(sale.cashTendered)}`);
     lines.push(`${t("pos.changeDue")}: ${money(sale.changeDue)}`);
@@ -9637,7 +9661,7 @@ function bindEvents() {
           }
         });
 
-        state.lastSale = { mode: "firestore", saleId: saleRef.id, items: saleItems, paymentMethod, total };
+        state.lastSale = { mode: "firestore", saleId: saleRef.id, items: saleItems, paymentMethod, total, ...taxFields };
       } catch (error) {
         console.warn(error);
         showToast(describeOperationError(error, "toast.saleFailedGeneric"));
@@ -9685,7 +9709,7 @@ function bindEvents() {
         voided: false,
         createdAt: new Date()
       });
-      state.lastSale = { mode: "local", items: saleItems, paymentMethod, total };
+      state.lastSale = { mode: "local", items: saleItems, paymentMethod, total, ...taxFields };
     }
 
     openReceiptDialog({
@@ -9704,6 +9728,13 @@ function bindEvents() {
       customerName,
       customerPhone,
       storeId: state.currentStoreId,
+      // The tax the sale was just written with. Omitted here, every downstream
+      // reader tests sale.vatRegistered === true against undefined and prints
+      // nothing -- so the arithmetic, the rules and the renderer were all
+      // correct and the customer still got a receipt with no VAT on it. A
+      // registered business is required to hand over a tax invoice showing the
+      // VAT charged and its VRN; this literal is what makes that true.
+      ...taxFields,
       createdAt: new Date()
     });
 
