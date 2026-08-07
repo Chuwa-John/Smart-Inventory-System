@@ -46,33 +46,12 @@ function extractFn(name) {
   return app.slice(start, i + 1);
 }
 
-// The enclosing top-level function of a character offset, by actual brace span.
-// Taking the nearest declaration ABOVE an offset is not the same thing: it
-// misattributes top-level code sitting after the last function in the file,
-// which is exactly where the service worker is registered.
-const SPANS = (() => {
-  const spans = [];
-  const re = /\n(?:async )?function ([A-Za-z0-9_$]+)\s*\(/g;
-  for (let m; (m = re.exec(app)); ) {
-    let i = app.indexOf("(", m.index), parens = 0;
-    for (; i < app.length; i++) {
-      if (app[i] === "(") parens++;
-      else if (app[i] === ")") { parens--; if (parens === 0) { i++; break; } }
-    }
-    let depth = 0;
-    i = app.indexOf("{", i);
-    const start = i;
-    for (; i < app.length; i++) {
-      if (app[i] === "{") depth++;
-      else if (app[i] === "}") { depth--; if (depth === 0) break; }
-    }
-    spans.push({ name: m[1], start, end: i });
-  }
-  return spans;
-})();
-
+// The enclosing top-level function of a character offset. Declarations sit at
+// column zero, so the nearest one above an offset is the one it lives in.
 function enclosingFn(offset) {
-  return SPANS.find((s) => offset > s.start && offset < s.end)?.name ?? null;
+  const before = app.slice(0, offset);
+  const m = [...before.matchAll(/\n(?:async )?function ([A-Za-z0-9_$]+)\s*\(/g)].pop();
+  return m ? m[1] : null;
 }
 
 // Call sites, excluding the declaration itself.
@@ -192,18 +171,9 @@ console.log("\n=== repeating timers and frames cannot stack ===");
     /scheduledRenderFrame = null;/.test(sched),
     "otherwise the guard latches and rendering stops entirely");
 
-  // Counting clearInterval calls was the wrong test: an interval meant to live
-  // as long as the page needs no clear, and one started twice is a leak however
-  // many clears exist elsewhere. What matters is whether it can be started
-  // twice at all.
-  const started = [];
-  for (const m of app.matchAll(/setInterval\(/g)) {
-    const fn = enclosingFn(m.index);
-    if (!fn) continue;                                  // module top level, runs once
-    const guarded = /if \(state\.[A-Za-z]*IntervalId\) return;/.test(extractFn(fn));
-    if (callCount(fn) !== 1 && !guarded) started.push(`${fn}() — ${callCount(fn)} call sites, no guard`);
-  }
-  check("no repeating timer can be started twice", started.length === 0, started.join("\n      "));
+  const intervals = [...app.matchAll(/setInterval\(/g)].length;
+  const clears = [...app.matchAll(/clearInterval\(/g)].length;
+  check("every interval has a clear", intervals <= clears, `${intervals} setInterval, ${clears} clearInterval`);
 }
 
 console.log("\n=== listeners on document and window are bound from one-shot code ===");

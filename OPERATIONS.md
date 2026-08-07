@@ -25,18 +25,9 @@ Do not enable Firebase Functions, Firebase Storage, or a Firebase billing upgrad
 
 1. Keep the working tree clean and review `git diff --check`.
 2. For every hosted frontend release, increment all of these together:
-   - `app.html`: the `app.js?v=...`, `boot.js?v=...` and `styles.css?v=...` values.
-   - `accept-invite.html`, `privacy-policy.html`, `terms.html`: the `styles.css?v=...` value.
-   - `sw.js`: `CACHE_NAME`, and the `app.js`, `boot.js` and `styles.css` entries
-     in `APP_SHELL`.
-
-   Note `index.html` is NOT in that list. It is the landing page, its CSS is
-   inline, and it references no versioned asset — this procedure named it three
-   times and never named `app.html` until 2026-08-07, which is the file that
-   actually points at the bundle. A release made by following the old wording
-   would have bumped nothing and shipped a shell pointing at the previous
-   build. `tests/deployment-validation.test.mjs` now fails if the list here and
-   the files that really carry stamps disagree.
+   - `index.html`: the `app.js?v=...` value.
+   - `index.html` and `accept-invite.html`: the `styles.css?v=...` value.
+   - `sw.js`: `CACHE_NAME`, and the `styles.css?v=...` entry in `APP_SHELL`.
 
    This prevents an old shell from referencing a new app bundle or vice versa.
 
