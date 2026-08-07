@@ -28,6 +28,22 @@ Do not enable Firebase Functions, Firebase Storage, or a Firebase billing upgrad
    `APP_SHELL` entry must use the identical URL the page requests, or the
    worker pre-caches one copy and serves another.
 
+   Why the `?v=` matters more than it looks: hosting serves every `.js` and
+   `.css` as `public, max-age=31536000, immutable`, so a browser keeps them for
+   a year and never asks again. That is safe *only* because the URL changes on
+   release. An asset referenced without a `?v=` is therefore pinned in a user's
+   browser for a year with no way to recover by deploying —
+   `tests/cache-policy.test.mjs` fails if any page ever references one.
+
+   The reverse applies to `app.html` and `sw.js`, which carry no version and are
+   served `no-cache`. They are the pointers: `app.html` says which build to
+   fetch, `sw.js` decides what the offline shell holds. Firebase's default of
+   `max-age=3600` on HTML meant a deploy took up to an hour to reach a returning
+   shop, including a fix on the sale path. Both rules are pinned by the same
+   test, including their ORDER — `sw.js` must come after the blanket `js|css`
+   rule in `firebase.json`, because Firebase takes the last matching value and a
+   reordering would silently make the service worker immutable for a year.
+
    Verify a release by checking the DEPLOYED file, not the local one --
    `curl` the hosted asset and grep it for the change. "The deploy said
    success" is not evidence the change is live.
