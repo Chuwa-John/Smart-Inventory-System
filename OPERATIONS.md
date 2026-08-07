@@ -99,7 +99,46 @@ Do not enable Firebase Functions, Firebase Storage, or a Firebase billing upgrad
 1. Identify the prior known-good Git commit and Firebase Hosting release.
 2. Revert the faulty commit with a new commit; do not use destructive Git reset commands.
 3. Deploy the reverted Hosting/Firestore configuration, then verify the two production endpoints above.
-4. For a proxy rollback, redeploy the prior healthy Render deploy through the Render dashboard or CLI, then verify `/health`.
+4. **Roll forward on a NEW version stamp. Never reissue the one you withdrew.**
+   See below — this is the rule the rehearsal existed to find.
+5. For a proxy rollback, redeploy the prior healthy Render deploy through the Render dashboard or CLI, then verify `/health`.
+
+### Why step 4 exists
+
+`?v=` is a cache key, not a build selector. Firebase serves whatever `/app.js`
+currently is for *every* query string — verified live during the drill, where
+`?v=20260807a`, `?v=20260807b` and `?v=99999999z` all returned identical bytes.
+
+`app.js` is served `immutable` for a year. So any browser that loaded
+`?v=X` while a bad build was live has that response pinned until 2027. If you
+roll forward reusing `X`, those browsers never re-fetch: they keep running the
+withdrawn code under a stamp everyone believes is the fix, and no deploy can
+dislodge it. **A rollback burns its version string permanently.**
+
+Reissuing a stamp for the *same* bytes is fine, and is exactly what step 2
+does — the revert brings the previous stamp and the previous file back
+together. `tests/deployment-validation.test.mjs` walks the git history of
+`app.html` and fails if any one stamp has ever meant two different builds.
+
+### Rehearsal record
+
+Rehearsed end to end on 2026-08-07 against production, not a preview channel.
+
+| Leg | Elapsed | Verified |
+| --- | --- | --- |
+| Deploy v90 | 43s | shell, `sw.js`, banner present |
+| Decision → rollback live (v90 → v89) | **62s** | shell reverted, banner gone, both bundles 200 |
+| Roll forward (v89 → v91, fresh stamp) | 8m32s | shell, `sw.js`, banner and `controllerchange` restored |
+
+The 62 seconds is the number to plan against: `git revert` plus
+`firebase deploy --only hosting`, decision to live. The roll-forward leg is not
+comparable — it included writing the stamp-reuse guard and running the whole
+suite, which a real roll-forward would not. Its deploy alone was ~45s.
+
+The rollback path works and is fast. What it does *not* do on its own is reach a
+till that never reloads — the browser only re-checks `sw.js` on navigation. That
+is what the update banner added in the same phase is for, and it is the reason a
+rollback is not finished when hosting says "release complete".
 
 ## Secret and access governance
 

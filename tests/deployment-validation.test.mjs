@@ -23,6 +23,8 @@
 // opening time, and only a reload changes that. So the shop worst affected by a
 // bad build was the shop least likely to receive its withdrawal.
 import { readFileSync, readdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const sw = readFileSync(new URL("../sw.js", import.meta.url), "utf8");
@@ -143,6 +145,67 @@ console.log("\n=== what a rollback restores is the whole set, not part of it ===
     `app.html ${[...stamps].join(",")} vs sw.js ${[...swStamps].join(",")}`);
 
   check("CACHE_NAME moved too", /const CACHE_NAME = "savia-shell-v\d+"/.test(sw));
+}
+
+console.log("\n=== a withdrawn version string is never reissued ===");
+{
+  // Found by rehearsing a rollback rather than reasoning about one. The ?v= is
+  // a cache key, not a build selector: hosting serves whatever /app.js
+  // currently is, for every query string. Confirmed live -- ?v=<old>, ?v=<new>
+  // and ?v=99999999z all returned the same bytes.
+  //
+  // That matters because app.js is served `immutable` for a year. Any browser
+  // that loaded ?v=X while a bad build was live has that response pinned until
+  // 2027. Roll forward reusing X and those browsers never re-fetch: they keep
+  // running the withdrawn code, under a stamp everyone believes is the fix.
+  // A rollback therefore BURNS its version string permanently.
+  const log = execFileSync("git", ["log", "--format=%H", "--reverse", "--", "app.html"],
+    { cwd: fileURLToPath(ROOT), encoding: "utf8" }).trim().split("\n").filter(Boolean);
+
+  // The invariant is NOT that a stamp appears once in history. A rollback done
+  // the documented way -- revert with a new commit -- necessarily puts the
+  // previous stamp back, and that is harmless, because it brings the previous
+  // BYTES back with it. A browser holding that stamp already has exactly what
+  // is now being served.
+  //
+  // What must never happen is one stamp meaning two different builds. Then the
+  // pinned copy and the served copy disagree with no way to tell them apart,
+  // and no deploy can dislodge the wrong one for a year.
+  const cwd = fileURLToPath(ROOT);
+  const blobs = (sha) => ["app.js", "styles.css", "boot.js"].map((f) => {
+    try {
+      return execFileSync("git", ["rev-parse", `${sha}:${f}`], { cwd, encoding: "utf8" }).trim();
+    } catch { return "-"; }
+  }).join("/");
+
+  const contentsFor = new Map();
+  for (const sha of log) {
+    let html = "";
+    try {
+      html = execFileSync("git", ["show", `${sha}:app.html`],
+        { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    } catch { continue; }
+    const stamp = html.match(/app\.js\?v=([0-9a-z]+)/)?.[1];
+    if (!stamp) continue;
+    if (!contentsFor.has(stamp)) contentsFor.set(stamp, new Set());
+    contentsFor.get(stamp).add(blobs(sha));
+  }
+
+  check("history was readable", contentsFor.size >= 3, `${contentsFor.size} distinct stamps in history`);
+
+  const ambiguous = [...contentsFor].filter(([, set]) => set.size > 1).map(([s]) => s);
+  check("no version string ever meant two different builds", ambiguous.length === 0,
+    `${ambiguous.join(", ")} — a browser pinned one of them under immutable and cannot be corrected by deploying`);
+
+  // The working tree counts as one more datapoint: shipping today's bytes under
+  // a stamp history already used for different bytes is the same defect.
+  const current = appHtml.match(/app\.js\?v=([0-9a-z]+)/)?.[1];
+  const priorContents = contentsFor.get(current);
+  const currentBlobs = blobs("HEAD");
+  check("the working tree does not reuse a stamp for new bytes",
+    !priorContents || priorContents.size === 0 || priorContents.has(currentBlobs)
+      || !log.length,
+    `${current} was committed with different app.js/styles.css/boot.js than the tree now holds`);
 }
 
 const failed = results.filter((r) => !r.pass);
