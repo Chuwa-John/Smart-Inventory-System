@@ -2209,6 +2209,85 @@ function clearDiscount() {
   state.discountBasis = 0;
 }
 
+// ---------------------------------------------------------------------------
+// VAT. Full rationale in DESIGN-vat.md; the parts that matter at the call site:
+//
+//   - Prices are INCLUSIVE. The shelf price is what is paid and the tax is
+//     extracted from inside it, which is how Tanzanian retail quotes prices and
+//     is what keeps the payable amount a whole shilling.
+//   - `net` is always derived by SUBTRACTION from the amount charged, never by
+//     rounding on its own. Round both independently and net + vat stops equal-
+//     ling the total, which is a VAT return that does not reconcile to takings.
+//   - zeroRated and exempt both carry no tax and are still not the same thing:
+//     zero-rated supplies are taxable at 0% and count toward taxable turnover,
+//     exempt supplies do not. That is the whole reason there are three classes
+//     and not a boolean.
+const VAT_RATE = 0.18;
+const TAX_CLASSES = ["standard", "zeroRated", "exempt"];
+
+function taxClassOf(product) {
+  return TAX_CLASSES.includes(product?.taxClass) ? product.taxClass : "standard";
+}
+
+function vatFromInclusive(inclusiveAmount) {
+  const amount = Number(inclusiveAmount || 0);
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  return Math.round((amount * VAT_RATE) / (1 + VAT_RATE));
+}
+
+// A basket-level discount has to be spread across the lines BEFORE any tax is
+// extracted, or a discount on a zero-rated item would reduce the VAT owed on a
+// standard-rated one. Largest remainder, so the parts sum to exactly the
+// discount -- apportioning each line independently and rounding leaves a
+// residue, and the residue is a total that disagrees with its own lines.
+function apportionDiscount(lineAmounts, discountAmount) {
+  const subtotal = lineAmounts.reduce((sum, amount) => sum + amount, 0);
+  const discount = Math.min(Math.max(Number(discountAmount || 0), 0), subtotal);
+  if (subtotal <= 0 || discount <= 0) return lineAmounts.map(() => 0);
+
+  const exact = lineAmounts.map((amount) => (amount * discount) / subtotal);
+  const shares = exact.map(Math.floor);
+  let remaining = discount - shares.reduce((sum, share) => sum + share, 0);
+
+  // The leftover shillings go to the lines with the largest fractional claim,
+  // which is what stops a rounding bias always favouring the first line.
+  const byFraction = exact
+    .map((value, index) => ({ index, fraction: value - Math.floor(value) }))
+    .sort((a, b) => b.fraction - a.fraction);
+
+  for (let i = 0; remaining > 0 && i < byFraction.length; i++) {
+    shares[byFraction[i].index] += 1;
+    remaining -= 1;
+  }
+  return shares;
+}
+
+// lines: [{ inclusive, taxClass }]. Returns whole shillings throughout, with
+// netTotal + taxTotal === total guaranteed for every input.
+function computeSaleTax(lines, discountAmount = 0) {
+  const amounts = lines.map((line) => Math.max(0, Math.round(Number(line.inclusive || 0))));
+  const shares = apportionDiscount(amounts, discountAmount);
+
+  const breakdown = {
+    standard: { net: 0, vat: 0 },
+    zeroRated: { net: 0, vat: 0 },
+    exempt: { net: 0, vat: 0 }
+  };
+
+  let total = 0;
+  lines.forEach((line, index) => {
+    const charged = amounts[index] - shares[index];
+    const taxClass = TAX_CLASSES.includes(line.taxClass) ? line.taxClass : "standard";
+    const vat = taxClass === "standard" ? vatFromInclusive(charged) : 0;
+    breakdown[taxClass].vat += vat;
+    breakdown[taxClass].net += charged - vat;
+    total += charged;
+  });
+
+  const taxTotal = breakdown.standard.vat + breakdown.zeroRated.vat + breakdown.exempt.vat;
+  return { total, taxTotal, netTotal: total - taxTotal, breakdown, vatRate: VAT_RATE };
+}
+
 // A fixed discount is authorised against one basket and stays applied while the
 // basket changes underneath it. computeDiscountAmount caps it at the subtotal,
 // so shrinking the cart quietly turns "50,000 off 60,000" into a 100% discount:

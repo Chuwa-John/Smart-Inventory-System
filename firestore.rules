@@ -139,7 +139,11 @@ service cloud.firestore {
         && (!('costPrice' in d) || moneyInRange(d.costPrice))
         && (!('sellingPrice' in d) || moneyInRange(d.sellingPrice))
         && (!('reorderLevel' in d) || countInRange(d.reorderLevel))
-        && (!('expiryDate' in d) || (d.expiryDate is string && d.expiryDate.size() <= 10));
+        && (!('expiryDate' in d) || (d.expiryDate is string && d.expiryDate.size() <= 10))
+        // Absent means standard-rated, which is what taxClassOf() defaults to.
+        // Defaulting the other way would silently under-collect on every
+        // product added before this field existed.
+        && (!('taxClass' in d) || d.taxClass in ['standard', 'zeroRated', 'exempt']);
     }
 
     function productImmutableFieldsUnchanged() {
@@ -268,7 +272,22 @@ service cloud.firestore {
         // and any truthiness check downstream would then read a perfectly
         // ordinary sale as rung up blind. Every reader tests === true, which
         // closes it in practice; this closes it at the boundary.
-        && (!('madeOffline' in d) || d.madeOffline is bool);
+        && (!('madeOffline' in d) || d.madeOffline is bool)
+        // VAT (DESIGN-vat.md). All optional: a business that is not registered
+        // writes none of them, and a sale from before it registered is outside
+        // the scheme rather than taxed at zero.
+        //
+        // The last clause is the one worth the expressions. Rules cannot sum a
+        // list, so they cannot check the tax against the items -- but net and
+        // tax are scalars, and their sum is exactly the property the whole
+        // feature is judged on. Enforcing it here means a client bug cannot
+        // write a sale whose VAT return fails to reconcile to its own takings.
+        && (!('vatRegistered' in d) || d.vatRegistered is bool)
+        && (!('vatRate' in d) || (d.vatRate is number && d.vatRate >= 0 && d.vatRate <= 1))
+        && (!('taxTotal' in d) || totalInRange(d.taxTotal))
+        && (!('netTotal' in d) || totalInRange(d.netTotal))
+        && (!('taxBreakdown' in d) || d.taxBreakdown is map)
+        && (!('taxTotal' in d) || !('netTotal' in d) || d.netTotal + d.taxTotal == d.total);
     }
 
     function validShiftOpen() {
