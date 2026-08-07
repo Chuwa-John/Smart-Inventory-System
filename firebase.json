@@ -74,6 +74,15 @@
         ]
       },
       {
+        "source": "/@(firebase-config|ai-config).js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
         "source": "**/*.html",
         "headers": [
           {

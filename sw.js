@@ -3,19 +3,25 @@
 // instantly on repeat visits. This does NOT cache Firestore/Firebase
 // traffic or any cross-origin requests \u2014 those always go to the network.
 // Bump this on every deploy so old clients pick up new files.
-const CACHE_NAME = "savia-shell-v96";
+const CACHE_NAME = "savia-shell-v98";
 
 const APP_SHELL = [
   "./",
   "./index.html",
   "./app.html",
-  "./styles.css?v=20260807h",
+  "./styles.css?v=20260807j",
   // Must carry the same ?v= as app.html requests: a cache key includes the
   // query string, so a bare "./app.js" here is a second, unread entry and the
   // 406 KB file gets fetched twice per install. tests/asset-versions.test.mjs
   // fails if this drifts from app.html again.
-  "./app.js?v=20260807h",
-  "./boot.js?v=20260807h",
+  "./app.js?v=20260807j",
+  "./boot.js?v=20260807j",
+  // Unversioned by design -- these are pointers, like app.html and sw.js, not
+  // versioned payload. Pre-cached so the app can still boot offline, and
+  // served network-first below so a rotated Firebase project or proxy URL
+  // reaches a device that already has them.
+  "./firebase-config.js",
+  "./ai-config.js",
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
@@ -72,6 +78,37 @@ self.addEventListener("fetch", (event) => {
           return response;
         })
         .catch(() => caches.match(request).then((cached) => cached || caches.match("./app.html")))
+    );
+    return;
+  }
+
+  // Configuration is network-first, unlike everything else here.
+  //
+  // firebase-config.js and ai-config.js decide which Firebase project the app
+  // talks to and where the AI proxy lives. They carry no ?v=, so cache-first
+  // would pin whatever a device happened to fetch once -- and hosting used to
+  // serve them `immutable` on top of that, which meant rotating a project or a
+  // proxy URL could not reach an installed device at all (QA-106).
+  //
+  // Cache is kept as the OFFLINE fallback, not as the preferred copy: without
+  // it the app cannot boot with no connection, which would take the offline
+  // till down with it.
+  if (/\/(firebase-config|ai-config)\.js$/.test(new URL(request.url).pathname)) {
+    event.respondWith(
+      // `cache: "reload"` is what makes this a fix rather than a fix for future
+      // installs only. Every device that loaded these files while hosting was
+      // still sending `immutable` holds them in its own HTTP cache until 2027,
+      // and a plain fetch() would be answered from there without ever asking
+      // the network. Reload bypasses that copy and replaces it.
+      fetch(new Request(request, { cache: "reload" }))
+        .then((response) => {
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request))
     );
     return;
   }

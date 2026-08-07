@@ -87,6 +87,101 @@ console.log("\n=== nothing immutable is requested without a version ===");
   check("the pages were actually scanned", pages.length >= 4, `${pages.length} html files`);
 }
 
+console.log("\n=== module imports are not invisible to this guard (QA-106) ===");
+{
+  // The blind spot that made this necessary. The check above reads HTML `src`
+  // and `href` attributes, so it never saw
+  //
+  //     import { firebaseConfig } from "./firebase-config.js";
+  //
+  // at the top of app.js and accept-invite.js. Those two files decide which
+  // Firebase project the app talks to and where the AI proxy lives, and they
+  // were being served `public, max-age=31536000, immutable` — verified against
+  // production. Bumping app.js?v= does not help: the specifier inside it is
+  // unchanged, so a device that has them keeps them for a year and no deploy
+  // can rotate a project or a proxy URL.
+  //
+  // An imported module is safe if it is versioned OR explicitly declared
+  // no-cache. Anything else is pinned.
+  const scripts = readdirSync(ROOT).filter((f) => f.endsWith(".js"));
+  const imports = [];
+  for (const file of scripts) {
+    const src = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+    for (const m of src.matchAll(/(?:^|\n)\s*import\s[^;]*?from\s+"(\.\/[^"]+\.js)(\?[^"]*)?"/g)) {
+      imports.push({ file, target: m[1], versioned: Boolean(m[2]) });
+    }
+  }
+  check("module imports were actually found to check", imports.length >= 2,
+    `${imports.length} local imports across ${scripts.length} scripts`);
+
+  const declaredNoCache = (target) => {
+    const name = target.replace("./", "");
+    return rules.some((rule) =>
+      (rule.source.includes(name.replace(".js", "")) || rule.source === `/${name}`)
+      && (rule.headers ?? []).some((h) =>
+        h.key.toLowerCase() === "cache-control" && /no-cache/.test(h.value)));
+  };
+
+  const pinned = imports.filter((i) => !i.versioned && !declaredNoCache(i.target));
+  check("no imported module is left pinned under immutable", pinned.length === 0,
+    pinned.map((i) => `${i.file} -> ${i.target}`).join("\n      ")
+      + "\n      version it, or declare it no-cache in firebase.json");
+
+  // The config files specifically: assert the rule exists rather than relying
+  // on the generic check above, because these two are the rotation path.
+  for (const name of ["firebase-config.js", "ai-config.js"]) {
+    check(`${name} is declared no-cache`, declaredNoCache(`./${name}`),
+      "this is the file a project or proxy rotation has to be able to reach");
+  }
+
+  // Order is load-bearing here for the same reason it is for sw.js.
+  const jsIndex = rules.findIndex((r) => r.source === "**/*.@(js|css)");
+  const cfgIndex = rules.findIndex((r) => /firebase-config/.test(r.source));
+  check("the config rule comes after the blanket js rule", cfgIndex > jsIndex,
+    "Firebase takes the last matching value; reversed, the config is immutable again");
+}
+
+console.log("\n=== the worker cannot pin the config either ===");
+{
+  // Fixing the HTTP header alone is not enough: the service worker serves
+  // same-origin GETs cache-first, so its own copy would outlive the header fix
+  // until CACHE_NAME happened to move.
+  const sw = readFileSync(new URL("../sw.js", import.meta.url), "utf8");
+  check("config is served network-first", /firebase-config\|ai-config/.test(sw),
+    "cache-first would keep serving a stale project id however the header is set");
+  // Brace-matched rather than sliced to a fixed length. The first version took
+  // the next 700 characters, which silently stopped containing the .catch as
+  // soon as a comment was added above it — an assertion that fails for editing
+  // rather than for breaking is worse than none.
+  const branchStart = sw.indexOf("if (/\\/(firebase-config|ai-config)");
+  let depth = 0, bi = sw.indexOf("{", branchStart);
+  for (let i = bi; i < sw.length; i++) {
+    if (sw[i] === "{") depth++;
+    else if (sw[i] === "}") { depth--; if (depth === 0) { bi = i; break; } }
+  }
+  // Comments stripped before any match. Three assertions in this session have
+  // now passed by matching an explanatory comment instead of the code it sat
+  // above — including one in this very block, whose note quotes `cache:
+  // "reload"` verbatim. Match code, or the test measures the prose.
+  const branch = sw.slice(branchStart, bi + 1).replace(/\/\/[^\n]*/g, "");
+  check("the config branch was located", branch.length > 100 && branch.length < 2000,
+    `${branch.length} chars`);
+  check("...with the cache kept as the offline fallback",
+    /\.catch\(\(\) => caches\.match\(request\)\)/.test(branch),
+    "dropping the cache entirely would stop the app booting offline and take the offline till with it");
+  check("...and still pre-cached for a cold offline start",
+    /"\.\/firebase-config\.js"/.test(sw) && /"\.\/ai-config\.js"/.test(sw));
+
+  // Without this the fix only protects installs that come AFTER it. Devices
+  // that loaded the config while hosting was still sending `immutable` hold it
+  // in their own HTTP cache until 2027, and a plain fetch() is answered from
+  // there without touching the network — so the very devices the rotation needs
+  // to reach are the ones it would still miss.
+  check("...and the network fetch bypasses the browser's own HTTP cache",
+    /cache: "reload"/.test(branch),
+    "already-pinned devices are exactly the ones this has to recover");
+}
+
 console.log("\n=== the service worker pre-caches the urls the pages request ===");
 {
   const sw = readFileSync(new URL("../sw.js", import.meta.url), "utf8");
