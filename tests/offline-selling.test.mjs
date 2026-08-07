@@ -274,7 +274,7 @@ console.log("=== a sale carries its own two markers, which are not the same fact
     "madeOffline is permanent, the queue marker clears itself -- collapsing them hides the durable one");
   check("the marker requires the value this app actually writes",
     !/sale\.madeOffline \?/.test(body) && !/if \(sale\.madeOffline\)/.test(body),
-    "the rules do not constrain madeOffline's type, so a truthy check would honour a string");
+    "belt and braces: the rules now type-check madeOffline, and every reader still tests === true");
   check("both markers exist in both languages",
     (src.match(/"offline\.saleMarker":/g) || []).length === 2 &&
     (src.match(/"offline\.salePending":/g) || []).length === 2);

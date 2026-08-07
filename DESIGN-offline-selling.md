@@ -25,12 +25,17 @@ count with its own banner separate from the connection one, a per-sale
 owner's "Sold while offline" report grouped by product. Two things were found
 while building it and are recorded in §13.
 
-Phase E (2026-08-07) is **written but not yet run**: `tests/offline-replay.test.mjs`
-covers replay, idempotency, the bound and load against the emulator, and the
-excluded-path regression landed in `tests/offline-selling.test.mjs`. The
-emulator cannot run in the environment it was written in, so the replay suite is
-unproven until `npm test` is run on a developer machine. The airplane-mode trial
-on a real handset is still owed and is the part no suite substitutes for.
+Phase E is **written and run** (2026-08-04): `tests/offline-replay.test.mjs`
+covers replay, idempotency, the bound, load and the `madeOffline` type against
+the emulator — 14 assertions, all passing — and the excluded-path regression
+landed in `tests/offline-selling.test.mjs`. It sat unproven for a period because
+the emulator could not run in the environment it was written in; that is
+resolved.
+
+**The airplane-mode trial on a real handset is still owed, and is the part no
+suite substitutes for.** Every write in the replay suite is issued directly, so
+Firestore's own persistence layer is assumed rather than exercised. Nothing here
+proves a real queue drains after a real outage on a real phone.
 Decisions taken: oversell policy = *sell anyway, flag it* (owner's call).
 
 This touches `completeSale()`, which is the most dangerous function in the
@@ -256,7 +261,7 @@ Each is independently shippable and independently safe.
 | B | Reconciliation becomes chain-aware — treats offline entries as `unknown` | Must land **before** anything writes an offline entry, or the first outage accuses someone — **DONE 2026-08-02** |
 | C | Client: `increment()` on the sale path, queued writes, offline ledger entry | The boundary is already proven by A and B — **DONE 2026-08-02** |
 | D | UX: banner, per-sale offline marker, unsynced count, "sold while offline" report | The policy's "flag it" half — **DONE 2026-08-04** |
-| E | End-to-end and load tests, then the excluded paths re-verified | **WRITTEN 2026-08-07, replay suite not yet run** — see §14 |
+| E | End-to-end and load tests, then the excluded paths re-verified | **DONE 2026-08-04** — replay suite run, 14/14; real-handset trial still owed, see §14 |
 
 **B before C is not negotiable.** Shipping the writer before the reader means the
 first outage produces a screen accusing a cashier of stealing.
@@ -315,13 +320,18 @@ would be accepted, and a truthiness check in the report would then mark a normal
 sale as rung up blind. Every read of the field in phase D therefore tests
 `=== true` explicitly, which closes the practical hole.
 
-The tidier fix is a rule — `!('madeOffline' in d) || d.madeOffline is bool` —
-and it is deliberately **not** in this phase. Phase D is client-only, so no
-emulator suite needed re-running; adding a rule would have meant shipping a
-`firestore.rules` change without running the 15 suites that exist to check
-exactly that. Filed rather than smuggled in. It tightens a field every existing
-client already writes correctly, so it is safe whenever an emulator run is
-available.
+The tidier fix is a rule — `!('madeOffline' in d) || d.madeOffline is bool`.
+It was deliberately **not** in phase D: that phase was client-only, so no
+emulator suite needed re-running, and adding a rule would have meant shipping a
+`firestore.rules` change without running the suites that exist to check exactly
+that. Filed rather than smuggled in.
+
+**Now done.** The emulator became available on 4 Aug; the rule is in
+`validSale()` and `offline-replay.test.mjs` pins all three shapes — a boolean
+accepted, a string refused, a number refused. The expression budget was
+re-measured on the same run, since `validSale()` is the hottest write in the
+schema: a 40-line sale still evaluates and 41 is still refused by the item cap
+rather than by exhausting the budget.
 
 **Negative stock had a second consequence nobody had followed.** Phase A allowed
 `products.quantity < 0`; `reorderRecommendation()` still read `quantity === 0`
@@ -339,7 +349,7 @@ still said sales could not be recorded. Both are now pinned by test.
 
 ---
 
-## 14. Phase E record — written, partly unproven
+## 14. Phase E record — written, then proven
 
 `tests/offline-replay.test.mjs` covers the four categories that needed a server:
 a queued sale landing against a shelf that moved under it (asserting
@@ -351,12 +361,22 @@ without stalling or losing any; and the negative bound still holding at replay
 time, which is the one place an absent bound would surface since nothing on the
 client re-checks it.
 
-**It has not been run.** The environment it was written in cannot reach the npm
-registry (403) or the emulator jar host (`blocked-by-allowlist`), so
-`firebase-tools` cannot be installed for Linux and the Firestore emulator binary
-cannot be fetched at all. The suite is therefore in the same category as the
-`madeOffline` rule filed in §13 — written honestly, marked unproven, and owed a
-run on a developer machine rather than quietly counted as passing.
+**It has now been run, and passes.** For a period it could not be: the
+environment it was written in reached neither the npm registry (403) nor the
+emulator jar host (`blocked-by-allowlist`), so `firebase-tools` could not be
+installed for Linux and the emulator binary could not be fetched at all. It was
+marked unproven rather than quietly counted as passing, which is the only honest
+position to hold about a suite that has never executed.
+
+On 4 Aug the emulator became available and it ran: 14 assertions, zero failures,
+including the three added for the `madeOffline` rule that §13 had also filed.
+The full chain re-ran alongside it — 36 suites, 1,066 assertions, plus 40 in the
+two headless browser checks.
+
+Worth keeping the sequence in mind: the suite was correct when written and
+proved nothing until it ran. The phase C bug is the argument — sale-breaking,
+shipped, with every emulator suite green throughout, because none of them
+execute the client sale path.
 
 **The regression half found a real defect.** `confirmProcessReturn()` caught its
 transaction error and toasted a flat "could not process the return" whatever had

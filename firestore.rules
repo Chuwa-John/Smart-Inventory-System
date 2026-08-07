@@ -260,7 +260,15 @@ service cloud.firestore {
         && d.paymentMethod in ['cash', 'mobile', 'card', 'credit']
         && (!('customerId' in d) || d.customerId == null || (d.customerId is string && d.customerId.size() > 0))
         && (!('amountPaid' in d) || d.amountPaid == null || totalInRange(d.amountPaid))
-        && (!('balanceDue' in d) || d.balanceDue == null || totalInRange(d.balanceDue));
+        && (!('balanceDue' in d) || d.balanceDue == null || totalInRange(d.balanceDue))
+        // Filed in DESIGN §13 and deferred only because no emulator was
+        // available to re-run the rules suites at the time. A sale rung up with
+        // no connection is marked so a shelf count can be trusted or not, and
+        // the field was type-free: madeOffline: "no" would have been accepted,
+        // and any truthiness check downstream would then read a perfectly
+        // ordinary sale as rung up blind. Every reader tests === true, which
+        // closes it in practice; this closes it at the boundary.
+        && (!('madeOffline' in d) || d.madeOffline is bool);
     }
 
     function validShiftOpen() {

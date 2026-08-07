@@ -215,6 +215,40 @@ console.log("=== a large queue draining does not stall the till ===");
     `quantity is ${left}, expected ${1000 - QUEUE} -- a shortfall means replays were silently lost`);
 }
 
+console.log("=== madeOffline is a flag, not free text ===");
+{
+  // Filed in DESIGN §13 and deferred only because no emulator was available to
+  // re-run the rules suites at the time. The field decides whether a shelf
+  // count can be trusted, and it was type-free: a client writing
+  // madeOffline: "no" would have been accepted, and any downstream truthiness
+  // check would then read a perfectly ordinary sale as rung up blind.
+  await seed(20);
+  const withFlag = (value, id) =>
+    setDoc(doc(as(TILL_A), "users", OWNER, "sales", id), {
+      items: [{ productId: "p1", name: "Sukari", qty: 1, sellingPrice: 1500, lineTotal: 1500 }],
+      subtotal: 1500, total: 1500,
+      discountType: "none", discountValue: 0, discountAmount: 0,
+      paymentMethod: "cash", cashTendered: 1500, changeDue: 0,
+      customerId: null, amountPaid: null, balanceDue: null,
+      branchId: STORE, storeId: STORE,
+      cashierUid: TILL_A, staffId: TILL_A, staffName: "Amina",
+      orderNumber: "9990001", customerName: "", customerPhone: "",
+      voided: false, madeOffline: value, createdAt: serverTimestamp()
+    });
+
+  const accepted = await withFlag(true, "ord_flag_bool").then(() => true).catch(() => false);
+  check("a boolean flag is accepted", accepted);
+
+  const stringRefused = await assertFails(withFlag("no", "ord_flag_string"))
+    .then(() => true).catch(() => false);
+  check("a string that looks like a flag is refused", stringRefused,
+    'madeOffline: "no" is truthy, and would mark an ordinary sale as rung up blind');
+
+  const numberRefused = await assertFails(withFlag(1, "ord_flag_number"))
+    .then(() => true).catch(() => false);
+  check("a number standing in for a flag is refused", numberRefused);
+}
+
 console.log("=== the bound still holds at replay time ===");
 {
   // Phase A loosened the guard to bounded negative, not to unbounded. A replay
