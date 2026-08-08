@@ -768,6 +768,7 @@ const DICTIONARY = {
     "report.vatCoverageIncomplete": "Incomplete: this device holds sales back to {date} only. Older sales in this range are not counted and this is not a filing figure.",
     "reports.collectedColumn": "Collected",
     "reports.netSalesColumn": "Net sales",
+    "toast.returnAlreadyRefunded": "This sale has already been refunded by someone else. Reopen it to see what is left.",
     "offline.saleMarker": "Rung up offline",
     "offline.salePending": "Not yet synced",
     "offlineReport.eyebrow": "Sold during an outage",
@@ -1466,6 +1467,7 @@ const DICTIONARY = {
     "report.vatCoverageIncomplete": "Haijakamilika: kifaa hiki kina mauzo tangu {date} pekee. Mauzo ya zamani katika kipindi hiki hayajahesabiwa na hii si takwimu ya kuwasilisha.",
     "reports.collectedColumn": "Zilizopokelewa",
     "reports.netSalesColumn": "Mauzo halisi",
+    "toast.returnAlreadyRefunded": "Mauzo haya tayari yamerejeshwa na mtu mwingine. Yafungue tena uone kilichobaki.",
     "offline.saleMarker": "Yaliuzwa bila mtandao",
     "offline.salePending": "Bado hayajasawazishwa",
     "offlineReport.eyebrow": "Yaliyouzwa wakati wa hitilafu ya mtandao",
@@ -3484,6 +3486,9 @@ async function confirmProcessReturn() {
     createdAt: new Date().toISOString()
   };
 
+  // Computed from the CLIENT cache, and used only on the offline/local branch
+  // below. The Firestore path recomputes them from the server copy inside the
+  // transaction -- see there for why.
   const nextReturns = [...(sale.returns || []), returnRecord];
   const nextRefundedAmount = Number(sale.refundedAmount || 0) + refundAmount;
 
@@ -3492,10 +3497,38 @@ async function confirmProcessReturn() {
       const { doc, collection, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
       await runTransaction(state.db, async (transaction) => {
         const saleRef = doc(state.db, "users", state.businessOwnerUid, "sales", saleId);
+        // Read the sale BEFORE writing it. Without this read the update was
+        // blind: Firestore had nothing to detect a conflict on for this
+        // document, and the amounts were computed from the client cache outside
+        // the callback -- so a retry rewrote the same stale values. Two managers
+        // refunding the same sale concurrently both took cash out of the drawer
+        // and the record showed one refund.
+        //
+        // The sale path already does exactly this, for the same reason: it
+        // reads its own target id first so a retried submission cannot record
+        // the sale twice.
+        const saleSnap = await transaction.get(saleRef);
         const productRefs = selections.map((item) => doc(state.db, "users", state.businessOwnerUid, "products", item.productId));
         const productSnaps = await Promise.all(productRefs.map((ref) => transaction.get(ref)));
 
-        transaction.update(saleRef, { returns: nextReturns, refundedAmount: nextRefundedAmount });
+        // Every read is complete before the first write -- Firestore requires
+        // that ordering, and adding a read below a write fails the transaction.
+        const serverData = saleSnap.exists() ? saleSnap.data() : {};
+        const serverReturns = Array.isArray(serverData.returns) ? serverData.returns : [];
+        const serverRefunded = Number(serverData.refundedAmount || 0);
+        const saleTotal = Number(serverData.total ?? sale.total ?? 0);
+
+        // The server, not the cache, decides whether there is anything left to
+        // refund. The rules refuse an over-refund anyway (QA-105a), but a
+        // rejected transaction tells the manager nothing useful; this names it.
+        if (serverRefunded + refundAmount > saleTotal) {
+          throw new Error("REFUND_EXCEEDS_REMAINING");
+        }
+
+        transaction.update(saleRef, {
+          returns: [...serverReturns, returnRecord],
+          refundedAmount: serverRefunded + refundAmount
+        });
 
         productSnaps.forEach((snap, index) => {
           if (!snap.exists()) return;
@@ -3536,6 +3569,10 @@ async function confirmProcessReturn() {
       });
     } catch (error) {
       console.warn(error);
+      if (String(error?.message) === "REFUND_EXCEEDS_REMAINING") {
+        showToast(t("toast.returnAlreadyRefunded"));
+        return;
+      }
       // describeOperationError, not the bare string (L-9 phase E). A return is
       // one of the paths that deliberately stays online-only, and the promise
       // made in OFFLINE-CAPABILITIES.md is that those refuse *honestly* -- the

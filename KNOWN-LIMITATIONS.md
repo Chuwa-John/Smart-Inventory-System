@@ -590,3 +590,45 @@ the payment report gives the refunded totals for the period.
 **Milestone:** once enough trading has happened under per-line `taxClass` that a
 consistent period can be computed from it — realistically the first full month
 after 2026-08-07.
+
+---
+
+## L-10 A cashier can write off a customer's debt — **OPEN, detective fix owed**
+
+Raised by an external QA pass (QA-111) on 2026-08-07 and confirmed against the
+emulator the same day.
+
+`validCustomerBalanceUpdate()` restricts the affected keys to `balanceOwed`,
+`oldestUnpaidAt` and `updatedAt`, and requires the balance to be non-negative.
+It places **no relationship between the new value and the old**, and requires no
+document in the `payments` subcollection. A cashier can set any customer's
+`balanceOwed` to zero in a single write, and the receivables report will agree
+with them.
+
+**Why it is not simply fixed.** This is the credit-side twin of L-2: Firestore
+rules authorise one write at a time and cannot bind a balance change to the
+payment that would justify it. Restricting decreases to managers does not help
+either — taking a repayment is a cashier's job, and it is a decrease.
+
+**Why the detective fix is buildable.** `payments` is create-only with `update`
+and `delete` both denied, so a payment record cannot be forged after the fact or
+tidied away, and it is owner-readable. Expected balance for a customer is
+therefore the sum of `balanceDue` across their credit sales minus the sum of
+their payments; anything else is a gap. That is the same shape as
+`reconcileShiftCash()` and `reconcileProductStock()`, both of which already
+exist and work.
+
+Two things that view must inherit from `reconcileShiftCash()`: it must report
+**unknown** rather than a discrepancy when the sales window does not reach far
+enough back (L-11), and it must stay off any path that gates a till. A control
+that accuses a cashier because of a subscription limit is worse than no control.
+
+**Risk: High** — straightforward insider fraud, and for a duka extending credit
+to regulars the receivable is the highest-value balance in the system.
+
+**Workaround:** the owner can read each customer's `payments` subcollection
+against their balance manually. `tests/rules-refund-boundary.test.mjs` asserts
+this hole deliberately, so if it ever becomes preventable that test fails and
+this entry should close.
+
+**Milestone:** next release, in the shape of `reconcileShiftCash()`.

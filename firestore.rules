@@ -258,6 +258,11 @@ service cloud.firestore {
         && d.staffName is string && d.staffName.size() > 0 && d.staffName.size() <= 80
         && d.orderNumber is string && d.orderNumber.matches('^[0-9]{1,10}$')
         && (!('subtotal' in d) || totalInRange(d.subtotal))
+        // QA-113. Both were range-checked and neither was tied to the other, so
+        // a sale could claim a 1,000,000 subtotal and a total of 100. Past this
+        // point the discount is client-side only, which is precisely what the
+        // override password exists to control.
+        && (!('subtotal' in d) || d.total == d.subtotal - d.get('discountAmount', 0))
         && (!('discountType' in d) || d.discountType in ['none', 'percent', 'fixed'])
         && (!('discountValue' in d) || totalInRange(d.discountValue))
         && (!('discountAmount' in d) || totalInRange(d.discountAmount))
@@ -288,7 +293,12 @@ service cloud.firestore {
         && (!('taxTotal' in d) || totalInRange(d.taxTotal))
         && (!('netTotal' in d) || totalInRange(d.netTotal))
         && (!('taxBreakdown' in d) || d.taxBreakdown is map)
-        && (!('taxTotal' in d) || !('netTotal' in d) || d.netTotal + d.taxTotal == d.total);
+        // QA-112. Written as `!a || !b || reconciles`, the guard short-circuits
+        // to true whenever either side is missing -- so a sale carrying taxTotal
+        // alone validated with any tax figure at all, on the one clause the
+        // whole feature is judged on. They travel together or not at all.
+        && (('taxTotal' in d) == ('netTotal' in d))
+        && (!('taxTotal' in d) || d.netTotal + d.taxTotal == d.total);
     }
 
     function validShiftOpen() {
@@ -554,7 +564,14 @@ service cloud.firestore {
             && after.createdAt == before.createdAt
             && (!('storeId' in before) || after.storeId == before.storeId)
             && (!('staffId' in before) || after.staffId == before.staffId)
-            && (!('orderNumber' in before) || after.orderNumber == before.orderNumber);
+            && (!('orderNumber' in before) || after.orderNumber == before.orderNumber)
+            // QA-105b. A void restores the WHOLE sale, so voiding one that has
+            // already been refunded refunds it a second time by another route.
+            // The client nets prior returns off the void; the rules did not look
+            // at refundedAmount at all. The second clause stops the obvious way
+            // around the first -- clearing the refund record on the way through.
+            && before.get('refundedAmount', 0) == 0
+            && after.get('refundedAmount', 0) == 0;
         }
 
         function validReturnUpdate() {
@@ -574,7 +591,16 @@ service cloud.firestore {
             && (!('staffId' in before) || after.staffId == before.staffId)
             && (!('orderNumber' in before) || after.orderNumber == before.orderNumber)
             && after.returns is list && after.returns.size() <= 20
-            && after.refundedAmount is number && after.refundedAmount >= 0 && after.refundedAmount <= after.total;
+            && after.refundedAmount is number && after.refundedAmount >= 0 && after.refundedAmount <= after.total
+            // QA-105a. Bounded is not the same as monotonic. Refund the full
+            // total, write refundedAmount: 0 with an empty returns array, and
+            // refund it again -- indefinitely. The client caps by what has
+            // already been returned, but the client is not the boundary, and an
+            // insider with a manager account and a REST client is exactly who
+            // this collection is guarded against. Proven exploitable against the
+            // emulator before this line existed.
+            && after.refundedAmount >= before.get('refundedAmount', 0)
+            && after.returns.size() >= before.get('returns', []).size();
         }
 
         // A get() on a document that does not exist yields resource == null, and

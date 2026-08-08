@@ -128,6 +128,68 @@ console.log("\n=== QA-007: voiding a sale that has returns must not invent stock
   check("a sale with no returns array does not throw", restore({ items: [] }, 4, "p1") === 4);
 }
 
+console.log("\n=== a return reads the sale before it rewrites it (QA-104) ===");
+{
+  // The sale path reads its own target id first so a retry cannot record the
+  // sale twice. The RETURN path did not: it computed the new returns array and
+  // refundedAmount from the client cache OUTSIDE the transaction callback, then
+  // issued transaction.update() having never called transaction.get() on that
+  // document. With no read there was nothing for Firestore to detect a conflict
+  // on, and a retry rewrote the same stale values.
+  //
+  // Two managers refunding the same sale concurrently therefore both took cash
+  // out of the drawer while the record showed one refund — and the stock went
+  // back twice, because that half WAS transactional. Reconciliation would show
+  // inventory that exists and money that does not.
+  const start = src.indexOf("async function confirmProcessReturn(");
+  let i = src.indexOf("{", src.indexOf("(", start)), depth = 0;
+  for (; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") { depth--; if (depth === 0) break; }
+  }
+  const fn = src.slice(start, i + 1).replace(/\/\/[^\n]*/g, "");
+
+  check("the return transaction was located", fn.length > 500, `${fn.length} chars`);
+  check("the sale is read inside the transaction", /transaction\.get\(saleRef\)/.test(fn),
+    "without a read on this document the write is blind and cannot retry correctly");
+
+  const readAt = fn.indexOf("transaction.get(saleRef)");
+  const writeAt = fn.indexOf("transaction.update(saleRef");
+  check("...before it is written", readAt !== -1 && writeAt !== -1 && readAt < writeAt,
+    "Firestore requires every read before the first write; a read after one fails the transaction");
+
+  // Read out of the update CALL, not the whole function. `serverRefunded +
+  // refundAmount` also appears in the over-refund guard a few lines above, so
+  // matching it anywhere passed even with the write reverted to the cached
+  // value — found by mutating exactly that.
+  const updateArgs = (() => {
+    const at = fn.indexOf("transaction.update(saleRef");
+    let d = 0, j = fn.indexOf("(", at);
+    for (let k = j; k < fn.length; k++) {
+      if (fn[k] === "(") d++;
+      else if (fn[k] === ")") { d--; if (d === 0) { j = k; break; } }
+    }
+    return fn.slice(at, j + 1);
+  })();
+  check("the written amount is derived from the server copy",
+    /refundedAmount: serverRefunded \+ refundAmount/.test(updateArgs),
+    `adding to the cached value reapplies a stale number on every retry. Wrote: ${updateArgs.slice(0, 140)}`);
+  check("the written returns list is built on the server copy",
+    /returns: \[\.\.\.serverReturns, returnRecord\]/.test(updateArgs),
+    "otherwise a concurrent return's record is overwritten and simply disappears");
+
+  // The throw, not the catch that handles it — both mention the same name.
+  check("an over-refund is refused by name",
+    /throw new Error\("REFUND_EXCEEDS_REMAINING"\)/.test(fn),
+    "the rules refuse it anyway, but a rejected transaction tells the manager nothing");
+  check("...and the refusal is measured against the server total",
+    /serverRefunded \+ refundAmount > saleTotal/.test(fn),
+    "measuring against the cached total is the same staleness one layer up");
+
+  const productReadAt = fn.indexOf("productRefs.map((ref) => transaction.get(ref))");
+  check("product reads also precede every write", productReadAt !== -1 && productReadAt < writeAt);
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 process.exit(failed.length ? 1 : 0);
