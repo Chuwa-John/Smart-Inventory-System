@@ -129,7 +129,23 @@ const authAttemptLimiter = rateLimit({
   limit: 5,
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  keyGenerator: (req) => readString(req.body?.email).trim().toLowerCase() || req.ip,
+  // Email AND source, not email alone (QA-108).
+  //
+  // Keyed purely on the submitted address, five unauthenticated POSTs to this
+  // public endpoint with a known email exhausted that address's budget for
+  // fifteen minutes -- and checkAuthAttemptLimit() turns the 429 into
+  // auth/too-many-requests and blocks sign-in before Firebase is contacted. A
+  // competitor, a dismissed employee, or anyone who has seen a receipt could
+  // keep a shop locked out of its own till indefinitely, at no cost and with no
+  // trace in the shop's logs.
+  //
+  // Combining with the source keeps what the limiter is actually for -- somebody
+  // guessing one account's password gets five tries -- while making the budget
+  // an attacker can burn their own rather than the owner's.
+  keyGenerator: (req) => {
+    const email = readString(req.body?.email).trim().toLowerCase();
+    return email ? `${email}|${req.ip}` : req.ip;
+  },
   handler: (_req, res) => {
     res.status(429).json({ ok: false, allowed: false, error: "Too many attempts. Please wait 15 minutes and try again." });
   }
@@ -328,9 +344,21 @@ function compactMetrics(metrics = {}) {
   return safe;
 }
 
+// The store types the app actually offers (CATEGORY_TEMPLATES in app.js).
+// Anything else becomes "general" rather than reaching the prompt.
+const AI_BUSINESS_TYPES = new Set(["duka", "salon", "hardware", "pharmacy", "bar", "general"]);
+
 function compactSnapshot(snapshot = {}) {
   return {
-    businessType: typeof snapshot.businessType === "string" ? snapshot.businessType.slice(0, 40) : "general",
+    // Whitelisted rather than truncated (QA-115). This value is interpolated
+    // into the TRUSTED instruction block of the system prompt, above the line
+    // that tells the model everything after it is untrusted data -- so 40
+    // characters of attacker-chosen text sat on the wrong side of that boundary.
+    // Owner-writable only, and validStore() does not constrain the field either,
+    // so it was self-inflicted rather than remote; that is a reason to close it
+    // cheaply, not a reason to leave it. `language` beside it was already
+    // whitelisted, which is the pattern this now follows.
+    businessType: AI_BUSINESS_TYPES.has(snapshot.businessType) ? snapshot.businessType : "general",
     language: snapshot.language === "sw" ? "sw" : "en",
     metrics: compactMetrics(snapshot.metrics),
     products: Array.isArray(snapshot.products) ? snapshot.products.slice(0, 80).map(compactProduct) : [],
@@ -1122,6 +1150,10 @@ const AI_BUCKETS = {
 };
 const AI_USED_FIELDS = Object.values(AI_BUCKETS).map((bucket) => bucket.usedField);
 
+// Just above the client's 60s abort, so the server gives up shortly after the
+// browser has -- rather than ten minutes later, still billing.
+const ANTHROPIC_TIMEOUT_MS = 70000;
+
 function currentPeriodKey(now = new Date()) {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 }
@@ -1211,15 +1243,27 @@ async function reserveAiQuestion(ownerUid, bucket) {
 // Best effort: the user asked a question the provider never answered, so it
 // should not count against them. A failure here is logged and swallowed --
 // losing one refund is a far smaller problem than failing the request twice.
-async function refundAiQuestion(ownerUid, periodKey) {
+// The bucket is a parameter because it has to be. reserveAiQuestion() charges
+// bucket.usedField -- "used" for chat, "reportsUsed" for reports -- and this
+// hardcoded "used" on both the read and the write (QA-109). So a failed REPORT
+// never refunded the report quota and silently decremented the chat counter
+// instead: an owner whose month-end report failed a few times against a cold
+// Render instance lost month-end reporting for the rest of the month with no way
+// to recover, while each failure minted a free chat question.
+async function refundAiQuestion(ownerUid, periodKey, bucket) {
+  const usedField = bucket?.usedField;
+  if (!usedField) {
+    console.error(`AI quota refund skipped for ownerUid=${ownerUid}: no bucket given.`);
+    return;
+  }
   try {
     await firestoreDb.runTransaction(async (transaction) => {
       const ref = aiUsageRef(ownerUid);
       const snap = await transaction.get(ref);
       if (!snap.exists || snap.get("periodKey") !== periodKey) return;
-      const used = Number(snap.get("used") || 0);
+      const used = Number(snap.get(usedField) || 0);
       if (used <= 0) return;
-      transaction.update(ref, { used: used - 1 });
+      transaction.update(ref, { [usedField]: used - 1 });
     });
   } catch (error) {
     console.error(`AI quota refund failed for ownerUid=${ownerUid}:`, error);
@@ -1335,6 +1379,14 @@ app.post("/api/ai/advisor", aiLimiter, async (req, res) => {
         }
       ],
       messages: conversation
+    }, {
+      // The SDK default is ten minutes. The client aborts at
+      // AI_PROXY_TIMEOUT_MS (60s) and stops listening, so past that point the
+      // tokens are billed and the quota charged for an answer nobody receives,
+      // and a Render worker is held for the rest of it. Slightly longer than the
+      // client's own budget so a request that would just make it is not cut off
+      // by a race between the two.
+      timeout: ANTHROPIC_TIMEOUT_MS
     });
 
     const answer = response.content
@@ -1351,7 +1403,7 @@ app.post("/api/ai/advisor", aiLimiter, async (req, res) => {
   } catch (error) {
     console.error("Anthropic request failed:", error);
     // The question was reserved but never answered -- give it back.
-    if (reservation) await refundAiQuestion(ownerUid, reservation.periodKey);
+    if (reservation) await refundAiQuestion(ownerUid, reservation.periodKey, bucket);
     return res.status(502).json({ ok: false, error: "AI provider request failed." });
   }
 });
