@@ -769,6 +769,7 @@ const DICTIONARY = {
     "reports.collectedColumn": "Collected",
     "reports.netSalesColumn": "Net sales",
     "toast.returnAlreadyRefunded": "This sale has already been refunded by someone else. Reopen it to see what is left.",
+    "toast.offlineStockUncertain": "Stock for this item may be out of date while offline. The sale is allowed and will be flagged for the owner.",
     "offline.saleMarker": "Rung up offline",
     "offline.salePending": "Not yet synced",
     "offlineReport.eyebrow": "Sold during an outage",
@@ -1468,6 +1469,7 @@ const DICTIONARY = {
     "reports.collectedColumn": "Zilizopokelewa",
     "reports.netSalesColumn": "Mauzo halisi",
     "toast.returnAlreadyRefunded": "Mauzo haya tayari yamerejeshwa na mtu mwingine. Yafungue tena uone kilichobaki.",
+    "toast.offlineStockUncertain": "Idadi ya bidhaa hii inaweza kuwa si sahihi ukiwa nje ya mtandao. Mauzo yanaruhusiwa na yataonyeshwa kwa mmiliki.",
     "offline.saleMarker": "Yaliuzwa bila mtandao",
     "offline.salePending": "Bado hayajasawazishwa",
     "offlineReport.eyebrow": "Yaliyouzwa wakati wa hitilafu ya mtandao",
@@ -1712,15 +1714,28 @@ function setLanguage(nextLanguage) {
 // compared against priceConfig.overridePasswordHash from price-config.js. Both are
 // gone; price-config.js is now a deprecated stub excluded from Hosting deploys.)
 
+// Short, and deliberately far shorter than the AI timeout. This call sits on
+// the SALE path -- checkCreditLimitBeforeSale() awaits it after Complete Sale
+// has already been disabled -- so its worst case is a till that cannot sell.
+// The Render free tier sleeps after about fifteen minutes idle and takes tens
+// of seconds to wake, and a bare fetch() has no timeout at all, so a credit
+// sale over the limit against a cold proxy froze the button for as long as the
+// browser's default allowed: minutes, with a queue at the counter.
+//
+// Failing closed here is correct. A refused override refuses one sale; a frozen
+// till refuses all of them.
+const OVERRIDE_VERIFY_TIMEOUT_MS = 8000;
+
 async function verifyOverridePassword() {
   const input = window.prompt(t("dialog.overridePasswordPrompt"));
   if (input === null) return false;
   try {
-    const token = await state.user.getIdToken(/* forceRefresh */ true);
+    const token = await state.user.getIdToken();
     const response = await fetch(aiConfig.overrideVerifyUrl, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({ code: input })
+      body: JSON.stringify({ code: input }),
+      signal: AbortSignal.timeout(OVERRIDE_VERIFY_TIMEOUT_MS)
     });
     if (response.status === 503) {
       // Distinguish "not configured" from "wrong password" so admins don't chase
@@ -1741,6 +1756,8 @@ async function verifyOverridePassword() {
     return true;
   } catch (error) {
     console.warn(error);
+    // A timeout and a dead network read the same to the cashier and have the
+    // same answer: the override could not be checked, so it was not granted.
     showToast(t("toast.overrideNetworkError"));
     return false;
   }
@@ -4364,6 +4381,12 @@ function normalizeCustomerPhoneKey(rawPhone) {
   return normalizeTzPhoneForWhatsApp(rawPhone);
 }
 
+// Deliberately NOT scoped to a store, and it used to be called with a
+// state.currentStoreId argument this signature silently discarded. That dead
+// argument looked like an unfinished intention; implementing it would have made
+// the problem worse. state.customers is already narrowed by the rules to what
+// this account may read, so narrowing again only widens the blind spot that
+// QA-110 is about -- see checkCreditLimitBeforeSale().
 function findCustomerByPhone(phoneKey) {
   return state.customers.find((customer) => customer.phone === phoneKey);
 }
@@ -4549,7 +4572,7 @@ async function confirmRecordPayment() {
 }
 
 async function findOrCreateCustomerForCredit(name, phoneKey) {
-  const existing = findCustomerByPhone(phoneKey, state.currentStoreId);
+  const existing = findCustomerByPhone(phoneKey);
   if (existing) return existing.id;
 
   if (state.db && state.user && state.businessOwnerUid) {
@@ -4672,13 +4695,35 @@ async function setCustomerCreditLimit(customerId) {
 // Returns a decision object rather than a boolean because the caller has to
 // record WHY it proceeded, not just that it did.
 async function checkCreditLimitBeforeSale(customerName, phoneKey, newBalanceDue) {
-  const existing = findCustomerByPhone(phoneKey, state.currentStoreId);
-  const limit = existing?.creditLimit;
-  if (limit == null) return { allowed: true, overridden: false };
+  const existing = findCustomerByPhone(phoneKey);
+
+  // Two different situations used to return the same silent "allowed".
+  //
+  // The customer is not visible to this account (QA-110). Customer documents
+  // are gated on memberCanAccessStore, so a Branch-B cashier simply cannot see
+  // a Branch-A customer -- the lookup misses, and the ceiling was defeated by
+  // walking to another branch. The client cannot tell that apart from a genuine
+  // new customer, and it must not refuse the sale on a guess, so it proceeds
+  // and says plainly that the check did not happen.
+  if (!existing) {
+    return { allowed: true, overridden: false, limitChecked: false, uncheckedReason: "customer-not-visible" };
+  }
+
+  // No ceiling has ever been set for them (QA-120). Cashiers can create
+  // customers, so this is the default for every credit account made at the
+  // till: unlimited credit, previously with nothing recorded anywhere.
+  const limit = existing.creditLimit;
+  if (limit == null) {
+    return {
+      allowed: true, overridden: false, limitChecked: false, uncheckedReason: "no-limit-set",
+      customerId: existing.id || null,
+      previousBalance: Number(existing.balanceOwed || 0)
+    };
+  }
 
   const currentBalance = Number(existing.balanceOwed || 0);
   const projectedTotal = currentBalance + newBalanceDue;
-  if (projectedTotal <= limit) return { allowed: true, overridden: false };
+  if (projectedTotal <= limit) return { allowed: true, overridden: false, limitChecked: true };
 
   // Show the numbers first. Asking for a password before saying why is how
   // people learn to type it without reading.
@@ -4705,7 +4750,7 @@ async function checkCreditLimitBeforeSale(customerName, phoneKey, newBalanceDue)
   // and the crossing is still recorded, flagged as unauthorised so the owner
   // can tell the two apart and has a concrete reason to set one.
   if (!state.overridePasswordSet) {
-    return { allowed: true, overridden: true, authorised: false, ...details };
+    return { allowed: true, overridden: true, authorised: false, limitChecked: true, ...details };
   }
 
   const authorized = await verifyOverridePassword();
@@ -4714,7 +4759,7 @@ async function checkCreditLimitBeforeSale(customerName, phoneKey, newBalanceDue)
     return { allowed: false, overridden: false };
   }
 
-  return { allowed: true, overridden: true, authorised: true, ...details };
+  return { allowed: true, overridden: true, authorised: true, limitChecked: true, ...details };
 }
 
 function transferDate(transfer) {
@@ -5340,7 +5385,18 @@ function findProductByBarcode(code) {
 
 function addProductToCartById(productId, options = {}) {
   const product = state.products.find((item) => item.id === productId);
-  if (!product || product.quantity <= 0) {
+  if (!product) {
+    showToast(t("toast.outOfStock"));
+    return { failed: true };
+  }
+  // Offline, the shelf count on this device is a cache that may be hours old --
+  // a restock, or another till's return, will not have reached it. Refusing on
+  // it turns a stale number into a refused customer holding the item, which is
+  // precisely the outcome L-9 phase A rejected: the rules already permit
+  // negative stock so the sale can be taken and flagged instead. Only the cart
+  // was still enforcing the old policy, so it applied to the two-till race and
+  // not to the single till, which is the common case.
+  if (product.quantity <= 0 && !isOfflineNow()) {
     showToast(t("toast.outOfStock"));
     return { failed: true };
   }
@@ -5362,8 +5418,14 @@ function addProductToCartById(productId, options = {}) {
   const existingCartItem = state.cart.find((item) => item.id === product.id);
   const existingQty = existingCartItem?.qty || 0;
   if (existingQty + requestedQty > product.quantity) {
-    showToast(t("toast.notEnoughStockQty"));
-    return { failed: true };
+    if (!isOfflineNow()) {
+      showToast(t("toast.notEnoughStockQty"));
+      return { failed: true };
+    }
+    // Taken, and the cashier is told why it might not match the shelf. The
+    // owner sees it through the Sold While Offline panel and the reconciliation
+    // treats an offline entry as unknown rather than as a discrepancy.
+    showToast(t("toast.offlineStockUncertain"));
   }
   if (!existingCartItem && state.cart.length >= 40) {
     showToast(t("toast.cartLimitReached"));
@@ -6393,7 +6455,7 @@ function shouldQueueSaleOffline(paymentMethod) {
 // flushed twice resolves to the same document path, and the rules' create
 // semantics refuse the second.
 function queueOfflineSale(args) {
-  const { doc, collection, setDoc, updateDoc, increment, serverTimestamp } = state.firebaseApi.firestore;
+  const { doc, collection, increment, serverTimestamp, writeBatch } = state.firebaseApi.firestore;
   const root = ["users", state.businessOwnerUid];
   const dedupeSaleId = `ord_${args.staffId}_${args.orderNumber}`;
   const saleId = args.duplicate ? `${dedupeSaleId}_dup${Date.now()}` : dedupeSaleId;
@@ -6406,7 +6468,24 @@ function queueOfflineSale(args) {
     catch (reportError) { console.warn(reportError); }
   };
 
-  setDoc(doc(state.db, ...root, "sales", saleId), {
+  // One batch, not four independent writes (QA-114).
+  //
+  // These used to be separate queued mutations, which meant they replayed
+  // independently and could half-succeed. The realistic case is not exotic: the
+  // deterministic sale id already exists, so the rules see an UPDATE where a
+  // create was intended and refuse it -- while the increment(-qty) stock writes,
+  // which carry no such constraint, land anyway. The shop is then short a full
+  // basket with no sale to explain it, and because the ledger entry is
+  // offline: true the reconciliation reports it as unknown rather than flagging
+  // it, so the only trace is the fault log.
+  //
+  // A batch is atomic on the server and still queues offline, so the whole sale
+  // either replays or does not. It is deliberately NOT awaited, for the same
+  // reason the individual writes were not: awaiting a write that cannot resolve
+  // until the connection returns is a spinner that never stops at the till.
+  const batch = writeBatch(state.db);
+
+  batch.set(doc(state.db, ...root, "sales", saleId), {
     items: args.items,
     subtotal: args.subtotal,
     discountType: args.discountType,
@@ -6437,18 +6516,18 @@ function queueOfflineSale(args) {
     // by exactly the outage.
     ...(args.taxFields || {}),
     createdAt: serverTimestamp()
-  }).catch(onReplayFailure("sale"));
+  });
 
   for (const item of args.items) {
-    updateDoc(doc(state.db, ...root, "products", item.productId), {
+    batch.update(doc(state.db, ...root, "products", item.productId), {
       quantity: increment(-item.qty),
       sold30: increment(item.qty),
       sold90: increment(item.qty),
       updatedAt: serverTimestamp(),
       movementReason: "sale"
-    }).catch(onReplayFailure("stock movement"));
+    });
 
-    setDoc(doc(collection(state.db, ...root, "stockMovements")), {
+    batch.set(doc(collection(state.db, ...root, "stockMovements")), {
       productId: item.productId,
       productName: item.name,
       storeId: args.storeId,
@@ -6458,10 +6537,10 @@ function queueOfflineSale(args) {
       saleId,
       uid: state.user?.uid || null,
       createdAt: serverTimestamp()
-    }).catch(onReplayFailure("ledger entry"));
+    });
   }
 
-  setDoc(doc(collection(state.db, ...root, "auditLogs")), {
+  batch.set(doc(collection(state.db, ...root, "auditLogs")), {
     action: "SALE_COMPLETED",
     total: args.total,
     paymentMethod: "cash",
@@ -6470,7 +6549,11 @@ function queueOfflineSale(args) {
     discountAmount: args.discountAmount,
     uid: state.user?.uid || null,
     createdAt: serverTimestamp()
-  }).catch(onReplayFailure("audit entry"));
+  });
+
+  // Fire and forget. The whole sale is now one unit: it replays completely or
+  // not at all, and a rejection names the sale rather than one fragment of it.
+  batch.commit().catch(onReplayFailure("sale"));
 
   return saleId;
 }
@@ -9520,7 +9603,15 @@ function bindEvents() {
     // zone and threw ReferenceError on EVERY sale, registered or not.
     const vatConfig = vatSettings();
 
-    const saleItems = state.cart.map((cartItem) => ({
+    // Snapshotted once, and everything below uses THIS rather than state.cart.
+    // Firestore retries a transaction callback on contention while the POS
+    // stays interactive, so a cart edited during a retry decremented different
+    // products than the sale record listed -- stock moving for goods no sale
+    // mentions, which the ledger chain then reports as unaccounted. saleItems
+    // was already a snapshot; the product refs and the tax lines were not.
+    const cart = state.cart.map((cartItem) => ({ ...cartItem }));
+
+    const saleItems = cart.map((cartItem) => ({
       productId: cartItem.id,
       name: cartItem.name,
       category: cartItem.category || "",
@@ -9556,7 +9647,7 @@ function bindEvents() {
     let taxFields = {};
     if (vatConfig.registered) {
       const computed = computeSaleTax(
-        state.cart.map((cartItem) => ({
+        cart.map((cartItem) => ({
           inclusive: cartItem.qty * Number(cartItem.sellingPrice || 0),
           taxClass: taxClassOf(cartItem)
         })),
@@ -9666,12 +9757,12 @@ function bindEvents() {
             throw new Error(t("txerror.duplicateOrderSubmission", { orderNumber }));
           }
 
-          const productRefs = state.cart.map((cartItem) => doc(state.db, "users", state.businessOwnerUid, "products", cartItem.id));
+          const productRefs = cart.map((cartItem) => doc(state.db, "users", state.businessOwnerUid, "products", cartItem.id));
           const productSnaps = await Promise.all(productRefs.map((ref) => transaction.get(ref)));
           const creditCustomerSnap = creditCustomerRef ? await transaction.get(creditCustomerRef) : null;
 
           productSnaps.forEach((snap, index) => {
-            const cartItem = state.cart[index];
+            const cartItem = cart[index];
             if (!snap.exists()) throw new Error(t("txerror.itemGone", { name: cartItem.name }));
             const currentQuantity = Number(snap.data().quantity || 0);
             if (currentQuantity < cartItem.qty) {
@@ -9680,7 +9771,7 @@ function bindEvents() {
           });
 
           productSnaps.forEach((snap, index) => {
-            const cartItem = state.cart[index];
+            const cartItem = cart[index];
             const currentQuantity = Number(snap.data().quantity || 0);
             const currentSold30 = Number(snap.data().sold30 || 0);
             const currentSold90 = Number(snap.data().sold90 || 0);
@@ -9750,6 +9841,26 @@ function bindEvents() {
             uid: state.user?.uid || null,
             createdAt: serverTimestamp()
           });
+
+          // Credit extended without any ceiling check at all. Not a crossing
+          // -- nothing was crossed, because nothing was known -- so it is a
+          // separate action rather than a CREDIT_LIMIT_EXCEEDED with empty
+          // numbers. Without this, the two ways the control silently does not
+          // fire left no trace whatsoever.
+          if (creditLimitDecision.limitChecked === false && creditBalanceDue > 0) {
+            const uncheckedRef = doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs"));
+            transaction.set(uncheckedRef, {
+              action: "CREDIT_LIMIT_UNCHECKED",
+              customerId: creditLimitDecision.customerId || null,
+              customerName: customerName || null,
+              reason: creditLimitDecision.uncheckedReason || "unknown",
+              previousBalance: creditLimitDecision.previousBalance ?? null,
+              saleTotal: total,
+              storeId: state.currentStoreId,
+              uid: state.user?.uid || null,
+              createdAt: serverTimestamp()
+            });
+          }
 
           // Written in the same transaction as the sale it justifies. A record
           // of an override whose sale rolled back would be worse than none.

@@ -248,8 +248,13 @@ console.log("\n=== every ledger call names a product that actually exists ===");
   // The sale's product refs and its ledger entry must name the same thing. If
   // they ever disagree the entry describes a different shelf than the one that
   // moved, which is worse than no entry at all.
+  // Deliberately not tied to the source array's NAME. It was `state.cart` and
+  // is now a `cart` snapshot taken before the transaction (QA-119, so a retry
+  // cannot decrement a basket that has since been edited). What must hold is
+  // that both sides read `.id` off the same entry — pinning the variable name
+  // failed this check for a rename that fixed a different bug.
   check("the sale's product refs and ledger entry use the same identifier",
-    /productRefs = state\.cart\.map\(\(cartItem\) => doc\([^)]*cartItem\.id\)\)/.test(noComments) &&
+    /productRefs = [A-Za-z.]*cart\.map\(\(cartItem\) => doc\([^)]*cartItem\.id\)\)/.test(noComments) &&
     /recordStockMovement\(transaction, \{\s*productId: cartItem\.id/.test(noComments),
     "productRefs uses cartItem.id; the ledger entry must too");
 

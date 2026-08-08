@@ -390,7 +390,11 @@ service cloud.firestore {
     // this costs is already paid by the create rule below, so scoping is
     // effectively free.
     function cashierAuditActions() {
-      return ['SALE_COMPLETED', 'PRODUCT_RESTOCKED', 'PAYMENT_RECORDED', 'CREDIT_LIMIT_EXCEEDED'];
+      return ['SALE_COMPLETED', 'PRODUCT_RESTOCKED', 'PAYMENT_RECORDED', 'CREDIT_LIMIT_EXCEEDED',
+              // Credit extended with no ceiling check at all -- the customer was not
+              // visible to this account, or had no limit set (QA-110/QA-120).
+              // Cashier-writable because a cashier is who makes that sale.
+              'CREDIT_LIMIT_UNCHECKED'];
     }
     function managerAuditActions() {
       return cashierAuditActions().concat(['SALE_VOIDED', 'RETURN_PROCESSED', 'CREDIT_LIMIT_CHANGED']);
@@ -419,7 +423,7 @@ service cloud.firestore {
               'previousLimit', 'newLimit', 'limit', 'previousBalance', 'projectedTotal', 'authorised',
               'productId', 'name', 'sellingPrice', 'qtyAdded',
               'previousCode', 'newCode',
-              'vrn', 'previouslyRegistered', 'storeCount',
+              'vrn', 'previouslyRegistered', 'storeCount', 'reason',
               'paymentMethod', 'discountType', 'discountAmount'];
     }
 
@@ -427,6 +431,7 @@ service cloud.firestore {
       let d = request.resource.data;
       return (!('name' in d) || (d.name is string && d.name.size() <= 120))
         && (!('vrn' in d) || (d.vrn is string && d.vrn.size() <= 20))
+        && (!('reason' in d) || (d.reason is string && d.reason.size() <= 40))
         && (!('customerName' in d) || (d.customerName is string && d.customerName.size() <= 120))
         && (!('method' in d) || (d.method is string && d.method.size() <= 40))
         && (!('paymentMethod' in d) || (d.paymentMethod is string && d.paymentMethod.size() <= 40))

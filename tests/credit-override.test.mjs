@@ -44,10 +44,67 @@ console.log("=== the gate asks before it charges ===");
 {
   check("the gate is async (it awaits authorisation)",
     /async function checkCreditLimitBeforeSale/.test(app));
-  check("an under-limit sale is not interrupted",
-    /if \(projectedTotal <= limit\) return \{ allowed: true, overridden: false \}/.test(gate));
-  check("a customer with no alert set is not interrupted",
-    /if \(limit == null\) return \{ allowed: true, overridden: false \}/.test(gate));
+  // Run rather than pattern-matched. These two used to assert the exact object
+  // literal the gate returned, so adding a field to that literal failed them
+  // while the behaviour was unchanged — a test that breaks on formatting and
+  // stays quiet on meaning. Executing it is immune to both.
+  {
+    const customers = [];
+    let confirmed = 0;
+    let verified = 0;
+    const env = {
+      state: { customers, overridePasswordSet: true },
+      findCustomerByPhone: (key) => customers.find((c) => c.phone === key),
+      t: (k) => k,
+      money: (v) => String(v),
+      showToast: () => {},
+      verifyOverridePassword: async () => { verified += 1; return true; },
+      window: { confirm: () => { confirmed += 1; return true; } }
+    };
+    // extractFn slices from `function <name>(`, which drops the `async` keyword
+    // sitting in front of it — the body awaits, so it has to go back on.
+    const asyncGate = /async function checkCreditLimitBeforeSale/.test(app) ? `async ${gate}` : gate;
+    const { checkCreditLimitBeforeSale } = new Function(
+      ...Object.keys(env),
+      `${asyncGate}\nreturn { checkCreditLimitBeforeSale };`
+    )(...Object.values(env));
+
+    customers.length = 0;
+    customers.push({ id: "c1", phone: "255700000001", name: "Juma", balanceOwed: 1000, creditLimit: 50000 });
+    const under = await checkCreditLimitBeforeSale("Juma", "255700000001", 2000);
+    check("an under-limit sale is not interrupted",
+      under.allowed === true && under.overridden === false && confirmed === 0 && verified === 0,
+      JSON.stringify(under));
+    check("...and it records that the ceiling WAS checked", under.limitChecked === true,
+      "the audit needs to tell a checked sale from an unchecked one");
+
+    customers.length = 0;
+    customers.push({ id: "c2", phone: "255700000002", name: "Asha", balanceOwed: 1000 });
+    const noLimit = await checkCreditLimitBeforeSale("Asha", "255700000002", 2000);
+    check("a customer with no alert set is not interrupted",
+      noLimit.allowed === true && noLimit.overridden === false && confirmed === 0,
+      JSON.stringify(noLimit));
+    check("...but the sale is marked as never ceiling-checked (QA-120)",
+      noLimit.limitChecked === false && noLimit.uncheckedReason === "no-limit-set",
+      "unlimited credit by default left no trace at all");
+
+    // QA-110: the customer exists at another branch and this account cannot
+    // read them, so the lookup misses. Previously indistinguishable from "no
+    // limit", which is how the ceiling was defeated by walking to another till.
+    customers.length = 0;
+    const unseen = await checkCreditLimitBeforeSale("Stranger", "255700000009", 2000);
+    check("an invisible customer does not block the sale", unseen.allowed === true);
+    check("...and is recorded as a different reason from no-limit (QA-110)",
+      unseen.limitChecked === false && unseen.uncheckedReason === "customer-not-visible",
+      "collapsing the two hides a cross-branch bypass inside a normal-looking default");
+
+    customers.length = 0;
+    customers.push({ id: "c3", phone: "255700000003", name: "Neema", balanceOwed: 49000, creditLimit: 50000 });
+    const over = await checkCreditLimitBeforeSale("Neema", "255700000003", 5000);
+    check("a crossing still asks and still authorises",
+      over.allowed === true && over.overridden === true && over.authorised === true
+        && confirmed === 1 && verified === 1, JSON.stringify(over));
+  }
 
   // Order matters: showing the numbers first is what stops the password
   // becoming a reflex.

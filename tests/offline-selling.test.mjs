@@ -131,8 +131,28 @@ console.log("=== a cash sale is queued offline, not refused (L-9 phase C) ===");
     /onReplayFailure/.test(body) && /reportFault/.test(body),
     "a rejection arrives hours later; a toast then would connect to nothing");
   check("all four writes are queued",
-    (body.match(/setDoc\(/g) || []).length >= 3 && /updateDoc\(/.test(body),
+    (body.match(/batch\.set\(/g) || []).length >= 3 && /batch\.update\(/.test(body),
     "sale, stock, ledger and audit");
+
+  // QA-114. These were four independent queued mutations, so they replayed
+  // independently and could half-succeed. The realistic failure is not exotic:
+  // the deterministic sale id already exists, the rules see an UPDATE where a
+  // create was intended and refuse it, and the increment(-qty) stock writes --
+  // which carry no such constraint -- land anyway. The shop is short a full
+  // basket with no sale to explain it, and because the ledger entry is
+  // offline: true the reconciliation reports it as unknown rather than flagging
+  // it, so the only trace is the fault log.
+  check("the whole sale replays as one unit, or not at all",
+    /writeBatch\(state\.db\)/.test(body) && /batch\.commit\(\)/.test(body),
+    "independent writes let a rejected sale leave its stock decrements applied");
+  check("no write escapes the batch",
+    !/[^.]\bsetDoc\(/.test(body) && !/[^.]\bupdateDoc\(/.test(body),
+    "a single loose write outside the batch reintroduces the partial replay");
+  check("the commit is still not awaited",
+    !/await batch\.commit/.test(body),
+    "awaiting a commit that cannot resolve until the connection returns is the spinner this whole path exists to avoid");
+  check("a rejected batch still reports the fault",
+    /batch\.commit\(\)\.catch\(onReplayFailure/.test(body));
 }
 
 console.log("=== the online path is untouched ===");
