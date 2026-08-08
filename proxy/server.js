@@ -1072,9 +1072,17 @@ app.post("/jobs/process-deletions", async (req, res) => {
     return res.status(503).json({ ok: false, error: "Deletion job is not configured." });
   }
   const provided = readString(req.headers["x-deletion-job-secret"]);
-  // Length check first: timingSafeEqual throws on a length mismatch.
-  if (provided.length !== deletionJobSecret.length
-    || !timingSafeEqual(Buffer.from(provided), Buffer.from(deletionJobSecret))) {
+  // QA-128. Compared as BYTES on both sides. The length guard used JS string
+  // length while timingSafeEqual works on buffers, so a multibyte value of
+  // equal character length passed the guard and then threw inside the compare --
+  // and the outer error handler answered 400 "Request could not be processed"
+  // instead of 401. A wrong secret must read as unauthorised, not as a
+  // malformed request, or whoever is debugging the scheduler chases the wrong
+  // thing entirely.
+  const providedBytes = Buffer.from(provided, "utf8");
+  const expectedBytes = Buffer.from(deletionJobSecret, "utf8");
+  if (providedBytes.length !== expectedBytes.length
+    || !timingSafeEqual(providedBytes, expectedBytes)) {
     return res.status(401).json({ ok: false, error: "Unauthorized." });
   }
   if (!firestoreDb) return res.status(503).json({ ok: false, error: "Not configured." });

@@ -1,59 +1,95 @@
-# SanitaryFlow ERP
+# SaviaSmart ERP
 
-Modern plumbing and sanitary inventory management platform built with HTML, CSS, JavaScript, Firebase Spark-plan services, and an optional external Anthropic proxy.
+Inventory, point of sale and staff management for a Tanzanian shop floor. Plain
+HTML, CSS and JavaScript ES modules — no framework and no build step — on
+Firebase Spark-plan services, with an optional Node proxy for the AI advisor.
 
-## Run Locally
+English and Kiswahili throughout. Prices are whole Tanzanian shillings.
 
-This app can run as a static site.
+## What it does
+
+- **Point of sale** — cash, mobile money, card and customer credit; discounts
+  behind a manager override; returns and voids.
+- **Inventory** — stock levels, a movement ledger whose chain can be
+  reconciled against the shelf, transfers between branches, low-stock alerts.
+- **Multiple branches** — stores, per-branch staff assignment, roaming access.
+- **Roles** — owner, manager and cashier, enforced in Firestore rules rather
+  than only in the UI.
+- **Shifts** — open with a float, close with a count, variance recorded.
+- **Customer credit** — balances, repayments, and a credit ceiling that costs a
+  manager override to cross.
+- **VAT** — inclusive at 18%, per-product tax class, off by default. See
+  `DESIGN-vat.md`.
+- **Offline selling** — a cash sale completes with no connection and replays
+  once when it returns. See `DESIGN-offline-selling.md` and `OFFLINE-CAPABILITIES.md`.
+- **AI advisor** — answers on the shop's own numbers, metered per business.
+
+## Run locally
+
+A static site, so any file server works:
 
 ```bash
 python -m http.server 5173
 ```
 
-Open `http://localhost:5173`.
+Then open `http://localhost:5173`. The landing page is `index.html`; the
+application itself is `app.html`.
 
-## Firebase Setup
+## Firebase setup
 
-1. Copy `firebase-config.sample.js` to `firebase-config.js`.
-2. Replace the placeholder values with your Firebase web app config.
-3. Enable Firebase Auth, Firestore, and Hosting. Do not enable Cloud Storage or Cloud Functions; this Spark-plan version stores operational data in Firestore and creates report exports in the browser.
-4. In Firebase Auth, enable the Email/Password sign-in provider.
-5. Deploy the Firestore rules in `firestore.rules`.
+1. Copy `firebase-config.sample.js` to `firebase-config.js` and fill in your
+   Firebase web app config. **This file is not a template to edit in place** —
+   it decides which project the app talks to and is served `no-cache` for that
+   reason (see `OPERATIONS.md`).
+2. Copy `.firebaserc.example` to `.firebaserc` and set your project ID.
+3. Enable Firebase Auth (Email/Password), Firestore and Hosting. Do **not**
+   enable Cloud Functions, Cloud Storage or a billing upgrade — this build is
+   deliberately Spark-only, and `OPERATIONS.md` says why.
+4. Deploy the rules: `firebase deploy --only firestore:rules`.
 
-Also copy `.firebaserc.example` to `.firebaserc` and replace `YOUR_FIREBASE_PROJECT_ID` with your real Firebase project ID.
+Data lives under `users/{ownerUid}`. Staff accounts are members of an owner's
+tree rather than tenants of their own, so a shop is one tree with several
+people in it.
 
-After Firebase connects, each signed-in user gets a private inventory under `users/{uid}`. Products, POS sales, and audit logs sync to Firestore for that account only.
+## The AI proxy
 
-## Anthropic AI Proxy
+`proxy/` is a small Express service holding the Anthropic key, the per-business
+quota and the override-password check. It is optional: without it the advisor
+falls back to local answers and price overrides fall back to the shared
+password. See `proxy/README.md`.
 
-This version avoids Firebase Functions so it can run on Firebase Spark. The AI Advisor can call the external Node proxy in `proxy/`.
-
-Do not place an Anthropic key in browser JavaScript for production.
-
-```bash
-cd proxy
-copy .env.example .env
-npm install
-npm run dev
-```
-
-Put your Anthropic key in `proxy/.env`, not in frontend files. If the proxy is unavailable, the app falls back to local inventory recommendations.
-
-## Deploy Everything
+## Tests
 
 ```bash
-firebase login
-firebase use YOUR_FIREBASE_PROJECT_ID
-firebase deploy --only hosting,firestore:rules
+npm --prefix tests ci
+npm --prefix tests test
 ```
 
-## Included Modules
+The emulator-backed suites need Java 17. Two further checks run a headless
+Chromium:
 
-- Operations dashboard with KPI cards and charts.
-- Inventory table with filtering, sorting, stock states, CSV export, and simple add-product modal.
-- Email/password signup and login for small-team onboarding.
-- Per-user Firestore inventory with create, edit, delete, export, and POS stock deduction.
-- Smart stock alerts and reorder recommendations.
-- POS screen with cart and stock deduction.
-- Reports catalog.
-- AI business advisor with external Anthropic proxy and local Spark-plan fallback.
+```bash
+node tests/contrast.headless.mjs
+node tests/compatibility.headless.mjs
+```
+
+## Documents worth reading before changing anything
+
+| File | What it is for |
+| --- | --- |
+| `OPERATIONS.md` | Release procedure, the caching contract, rollback — rehearsed, with timings. |
+| `KNOWN-LIMITATIONS.md` | What this system does **not** do, recorded on the day it was found. |
+| `DESIGN-vat.md` | The four commercial decisions behind VAT, and why fiscal numbers are not ours. |
+| `DESIGN-offline-selling.md` | The offline queue, and §15 — the handset trial that no suite substitutes for. |
+| `SECURITY-AUDIT.md` | Findings and their resolutions. |
+| `RECOVERY.md` | What to do when something has already gone wrong. |
+| `DATA-DELETION.md` | The account deletion lifecycle and its grace period. |
+
+Two rules that are load-bearing and easy to get wrong:
+
+- **Bump the version stamp on the change, not on the deploy.** Any edit to
+  `app.js`, `styles.css` or `boot.js` moves `?v=` even if you are not deploying.
+- **A rolled-back stamp is burned.** Roll forward on a new one, never reissue.
+
+Both are explained in `OPERATIONS.md` and enforced by
+`tests/deployment-validation.test.mjs`.

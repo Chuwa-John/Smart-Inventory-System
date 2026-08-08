@@ -640,7 +640,10 @@ service cloud.firestore {
      match /customers/{customerId} {
         function validCustomer() {
           let d = request.resource.data;
-          return d.name is string && d.name.size() <= 80
+          // QA-126. Every other name in this schema requires size() > 0; this one
+          // did not, so a customer could be created with no name at all and then
+          // appear in the receivables report as a blank row nobody can chase.
+          return d.name is string && d.name.size() > 0 && d.name.size() <= 80
             && d.phone is string && d.phone.size() > 0 && d.phone.size() <= 20
             && d.balanceOwed is number && d.balanceOwed >= 0
             && d.storeId is string && d.storeId.size() > 0
@@ -811,6 +814,10 @@ service cloud.firestore {
             && countInRange(d.quantity) && d.quantity > 0
             && d.sourceStoreId is string && d.sourceStoreId.size() > 0
             && d.destinationStoreId is string && d.destinationStoreId.size() > 0
+            // QA-127. A transfer to itself writes two ledger entries that cancel,
+            // so the shelf is unchanged and the chain gains two entries describing
+            // a movement that never happened.
+            && d.sourceStoreId != d.destinationStoreId
             && d.staffName is string && d.staffName.size() > 0 && d.staffName.size() <= 80
             && (!('destinationProductId' in d) || (d.destinationProductId is string && d.destinationProductId.size() > 0))
             && (!('sourceStoreName' in d) || (d.sourceStoreName is string && d.sourceStoreName.size() <= 60))

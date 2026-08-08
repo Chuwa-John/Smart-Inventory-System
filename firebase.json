@@ -21,7 +21,9 @@
       "tests/**",
       "functions/**",
       "*.md",
+      "*.txt",
       "gen-sri.mjs",
+      "price-config.js",
       "firestore.rules",
       "firestore.indexes.json"
     ],
@@ -94,7 +96,7 @@
     ],
     "rewrites": [
       {
-        "source": "**",
+        "source": "**/!(*.@(js|css|json|png|jpg|jpeg|svg|ico|txt|map|webmanifest))",
         "destination": "/index.html"
       }
     ]
