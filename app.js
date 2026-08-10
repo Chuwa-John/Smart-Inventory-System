@@ -14,6 +14,9 @@ const APP_VERSION = (() => {
 const state = {
   products: [],
   creditOverrides: [],
+  // null, not [], because "not known" and "none today" are different answers
+  // and one of them must not be printed as a money figure.
+  repaymentsToday: null,
   faults: [],
   shifts: [],
   openShift: null,
@@ -307,6 +310,10 @@ const DICTIONARY = {
     "control.allStoresScope": "All stores · month to date",
     "control.expectedCash": "Expected in drawer",
     "control.expectedCashNote": "Cash sales plus cash deposits, less refunds",
+    "control.expectedCashNoteWithRepayments": "Cash sales, deposits and debt repaid, less refunds",
+    "control.collectedOnAccount": "Collected on account",
+    "control.collectedOnAccountNote": "Cash · Mobile · Card — no debt repaid today",
+    "control.collectedOnAccountUnavailable": "Owner sign-in only",
     "control.netTakings": "Net takings",
     "control.netTakingsNote": "After refunds, excluding voids",
     "control.salesCount": "Sales",
@@ -1006,6 +1013,10 @@ const DICTIONARY = {
     "control.allStoresScope": "Maduka yote · mwezi hadi leo",
     "control.expectedCash": "Fedha inayotarajiwa",
     "control.expectedCashNote": "Mauzo ya taslimu na malipo, ukiondoa marejesho",
+    "control.expectedCashNoteWithRepayments": "Mauzo ya taslimu, malipo ya awali na madeni yaliyolipwa, ukiondoa marejesho",
+    "control.collectedOnAccount": "Madeni yaliyolipwa",
+    "control.collectedOnAccountNote": "Taslimu · Simu · Kadi — hakuna deni lililolipwa leo",
+    "control.collectedOnAccountUnavailable": "Kwa mmiliki pekee",
     "control.netTakings": "Mapato halisi",
     "control.netTakingsNote": "Baada ya marejesho, bila mauzo yaliyofutwa",
     "control.salesCount": "Mauzo",
@@ -4632,6 +4643,11 @@ async function confirmRecordPayment() {
   }
 
   qs("#paymentDialog").close();
+  // The money is in the drawer now, so the panel has to say so. Nothing else
+  // re-renders this: the customer document changes, but the repayment figure
+  // comes from the audit log, which is not subscribed.
+  invalidateRepaymentsToday();
+  renderManagerControl();
   showToast(t("toast.paymentRecorded", { amount: money(amount), balance: money(newBalance) }));
 }
 
@@ -6423,6 +6439,91 @@ async function loadCreditOverrideCount() {
   }
 }
 
+// Debt repaid today, for the manager panel.
+//
+// A repayment used to leave no trace on this screen: it cleared the customer's
+// balance and vanished. The money was real and it was in the drawer, but the
+// only places that knew were Customer Accounts and -- for cash alone -- the
+// shift reconciliation.
+//
+// This is deliberately NOT added to any revenue figure. A credit sale books its
+// FULL total as revenue on the day it is made (saleNetTotal), and only the
+// deposit counts toward a payment method; the balance becomes a receivable.
+// The repayment is that receivable being collected, so adding it to takings
+// would count one trade twice -- the exact class of disagreement QA-103 was
+// fixed to end. Money received and revenue earned are different questions, and
+// this answers the first one.
+//
+// Same source as shiftCashRepayments(): the audit log, one collection with an
+// index that already exists, rather than a collection-group query across every
+// customer's payments subcollection.
+//
+// Owner-only in practice. firestore.rules makes auditLogs owner-read, so a
+// manager's query is denied and this fails quiet, exactly like the credit
+// override tile beside it -- the panel must still show the cash.
+let repaymentFetchKey = null;
+
+function ensureRepaymentsLoaded() {
+  if (!state.db || !state.businessOwnerUid) return;
+  // Keyed by day as well as business: unlike the override count, this figure
+  // is "today" and a till left open overnight must not keep yesterday's.
+  const key = `${state.businessOwnerUid}:${new Date().toDateString()}`;
+  if (repaymentFetchKey === key) return;
+  repaymentFetchKey = key;
+  loadRepaymentsToday().then(() => renderManagerControl());
+}
+
+// Called after a repayment is recorded. Without it the cashier takes the money,
+// the balance clears, and the tile they are watching still says nothing --
+// which is the complaint this whole thing exists to answer.
+function invalidateRepaymentsToday() {
+  repaymentFetchKey = null;
+}
+
+async function loadRepaymentsToday() {
+  if (!state.db || !state.businessOwnerUid) return;
+  const { collection, query, where, orderBy, limit, getDocs } = state.firebaseApi.firestore;
+  try {
+    const snapshot = await getDocs(query(
+      collection(state.db, "users", state.businessOwnerUid, "auditLogs"),
+      where("action", "==", "PAYMENT_RECORDED"),
+      orderBy("createdAt", "desc"),
+      limit(300)
+    ));
+    const now = new Date();
+    state.repaymentsToday = snapshot.docs
+      .map((entry) => entry.data())
+      .filter((row) => {
+        const at = row.createdAt?.toDate ? row.createdAt.toDate() : null;
+        return at !== null && isSameDay(at, now);
+      });
+  } catch (error) {
+    console.warn("Could not load debt repayments.", error);
+    state.repaymentsToday = null;
+  }
+}
+
+// null means "not known" -- denied, failed, or not yet loaded -- and every
+// caller has to tell that apart from zero, because a tile that says 0 when it
+// means "I could not look" is a lie about the drawer.
+function repaymentTotalsToday(scopedToStore) {
+  const rows = state.repaymentsToday;
+  if (!Array.isArray(rows)) return null;
+  const totals = { cash: 0, mobile: 0, card: 0, total: 0, count: 0 };
+  for (const row of rows) {
+    if (scopedToStore && row.storeId !== state.currentStoreId) continue;
+    // Entries written before repayments recorded a method are treated as cash,
+    // matching shiftCashRepayments() rather than inventing a second rule for
+    // the same rows.
+    const method = ["cash", "mobile", "card"].includes(row.method) ? row.method : "cash";
+    const amount = safeNumber(row.amount);
+    totals[method] += amount;
+    totals.total += amount;
+    totals.count += 1;
+  }
+  return totals;
+}
+
 // ---- Shifts and cash reconciliation -----------------------------------------
 //
 // A shift is one till, one person, one stretch of time: opened with a float,
@@ -7286,14 +7387,40 @@ function renderManagerControl() {
   }).length;
 
   ensureCreditOverridesLoaded();
+  ensureRepaymentsLoaded();
   ensureShiftsLoaded();
   renderShiftPanel();
   const scopedOverrides = (state.creditOverrides || []).filter((row) =>
     !scopedToStore || row.storeId === state.currentStoreId);
 
+  // Cash repaid against old debt is in the drawer just as surely as a cash
+  // sale, and computeShiftExpectedCash() has always counted it -- so this tile
+  // and the shift panel below it were showing two different expected-cash
+  // figures on the same screen, differing by exactly the day's repayments.
+  // When the figure is unknown (a manager, whom the rules refuse) the note
+  // stops claiming repayments are in it rather than quietly overstating.
+  const repayments = repaymentTotalsToday(scopedToStore);
+  const drawerCash = s.drawerCash + (repayments?.cash || 0);
+
   qs("#managerControlGrid").innerHTML = [
-    controlTile(t("control.expectedCash"), money(s.drawerCash), "accent", t("control.expectedCashNote")),
+    controlTile(t("control.expectedCash"), money(drawerCash), "accent",
+      repayments ? t("control.expectedCashNoteWithRepayments") : t("control.expectedCashNote")),
     controlTile(t("control.netTakings"), money(s.net), "", t("control.netTakingsNote")),
+    // Beside the takings, never inside them: this money was already counted as
+    // revenue on the day the credit sale was made.
+    controlTile(t("control.collectedOnAccount"),
+      repayments === null ? "—" : money(repayments.total),
+      repayments && repayments.total > 0 ? "accent" : "",
+      repayments === null
+        ? t("control.collectedOnAccountUnavailable")
+        : (repayments.total > 0
+          // Named, not three bare figures: every neighbouring tile says which
+          // method it means, and a split the reader has to guess at is not a
+          // figure they can act on. Measured at the panel's 216px column --
+          // it wraps to two lines and lands at the same tile height as the
+          // drawer note beside it.
+          ? `${t("pos.cash")} ${money(repayments.cash)} · ${t("pos.mobile")} ${money(repayments.mobile)} · ${t("pos.card")} ${money(repayments.card)}`
+          : t("control.collectedOnAccountNote"))),
     controlTile(t("control.salesCount"), String(s.count),
       "", s.count ? t("control.averageBasket", { value: money(Math.round(s.net / s.count)) }) : ""),
     controlTile(t("control.byMethod"),
@@ -7874,6 +8001,10 @@ async function initFirebase() {
         state.unsubscribeTransfers = null;
         if (state.unsubscribeConnection) state.unsubscribeConnection();
         state.unsubscribeConnection = null;
+        // Money figures must not outlive the session that fetched them: the
+        // next sign-in may be a different business on the same device.
+        state.repaymentsToday = null;
+        invalidateRepaymentsToday();
         // Back to unknown, not offline: the next sign-in must not inherit a
         // verdict about a connection this session had.
         state.serverReachable = null;

@@ -134,6 +134,125 @@ console.log("\n=== timestamp shapes that actually reach these panels ===");
     isSameMonth(new Date(now.getFullYear() - 1, now.getMonth(), 1), now), false);
 }
 
+console.log("\n=== debt repaid today is money in, and is not revenue ===");
+{
+  // The shop asked for this: a customer pays off credit and it should show as
+  // money taken that day, by the method they paid with, instead of the balance
+  // simply disappearing.
+  //
+  // The trap is that a credit sale already books its FULL total as revenue on
+  // the day it was made -- see saleNetTotal and the credit case above, where a
+  // 10,000 sale with a 3,000 deposit reports credit 10,000. The repayment is
+  // that receivable being collected. Adding it to takings would count one
+  // trade twice, so these assertions exist as much to pin what must NOT move.
+  const totals = new Function("state", "safeNumber",
+    `${extract("repaymentTotalsToday")} return repaymentTotalsToday;`
+  );
+  const withRows = (rows, currentStoreId = null) =>
+    totals({ repaymentsToday: rows, currentStoreId }, (v) => (Number.isFinite(Number(v)) ? Number(v) : 0));
+
+  {
+    const r = withRows([
+      { amount: 5000, method: "cash", storeId: "A" },
+      { amount: 3000, method: "mobile", storeId: "A" },
+      { amount: 2000, method: "card", storeId: "A" }
+    ])(false);
+    check("cash repayments are bucketed", r.cash, 5000);
+    check("mobile repayments are bucketed", r.mobile, 3000);
+    check("card repayments are bucketed", r.card, 2000);
+    check("the total is the sum", r.total, 10000);
+    check("the count is the number of repayments", r.count, 3);
+  }
+  {
+    // Matches shiftCashRepayments(), which treats a method-less entry as cash
+    // rather than dropping it. Two rules for the same rows would put the drawer
+    // tile and the shift panel back into disagreement.
+    const r = withRows([{ amount: 4000, storeId: "A" }])(false);
+    check("a repayment written before methods existed counts as cash", r.cash, 4000);
+    const junk = withRows([{ amount: 4000, method: "barter", storeId: "A" }])(false);
+    check("an unrecognised method is not silently dropped", junk.cash, 4000);
+    check("...and does not invent a fourth bucket", junk.total, 4000);
+  }
+  {
+    const r = withRows([
+      { amount: 5000, method: "cash", storeId: "A" },
+      { amount: 9000, method: "cash", storeId: "B" }
+    ], "A")(true);
+    check("another branch's repayment stays out of this till", r.cash, 5000);
+    const all = withRows([
+      { amount: 5000, method: "cash", storeId: "A" },
+      { amount: 9000, method: "cash", storeId: "B" }
+    ], "A")(false);
+    check("...and is included when viewing all stores", all.cash, 14000);
+  }
+  {
+    // The distinction the drawer tile depends on. A tile that prints 0 when it
+    // means "I could not look" is a lie about the cash, and firestore.rules
+    // makes auditLogs owner-read, so a manager genuinely cannot look.
+    check("not loaded is null, not zero", withRows(null)(false), null);
+    check("denied is null, not zero", withRows(undefined)(false), null);
+    const none = withRows([])(false);
+    check("genuinely none today is zero, not null", none && none.total, 0);
+  }
+  {
+    // The whole accounting argument in one assertion: a repayment carries no
+    // sale, so no revenue figure can move when one is recorded.
+    const before = summariseSales([sale({ paymentMethod: "credit", total: 10000, amountPaid: 3000, amountPaidMethod: "cash", balanceDue: 7000 })]);
+    const r = withRows([{ amount: 7000, method: "cash", storeId: "A" }])(false);
+    check("net takings are unchanged by a repayment", before.net, 10000);
+    check("the drawer gains exactly the cash repaid", before.drawerCash + r.cash, 10000);
+    check("...which is the deposit plus the settlement, not the sale twice",
+      before.drawerCash + r.cash, 3000 + 7000);
+  }
+}
+
+console.log("\n=== the repayment figure is wired where it is claimed to be ===");
+{
+  const noComments = src.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  // The end anchor must be searched FROM the start index: "const byStaff = new
+  // Map()" also appears earlier in the file, and taking the first one made this
+  // slice run backwards and silently match nothing.
+  const gridStart = noComments.indexOf("qs(\"#managerControlGrid\").innerHTML");
+  const grid = noComments.slice(gridStart, noComments.indexOf("const byStaff = new Map()", gridStart));
+  check("the grid was located", grid.length > 500 && grid.length < 6000, true);
+
+  check("the drawer tile adds cash repaid",
+    /const drawerCash = s\.drawerCash \+ \(repayments\?\.cash \|\| 0\);/.test(noComments), true);
+  check("the drawer note stops claiming repayments when they are unknown",
+    /repayments \? t\("control\.expectedCashNoteWithRepayments"\) : t\("control\.expectedCashNote"\)/.test(grid), true);
+  check("there is a tile for it", /control\.collectedOnAccount/.test(grid), true);
+  check("unknown shows a dash, not a money figure",
+    /repayments === null \? "—" : money\(repayments\.total\)/.test(grid), true);
+
+  // The load-bearing negative: no revenue figure may take the repayment in.
+  // The netTakings tile alone, matched as one call rather than sliced to the
+  // next tile -- the collected-on-account tile now sits between them, and a
+  // range that swallowed it read its wording as if it were part of takings.
+  const takingsTile = /controlTile\(t\("control\.netTakings"\)[^\n]*/.exec(grid)?.[0] || "";
+  check("the takings tile was located", takingsTile.length > 20, true);
+  check("net takings is still plain s.net", /money\(s\.net\)/.test(takingsTile), true);
+  check("...with no repayment term added", /repayment/i.test(takingsTile), false);
+
+  // Recording a payment has to refresh it, or the cashier takes the money and
+  // the tile they are looking at still says nothing.
+  const payFn = noComments.slice(noComments.indexOf("async function confirmRecordPayment("));
+  const payBody = payFn.slice(0, payFn.indexOf("\nasync function "));
+  check("recording a payment invalidates the cache",
+    /invalidateRepaymentsToday\(\);/.test(payBody), true);
+  check("...and re-renders the panel", /renderManagerControl\(\);/.test(payBody), true);
+
+  // Cached per DAY, not just per business: a till left open overnight must not
+  // keep yesterday's collections on screen.
+  check("the cache key includes the date",
+    /const key = `\$\{state\.businessOwnerUid\}:\$\{new Date\(\)\.toDateString\(\)\}`;/.test(noComments), true);
+
+  for (const key of ["control.collectedOnAccount", "control.collectedOnAccountNote",
+                     "control.collectedOnAccountUnavailable", "control.expectedCashNoteWithRepayments"]) {
+    check(`${key} exists in both languages`,
+      (src.match(new RegExp(`"${key.replace(/\./g, "\\.")}"`, "g")) || []).length >= 3, true);
+  }
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 process.exit(failed.length ? 1 : 0);
