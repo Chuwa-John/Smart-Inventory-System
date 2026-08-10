@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Accept Staff Invite - SaviaSmart ERP</title>
     <link rel="preconnect" href="https://www.gstatic.com" />
-    <link rel="stylesheet" href="./styles.css?v=20260808c" />
+    <link rel="stylesheet" href="./styles.css?v=20260808d" />
     <meta name="theme-color" content="#101114" />
   </head>
   <body>
-    <div class="auth-gate" style="position:static; min-height:100vh;">
-      <form class="auth-panel" id="acceptInviteForm" novalidate>
-        <div>
+    <div class="invite-gate">
+      <form class="invite-panel" id="acceptInviteForm" novalidate>
+        <div class="invite-heading">
           <p class="eyebrow">Staff invitation</p>
           <h1>SaviaSmart ERP</h1>
           <p class="auth-copy" id="acceptInviteIntro">Loading invite&hellip;</p>
@@ -26,7 +26,7 @@
           <p class="auth-copy" id="inviteContextText"></p>
         </div>
 
-        <div id="acceptInviteFormFields" hidden>
+        <div class="invite-fields" id="acceptInviteFormFields" hidden>
           <!-- Sales are attributed to this name. It is collected here, from the
                person themselves, because the owner no longer maintains a list of
                cashier names for the till to pick from. -->
@@ -58,7 +58,7 @@
              A brand-new account is never verified at the moment it is created,
              so this step is the normal path for a first-time staff member,
              not an error state. -->
-        <div id="inviteVerifySection" hidden>
+        <div class="invite-fields" id="inviteVerifySection" hidden>
           <div class="auth-why">
             <strong id="inviteVerifyHeading">Verify your email to continue</strong>
             <p class="auth-copy" id="inviteVerifyText">

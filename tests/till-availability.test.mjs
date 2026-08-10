@@ -81,6 +81,249 @@ console.log("\n=== the guard did not cost the idempotency work ===");
   check("a deliberate re-entry still gets its own id", /duplicate \? `\$\{dedupeSaleId\}_dup\$\{Date\.now\(\)\}`/.test(app));
 }
 
+console.log("\n=== Transfer is held to the same rule ===");
+{
+  // Reported in UAT: the Transfer button stayed live while the transfer was
+  // processing. It is the same defect the Complete Sale button already had,
+  // and it is not a cosmetic one. A second run moves the stock twice, writes
+  // two rows into transfer history, and where the destination store has no
+  // matching SKU yet, both runs read that as empty OUTSIDE the transaction and
+  // each creates its own destination product -- one SKU on two shelves, in the
+  // system whose job is knowing where the stock is. Firestore's transaction
+  // retry cannot save this: both runs are individually valid.
+  const start = app.indexOf("async function confirmTransfer(");
+  const lines = app.slice(start).split("\n");
+  let depth = 0, endLine = null;
+  for (let i = 0; i < lines.length; i++) {
+    depth += (lines[i].match(/\{/g) || []).length - (lines[i].match(/\}/g) || []).length;
+    if (depth === 0 && i > 0) { endLine = i; break; }
+  }
+  const transfer = lines.slice(0, endLine + 1).join("\n");
+
+  const guardAt = transfer.indexOf("confirmButton.disabled = true");
+  const firstAwait = transfer.indexOf("await ");
+  check("confirmTransfer claims the button", guardAt !== -1);
+  check("it is claimed before the first await", guardAt !== -1 && guardAt < firstAwait,
+    `guard at ${guardAt}, first await at ${firstAwait} — the dialog stays interactive across a lookup and a transaction`);
+  check("a second entry while in flight is refused",
+    /if \(confirmButton\.disabled\) return;/.test(transfer),
+    "without this, two queued clicks both proceed");
+
+  const reEnables = transfer.match(/confirmButton\.disabled = false/g) || [];
+  check("there is exactly one re-enable", reEnables.length === 1,
+    `${reEnables.length} found — more than one means the paths can diverge`);
+  check("it lives in a finally block",
+    /\} finally \{[\s\S]{0,400}confirmButton\.disabled = false;[\s\S]{0,40}\}/.test(transfer),
+    "the dialog closes on success, so a re-enable on the happy path only would strand the next transfer");
+  check("the finally covers the whole transaction",
+    transfer.indexOf("runTransaction") > transfer.indexOf("try {") &&
+    transfer.indexOf("runTransaction") < transfer.indexOf("} finally {"));
+
+  // The validation above the guard is all synchronous, which is what makes it
+  // safe to leave outside: no second click can interleave with it.
+  const beforeGuard = transfer.slice(0, guardAt);
+  check("nothing above the guard awaits", !/await /.test(beforeGuard),
+    "an await above the guard reopens the window it exists to close");
+}
+
+console.log("\n=== and the second click is actually refused, not just guarded on paper ===");
+{
+  // The checks above read the source. This one runs confirmTransfer twice
+  // without awaiting the first, which is what a double-click IS, and counts the
+  // transactions that reach the database.
+  const start = app.indexOf("async function confirmTransfer(");
+  let depth = 0, i = app.indexOf("{", start);
+  for (; i < app.length; i++) {
+    if (app[i] === "{") depth++;
+    else if (app[i] === "}") { depth--; if (depth === 0) break; }
+  }
+  const source = app.slice(start, i + 1);
+
+  function harness() {
+    const calls = { transactions: 0, toasts: [], closed: 0 };
+    const button = { disabled: false };
+    const elements = {
+      "#transferDialog": { close: () => { calls.closed += 1; } },
+      "#transferDestinationSelect": { value: "store-b" },
+      "#transferStaffNameInput": { value: "Juma Ally" },
+      "#transferQuantityInput": { value: "10" },
+      "#confirmTransferButton": button
+    };
+    const firestore = {
+      collection: () => ({}),
+      doc: () => ({ id: "ref" }),
+      query: () => ({}),
+      where: () => ({}),
+      serverTimestamp: () => "ts",
+      // The lookup that opens the window: a real one is a network round trip,
+      // and it happens before the transaction claims anything.
+      getDocs: async () => { await new Promise((r) => setTimeout(r, 10)); return { empty: true, docs: [] }; },
+      runTransaction: async (db, fn) => {
+        calls.transactions += 1;
+        await fn({
+          get: async () => ({ exists: () => true, data: () => ({ quantity: 100 }) }),
+          update: () => {}, set: () => {}
+        });
+      }
+    };
+    const state = {
+      pendingTransferProductId: "p1",
+      products: [{ id: "p1", name: "Pipe", sku: "SKU1", quantity: 100, storeId: "store-a" }],
+      stores: [{ id: "store-a", name: "Main" }, { id: "store-b", name: "Branch" }],
+      db: {}, businessOwnerUid: "owner", user: { uid: "u1" },
+      firebaseApi: { firestore }
+    };
+
+    const run = new Function(
+      "state", "qs", "showToast", "t", "productStoreId", "recordStockMovement",
+      "describeOperationError", "console",
+      `${source} return confirmTransfer;`
+    )(
+      state,
+      (selector) => elements[selector],
+      (message) => calls.toasts.push(message),
+      (key) => key,
+      (product) => product.storeId,
+      () => {},
+      (error, fallback) => fallback,
+      { warn: () => {} }
+    );
+
+    return { run, calls, button };
+  }
+
+  {
+    const { run, calls, button } = harness();
+    const first = run();
+    const second = run();               // the double-click, before the first settles
+    check("the button is disabled while the transfer is in flight", button.disabled === true);
+    await Promise.all([first, second]);
+    check("a double-click moves the stock once, not twice", calls.transactions === 1,
+      `${calls.transactions} transactions reached the database`);
+    check("and the dialog still closes", calls.closed === 1);
+    check("the button is handed back afterwards", button.disabled === false);
+  }
+
+  {
+    // The other half of the rule: refusing the second click must not cost the
+    // next legitimate transfer.
+    const { run, calls } = harness();
+    await run();
+    await run();
+    check("two deliberate transfers both go through", calls.transactions === 2,
+      `${calls.transactions} — the finally must re-enable, not just the happy path`);
+  }
+}
+
+console.log("\n=== Restock is held to the same rule ===");
+{
+  // Found while fixing Transfer, and the same bug: the transaction reads the
+  // shelf and adds to what it finds, so a second run adds the delivery twice.
+  // The shop then believes it holds stock nobody delivered, which is the same
+  // lie as an oversell wearing the opposite sign -- and unlike an oversell,
+  // nothing downstream flags it, because a restock is supposed to raise the
+  // count.
+  const start = app.indexOf("async function confirmRestock(");
+  const lines = app.slice(start).split("\n");
+  let depth = 0, endLine = null;
+  for (let i = 0; i < lines.length; i++) {
+    depth += (lines[i].match(/\{/g) || []).length - (lines[i].match(/\}/g) || []).length;
+    if (depth === 0 && i > 0) { endLine = i; break; }
+  }
+  const restock = lines.slice(0, endLine + 1).join("\n");
+
+  const guardAt = restock.indexOf("confirmButton.disabled = true");
+  const firstAwait = restock.indexOf("await ");
+  check("confirmRestock claims the button", guardAt !== -1);
+  check("it is claimed before the first await", guardAt !== -1 && guardAt < firstAwait);
+  check("a second entry while in flight is refused",
+    /if \(confirmButton\.disabled\) return;/.test(restock));
+  check("nothing above the guard awaits", !/await /.test(restock.slice(0, guardAt)));
+
+  const reEnables = restock.match(/confirmButton\.disabled = false/g) || [];
+  check("there is exactly one re-enable", reEnables.length === 1, `${reEnables.length} found`);
+  check("it lives in a finally block",
+    /\} finally \{[\s\S]{0,400}confirmButton\.disabled = false;[\s\S]{0,40}\}/.test(restock));
+
+  // This function's shape is the reason to check rather than assume: its inner
+  // catch returns early, and the close/render/toast sit AFTER the transaction
+  // block rather than inside it. A finally that only wrapped the transaction
+  // would miss all of it.
+  const finallyAt = restock.indexOf("} finally {");
+  check("the early return in the transaction's catch is covered",
+    restock.indexOf("showToast(describeOperationError(error, \"toast.restockFailed\"))") < finallyAt,
+    "the catch returns without closing the dialog — that path must still hand the button back");
+  check("renderAll() runs inside the protected span",
+    restock.indexOf("renderAll()") > restock.indexOf("try {") &&
+    restock.indexOf("renderAll()") < finallyAt);
+
+  // Runtime: two overlapping clicks, counting the transactions that land.
+  const fnStart = app.indexOf("async function confirmRestock(");
+  let d = 0, j = app.indexOf("{", fnStart);
+  for (; j < app.length; j++) {
+    if (app[j] === "{") d++;
+    else if (app[j] === "}") { d--; if (d === 0) break; }
+  }
+  const source = app.slice(fnStart, j + 1);
+
+  function harness() {
+    const calls = { transactions: 0, closed: 0, renders: 0, toasts: [] };
+    const button = { disabled: false };
+    const elements = {
+      "#restockDialog": { close: () => { calls.closed += 1; } },
+      "#restockQuantityInput": { value: "50" },
+      "#confirmRestockButton": button
+    };
+    const state = {
+      pendingRestockProductId: "p1",
+      products: [{ id: "p1", name: "Pipe", quantity: 10, storeId: "store-a" }],
+      db: {}, businessOwnerUid: "owner", user: { uid: "u1" },
+      firebaseApi: { firestore: {
+        doc: () => ({}), collection: () => ({}), serverTimestamp: () => "ts",
+        runTransaction: async (db, fn) => {
+          calls.transactions += 1;
+          // The delay is the point: a real transaction is a round trip, and the
+          // dialog stays interactive for all of it.
+          await new Promise((r) => setTimeout(r, 10));
+          await fn({
+            get: async () => ({ exists: () => true, data: () => ({ quantity: 10 }) }),
+            update: () => {}, set: () => {}
+          });
+        }
+      } }
+    };
+    const run = new Function(
+      "state", "qs", "showToast", "t", "productStoreId", "recordStockMovement",
+      "describeOperationError", "renderAll", "console",
+      `${source} return confirmRestock;`
+    )(
+      state, (selector) => elements[selector], (m) => calls.toasts.push(m), (key) => key,
+      (product) => product.storeId, () => {}, (error, fallback) => fallback,
+      () => { calls.renders += 1; }, { warn: () => {} }
+    );
+    return { run, calls, button };
+  }
+
+  {
+    const { run, calls, button } = harness();
+    const first = run();
+    const second = run();
+    check("the button is disabled while the restock is in flight", button.disabled === true);
+    await Promise.all([first, second]);
+    check("a double-click adds the delivery once, not twice", calls.transactions === 1,
+      `${calls.transactions} transactions reached the database`);
+    check("and the dialog still closes once", calls.closed === 1);
+    check("the button is handed back afterwards", button.disabled === false);
+  }
+
+  {
+    const { run, calls } = harness();
+    await run();
+    await run();
+    check("two deliberate restocks both go through", calls.transactions === 2);
+  }
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 process.exit(failed.length ? 1 : 0);

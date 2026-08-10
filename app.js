@@ -119,7 +119,12 @@ const state = {
   productMovementProductId: null,
   lastActivityAt: Date.now(),
   idleCheckIntervalId: null,
-  updateReady: false
+  updateReady: false,
+  // Firestore's own answer to "can I reach the backend", which is not the same
+  // question navigator.onLine answers. null until a live connection has
+  // actually been observed -- see watchServerConnection().
+  serverReachable: null,
+  unsubscribeConnection: null
 };
 
 const MAX_CHAT_HISTORY = 20;
@@ -636,6 +641,7 @@ const DICTIONARY = {
     "toast.passwordResetSent": "If an account exists for that email, a password reset link has been sent.",
     "toast.verificationEmailSent": "Verification email sent. Please check your inbox.",
     "toast.verificationEmailFailed": "Could not send the verification email. Please try again shortly.",
+    "toast.emailVerified": "Email address verified. Thank you.",
     "toast.idleSignOut": "You were signed out after a period of inactivity.",
     "toast.authTooManyRequests": "Too many attempts. Please wait a while and try again.",
     "toast.consentRequired": "Please accept the Terms & Conditions and Privacy Policy to create an account.",
@@ -727,6 +733,8 @@ const DICTIONARY = {
     "offline.bannerText": "No internet connection. Cash sales are saved on this device and will sync when you reconnect.",
     "toast.offlineCashOnly": "Only cash sales can be recorded while offline. Credit sales need a connection.",
     "toast.saleQueuedOffline": "Sale saved on this device. It will sync when the connection returns.",
+    "toast.saleHeldUnconfirmed": "The connection did not answer. The sale is saved on this device and will sync.",
+    "toast.saleUnconfirmed": "The connection did not answer, so this sale is not confirmed. Check the sales list before entering it again.",
     "offline.unsyncedOne": "1 sale is saved on this device and has not reached the server yet. Keep this app installed until it syncs.",
     "offline.unsyncedMany": "{count} sales are saved on this device and have not reached the server yet. Keep this app installed until they sync.",
     "update.readyText": "A new version of the app is ready. Reload when you are not mid-sale.",
@@ -1333,6 +1341,7 @@ const DICTIONARY = {
     "toast.passwordResetSent": "Kama akaunti ipo kwa barua pepe hiyo, kiungo cha kubadilisha nenosiri kimetumwa.",
     "toast.verificationEmailSent": "Barua pepe ya uthibitisho imetumwa. Tafadhali angalia kikasha chako.",
     "toast.verificationEmailFailed": "Imeshindwa kutuma barua pepe ya uthibitisho. Tafadhali jaribu tena baadaye.",
+    "toast.emailVerified": "Barua pepe yako imethibitishwa. Asante.",
     "toast.idleSignOut": "Umetolewa nje baada ya muda wa kutotumika.",
     "toast.authTooManyRequests": "Majaribio mengi sana. Tafadhali subiri kidogo kisha ujaribu tena.",
     "toast.consentRequired": "Tafadhali kubali Sheria na Masharti na Sera ya Faragha kabla ya kufungua akaunti.",
@@ -1427,6 +1436,8 @@ const DICTIONARY = {
     "offline.bannerText": "Hakuna muunganisho wa intaneti. Mauzo ya taslimu yanahifadhiwa kwenye kifaa hiki na yatasawazishwa muunganisho utakaporudi.",
     "toast.offlineCashOnly": "Ni mauzo ya taslimu pekee yanayoweza kurekodiwa bila mtandao. Mauzo ya mkopo yanahitaji muunganisho.",
     "toast.saleQueuedOffline": "Mauzo yamehifadhiwa kwenye kifaa hiki. Yatasawazishwa muunganisho utakaporudi.",
+    "toast.saleHeldUnconfirmed": "Muunganisho haujajibu. Mauzo yamehifadhiwa kwenye kifaa hiki na yatasawazishwa.",
+    "toast.saleUnconfirmed": "Muunganisho haujajibu, kwa hiyo mauzo haya hayajathibitishwa. Angalia orodha ya mauzo kabla ya kuyaingiza tena.",
     "offline.unsyncedOne": "Mauzo 1 yamehifadhiwa kwenye kifaa hiki na bado hayajafika kwenye seva. Usiondoe programu hii hadi yasawazishwe.",
     "offline.unsyncedMany": "Mauzo {count} yamehifadhiwa kwenye kifaa hiki na bado hayajafika kwenye seva. Usiondoe programu hii hadi yasawazishwe.",
     "update.readyText": "Toleo jipya la programu lipo tayari. Pakia upya wakati hauko katikati ya mauzo.",
@@ -4163,8 +4174,11 @@ const SDK_ERROR_MESSAGE_KEYS = {
 
 function describeOperationError(error, fallbackKey) {
   // Being offline outranks whatever code the SDK attached: when there is no
-  // connection, that is the only fact the operator can act on.
-  if (typeof navigator !== "undefined" && navigator.onLine === false) return t("error.offline");
+  // connection, that is the only fact the operator can act on. Asks
+  // isOfflineNow() rather than navigator.onLine directly, so a cashier on dead
+  // shop wifi is told "no internet" instead of "unavailable" -- the browser
+  // still calls that state online.
+  if (isOfflineNow()) return t("error.offline");
   if (error && typeof error.code === "string") {
     return t(SDK_ERROR_MESSAGE_KEYS[error.code] || fallbackKey);
   }
@@ -4204,14 +4218,64 @@ function renderUnsyncedSalesBanner() {
 }
 
 function watchConnection() {
-  const sync = () => {
-    state.online = typeof navigator === "undefined" ? true : navigator.onLine !== false;
-    renderOfflineBanner();
-    renderUnsyncedSalesBanner();
-  };
-  window.addEventListener("online", sync);
-  window.addEventListener("offline", sync);
-  sync();
+  window.addEventListener("online", syncConnectionState);
+  window.addEventListener("offline", syncConnectionState);
+  syncConnectionState();
+}
+
+function syncConnectionState() {
+  state.online = !isOfflineNow();
+  renderOfflineBanner();
+  renderUnsyncedSalesBanner();
+}
+
+// Firestore tells every snapshot whether it came from the server or from the
+// local cache, and metadata.fromCache is precisely "am I in touch with the
+// backend". One document is enough to hear it: the signed-in user's own
+// profile, which every role may read (firestore.rules: `allow read: if
+// isOwner(userId)`) and which ensureUserProfile() has already created.
+//
+// includeMetadataChanges is the point of the listener. Without it the callback
+// only fires when the DATA changes, and a connection dropping changes no data
+// -- the till would not learn it had gone offline until something happened to
+// be written, which offline is exactly when nothing is.
+//
+// Deliberately one-way until proven. The flag starts null and only reaches
+// `false` once a live connection has been SEEN and then lost. A snapshot
+// served from cache in the first seconds after load is ordinary startup, not
+// an outage, and treating it as one would be its own bug: cash sales queued
+// that could have been transacted against a real stock check, and credit sales
+// refused with "cash only" on a perfectly good connection. An outage we notice
+// a moment late costs nothing; a phantom outage costs a sale.
+function watchServerConnection() {
+  if (!state.db || !state.user) return;
+  if (state.unsubscribeConnection) state.unsubscribeConnection();
+
+  const { doc, onSnapshot } = state.firebaseApi.firestore;
+  const profileRef = doc(state.db, "users", state.user.uid);
+
+  state.unsubscribeConnection = onSnapshot(
+    profileRef,
+    { includeMetadataChanges: true },
+    (snapshot) => {
+      if (!snapshot.metadata.fromCache) {
+        state.serverReachable = true;
+      } else if (state.serverReachable === true) {
+        state.serverReachable = false;
+      } else {
+        return;
+      }
+      syncConnectionState();
+    },
+    (error) => {
+      // A denied or broken listener must not be read as an outage -- that
+      // would refuse credit sales for the rest of the session over a rules
+      // problem. Fall back to navigator.onLine by returning to "unknown".
+      console.warn("Could not watch the database connection; falling back to navigator.onLine.", error);
+      state.serverReachable = null;
+      syncConnectionState();
+    }
+  );
 }
 
 function showToast(message) {
@@ -5245,6 +5309,21 @@ async function confirmTransfer() {
 
   const sourceStore = state.stores.find((store) => store.id === productStoreId(product));
 
+  // Same guard, and for the same reason, as #completeSaleButton below. Nothing
+  // above this line awaits, so the only window a second click can land in is
+  // the one that opens here -- and it is a wide one: a lookup, then a
+  // transaction, over shop wifi. The dialog stays open and interactive for all
+  // of it, which is exactly when somebody presses Transfer again.
+  //
+  // A second run is not a harmless repeat. It moves the stock twice, writes two
+  // rows into transfer history, and where the destination has no matching SKU
+  // yet, both runs read that as empty outside the transaction and each creates
+  // its own destination product -- one SKU, two shelves, in a system whose
+  // whole job is knowing where the stock is.
+  const confirmButton = qs("#confirmTransferButton");
+  if (confirmButton.disabled) return;
+  confirmButton.disabled = true;
+
   try {
     const { collection, doc, runTransaction, serverTimestamp, query, where, getDocs } = state.firebaseApi.firestore;
     const productsRef = collection(state.db, "users", state.businessOwnerUid, "products");
@@ -5317,6 +5396,10 @@ async function confirmTransfer() {
   } catch (error) {
     console.warn(error);
     showToast(describeOperationError(error, "toast.transferFailed"));
+  } finally {
+    // Every path, so neither a failure nor a close can leave the next transfer
+    // facing a dead button.
+    confirmButton.disabled = false;
   }
 }
 
@@ -5338,6 +5421,18 @@ async function confirmRestock() {
   if (!Number.isFinite(qty) || qty <= 0) return showToast(t("toast.restockInvalidQuantity"));
 
   const newQuantityDisplay = Number(product.quantity || 0) + qty;
+
+  // The third of these, after #completeSaleButton and #confirmTransferButton.
+  // A restock is the same shape of risk as a transfer running twice: the
+  // transaction reads the shelf and adds to what it finds, so two runs add the
+  // delivery twice and the shop believes it holds stock that was never
+  // delivered. Nothing above this line awaits, so this is where the window
+  // opens; the finally below closes it on every path, including the render.
+  const confirmButton = qs("#confirmRestockButton");
+  if (confirmButton.disabled) return;
+  confirmButton.disabled = true;
+
+  try {
 
   if (state.db && state.user && state.businessOwnerUid) {
     try {
@@ -5375,6 +5470,12 @@ async function confirmRestock() {
   qs("#restockDialog").close();
   renderAll();
   showToast(t("toast.restocked", { qty, name: product.name, quantity: newQuantityDisplay }));
+
+  } finally {
+    // Every path, including the early return the transaction's catch takes, so
+    // a failed delivery cannot leave the next one facing a dead button.
+    confirmButton.disabled = false;
+  }
 }
 
 function findProductByBarcode(code) {
@@ -6304,6 +6405,7 @@ function ensureCreditOverridesLoaded() {
 async function loadCreditOverrideCount() {
   if (!state.db || !state.businessOwnerUid) return;
   const since = new Date(Date.now() - CREDIT_OVERRIDE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const { collection, query, where, orderBy, limit, getDocs } = state.firebaseApi.firestore;
   try {
     const snapshot = await getDocs(query(
       collection(state.db, "users", state.businessOwnerUid, "auditLogs"),
@@ -6415,8 +6517,29 @@ function recordStockMovement(transaction, fields) {
 // shop with 1000 sales, 1.2s at 2000 products, 6s at 10000 -- per render, on a
 // desktop, with renderAll() firing on every snapshot. This is O(sales) once
 // instead, whatever the catalogue size.
+// "Offline" has to mean "the database is unreachable", because that is the
+// condition the sale path branches on -- and navigator.onLine does not mean
+// that. It reports whether the device has a network interface with a route, so
+// it stays true on shop wifi whose uplink has died, behind a captive portal,
+// and when DNS stops resolving.
+//
+// That last one is not hypothetical. It is what the UAT console log was full
+// of: ERR_QUIC_PROTOCOL_ERROR, then run after run of ERR_NAME_NOT_RESOLVED
+// against firestore.googleapis.com, while the browser went on reporting that
+// it was online.
+//
+// That gap is what made "sales don't work offline" true. isOfflineNow() said
+// online, so the sale skipped the queue and went to runTransaction(), which
+// cannot complete without a server. The promise never settled, the Complete
+// Sale button stayed disabled behind it, and the till stopped serving -- the
+// exact outcome the whole offline feature exists to prevent, reached by the
+// one route it was not watching.
+//
+// state.serverReachable is Firestore's own view, which is authoritative here
+// because it is the same fact that decides whether a transaction can complete.
 function isOfflineNow() {
-  return typeof navigator !== "undefined" && navigator.onLine === false;
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+  return state.serverReachable === false;
 }
 
 // Only cash sales are queued offline (L-9 phase C). A credit sale needs the
@@ -6425,6 +6548,43 @@ function isOfflineNow() {
 // is refused with its own message rather than left to fail as a generic error.
 function shouldQueueSaleOffline(paymentMethod) {
   return isOfflineNow() && paymentMethod === "cash";
+}
+
+// How long a sale transaction is given before the till stops waiting on it.
+//
+// Phase F closed the case where the outage was already known when the sale
+// started. This closes the one where it begins mid-transaction: runTransaction()
+// needs a server round trip, so if the connection dies after it starts, the
+// promise does not settle and #completeSaleButton stays disabled behind it. The
+// shop stops selling until somebody reloads the page.
+//
+// Ten seconds is chosen to be well clear of a slow-but-working sale -- a
+// transaction on poor mobile data lands in one to three -- because the cost of
+// giving up early is real: the fallback is a queued write, which has no
+// server-side stock check, so a premature timeout trades the oversell guard for
+// nothing. The cost of waiting slightly too long is only that the cashier looks
+// at a dimmed button for a moment longer.
+const SALE_TRANSACTION_TIMEOUT_MS = 10000;
+
+// Resolves to "committed" or "unconfirmed"; a rejection still rejects, so the
+// existing catch keeps reporting real failures exactly as it did.
+//
+// "unconfirmed" is deliberately not an error. The transaction may still be in
+// flight and may still land, so the only true statement is that we stopped
+// waiting -- and the caller has to treat that differently from "no".
+async function awaitSaleTransaction(attempt) {
+  let timeoutId = null;
+  try {
+    return await Promise.race([
+      attempt.then(() => "committed"),
+      new Promise((resolve) => {
+        timeoutId = window.setTimeout(() => resolve("unconfirmed"), SALE_TRANSACTION_TIMEOUT_MS);
+      })
+    ]);
+  } finally {
+    // A till runs for a whole shift; a timer left per sale is a leak.
+    window.clearTimeout(timeoutId);
+  }
 }
 
 // A sale made with no connection, written as queued relative updates instead of
@@ -6457,8 +6617,13 @@ function shouldQueueSaleOffline(paymentMethod) {
 function queueOfflineSale(args) {
   const { doc, collection, increment, serverTimestamp, writeBatch } = state.firebaseApi.firestore;
   const root = ["users", state.businessOwnerUid];
+  // The caller mints the id, because completeSale() has to decide it before the
+  // offline and online paths diverge -- the timeout fallback records a sale the
+  // transaction may also still be trying to record, and they are only safe
+  // sharing one id. The local computation stays as a fallback so a future caller
+  // that forgets still gets a deterministic id rather than a random one.
   const dedupeSaleId = `ord_${args.staffId}_${args.orderNumber}`;
-  const saleId = args.duplicate ? `${dedupeSaleId}_dup${Date.now()}` : dedupeSaleId;
+  const saleId = args.saleId || (args.duplicate ? `${dedupeSaleId}_dup${Date.now()}` : dedupeSaleId);
 
   // A rejection arrives at replay time, long after the cashier has moved on, so
   // it goes to the fault log rather than a toast nobody will connect to it.
@@ -7683,6 +7848,7 @@ async function initFirebase() {
         subscribeToMonthlyReports();
         subscribeToCustomers();
         subscribeToTransfers();
+        watchServerConnection();
       } else {
         stopIdleWatcher();
         if (state.unsubscribeProducts) state.unsubscribeProducts();
@@ -7706,6 +7872,11 @@ async function initFirebase() {
         state.unsubscribeCustomers = null;
         if (state.unsubscribeTransfers) state.unsubscribeTransfers();
         state.unsubscribeTransfers = null;
+        if (state.unsubscribeConnection) state.unsubscribeConnection();
+        state.unsubscribeConnection = null;
+        // Back to unknown, not offline: the next sign-in must not inherit a
+        // verdict about a connection this session had.
+        state.serverReachable = null;
         state.products = [];
         state.cart = [];
         state.sales = [];
@@ -8893,6 +9064,49 @@ async function handleForgotPassword() {
   button.disabled = false;
 }
 
+// The verification link is opened somewhere else -- a second tab, or the phone
+// the email arrived on -- so nothing in this tab ever hears about it. The
+// Firebase user object caches emailVerified from sign-in and
+// onAuthStateChanged does not fire again for a verification, which left the
+// amber banner standing until someone happened to reload the whole app. Asking
+// again when the tab comes back to the front costs one request at the exact
+// moment somebody has returned from their inbox.
+const VERIFICATION_RECHECK_GAP_MS = 5000;
+
+let lastVerificationCheckMs = 0;
+
+async function refreshEmailVerification() {
+  // Nothing to learn: signed out, already verified, or no connection to ask
+  // over. Once it flips this stops running for the rest of the session, so the
+  // steady state after verifying is no requests at all.
+  if (!state.user || state.user.emailVerified) return;
+  if (!navigator.onLine) return;
+  // Switching tabs is not a rare event and each check is a round trip.
+  const now = Date.now();
+  if (now - lastVerificationCheckMs < VERIFICATION_RECHECK_GAP_MS) return;
+  lastVerificationCheckMs = now;
+
+  try {
+    await state.user.reload();
+  } catch (error) {
+    console.warn("Could not refresh email verification status:", error);
+    return;
+  }
+  if (!state.user.emailVerified) return;
+
+  // reload() refreshes the account record, but the ID token still carries the
+  // old email_verified claim until it is forced. The proxy checks the claim on
+  // the token rather than the record (proxy/server.js), so without this the
+  // banner would come down while the server went on turning the account away.
+  try {
+    await state.user.getIdToken(true);
+  } catch (tokenError) {
+    console.warn("Could not refresh the ID token after verification:", tokenError);
+  }
+  updateAuthUi();
+  showToast(t("toast.emailVerified"));
+}
+
 async function handleResendVerification() {
   if (!state.auth || !state.user) return;
   const button = qs("#resendVerificationButton");
@@ -9306,6 +9520,13 @@ function bindEvents() {
     showToast(t("toast.signedOut"));
   });
   qs("#resendVerificationButton")?.addEventListener("click", handleResendVerification);
+  // Both fire on a tab switch and refreshEmailVerification() throttles, so the
+  // pair costs nothing: visibilitychange catches coming back from the inbox in
+  // another tab, focus catches the window itself regaining it, and online
+  // catches a link opened on a phone while this till had no connection.
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshEmailVerification(); });
+  window.addEventListener("focus", refreshEmailVerification);
+  window.addEventListener("online", refreshEmailVerification);
   qs("#overridePasswordSettingsButton")?.addEventListener("click", openOverridePasswordDialog);
   qs("#overridePasswordNudgeSetButton")?.addEventListener("click", openOverridePasswordDialog);
   qs("#updateReloadButton")?.addEventListener("click", () => location.reload());
@@ -9711,8 +9932,21 @@ function bindEvents() {
       return;
     }
 
+    // Minted once, here, and used by whichever path ends up recording the sale.
+    //
+    // Both paths derive this from staffId + orderNumber, which is what makes a
+    // retry idempotent -- but the duplicate case appends Date.now(), so
+    // computing it separately in each path would hand a sale that started
+    // online and finished queued two DIFFERENT ids, and let both commit. That
+    // is the precise double-sale the deterministic id exists to prevent, so the
+    // timeout fallback below is only safe because the id is decided before the
+    // paths diverge.
+    const dedupeSaleId = `ord_${seller.id}_${orderNumber}`;
+    const saleId = duplicate ? `${dedupeSaleId}_dup${Date.now()}` : dedupeSaleId;
+
     if (state.db && state.user && state.businessOwnerUid && shouldQueueSaleOffline(paymentMethod)) {
-      const saleId = queueOfflineSale({
+      queueOfflineSale({
+        saleId,
         items: saleItems,
         subtotal,
         discountType,
@@ -9735,23 +9969,25 @@ function bindEvents() {
     } else if (state.db && state.user && state.businessOwnerUid) {
       try {
         const { collection, doc, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
-        // Idempotency: key the sale document deterministically on staffId + the
-        // staff-entered order number instead of a random auto-id. A retried
+        // Idempotency: the sale document is keyed deterministically on staffId +
+        // the staff-entered order number instead of a random auto-id (minted
+        // above, before the offline and online paths diverge). A retried
         // submission (flaky network, double-tap after a hang, etc.) for the same
-        // order number now resolves to the SAME document path, so Firestore's
+        // order number resolves to the SAME document path, so Firestore's
         // create-vs-update rule semantics reject the retry instead of silently
         // creating a second sale and double-decrementing stock. If the cashier
         // already confirmed "record again anyway" above (duplicate === true),
-        // give that deliberate re-entry its own distinct id so it isn't blocked.
-        const dedupeSaleId = `ord_${seller.id}_${orderNumber}`;
-        const saleId = duplicate ? `${dedupeSaleId}_dup${Date.now()}` : dedupeSaleId;
+        // that deliberate re-entry gets its own distinct id so it isn't blocked.
         const saleRef = doc(state.db, "users", state.businessOwnerUid, "sales", saleId);
         let creditCustomerId = null;
         if (paymentMethod === "credit") {
           creditCustomerId = await findOrCreateCustomerForCredit(customerName, creditPhoneKey);
         }
         const creditCustomerRef = creditCustomerId ? doc(state.db, "users", state.businessOwnerUid, "customers", creditCustomerId) : null;
-        await runTransaction(state.db, async (transaction) => {
+        // Set once the timeout below has already given up on this transaction,
+        // so its late settlement is logged rather than reported twice.
+        let unconfirmed = false;
+        const attempt = runTransaction(state.db, async (transaction) => {
           const existingSaleSnap = await transaction.get(saleRef);
           if (existingSaleSnap.exists()) {
             throw new Error(t("txerror.duplicateOrderSubmission", { orderNumber }));
@@ -9884,7 +10120,63 @@ function bindEvents() {
           }
         });
 
-        state.lastSale = { mode: "firestore", saleId: saleRef.id, items: saleItems, paymentMethod, total, ...taxFields };
+        // Promise.race leaves the loser running, and a rejection with nobody
+        // listening is an unhandled rejection the browser reports as a crash.
+        // Attached before the race so it cannot be missed. Only speaks up once
+        // the timeout has given up -- otherwise the catch below has it.
+        attempt.catch((lateError) => {
+          if (!unconfirmed) return;
+          console.warn("A sale transaction that had already timed out then failed.", lateError);
+          try { reportFault("rejection", `timed-out sale later failed: ${lateError?.code || lateError}`, "completeSale"); }
+          catch (reportError) { console.warn(reportError); }
+        });
+
+        const outcome = await awaitSaleTransaction(attempt);
+
+        if (outcome === "unconfirmed") {
+          unconfirmed = true;
+          // Cash can be held on the device, so it is -- under the SAME sale id
+          // the transaction is using. Whichever reaches the server first wins:
+          // if the transaction commits, this batch's set() on an existing sale
+          // is an update, which firestore.rules only permits in void or return
+          // shape, so the batch is refused WHOLE and the stock is not
+          // decremented twice. If the batch lands first, the transaction's own
+          // exists() check throws. Exactly one sale either way.
+          if (paymentMethod === "cash") {
+            queueOfflineSale({
+              saleId,
+              items: saleItems,
+              subtotal,
+              discountType,
+              discountValue: Number(state.discountValue || 0),
+              discountAmount,
+              total,
+              cashTendered,
+              changeDue,
+              storeId: state.currentStoreId,
+              staffId: seller.id,
+              staffName: seller.name,
+              orderNumber,
+              customerName,
+              customerPhone,
+              duplicate,
+              taxFields
+            });
+            state.lastSale = { mode: "firestore", saleId, items: saleItems, paymentMethod, total, ...taxFields };
+            showToast(t("toast.saleHeldUnconfirmed"));
+          } else {
+            // Not queueable: a credit sale needs the customer's real balance and
+            // an authorised override, neither of which exists here. And it must
+            // not be reported as failed, because the transaction may still
+            // commit. Unknown is the honest answer, so the cashier is told to
+            // look before re-entering -- and if they do re-enter, the shared id
+            // means the rules refuse the second one.
+            showToast(t("toast.saleUnconfirmed"));
+            return;
+          }
+        } else {
+          state.lastSale = { mode: "firestore", saleId: saleRef.id, items: saleItems, paymentMethod, total, ...taxFields };
+        }
       } catch (error) {
         console.warn(error);
         showToast(describeOperationError(error, "toast.saleFailedGeneric"));

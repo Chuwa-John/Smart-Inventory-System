@@ -1,7 +1,8 @@
 # Design — offline selling (L-9)
 
-Status: **phases A–E built, tested and deployed.** Written 2026-08-02,
-completed 2026-08-04. The only step outstanding is the handset trial in §15.
+Status: **phases A–G built and tested; F and G awaiting deploy.** Written 2026-08-02,
+phases A–E completed 2026-08-04, phases F and G 2026-08-08. The only step outstanding
+is the handset trial in §15.
 
 Phase A (rules only) landed 2026-08-02: `stockCountInRange` permits bounded
 negative `products.quantity`, and `stockMovements` accepts an `offline: true`
@@ -32,6 +33,78 @@ the emulator — 14 assertions, all passing — and the excluded-path regression
 landed in `tests/offline-selling.test.mjs`. It sat unproven for a period because
 the emulator could not run in the environment it was written in; that is
 resolved.
+
+Phase F (detection) landed 2026-08-08, out of user acceptance testing: **"sales
+don't work when the user is offline."** Everything above was reached only when
+`navigator.onLine === false`, and that flag does not mean what this feature
+needed it to mean. It reports whether the device has a network interface with a
+route, so it stays `true` on shop wifi with a dead uplink, behind a captive
+portal, and when DNS stops resolving. The UAT console log was the third case:
+`ERR_QUIC_PROTOCOL_ERROR`, then run after run of `ERR_NAME_NOT_RESOLVED` against
+`firestore.googleapis.com`, while the browser reported being online throughout.
+
+So `isOfflineNow()` said online, the sale skipped the queue, and it went to
+`runTransaction()` — which cannot complete without a server. The promise never
+settled, `#completeSaleButton` stayed disabled behind it, and the till stopped
+selling. Phases A–E were correct and were never reached: the outage they were
+built for was one the trigger could not see. Note that §14's list of untested
+failure modes already named "a captive portal answering requests with a login
+page"; this is that class of failure, arriving by DNS instead.
+
+`isOfflineNow()` now also consults `state.serverReachable`, which is Firestore's
+own view via `snapshot.metadata.fromCache` on a one-document listener
+(`watchServerConnection()`, on the signed-in user's own profile — readable by
+every role). That is the authoritative signal here because it is the same fact
+that decides whether a transaction can complete. `includeMetadataChanges` is
+required, not incidental: a connection dropping changes no data, so without it
+the callback never fires and the till never learns.
+
+The flag is deliberately **one-way until proven** — it starts `null` and only
+reaches `false` once a live connection has been seen and then lost. A snapshot
+served from cache during ordinary startup is not an outage, and treating it as
+one would queue cash sales that could have been transacted against a real stock
+check, and refuse credit sales with "cash only" on a good connection. An outage
+noticed a moment late costs nothing; a phantom outage costs a sale. A failed or
+denied listener returns to `null`, never to `false`, for the same reason.
+
+Phase G (the mid-transaction outage) landed 2026-08-08, immediately after F and
+at the shop owner's request. F closes the case where the outage is already known
+when the sale starts; G closes the one where it begins *during* the transaction,
+which F cannot see. `runTransaction()` needs a server round trip, so a
+connection dying after it starts leaves a promise that never settles and
+`#completeSaleButton` disabled behind it — the same dead till, reached later.
+
+The sale transaction is now started rather than awaited, and raced against
+`SALE_TRANSACTION_TIMEOUT_MS` (10s) by `awaitSaleTransaction()`, which resolves
+to `"committed"` or `"unconfirmed"`. A rejection still rejects, so real failures
+are reported exactly as before. Ten seconds is well clear of a slow-but-working
+sale — one to three on poor mobile data — because giving up early has a real
+cost: the fallback is a queued write with no server-side stock check, so a
+premature timeout trades the oversell guard for nothing.
+
+On `"unconfirmed"`, a **cash** sale is queued; a non-cash sale is not, for the
+§1 reason, and is reported as *unconfirmed* rather than failed — the transaction
+may still commit, so "unknown" is the only true statement. The cashier is told
+to check the sales list before re-entering.
+
+Two properties make the fallback safe, and both are now pinned by tests rather
+than argued:
+
+1. **One id.** The sale id is minted once, above the point where the offline and
+   online paths diverge, and passed into `queueOfflineSale()`. This is not
+   cosmetic: the `duplicate` case appends `Date.now()`, so an id computed
+   separately per path would differ and *both would commit* — the exact
+   double-sale the deterministic id exists to prevent.
+2. **The loser is refused whole.** `firestore.rules` permits an update to a sale
+   only in void or return shape, so a queued `set()` over a committed sale
+   fails; because the queued writes are one batch (§6, QA-114), the stock
+   decrements fail with it. In the other direction the transaction's own
+   `exists()` check throws. Exactly one sale, either way.
+
+`Promise.race` leaves the loser running, so the abandoned transaction carries a
+`catch` that logs and files a fault if it later fails — an unhandled rejection
+reads to the browser as a crash, and a late failure means the queued fallback is
+the only record of that sale.
 
 **The airplane-mode trial on a real handset is still owed, and is the part no
 suite substitutes for.** Every write in the replay suite is issued directly, so
@@ -483,3 +556,53 @@ outage, across two tills queueing simultaneously against the same shelf, or
 under the storage pressure of a phone that is nearly full. Those are worth
 knowing before this is sold to a customer whose branches run on mobile data,
 and none of them are blocking for a pilot with a shop you can telephone.
+
+---
+
+## 16. Phase F and G record — the detection gap, and closing the hang
+
+Phase F is described at the top of this document. Two things belong in the
+record rather than the summary.
+
+**Why no suite caught it.** Every offline test in the repo either sets
+`navigator.onLine = false` in a harness or issues writes directly against the
+emulator. Both start from the premise that the app has already decided it is
+offline. Nothing tested *how* it decides, so the one line that made the decision
+was the one line with no coverage — the same shape as the phase C defect
+recorded in §14, which shipped with every emulator suite green because those
+suites assert write shapes and never execute the client's sale code.
+`tests/offline-selling.test.mjs` now drives `watchServerConnection()` through
+the state machine, including the phantom-outage case, and
+`tests/error-messages.test.mjs` compiles the real `isOfflineNow()` rather than
+stubbing `navigator` away.
+
+**The remaining hang, and what closing it cost.** If the connection dies *after*
+`runTransaction()` has started, that promise does not settle and
+`#completeSaleButton` stays disabled until the page is reloaded. F made this
+much rarer — an outage lasting more than a second or two is now detected before
+the sale starts — but did not remove it. It was recorded here as the owner's
+call, because the fallback changes how *online* sales behave, and taken up
+immediately: phase G, described at the top of this document.
+
+Two things from building it belong in the record.
+
+**The safety argument had a hole in it.** The version of this section written
+before G said the fallback was safe because "both paths derive the same document
+id from `staffId` + `orderNumber`". That is true only when `duplicate` is false.
+When the cashier has confirmed *record again anyway*, the id appends
+`Date.now()` — so the two paths, computing it at two different moments, would
+have produced two different ids and both would have committed. A double sale, in
+the mechanism whose entire job is preventing one. The id is now minted once
+before the paths diverge. The general lesson is the narrower one: an idempotency
+argument that says "both paths derive the same id" has to be checked against the
+code that derives it, in every branch, not read once and believed.
+
+**Testing the mechanism is not testing its use.** The first version of the G
+tests exercised `awaitSaleTransaction()` directly and passed with the call site
+deleted from `completeSale()` — the helper was correct and unreachable. The same
+was true of the shared id: the assertion matched the first
+`queueOfflineSale({ saleId, ...})` call site and never looked at the second,
+which is the one that matters. Both were caught by deliberately reintroducing
+each defect and confirming the suite went red; neither would have been caught by
+reading. Any assertion about this path is worth that check, because the failure
+it guards against is silent.

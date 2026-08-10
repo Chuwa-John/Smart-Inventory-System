@@ -1456,6 +1456,65 @@ dialog::backdrop {
   color: var(--accent);
 }
 
+/* ---- Staff invitation page -------------------------------------------------
+
+   accept-invite.html deliberately does NOT reuse .auth-panel. That class is a
+   full-bleed two-pane grid whose left half is a pitch, hidden outright below
+   900px -- the right shape for a stranger deciding whether to sign up, and the
+   wrong one here. Nobody browses to an invite page. They arrive from a link,
+   already invited, most often on the phone the mail landed on, and the one
+   thing they must be able to read is who invited them and as what. .auth-brand
+   hides exactly that on a phone.
+
+   This page borrowed .auth-panel back when it was a centred card, and kept the
+   class after the sign-in gate was rebuilt around a two-column grid. Its four
+   plain <div>s were then auto-placed into that grid: heading top-left, invite
+   context top-right, fields underneath, no card, no padding. Giving the page
+   its own container is what stops the two from breaking each other again. */
+.invite-gate {
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  min-height: 100vh;
+  padding: clamp(20px, 5vw, 56px) var(--space-4);
+  background: var(--bg);
+}
+
+/* Capped and centred: this is a short form, and a password field stretched
+   across a monitor is neither comfortable nor legible. `margin: auto` centres
+   it vertically when it is short and lets the page scroll when it is not,
+   which the verification step makes it. */
+.invite-panel {
+  display: grid;
+  gap: var(--space-5);
+  width: min(520px, 100%);
+  margin: auto;
+  padding: clamp(20px, 4vw, 32px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-lg);
+}
+
+.invite-panel h1 {
+  margin-bottom: var(--space-2);
+  font-size: clamp(1.5rem, 1.3rem + 1vw, 1.875rem);
+  letter-spacing: -0.03em;
+  font-weight: 680;
+}
+
+.invite-heading {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* Each step of the page is one child of the card, so it has to carry its own
+   rhythm -- the card's gap only separates the steps from each other. */
+.invite-fields {
+  display: grid;
+  gap: var(--space-4);
+}
+
 .auth-consent-row {
   display: flex;
   flex-direction: row;

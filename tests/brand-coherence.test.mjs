@@ -20,6 +20,7 @@ import { readFileSync } from "node:fs";
 const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const landing = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const index = readFileSync(new URL("../app.html", import.meta.url), "utf8");
+const invite = readFileSync(new URL("../accept-invite.html", import.meta.url), "utf8");
 const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 
 const results = [];
@@ -98,6 +99,44 @@ console.log("\n=== the sign-in screen is part of the same story ===");
   }
   check("the pitch is hidden on a phone, where the form is all that is wanted",
     /@media \(max-width: 900px\)[\s\S]{0,400}\.auth-brand \{ display: none; \}/.test(css));
+}
+
+console.log("\n=== the invite page is laid out by its own rules ===");
+{
+  // This is the regression, not a style preference. accept-invite.html was
+  // written when .auth-panel was a centred card and kept the class after the
+  // sign-in gate was rebuilt as a two-pane grid. Its plain <div>s were then
+  // auto-placed into two columns -- heading top-left, invite context
+  // top-right, fields underneath, no card at all -- and nothing failed,
+  // because no test knew the two pages shared a class.
+  check("it does not borrow the sign-in gate's grid",
+    !/class="auth-panel"/.test(invite) && !/class="auth-gate"/.test(invite),
+    "those are shaped for a two-pane pitch and will scatter this page's children");
+  check("it has a container of its own",
+    /class="invite-gate"/.test(invite) && /class="invite-panel"/.test(invite));
+  check("that container is a single column",
+    /\.invite-panel \{[^}]*display: grid;/.test(css) &&
+    !/\.invite-panel \{[^}]*grid-template-columns/.test(css));
+  // The whole point of the page. .auth-brand is display:none below 900px, so
+  // laying this out with it would hide who invited you and as what -- on the
+  // phone the invitation email was opened on, which is where most staff are.
+  check("nothing on it is hidden on a phone",
+    !/class="auth-brand"/.test(invite),
+    "who invited you, and as what, is the one thing this page must say");
+  check("the fields carry their own spacing",
+    /class="invite-fields" id="acceptInviteFormFields"/.test(invite) &&
+    /class="invite-fields" id="inviteVerifySection"/.test(invite));
+  // Same rule as the sign-in gate above: this was a re-wrap, not a rebuild.
+  // accept-invite.js reaches every one of these by id and nothing by position.
+  const inviteForm = invite.slice(invite.indexOf('id="acceptInviteForm"'),
+    invite.indexOf("</form>", invite.indexOf('id="acceptInviteForm"')));
+  for (const id of ["acceptInviteIntro", "inviteContextBox", "inviteContextHeading",
+                    "inviteContextText", "inviteFullName", "inviteEmail", "invitePassword",
+                    "inviteConfirmPassword", "inviteConfirmPasswordRow", "acceptInviteError",
+                    "acceptInviteSubmitButton", "inviteVerifySection", "inviteVerifyError",
+                    "inviteVerifyContinueButton", "inviteResendVerificationButton"]) {
+    check(`#${id} is still inside the form`, inviteForm.includes(`id="${id}"`));
+  }
 }
 
 console.log("\n=== the landing page is a real page, not a mock ===");

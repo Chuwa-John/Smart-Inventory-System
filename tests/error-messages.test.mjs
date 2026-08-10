@@ -37,9 +37,15 @@ function check(name, pass, detail = "") {
 // Harness: t() returns the key so assertions read as intent, and navigator is
 // swapped per case.
 const navigator = { onLine: true };
-const { describeOperationError } = new Function("navigator", "t",
-  `${mapBlock}\n${extract("describeOperationError")}\nreturn { describeOperationError };`
-)(navigator, (key) => key);
+// describeOperationError now asks isOfflineNow() rather than reading
+// navigator.onLine itself, so the real one is compiled in alongside it: the
+// point of that change is that the browser's flag is not the whole answer, and
+// a harness that stubbed it away would test the version of the code that had
+// the bug.
+const state = { serverReachable: null };
+const { describeOperationError } = new Function("navigator", "state", "t",
+  `${mapBlock}\n${extract("isOfflineNow")}\n${extract("describeOperationError")}\nreturn { describeOperationError };`
+)(navigator, state, (key) => key);
 
 const sdkError = (code) => Object.assign(new Error("Some raw English SDK text."), { code });
 const appError = (translated) => new Error(translated);
@@ -86,6 +92,18 @@ console.log("\n=== offline outranks whatever code the SDK attached ===");
     describeOperationError(appError("Something specific"), "toast.saleFailedGeneric") === "error.offline");
   check("no error object at all still reports the connection",
     describeOperationError(null, "toast.saleFailedGeneric") === "error.offline");
+
+  // The case reported in UAT: dead DNS, so the database is unreachable while
+  // the browser still calls itself online. The cashier used to be told
+  // "unavailable", which names nothing they can act on.
+  navigator.onLine = true;
+  state.serverReachable = false;
+  check("dead shop wifi reports the connection, not the SDK's code",
+    describeOperationError(sdkError("unavailable"), "toast.saleFailedGeneric") === "error.offline");
+  check("and a permission error there reports the connection too",
+    describeOperationError(sdkError("permission-denied"), "toast.saleFailedGeneric") === "error.offline",
+    "navigator.onLine is true here — only the database knows better");
+  state.serverReachable = null;
 }
 
 console.log("\n=== degenerate input never throws ===");

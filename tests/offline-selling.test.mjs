@@ -69,8 +69,11 @@ console.log("=== the user is told the truth about it ===");
   check("the banner exists in Kiswahili too",
     (src.match(/"offline\.bannerText"/g) || []).length >= 2);
   check("being offline outranks whatever code the SDK returned",
-    /navigator\.onLine === false\) return t\("error\.offline"\)/.test(noComments),
+    /if \(isOfflineNow\(\)\) return t\("error\.offline"\);/.test(noComments),
     "a cashier needs 'no internet', not 'unavailable'");
+  check("and it asks isOfflineNow(), not navigator.onLine directly",
+    !/navigator\.onLine === false\) return t\("error\.offline"\)/.test(noComments),
+    "on dead shop wifi the browser still says online, so the cashier got 'unavailable'");
   check("the SDK's unavailable code maps to the offline message",
     /"unavailable": "error\.offline"/.test(noComments));
 }
@@ -103,9 +106,14 @@ console.log("=== a cash sale is queued offline, not refused (L-9 phase C) ===");
     const saleEnd = noComments.indexOf('describeOperationError(error, "toast.saleFailedGeneric")');
     const saleStart = noComments.lastIndexOf("if (!seller.id", saleEnd);
     const region = noComments.slice(saleStart, saleEnd);
+    // Matches runTransaction( without requiring `await` in front of it: since
+    // the phase F timeout the sale path starts the transaction and hands it to
+    // awaitSaleTransaction() rather than awaiting it directly. The ordering
+    // property this guards is unchanged.
     check("the offline branch is taken before the transaction one",
       region.indexOf("shouldQueueSaleOffline(paymentMethod)") !== -1 &&
-      region.indexOf("shouldQueueSaleOffline(paymentMethod)") < region.indexOf("await runTransaction("),
+      region.indexOf("runTransaction(state.db") !== -1 &&
+      region.indexOf("shouldQueueSaleOffline(paymentMethod)") < region.indexOf("runTransaction(state.db"),
       "the transaction must be the else, or an offline sale still hits a path that cannot queue");
     check("the non-cash refusal comes before both",
       region.indexOf("toast.offlineCashOnly") < region.indexOf("shouldQueueSaleOffline(paymentMethod)"));
@@ -403,7 +411,11 @@ console.log("=== the excluded paths still refuse offline, and still say why (L-9
   // needs what a transaction gives it. If this count drops, something moved off
   // the transactional path -- which is exactly what phase C did to cash sales,
   // deliberately and with a design document. It should not happen by accident.
-  const transactions = (noComments.match(/await runTransaction\(state\.db/g) || []).length;
+  // Counted without requiring `await`: the sale path now starts its transaction
+  // and races it against a timeout (phase F), so it reads
+  // `const attempt = runTransaction(...)`. It is still transaction-bound, which
+  // is what this number is about.
+  const transactions = (noComments.match(/runTransaction\(state\.db/g) || []).length;
   check("the online-only paths are still transaction-bound",
     transactions >= 8,
     `found ${transactions}; a drop means an operation can now queue, which for a return or a shift close is a correctness bug`);
@@ -433,6 +445,262 @@ console.log("=== the F-4 premise is flagged where it is stated ===");
     "a correction far from what it corrects gets read separately, or not at all");
   check("the corrected entry points at the test that pins it",
     /tests\/offline-selling\.test\.mjs/.test(audit));
+}
+
+console.log("\n=== 'offline' means the database is unreachable, not what the OS thinks ===");
+{
+  // Reported in UAT as "sales don't work when the user is offline", with a
+  // console log that named the cause: ERR_QUIC_PROTOCOL_ERROR, then run after
+  // run of ERR_NAME_NOT_RESOLVED against firestore.googleapis.com. DNS was
+  // dead. navigator.onLine was true throughout, because the device still had a
+  // network interface with a route -- which is the only thing that flag means.
+  //
+  // So isOfflineNow() said online, the sale skipped the queue, and it went to
+  // runTransaction(), which cannot complete without a server. The promise never
+  // settled, the Complete Sale button stayed disabled behind it, and the till
+  // stopped selling. The offline feature was never reached by the outage it was
+  // built for. Captive portals and a hung uplink read identically.
+  function extract(name) {
+    const start = src.indexOf(`function ${name}(`);
+    if (start === -1) throw new Error(`${name} not found`);
+    let depth = 0, i = src.indexOf("{", start);
+    for (; i < src.length; i++) {
+      if (src[i] === "{") depth++;
+      else if (src[i] === "}") { depth--; if (depth === 0) break; }
+    }
+    return src.slice(start, i + 1);
+  }
+
+  function harness({ onLine = true } = {}) {
+    const listener = {};
+    const state = {
+      db: {}, user: { uid: "u1" }, serverReachable: null, unsubscribeConnection: null,
+      firebaseApi: { firestore: {
+        doc: (...path) => ({ path }),
+        onSnapshot: (ref, options, onNext, onError) => {
+          listener.ref = ref; listener.options = options;
+          listener.onNext = onNext; listener.onError = onError;
+          return () => { listener.stopped = true; };
+        }
+      } }
+    };
+    const api = new Function("state", "navigator", "syncConnectionState", "console",
+      `${extract("isOfflineNow")}
+       ${extract("watchServerConnection")}
+       return { isOfflineNow, watchServerConnection };`
+    )(state, { onLine }, () => {}, { warn: () => {} });
+    return { state, listener, ...api };
+  }
+
+  // A connection dropping changes no data, so a listener without this never
+  // fires and the till never learns. This is the whole mechanism.
+  {
+    const h = harness();
+    h.watchServerConnection();
+    check("the connection watch asks for metadata changes",
+      h.listener.options && h.listener.options.includeMetadataChanges === true,
+      "without it the callback only fires on data changes, and an outage changes no data");
+    check("it watches the signed-in user's own profile document",
+      JSON.stringify(h.listener.ref.path).includes("users") && h.listener.ref.path.includes("u1"),
+      "every role may read its own profile, so this works for a cashier too");
+  }
+
+  // The phantom-outage guard. Snapshots arrive from cache during ordinary
+  // startup; reading that as an outage would queue cash sales that could have
+  // been transacted against a real stock check, and refuse credit sales with
+  // "cash only" on a perfectly good connection.
+  {
+    const h = harness();
+    h.watchServerConnection();
+    check("before any snapshot, nothing is claimed", h.state.serverReachable === null);
+    check("and the till is treated as online", h.isOfflineNow() === false);
+    h.listener.onNext({ metadata: { fromCache: true } });
+    check("a cache snapshot at startup is not an outage", h.state.serverReachable === null,
+      "the flag must only fall after a live connection has been seen");
+    check("so the till is still treated as online", h.isOfflineNow() === false);
+  }
+
+  // The reported bug.
+  {
+    const h = harness({ onLine: true });
+    h.watchServerConnection();
+    h.listener.onNext({ metadata: { fromCache: false } });
+    check("a server snapshot establishes the connection", h.state.serverReachable === true);
+    check("and the till is online", h.isOfflineNow() === false);
+
+    h.listener.onNext({ metadata: { fromCache: true } });
+    check("losing the connection is noticed", h.state.serverReachable === false);
+    check("the till is offline even though the browser says otherwise",
+      h.isOfflineNow() === true,
+      "this is the DNS-failure case from the UAT log: navigator.onLine true, database unreachable");
+
+    h.listener.onNext({ metadata: { fromCache: false } });
+    check("and it recovers when the connection comes back", h.isOfflineNow() === false);
+  }
+
+  // A rules problem or a broken listener must not be read as an outage: that
+  // would refuse every credit sale for the rest of the session.
+  {
+    const h = harness();
+    h.watchServerConnection();
+    h.listener.onNext({ metadata: { fromCache: false } });
+    h.listener.onNext({ metadata: { fromCache: true } });
+    check("a lost connection is offline", h.isOfflineNow() === true);
+    h.listener.onError(new Error("permission-denied"));
+    check("a failed watch falls back to unknown, not to offline",
+      h.state.serverReachable === null && h.isOfflineNow() === false);
+  }
+
+  // The original signal still stands on its own.
+  {
+    const h = harness({ onLine: false });
+    check("airplane mode is still offline without any snapshot at all",
+      h.isOfflineNow() === true);
+  }
+
+  check("the watch starts with the other subscriptions",
+    /subscribeToTransfers\(\);\s*\n\s*watchServerConnection\(\);/.test(noComments));
+  check("and is torn down on sign-out",
+    /state\.unsubscribeConnection = null;/.test(noComments) &&
+    /state\.serverReachable = null;/.test(noComments),
+    "the next sign-in must not inherit this session's verdict about a connection");
+}
+
+console.log("\n=== an outage that starts mid-transaction no longer strands the till ===");
+{
+  // Phase F caught the outage that had already begun when the sale started.
+  // This is the other half: runTransaction() needs a server round trip, so a
+  // connection dying AFTER it starts leaves a promise that never settles, with
+  // #completeSaleButton disabled behind it. The shop stops selling until
+  // somebody reloads.
+  //
+  // The fallback is only safe because of two properties that are checked here
+  // rather than assumed, since getting either wrong records the sale twice and
+  // decrements the stock twice.
+  function extractAsync(name) {
+    const start = src.indexOf(`async function ${name}(`);
+    if (start === -1) throw new Error(`${name} not found`);
+    let depth = 0, i = src.indexOf("{", start);
+    for (; i < src.length; i++) {
+      if (src[i] === "{") depth++;
+      else if (src[i] === "}") { depth--; if (depth === 0) break; }
+    }
+    return src.slice(start, i + 1);
+  }
+
+  // Property one: ONE id, minted before the paths diverge. The duplicate case
+  // appends Date.now(), so an id computed separately per path would differ --
+  // and two different ids both commit. This is the whole safety argument.
+  {
+    const handlerStart = noComments.indexOf('qs("#completeSaleButton").addEventListener');
+    // Wide enough to reach the timeout fallback, which sits ~12.8k in. A window
+    // that stopped short of it silently checked only the first call site.
+    const handler = noComments.slice(handlerStart, handlerStart + 16000);
+    const mintAt = handler.indexOf("const saleId = duplicate ?");
+    const branchAt = handler.indexOf("shouldQueueSaleOffline(paymentMethod)");
+    check("the sale id is minted once", (handler.match(/const saleId = duplicate \?/g) || []).length === 1,
+      "a second mint would give the duplicate case a different Date.now()");
+    check("and minted before the offline/online paths split", mintAt !== -1 && mintAt < branchAt);
+    // BOTH call sites, counted. There are two -- the offline branch and the
+    // timeout fallback -- and it is the fallback that matters most, because it
+    // is the one racing a transaction that may still commit. An earlier version
+    // of this check matched only the first and passed with the fallback broken.
+    const callSites = (handler.match(/queueOfflineSale\(\{/g) || []).length;
+    const idPassed = (handler.match(/queueOfflineSale\(\{\s*saleId,/g) || []).length;
+    check("every queued path is handed that id", callSites === 2 && idPassed === 2,
+      `${idPassed} of ${callSites} call sites pass it — the fallback and the transaction ` +
+      "must race under one id or both can commit");
+    check("queueOfflineSale prefers the caller's id",
+      /const saleId = args\.saleId \|\| \(args\.duplicate \?/.test(noComments));
+  }
+
+  // Property two: the loser of the race is refused, not merged. Checked against
+  // the rules themselves -- sales may only be updated in void or return shape,
+  // so a queued set() over a committed sale fails, and because the queued
+  // writes are one batch (QA-114) the stock writes fail with it.
+  {
+    const rules = readFileSync(new URL("../firestore.rules", import.meta.url), "utf8");
+    const salesAt = rules.indexOf("match /sales/{saleId}");
+    // To the end of the block, not a fixed window: the allow clauses sit below
+    // ~80 lines of validVoidUpdate/validReturnUpdate definitions.
+    const salesBlock = rules.slice(salesAt, rules.indexOf("allow delete: if false;", salesAt));
+    // Whitespace-tolerant: the clause wraps across four lines in the rules.
+    const updateClause = salesBlock.slice(salesBlock.indexOf("allow update:"));
+    check("a sale may only be updated as a void or a return",
+      salesBlock.includes("allow update:") &&
+      /validVoidUpdate\(\)\s*\|\|\s*validReturnUpdate\(\)/.test(updateClause) &&
+      !/allow write:/.test(salesBlock),
+      "if a plain overwrite were allowed, the losing path would silently replace the winner");
+    check("the queued sale and its stock writes are one batch",
+      /const batch = writeBatch\(state\.db\);/.test(noComments),
+      "a refused sale must take its stock decrements down with it");
+    check("the transaction refuses an id that already exists",
+      /existingSaleSnap\.exists\(\)[\s\S]{0,120}txerror\.duplicateOrderSubmission/.test(noComments),
+      "the other direction: the batch landed first");
+  }
+
+  // The race itself, run for real against a short timeout.
+  {
+    const run = (attempt, timeoutMs) => new Function("window", "SALE_TRANSACTION_TIMEOUT_MS",
+      `${extractAsync("awaitSaleTransaction")} return awaitSaleTransaction;`
+    )({ setTimeout, clearTimeout }, timeoutMs)(attempt);
+
+    // Testing the helper proves nothing if the sale path does not use it. That
+    // is not hypothetical caution: this suite passed with the call site removed
+    // until this assertion was added.
+    check("the sale path actually routes its transaction through the timeout",
+      /const outcome = await awaitSaleTransaction\(attempt\);/.test(noComments),
+      "awaiting the transaction directly is the hang this phase exists to remove");
+    check("and the transaction is started without being awaited first",
+      /const attempt = runTransaction\(state\.db/.test(noComments),
+      "an await here would strand the till before the race could begin");
+
+    check("a transaction that lands reports committed",
+      (await run(Promise.resolve(), 1000)) === "committed");
+    check("a transaction that never settles reports unconfirmed",
+      (await run(new Promise(() => {}), 20)) === "unconfirmed",
+      "this is the hang: without it the await never returns and the button stays disabled");
+
+    let rejected = false;
+    try { await run(Promise.reject(new Error("permission-denied")), 1000); }
+    catch { rejected = true; }
+    check("a real failure still rejects, so the existing catch reports it", rejected,
+      "a timeout must not swallow the errors the cashier needs to see");
+
+    // A till runs all shift. If the timer outlived a fast sale, node would not
+    // exit here -- and neither would the handles accumulate harmlessly.
+    check("the timer is cleared when the transaction wins",
+      (await run(Promise.resolve(), 60_000)) === "committed");
+  }
+
+  // What the cashier is told, and what is not queued.
+  {
+    const handlerStart = noComments.indexOf('qs("#completeSaleButton").addEventListener');
+    const handler = noComments.slice(handlerStart, handlerStart + 14000);
+    const unconfirmedAt = handler.indexOf('outcome === "unconfirmed"');
+    // Bounded at the catch, or the generic failure message the catch legitimately
+    // uses would be read as belonging to the unconfirmed branch.
+    const region = handler.slice(unconfirmedAt, handler.indexOf("} catch (error) {", unconfirmedAt));
+    check("an unconfirmed cash sale is held on the device",
+      /paymentMethod === "cash"[\s\S]{0,200}queueOfflineSale\(\{/.test(region));
+    check("an unconfirmed credit sale is NOT queued",
+      /\} else \{[\s\S]{0,400}toast\.saleUnconfirmed/.test(region),
+      "no real balance and no authorised override — the phase C rule holds here too");
+    check("and it is not reported as a failure",
+      !/toast\.saleFailedGeneric/.test(region),
+      "the transaction may still commit; 'unknown' is the only true answer");
+    check("the late settlement of an abandoned transaction is handled",
+      /attempt\.catch\(\(lateError\) =>/.test(noComments),
+      "Promise.race leaves the loser running, and an unhandled rejection reads as a crash");
+    check("and it is recorded where the owner can see it",
+      /reportFault\("rejection", `timed-out sale later failed/.test(noComments));
+  }
+
+  for (const key of ["toast.saleHeldUnconfirmed", "toast.saleUnconfirmed"]) {
+    check(`${key} exists in both languages`,
+      (src.match(new RegExp(`"${key.replace(".", "\\.")}"`, "g")) || []).length >= 3,
+      "two dictionary entries plus at least one usage");
+  }
 }
 
 const failed = results.filter((r) => !r.pass);
