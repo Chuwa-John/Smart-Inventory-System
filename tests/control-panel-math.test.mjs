@@ -246,6 +246,32 @@ console.log("\n=== the repayment figure is wired where it is claimed to be ===")
   check("the cache key includes the date",
     /const key = `\$\{state\.businessOwnerUid\}:\$\{new Date\(\)\.toDateString\(\)\}`;/.test(noComments), true);
 
+  // "Credit outstanding" is summed straight from state.customers, so it is only
+  // ever as fresh as the last repaint. subscribeToCustomers() used to repaint
+  // just its own view, and a repayment writes ONLY to customers and auditLogs --
+  // so nothing triggered a full render and the owner panel kept showing debt
+  // that had been paid. Reported in UAT as credit not clearing.
+  //
+  // Sales-derived tiles never showed this because a sale also writes to
+  // products, and that subscription does schedule a render; the credit path is
+  // the one with no such side effect to ride on.
+  const customersFn = noComments.slice(noComments.indexOf("async function subscribeToCustomers("));
+  const customersBody = customersFn.slice(0, customersFn.indexOf("\nasync function "));
+  check("the owner tile reads live customer balances",
+    /const creditOwed = state\.customers\.reduce\(\(sum, c\) => sum \+ safeNumber\(c\.balanceOwed\), 0\);/.test(noComments), true);
+  // Sliced to the onSnapshot callback specifically. subscribeToCustomers has an
+  // early-return branch that also repaints, and a regex over the whole function
+  // matched THAT and passed while the callback -- the one a repayment actually
+  // fires -- had no repaint at all.
+  const snapshotCallback = customersBody.slice(customersBody.indexOf("onSnapshot(customersQuery"));
+  check("the snapshot callback was located", snapshotCallback.length > 80, true);
+  check("a customer snapshot repaints the control panels",
+    /scheduleRenderAll\(\);/.test(snapshotCallback), true);
+  check("both the snapshot and the no-stores branch repaint",
+    (customersBody.match(/scheduleRenderAll\(\);/g) || []).length, 2);
+  check("...via the once-per-frame path, not a raw renderAll",
+    !/[^e]renderAll\(\)/.test(customersBody), true);
+
   for (const key of ["control.collectedOnAccount", "control.collectedOnAccountNote",
                      "control.collectedOnAccountUnavailable", "control.expectedCashNoteWithRepayments"]) {
     check(`${key} exists in both languages`,

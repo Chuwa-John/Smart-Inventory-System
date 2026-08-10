@@ -4508,6 +4508,7 @@ async function subscribeToCustomers() {
     if (queryStoreIds !== null && queryStoreIds.length === 0) {
       state.customers = [];
       renderCustomerAccounts();
+      scheduleRenderAll();
       return;
     }
     const customersQuery = queryStoreIds === null
@@ -4516,6 +4517,17 @@ async function subscribeToCustomers() {
     state.unsubscribeCustomers = onSnapshot(customersQuery, (snapshot) => {
       state.customers = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
       renderCustomerAccounts();
+      // The owner panel's "Credit outstanding" is summed from these very
+      // documents, and this was the only subscription that repainted just its
+      // own view. So a repayment lowered the balance, Customer Accounts showed
+      // the new figure, and the control panel went on displaying the old debt
+      // until some unrelated snapshot happened to trigger a full render -- or
+      // the page was reloaded. Reported as credit not clearing after payment.
+      //
+      // scheduleRenderAll(), not renderAll(): the same once-per-frame
+      // coalescing every other subscription uses, so a burst of customer
+      // updates still costs one render.
+      scheduleRenderAll();
     });
   } catch (error) {
     console.warn(error);
