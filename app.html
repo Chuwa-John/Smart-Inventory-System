@@ -1,8 +1,27 @@
 <!doctype html>
-<html lang="en" class="js-pending">
+<html lang="en" class="js-pending" translate="no">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      This app translates itself. setLanguage() swaps every string and sets
+      <html lang> to match, which is exactly the signal Chrome's built-in
+      translator watches: switching to Kiswahili announced a Swahili page, and a
+      browser set to "always translate Swahili to English" turned it straight
+      back. Reported in UAT as the language switch reverting on its own, with a
+      CSP violation beside it -- the translator's stylesheet on gstatic, refused
+      by style-src.
+
+      Only this page opts out. The landing, legal and invite pages carry no
+      switcher of their own, so machine translation there is a service to a
+      reader rather than a fight with the UI.
+
+      The CSP is deliberately NOT widened to let that stylesheet through. It
+      would loosen a security header on a page handling money, to restore a
+      feature whose whole effect here is to overwrite a real translation with a
+      machine one.
+    -->
+    <meta name="google" content="notranslate" />
     <title>SaviaSmart ERP</title>
     <link rel="preconnect" href="https://www.gstatic.com" />
     <!-- Export/scanner libraries load on demand (see EXTERNAL_LIBRARIES in

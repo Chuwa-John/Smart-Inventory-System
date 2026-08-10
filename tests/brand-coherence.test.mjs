@@ -101,6 +101,34 @@ console.log("\n=== the sign-in screen is part of the same story ===");
     /@media \(max-width: 900px\)[\s\S]{0,400}\.auth-brand \{ display: none; \}/.test(css));
 }
 
+console.log("\n=== the app translates itself, and says so ===");
+{
+  // Reported in UAT as "I switch to Kiswahili and it goes straight back to
+  // English", with a CSP violation beside it for a stylesheet on gstatic.
+  // One cause, not two: setLanguage() sets <html lang="sw">, which is the
+  // signal Chrome's translator watches, and a browser set to always translate
+  // Swahili to English machine-translated the real translation away. The CSP
+  // error was that translator's own stylesheet being refused.
+  check("the app page opts out of machine translation",
+    /<html lang="en" class="js-pending" translate="no">/.test(index) &&
+    /<meta name="google" content="notranslate" \/>/.test(index),
+    "without this the browser fights setLanguage() and wins");
+  // The narrow scope is the point. These pages have no switcher of their own,
+  // so a reader translating them is being served, not overridden.
+  for (const [name, page] of [["the landing page", landing], ["the invite page", invite]]) {
+    check(`${name} is still translatable`, !/notranslate|translate="no"/.test(page),
+      "opting out here would take away the only translation those readers have");
+  }
+  // The other way to silence the CSP error is to let the translator's
+  // stylesheet load. That trades a security header on a page handling money
+  // for a feature whose effect here is to overwrite the real translation.
+  const hosting = readFileSync(new URL("../firebase.json", import.meta.url), "utf8");
+  const csp = /"Content-Security-Policy",\s*"value":\s*"([^"]+)"/.exec(hosting)?.[1] || "";
+  check("style-src was not widened to accommodate the translator",
+    /style-src 'self' 'unsafe-inline';/.test(csp) && !/style-src[^;]*gstatic/.test(csp),
+    "the CSP error is the symptom; the opt-out is the fix");
+}
+
 console.log("\n=== the invite page is laid out by its own rules ===");
 {
   // This is the regression, not a style preference. accept-invite.html was

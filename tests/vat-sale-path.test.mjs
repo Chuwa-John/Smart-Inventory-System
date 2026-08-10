@@ -163,7 +163,11 @@ console.log("\n=== a shop that is not registered writes nothing ===");
 
 console.log("\n=== both paths carry it, or the return disagrees with the takings ===");
 {
-  check("the online sale document carries the fields", /\.\.\.taxFields,\n\s*createdAt: serverTimestamp\(\)/.test(handler),
+  // \r?\n, not \n: core.autocrlf rewrites the working tree on a Windows
+  // checkout, and this assertion then failed against code it should have
+  // passed -- a false alarm on the one machine the shop is developed on, while
+  // CI on Linux saw nothing.
+  check("the online sale document carries the fields", /\.\.\.taxFields,\r?\n\s*createdAt: serverTimestamp\(\)/.test(handler),
     "written before createdAt so nothing can overwrite the timestamp");
   check("the offline queue is given them", /taxFields\n?\s*\}\);/.test(handler) || /duplicate,\s*\n\s*taxFields/.test(handler));
   check("the offline sale document writes them", /\.\.\.\(args\.taxFields \|\| \{\}\),/.test(offlineQueue),
