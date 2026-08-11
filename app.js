@@ -5187,7 +5187,28 @@ async function saveProduct(product) {
     showToast(t("toast.selectStoreBeforeAdd"));
     return;
   }
+  // No store at all is a different condition from "all stores", and it was the
+  // only one of the two this path did not refuse -- completeSale() has always
+  // checked both. Without it the line below falls through every falsy branch
+  // and writes storeId: "", which no scoped view can ever show:
+  //
+  //   - the person who added it sees nothing, because a staff subscription
+  //     filters where("storeId","in",[their stores]) and "" is in no list
+  //   - the owner sees it appear in whichever store happens to be first,
+  //     because productStoreId() falls back to state.stores[0]
+  //
+  // Reported as stock added by a new user landing in the older account and
+  // never showing in their own. The usual cause is a staff member with no
+  // store assigned, whose store list resolves empty -- so this refuses rather
+  // than filing the product somewhere nobody chose.
+  if (!existing && state.db && !state.currentStoreId) {
+    showToast(t("toast.loadingStore"));
+    return;
+  }
   product.id = product.id || crypto.randomUUID();
+  // existing?.storeId is deliberately still first, and deliberately still a
+  // falsy check: a product already saved with an empty storeId is repaired by
+  // the next edit rather than keeping the broken value forever.
   product.storeId = existing?.storeId || product.storeId || state.currentStoreId;
   product.sold30 = Number(existing?.sold30 ?? product.sold30 ?? 0);
   product.sold90 = Number(existing?.sold90 ?? product.sold90 ?? 0);
