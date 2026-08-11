@@ -1,28 +1,28 @@
 # SaviaSmart ERP
 
 Inventory, point of sale and staff management for a Tanzanian shop floor. Plain
-HTML, CSS and JavaScript ES modules — no framework and no build step — on
+HTML, CSS and JavaScript ES modules,no framework and no build step,on
 Firebase Spark-plan services, with an optional Node proxy for the AI advisor.
 
 English and Kiswahili throughout. Prices are whole Tanzanian shillings.
 
 ## What it does
 
-- **Point of sale** — cash, mobile money, card and customer credit; discounts
+- **Point of sale**: cash, mobile money, card and customer credit; discounts
   behind a manager override; returns and voids.
-- **Inventory** — stock levels, a movement ledger whose chain can be
+- **Inventory**:stock levels, a movement ledger whose chain can be
   reconciled against the shelf, transfers between branches, low-stock alerts.
-- **Multiple branches** — stores, per-branch staff assignment, roaming access.
-- **Roles** — owner, manager and cashier, enforced in Firestore rules rather
+- **Multiple branches**: stores, per-branch staff assignment, roaming access.
+- **Roles** : owner, manager and cashier, enforced in Firestore rules rather
   than only in the UI.
-- **Shifts** — open with a float, close with a count, variance recorded.
-- **Customer credit** — balances, repayments, and a credit ceiling that costs a
+- **Shifts** : open with a float, close with a count, variance recorded.
+- **Customer credit** : balances, repayments, and a credit ceiling that costs a
   manager override to cross.
-- **VAT** — inclusive at 18%, per-product tax class, off by default. See
+- **VAT** : inclusive at 18%, per-product tax class, off by default. See
   `DESIGN-vat.md`.
-- **Offline selling** — a cash sale completes with no connection and replays
+- **Offline selling** : a cash sale completes with no connection and replays
   once when it returns. See `DESIGN-offline-selling.md` and `OFFLINE-CAPABILITIES.md`.
-- **AI advisor** — answers on the shop's own numbers, metered per business.
+- **AI advisor** :answers on the shop's own numbers, metered per business.
 
 ## Run locally
 
@@ -38,7 +38,7 @@ application itself is `app.html`.
 ## Firebase setup
 
 1. Copy `firebase-config.sample.js` to `firebase-config.js` and fill in your
-   Firebase web app config. **This file is not a template to edit in place** —
+   Firebase web app config. **This file is not a template to edit in place** ,
    it decides which project the app talks to and is served `no-cache` for that
    reason (see `OPERATIONS.md`).
 2. Copy `.firebaserc.example` to `.firebaserc` and set your project ID.
