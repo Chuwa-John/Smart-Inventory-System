@@ -28,7 +28,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260808h" />
+    <link rel="stylesheet" href="./styles.css?v=20260808i" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#0b0d10" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -48,7 +48,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260808h"></script>
+    <script type="module" src="./boot.js?v=20260808i"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -102,7 +102,7 @@
           <button class="icon-button mobile-menu" id="mobileMenuButton" aria-label="Open menu">&#9776;</button>
           <div class="search-wrap">
             <span>Search</span>
-            <input id="globalSearch" type="search" placeholder="Search your products..." data-i18n-placeholder="topbar.searchPlaceholder" data-i18n-aria-label="a11y.globalSearch" />
+            <input id="globalSearch" type="search" placeholder="Search your products..." data-i18n-placeholder="topbar.searchPlaceholder" data-i18n-aria-label="a11y.globalSearch" autocomplete="off" />
             <kbd>Ctrl K</kbd>
           </div>
           <div class="account-chip" id="accountChip" hidden>
@@ -365,7 +365,7 @@
               <div class="panel-head">
                 <h2 data-i18n="pos.productSearch">Product Search</h2>
                 <span class="scan-input-row">
-                  <input id="posSearch" type="search" placeholder="Search products" data-i18n-placeholder="pos.searchPlaceholder" data-i18n-aria-label="a11y.posSearch" />
+                  <input id="posSearch" type="search" placeholder="Search products" data-i18n-placeholder="pos.searchPlaceholder" data-i18n-aria-label="a11y.posSearch" autocomplete="off" />
                   <button class="ghost-button compact" type="button" id="scanPosBarcodeButton" data-i18n="pos.scanBarcode">Scan Barcode</button>
                 </span>
               </div>
@@ -418,13 +418,13 @@
                 <button class="ghost-button compact" id="staffRosterButton" type="button" data-i18n="staff.rosterButton">Staff Roster</button>
               </div>
               <label><span data-i18n="pos.customerName">Customer name (optional)</span>
-                <input id="posCustomerName" type="text" maxlength="80" placeholder="e.g. Amina" data-i18n-placeholder="pos.customerNamePlaceholder" />
+                <input id="posCustomerName" type="text" maxlength="80" placeholder="e.g. Amina" data-i18n-placeholder="pos.customerNamePlaceholder" autocomplete="off" />
               </label>
               <label><span data-i18n="pos.customerPhone">Customer phone (optional)</span>
-                <input id="posCustomerPhone" type="tel" maxlength="20" placeholder="e.g. 07XXXXXXXX" data-i18n-placeholder="pos.customerPhonePlaceholder" />
+                <input id="posCustomerPhone" type="tel" maxlength="20" placeholder="e.g. 07XXXXXXXX" data-i18n-placeholder="pos.customerPhonePlaceholder" autocomplete="off" />
               </label>
               <label><span data-i18n="pos.orderNumberLabel">Order number (optional)</span>
-                <input id="posOrderNumber" type="text" inputmode="numeric" pattern="[0-9]{1,10}" maxlength="10" placeholder="Leave blank to auto-generate" data-i18n-placeholder="pos.orderNumberPlaceholder" />
+                <input id="posOrderNumber" type="text" inputmode="numeric" pattern="[0-9]{1,10}" maxlength="10" placeholder="Leave blank to auto-generate" data-i18n-placeholder="pos.orderNumberPlaceholder" autocomplete="off" />
               </label>
               <div class="payment-grid" id="paymentGrid">
                 <button class="ghost-button payment-option active" data-payment="cash" type="button" data-i18n="pos.cash">Cash</button>
@@ -493,7 +493,7 @@
                 <p class="eyebrow" data-i18n="reports.financialEyebrow">Financial tracking</p>
                 <h2 data-i18n="reports.staffBreakdownTitle">Sales by Staff</h2>
               </div>
-              <input id="orderNumberSearch" type="search" placeholder="Search order number" data-i18n-placeholder="reports.searchOrderPlaceholder" data-i18n-aria-label="a11y.orderNumberSearch" />
+              <input id="orderNumberSearch" type="search" placeholder="Search order number" data-i18n-placeholder="reports.searchOrderPlaceholder" data-i18n-aria-label="a11y.orderNumberSearch" autocomplete="off" />
             </div>
             <div id="orderNumberSearchResult" class="muted" hidden></div>
             <div class="table-panel" style="box-shadow:none;border:none">
@@ -642,7 +642,7 @@
                 <h2 data-i18n="monthlyReport.sectionTitle">Monthly Reports</h2>
               </div>
               <div class="button-row" style="gap:8px">
-                <label style="flex-direction:row;align-items:center;gap:6px;color:inherit"><span data-i18n="monthlyReport.monthLabel">Month</span><input id="monthlyReportMonth" type="month" /></label>
+                <label style="flex-direction:row;align-items:center;gap:6px;color:inherit"><span data-i18n="monthlyReport.monthLabel">Month</span><input id="monthlyReportMonth" type="month" autocomplete="off" /></label>
                 <button class="primary-button compact" id="generateMonthlyReportButton" type="button" data-i18n="monthlyReport.generateButton">Generate Report</button>
               </div>
             </div>
@@ -722,14 +722,14 @@
         </div>
         <input name="id" type="hidden" />
         <div class="form-grid">
-          <label><span data-i18n="product.nameLabel">Product name</span><input name="name" required maxlength="120" /></label>
-         <label><span data-i18n="product.categoryLabel">Category</span><input name="category" list="categorySuggestions" required maxlength="60" /></label>
+          <label><span data-i18n="product.nameLabel">Product name</span><input name="name" required maxlength="120" autocomplete="off" /></label>
+         <label><span data-i18n="product.categoryLabel">Category</span><input name="category" list="categorySuggestions" required maxlength="60" autocomplete="off" /></label>
           <datalist id="categorySuggestions"></datalist>
-          <label><span data-i18n="product.brandLabel">Brand</span><input name="brand" maxlength="60" /></label>
-          <label><span data-i18n="product.supplierLabel">Suppliers</span><input name="supplier" maxlength="60" /></label>
+          <label><span data-i18n="product.brandLabel">Brand</span><input name="brand" maxlength="60" autocomplete="off" /></label>
+          <label><span data-i18n="product.supplierLabel">Suppliers</span><input name="supplier" maxlength="60" autocomplete="off" /></label>
           <label><span data-i18n="product.barcodeLabel">Barcode</span>
             <span class="scan-input-row">
-              <input name="barcode" maxlength="64" />
+              <input name="barcode" maxlength="64" autocomplete="off" />
               <button class="ghost-button compact" type="button" id="scanProductBarcodeButton" data-i18n="product.scanButton">Scan</button>
             </span>
           </label>
@@ -779,10 +779,10 @@
           <span data-i18n="vat.registeredLabel">This business is registered for VAT</span>
         </label>
         <label><span data-i18n="vat.vrnLabel">VAT registration number (VRN)</span>
-          <input id="vatVrnInput" type="text" maxlength="20" placeholder="e.g. 40-123456-A" data-i18n-placeholder="vat.vrnPlaceholder" />
+          <input id="vatVrnInput" type="text" maxlength="20" placeholder="e.g. 40-123456-A" data-i18n-placeholder="vat.vrnPlaceholder" autocomplete="off" />
         </label>
         <label><span data-i18n="vat.tinLabel">Taxpayer identification number (TIN)</span>
-          <input id="vatTinInput" type="text" maxlength="20" placeholder="e.g. 123-456-789" data-i18n-placeholder="vat.tinPlaceholder" />
+          <input id="vatTinInput" type="text" maxlength="20" placeholder="e.g. 123-456-789" data-i18n-placeholder="vat.tinPlaceholder" autocomplete="off" />
         </label>
       </div>
       <p class="muted" data-i18n="vat.fiscalNote">This does not replace your EFD. Fiscal receipts still come from your TRA-registered device.</p>
@@ -803,7 +803,7 @@
           <select id="transferDestinationSelect"></select>
         </label>
         <label><span data-i18n="dialog.transferStaffLabel">Name of the person making this transfer</span>
-          <input id="transferStaffNameInput" type="text" list="transferStaffSuggestions" maxlength="80" placeholder="e.g. Juma Ally" data-i18n-placeholder="dialog.transferStaffPlaceholder" />
+          <input id="transferStaffNameInput" type="text" list="transferStaffSuggestions" maxlength="80" placeholder="e.g. Juma Ally" data-i18n-placeholder="dialog.transferStaffPlaceholder" autocomplete="off" />
           <datalist id="transferStaffSuggestions"></datalist>
         </label>
         <label><span data-i18n="dialog.transferQuantityLabel">Quantity to transfer</span>
@@ -863,7 +863,7 @@
           </select>
         </label>
         <label><span data-i18n="payment.noteLabel">Note (optional)</span>
-          <input id="paymentNoteInput" type="text" maxlength="200" />
+          <input id="paymentNoteInput" type="text" maxlength="200" autocomplete="off" />
         </label>
       </div>
       <div class="button-row end">
@@ -1094,11 +1094,11 @@
 
     <div class="command-palette" id="commandPalette" aria-hidden="true">
       <div class="command-box">
-        <input id="commandInput" placeholder="Type a command or module name" data-i18n-placeholder="command.placeholder" data-i18n-aria-label="a11y.commandInput" />
+        <input id="commandInput" placeholder="Type a command or module name" data-i18n-placeholder="command.placeholder" data-i18n-aria-label="a11y.commandInput" autocomplete="off" />
         <div id="commandResults"></div>
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260808h"></script>
+    <script type="module" src="./app.js?v=20260808i"></script>
   </body>
 </html>

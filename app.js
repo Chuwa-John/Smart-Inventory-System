@@ -587,6 +587,7 @@ const DICTIONARY = {
     "inventory.loadingState": "Loading your stock\u2026 a large catalogue can take a moment on the first sign-in from a device.",
     "inventory.loadFailedState": "Your stock could not be loaded. Check the connection and reload \u2014 nothing has been lost.",
     "inventory.noMatchesState": "No products match this search or filter. Clear it to see the rest of your stock.",
+    "inventory.clearFilters": "Clear search and filters",
     "toast.incorrectPassword": "Incorrect password. Price change cancelled.",
     "toast.overrideNotConfigured": "Price overrides aren't set up yet. Ask your admin to configure them.",
     "toast.overrideNetworkError": "Couldn't reach the override service. Check your connection and try again.",
@@ -1292,6 +1293,7 @@ const DICTIONARY = {
     "inventory.loadingState": "Inapakia hisa zako\u2026 orodha kubwa inaweza kuchukua muda kidogo unapoingia mara ya kwanza kwenye kifaa.",
     "inventory.loadFailedState": "Hisa zako hazikuweza kupakiwa. Angalia muunganisho kisha upakie upya \u2014 hakuna kilichopotea.",
     "inventory.noMatchesState": "Hakuna bidhaa zinazolingana na utafutaji huu. Ondoa kichujio ili kuona hisa zako zote.",
+    "inventory.clearFilters": "Ondoa utafutaji na vichujio",
     "toast.incorrectPassword": "Nenosiri si sahihi. Mabadiliko ya bei yamesitishwa.",
     "toast.overrideNotConfigured": "Mabadiliko ya bei ya ziada bado hayajawekwa. Muulize msimamizi wako ayaweke.",
     "toast.overrideNetworkError": "Imeshindwa kufikia huduma ya ruhusa. Angalia muunganisho wako na ujaribu tena.",
@@ -2267,7 +2269,19 @@ function renderInventory() {
     // is tens of seconds of an owner being told their stock is gone and invited
     // to re-enter it. Distinguish the two: until the first snapshot lands,
     // nothing is known, and saying so is the honest answer.
-    .join("") || `<tr><td colspan="8" class="empty-state">${esc(inventoryEmptyMessage())}</td></tr>`;
+    // The message already says a filter is hiding the stock. This makes it
+    // possible to do something about it in one press.
+    //
+    // Worth the extra control because of how this failed in the field: Chrome
+    // autofilled an email address into the product search, the table went
+    // empty, and the shop concluded their inventory had not saved. The text
+    // alone was there and was not enough -- nobody connects a stray value in a
+    // search box with a table that looks broken.
+    .join("") || `<tr><td colspan="8" class="empty-state">${esc(inventoryEmptyMessage())}${
+      inventoryFiltersActive()
+        ? ` <button class="link-button" type="button" id="clearInventoryFilters">${esc(t("inventory.clearFilters"))}</button>`
+        : ""
+    }</td></tr>`;
 }
 
 function renderPosProducts() {
@@ -9826,6 +9840,20 @@ function bindEvents() {
     const movementTrigger = event.target.closest("[data-view-movement]");
     if (movementTrigger) {
       openProductMovementDialog(movementTrigger.dataset.viewMovement);
+      return;
+    }
+
+    if (event.target.closest("#clearInventoryFilters")) {
+      const search = qs("#globalSearch");
+      if (search) search.value = "";
+      const category = qs("#categoryFilter");
+      if (category) category.value = "all";
+      const stock = qs("#stockFilter");
+      if (stock) stock.value = "all";
+      // renderAll, not renderInventory: the same search box narrows the POS
+      // list and the KPI row reads its own unfiltered source, so clearing it
+      // here has to put every view back in agreement.
+      renderAll();
       return;
     }
 
