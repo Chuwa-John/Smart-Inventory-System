@@ -86,8 +86,18 @@ console.log("\n=== so the write refuses rather than guessing ===");
   const body = fn.slice(0, fn.indexOf("\nfunction ") > 0 ? fn.indexOf("\nfunction ") : 20000);
 
   check("adding with no store selected is refused",
-    /if \(!existing && state\.db && !state\.currentStoreId\) \{\s*showToast\(t\("toast\.loadingStore"\)\);\s*return;\s*\}/.test(body),
+    /if \(!existing && state\.db && !state\.currentStoreId\) \{[\s\S]{0,400}?return;\s*\}/.test(body),
     "without this the storeId falls through to an empty string");
+  // A staff member with no store will never succeed by waiting, so telling
+  // them to try again in a moment sends them round that loop for good. The
+  // owner is the one who has to act, and the message has to say so.
+  check("a staff member with no store is told to ask the owner",
+    /staffWithoutStore \? t\("toast\.noStoreAssigned"\) : t\("toast\.loadingStore"\)/.test(body));
+  check("...and that is distinguished from an owner still loading",
+    /state\.user\.uid !== state\.businessOwnerUid && !state\.stores\.length/.test(body),
+    "an owner with no store really is mid-load, because ensureDefaultStore creates one");
+  check("toast.noStoreAssigned exists in both languages",
+    (src.match(/"toast\.noStoreAssigned"/g) || []).length >= 3);
   check("adding across all stores is still refused",
     /if \(!existing && state\.db && state\.currentStoreId === "all"\) \{/.test(body));
 

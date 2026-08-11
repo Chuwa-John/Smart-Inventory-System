@@ -662,6 +662,7 @@ const DICTIONARY = {
     "toast.invalidPrice": "Invalid price.", "toast.onlyUnitsAvailable": "Only {quantity} units available.",
     "toast.addProductsFirst": "Add products to the cart first.",
     "toast.loadingStore": "Loading your store - please try again in a moment.",
+    "toast.noStoreAssigned": "No store has been assigned to you yet. Ask the business owner to give you access to a store before adding stock.",
     "toast.selectStoreBeforeSale": "Select a specific store before completing a sale.",
     "toast.cashLessThanTotal": "Cash tendered is less than the sale total.",
     "toast.saleFailedGeneric": "Sale failed. Please recheck stock and try again.",
@@ -1366,6 +1367,7 @@ const DICTIONARY = {
     "toast.invalidPrice": "Bei si sahihi.", "toast.onlyUnitsAvailable": "Vitengo {quantity} tu vinapatikana.",
     "toast.addProductsFirst": "Ongeza bidhaa kwenye kikapu kwanza.",
     "toast.loadingStore": "Duka lako linapakia - tafadhali jaribu tena baada ya muda mfupi.",
+    "toast.noStoreAssigned": "Bado hujapangiwa duka. Muombe mmiliki wa biashara akupe ruhusa ya duka kabla ya kuongeza bidhaa.",
     "toast.selectStoreBeforeSale": "Chagua duka mahususi kabla ya kukamilisha mauzo.",
     "toast.cashLessThanTotal": "Fedha zilizolipwa ni chini ya jumla ya mauzo.",
     "toast.saleFailedGeneric": "Mauzo yameshindwa. Angalia hisa tena na ujaribu tena.",
@@ -5202,7 +5204,13 @@ async function saveProduct(product) {
   // store assigned, whose store list resolves empty -- so this refuses rather
   // than filing the product somewhere nobody chose.
   if (!existing && state.db && !state.currentStoreId) {
-    showToast(t("toast.loadingStore"));
+    // Two different situations reach here and they need different answers. A
+    // staff member with no store assigned will never succeed by waiting, and
+    // "try again in a moment" sends them round that loop indefinitely -- the
+    // owner has to grant them a store. An owner with no store yet really is
+    // mid-load, because ensureDefaultStore() creates one.
+    const staffWithoutStore = state.user && state.user.uid !== state.businessOwnerUid && !state.stores.length;
+    showToast(staffWithoutStore ? t("toast.noStoreAssigned") : t("toast.loadingStore"));
     return;
   }
   product.id = product.id || crypto.randomUUID();
