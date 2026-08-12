@@ -100,7 +100,12 @@ console.log("\n=== the transaction cannot decrement a cart that has moved (QA-11
     `${tx.length} of ${handler.length} chars`);
   check("the transaction reads no live cart", !/state\.cart/.test(tx),
     "a cart edited during a retry decremented different products than the sale record listed");
-  check("...and builds its product refs from the snapshot", /cart\.map\(\(cartItem\) => doc\(/.test(tx));
+  // Since DESIGN-services.md Phase B the refs map stockCart, which is the
+  // snapshot with service lines removed. The property is unchanged: whatever is
+  // mapped must derive from the snapshot, never from state.cart.
+  check("...and builds its product refs from the snapshot",
+    /const stockCart = cart\.filter\(/.test(tx) && /productRefs = stockCart\.map\(\(cartItem\) => doc\(/.test(tx),
+    "stockCart must come from the cart snapshot, and the refs from stockCart");
   check("...and indexes the snapshot, not the live array", !/state\.cart\[index\]/.test(tx));
 
   // The snapshot must be taken before anything derives from it.

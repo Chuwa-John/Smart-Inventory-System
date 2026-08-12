@@ -254,7 +254,7 @@ console.log("\n=== every ledger call names a product that actually exists ===");
   // that both sides read `.id` off the same entry — pinning the variable name
   // failed this check for a rename that fixed a different bug.
   check("the sale's product refs and ledger entry use the same identifier",
-    /productRefs = [A-Za-z.]*cart\.map\(\(cartItem\) => doc\([^)]*cartItem\.id\)\)/.test(noComments) &&
+    /productRefs = [A-Za-z_$.]+\.map\(\(cartItem\) => doc\([^)]*cartItem\.id\)\)/.test(noComments) &&
     /recordStockMovement\(transaction, \{\s*productId: cartItem\.id/.test(noComments),
     "productRefs uses cartItem.id; the ledger entry must too");
 

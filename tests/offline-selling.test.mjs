@@ -558,8 +558,11 @@ console.log("\n=== 'offline' means the database is unreachable, not what the OS 
       h.isOfflineNow() === true);
   }
 
+  // subscribeToServices() now sits between these two. The property is that the
+  // watch starts in the same block as the subscriptions, not that it is
+  // adjacent to any particular one.
   check("the watch starts with the other subscriptions",
-    /subscribeToTransfers\(\);\s*\n\s*watchServerConnection\(\);/.test(noComments));
+    /subscribeToTransfers\(\);[\s\S]{0,120}watchServerConnection\(\);/.test(noComments));
   check("and is torn down on sign-out",
     /state\.unsubscribeConnection = null;/.test(noComments) &&
     /state\.serverReachable = null;/.test(noComments),
@@ -676,7 +679,7 @@ console.log("\n=== an outage that starts mid-transaction no longer strands the t
   // What the cashier is told, and what is not queued.
   {
     const handlerStart = noComments.indexOf('qs("#completeSaleButton").addEventListener');
-    const handler = noComments.slice(handlerStart, handlerStart + 14000);
+    const handler = noComments.slice(handlerStart, handlerStart + 20000);
     const unconfirmedAt = handler.indexOf('outcome === "unconfirmed"');
     // Bounded at the catch, or the generic failure message the catch legitimately
     // uses would be read as belonging to the unconfirmed branch.

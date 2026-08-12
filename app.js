@@ -13,6 +13,12 @@ const APP_VERSION = (() => {
 
 const state = {
   products: [],
+  // Sellable things with a price and no shelf, for bar/restaurant and salon
+  // stores (DESIGN-services.md). Kept apart from products deliberately: a
+  // service has no quantity, and storing zero would put every haircut in the
+  // low-stock and reorder surfaces forever.
+  services: [],
+  unsubscribeServices: null,
   creditOverrides: [],
   // null, not [], because "not known" and "none today" are different answers
   // and one of them must not be printed as a money figure.
@@ -656,6 +662,10 @@ const DICTIONARY = {
     "toast.passwordMismatch": "Passwords do not match.",
     "toast.outOfStock": "This product is out of stock.",
     "toast.selectStoreToSell": "Select a specific store to make a sale.",
+    "services.title": "Services",
+    "services.menuTitle": "Menu",
+    "services.posEmpty": "No services priced yet.",
+    "toast.serviceUnavailable": "That service is no longer on the list.",
     "toast.enterPricePerUnit": "Enter a price per unit for this product.",
     "toast.notEnoughStockQty": "Not enough stock available for this quantity.",
     "toast.cartLimitReached": "This sale has reached the 40 line-item limit. Complete this sale and start a new one.",
@@ -1362,6 +1372,10 @@ const DICTIONARY = {
     "toast.passwordMismatch": "Manenosiri hayafanani.",
     "toast.outOfStock": "Bidhaa hii haipo kwenye hisa.",
     "toast.selectStoreToSell": "Chagua duka mahususi kufanya mauzo.",
+    "services.title": "Huduma",
+    "services.menuTitle": "Menyu",
+    "services.posEmpty": "Hakuna huduma zilizowekewa bei bado.",
+    "toast.serviceUnavailable": "Huduma hiyo haipo tena kwenye orodha.",
     "toast.enterPricePerUnit": "Weka bei kwa kila kitengo cha bidhaa hii.",
     "toast.notEnoughStockQty": "Hisa haitoshi kwa kiasi hiki.",
     "toast.cartLimitReached": "Mauzo haya yamefikia kikomo cha bidhaa 40. Kamilisha mauzo haya na uanze mengine.",
@@ -1811,6 +1825,30 @@ function saleStoreId(sale) {
 
 function activeStores() {
   return state.stores.filter((store) => !store.archived);
+}
+
+// Which business types sell services at all (DESIGN-services.md §1). A duka or
+// a hardware store has stock and nothing else; a salon and a bar have both.
+// Per STORE, not per account -- a multi-branch owner may run one salon and one
+// duka, and the POS has to change when they switch branches.
+const SERVICE_BUSINESS_TYPES = ["salon", "bar"];
+
+function storeSellsServices() {
+  return SERVICE_BUSINESS_TYPES.includes(currentBusinessType());
+}
+
+// Scoped the same way storeProducts() is, plus withdrawn items dropped. A
+// service is deactivated rather than deleted, because sales already reference
+// it and deleting would leave that history describing something gone -- so the
+// till must filter what it offers, not what exists.
+function storeServices() {
+  if (!storeSellsServices()) return [];
+  if (!state.db) return state.services;
+  if (!state.currentStoreId) return [];
+  const scoped = state.currentStoreId === "all"
+    ? state.services
+    : state.services.filter((service) => service.storeId === state.currentStoreId);
+  return scoped.filter((service) => service.active !== false);
 }
 
 function storeProducts() {
@@ -2303,6 +2341,49 @@ function renderPosProducts() {
     // waiting to ring something up. Only while the catalogue is still arriving:
     // a genuinely empty search result stays blank, as it should.
     .join("") || (state.productsInitialized ? "" : `<p class="muted">${esc(t("inventory.loadingState"))}</p>`);
+
+  renderPosServices(term);
+}
+
+// Services in the same till panel as stock, because a bar rings up a beer and a
+// plate of food on one bill and should not have to look in two places for them.
+// Appended rather than merged into one sorted list: they are priced and sold
+// the same way but they are not the same kind of thing, and a cashier scanning
+// for "Braiding" among bottles is helped by the split.
+//
+// Empty for every business type that does not sell services, which is the
+// common case -- storeServices() returns [] and this renders nothing at all.
+function renderPosServices(term) {
+  const panel = qs("#posServices");
+  const list = qs("#posServicesList");
+  if (!panel || !list) return;
+
+  const services = storeServices().filter((service) =>
+    !term || [service.name, service.category].join(" ").toLowerCase().includes(term));
+
+  // Hidden entirely rather than shown empty: a duka has no use for the heading,
+  // and a salon with no menu yet is told so by the Services tab, not here.
+  panel.hidden = !storeSellsServices();
+  if (panel.hidden) return;
+
+  qs("#posServicesTitle").textContent = t(serviceLabelKey());
+  list.innerHTML = services
+    .slice(0, 8)
+    .map((service) => `<div class="pos-product">
+      <strong>${esc(service.name)}</strong>
+      <span class="muted">${esc(service.category || "-")} - ${money(service.price)}</span>
+      <div class="pos-product-controls">
+        <input type="number" min="1" value="1" class="pos-qty-input" data-service-qty-input="${esc(service.id)}" aria-label="${esc(t("pos.qtyAriaLabel", { name: service.name }))}" />
+        <button class="ghost-button compact" data-add-service="${esc(service.id)}" type="button">${t("pos.addButton")}</button>
+      </div>
+    </div>`)
+    .join("") || `<p class="muted">${esc(t("services.posEmpty"))}</p>`;
+}
+
+// "Services" for a salon, "Menu" for a bar. The same list either way -- only
+// the word differs, the way CATEGORY_TEMPLATES already varies by business type.
+function serviceLabelKey() {
+  return currentBusinessType() === "bar" ? "services.menuTitle" : "services.title";
 }
 
 function cartSubtotal() {
@@ -2493,7 +2574,10 @@ function renderCart() {
   qs("#cartItems").innerHTML = state.cart
     .map((item) => {
       const product = state.products.find((p) => p.id === item.id);
-      const maxQty = product ? product.quantity : item.qty;
+      // A service has no ceiling -- there is no shelf to run out of. Without
+      // this the max attribute falls back to the current qty and the input
+      // refuses to go past 1, so a bar could not ring up two of the same dish.
+      const maxQty = isServiceLine(item) ? "" : (product ? product.quantity : item.qty);
       return `<div class="cart-item">
         <div class="cart-item-info">
           <strong>${esc(item.name)}</strong>
@@ -2503,7 +2587,7 @@ function renderCart() {
         </div>
         <div class="cart-item-controls">
           <button class="ghost-button compact" data-decrease-cart="${item.id}" type="button" aria-label="${esc(t("cart.decreaseAriaLabel"))}">-</button>
-          <input type="number" min="1" max="${maxQty}" value="${item.qty}" class="cart-qty-input" data-qty-edit="${item.id}" aria-label="${esc(t("cart.qtyAriaLabel", { name: item.name }))}" />
+          <input type="number" min="1" ${maxQty === "" ? "" : `max="${maxQty}"`} value="${item.qty}" class="cart-qty-input" data-qty-edit="${item.id}" aria-label="${esc(t("cart.qtyAriaLabel", { name: item.name }))}" />
           <button class="ghost-button compact" data-increase-cart="${item.id}" type="button" aria-label="${esc(t("cart.increaseAriaLabel"))}">+</button>
           <button class="ghost-button compact danger" data-remove-cart="${item.id}" type="button" aria-label="${esc(t("cart.removeAriaLabel"))}">${t("cart.removeButton")}</button>
         </div>
@@ -4514,6 +4598,49 @@ function renderCustomerAccounts() {
   if (totalEl) totalEl.textContent = `${t("customers.totalOwed")}: ${money(total)}`;
 }
 
+// Services, scoped exactly like products (DESIGN-services.md Phase B).
+//
+// Subscribed for every business type, not only bar/salon. The gating is a
+// display decision -- storeSellsServices() -- and putting it here instead would
+// mean a multi-branch owner switching from a duka to their salon would need a
+// resubscribe to see the menu, on the one screen where a pause is least
+// affordable. An empty collection costs one listener and no documents.
+async function subscribeToServices() {
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
+  if (state.unsubscribeServices) state.unsubscribeServices();
+  try {
+    const { collection, onSnapshot, query, where } = state.firebaseApi.firestore;
+    const servicesRef = collection(state.db, "users", state.businessOwnerUid, "services");
+    const queryStoreIds = await resolveQueryStoreIds();
+    // Same reasoning as products: an empty `in` filter is rejected by Firestore
+    // outright, so a member with no store access subscribes to nothing rather
+    // than sending one.
+    if (queryStoreIds !== null && queryStoreIds.length === 0) {
+      state.services = [];
+      scheduleRenderAll();
+      return;
+    }
+    const servicesQuery = queryStoreIds === null
+      ? servicesRef
+      : query(servicesRef, where("storeId", "in", queryStoreIds));
+    state.unsubscribeServices = onSnapshot(
+      servicesQuery,
+      (snapshot) => {
+        state.services = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        scheduleRenderAll();
+      },
+      (error) => {
+        // Named in the console like the products listener, because the two fail
+        // for the same reasons and a silent menu is as confusing as silent
+        // stock. Not toasted: a shop with no services yet is the normal case.
+        console.warn("[services listener]", error.code || error, "queryStoreIds=", queryStoreIds);
+      }
+    );
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
 async function subscribeToCustomers() {
   if (!state.db || !state.user || !state.businessOwnerUid) return;
   if (state.unsubscribeCustomers) state.unsubscribeCustomers();
@@ -5609,10 +5736,68 @@ function addProductToCartById(productId, options = {}) {
     existingCartItem.qty += requestedQty;
     if (product.priceType === "dynamic") existingCartItem.sellingPrice = unitPrice;
   } else {
-    state.cart.push({ ...product, qty: requestedQty, sellingPrice: unitPrice });
+    // kind is written on every cart line, products included. The sale path
+    // branches on it, and a line that simply omitted it would be read as a
+    // product by the default -- correct here, but only by luck. Stating it on
+    // both makes the discriminator real rather than an absence.
+    state.cart.push({ ...product, kind: "product", qty: requestedQty, sellingPrice: unitPrice });
   }
   renderCart();
   return { success: true, product };
+}
+
+// The service half of addProductToCartById(). Deliberately a separate function
+// rather than a branch inside it: almost everything that one does is about
+// stock -- the out-of-stock refusal, the offline staleness warning, the
+// available-quantity ceiling, dynamic pricing -- and none of it applies to a
+// haircut. Threading a `kind` flag through all of that would leave the reader
+// checking which half of the function they are in.
+function addServiceToCartById(serviceId, options = {}) {
+  const service = storeServices().find((item) => item.id === serviceId);
+  if (!service) {
+    showToast(t("toast.serviceUnavailable"));
+    return { failed: true };
+  }
+  if (state.db && state.currentStoreId === "all") {
+    showToast(t("toast.selectStoreToSell"));
+    return { failed: true };
+  }
+
+  const requestedQty = Math.max(1, Math.floor(Number(options.qty || 1)));
+  const existingCartItem = state.cart.find((item) => item.id === service.id);
+
+  // The same 40-line cap the product path enforces, and for the same reason:
+  // firestore.rules caps sale.items at 40, so a 41st line is a sale the server
+  // will refuse after the cashier has already taken the money.
+  if (!existingCartItem && state.cart.length >= 40) {
+    showToast(t("toast.cartLimitReached"));
+    return { failed: true };
+  }
+
+  pushCartHistory();
+  if (existingCartItem) {
+    existingCartItem.qty += requestedQty;
+  } else {
+    // sellingPrice, not price: the cart, the totals, the discount apportioning
+    // and the tax computation all read sellingPrice, and renaming it here would
+    // mean touching every one of them to gain nothing.
+    state.cart.push({
+      ...service,
+      kind: "service",
+      qty: requestedQty,
+      sellingPrice: Number(service.price || 0)
+    });
+  }
+  renderCart();
+  return { success: true, service };
+}
+
+// One place that answers "is this a thing on a shelf". Works on a cart line and
+// on a saved sale item alike, because both carry `kind`. Defaults to product
+// when it is absent, which is what every sale recorded before this existed
+// looks like -- so no migration, and no historical sale is reinterpreted.
+function isServiceLine(item) {
+  return item?.kind === "service";
 }
 
 async function closeBarcodeScanner() {
@@ -8030,6 +8215,7 @@ async function initFirebase() {
         subscribeToMonthlyReports();
         subscribeToCustomers();
         subscribeToTransfers();
+        subscribeToServices();
         watchServerConnection();
       } else {
         stopIdleWatcher();
@@ -8054,6 +8240,9 @@ async function initFirebase() {
         state.unsubscribeCustomers = null;
         if (state.unsubscribeTransfers) state.unsubscribeTransfers();
         state.unsubscribeTransfers = null;
+        if (state.unsubscribeServices) state.unsubscribeServices();
+        state.unsubscribeServices = null;
+        state.services = [];
         if (state.unsubscribeConnection) state.unsubscribeConnection();
         state.unsubscribeConnection = null;
         // Money figures must not outlive the session that fetched them: the
@@ -9754,6 +9943,17 @@ function bindEvents() {
       return;
     }
 
+    const serviceButton = event.target.closest("[data-add-service]");
+    if (serviceButton) {
+      const serviceId = serviceButton.dataset.addService;
+      const qtyInput = qs(`[data-service-qty-input="${serviceId}"]`);
+      const requestedQty = Math.max(1, Math.floor(Number(qtyInput?.value || 1)));
+      const result = addServiceToCartById(serviceId, { qty: requestedQty });
+      if (!result?.success) return;
+      if (qtyInput) qtyInput.value = 1;
+      return;
+    }
+
     const cartButton = event.target.closest("[data-add-cart]");
     if (cartButton) {
       const product = state.products.find((item) => item.id === cartButton.dataset.addCart);
@@ -9781,6 +9981,15 @@ function bindEvents() {
     const increaseButton = event.target.closest("[data-increase-cart]");
     if (increaseButton) {
       const cartItem = state.cart.find((item) => item.id === increaseButton.dataset.increaseCart);
+      // A service has no matching product document, so the `cartItem && product`
+      // guard below would silently do nothing and the + button would look
+      // broken. Handled first, with no stock ceiling to check.
+      if (isServiceLine(cartItem)) {
+        pushCartHistory();
+        cartItem.qty += 1;
+        renderCart();
+        return;
+      }
       const product = state.products.find((item) => item.id === increaseButton.dataset.increaseCart);
       if (cartItem && product) {
         if (cartItem.qty >= product.quantity) return showToast(t("toast.noMoreStock"));
@@ -9954,6 +10163,14 @@ function bindEvents() {
     if (qtyEditInput) {
       const id = qtyEditInput.dataset.qtyEdit;
       const cartItem = state.cart.find((item) => item.id === id);
+      // Same reason as the + button: no product document, no stock ceiling, and
+      // the joint guard below would otherwise reject the edit outright.
+      if (isServiceLine(cartItem)) {
+        pushCartHistory();
+        cartItem.qty = Math.max(1, Math.floor(Number(qtyEditInput.value || 1)));
+        renderCart();
+        return;
+      }
       const product = state.products.find((item) => item.id === id);
       if (!cartItem || !product) return;
       const nextQty = Math.max(1, Math.floor(Number(qtyEditInput.value || 1)));
@@ -10033,7 +10250,18 @@ function bindEvents() {
     const cart = state.cart.map((cartItem) => ({ ...cartItem }));
 
     const saleItems = cart.map((cartItem) => ({
-      productId: cartItem.id,
+      // Written on every line, products included, so the discriminator is a
+      // value rather than an absence. Every sale recorded before this existed
+      // has no `kind` at all and is read as a product by isServiceLine()'s
+      // default, which is correct and needs no migration.
+      kind: isServiceLine(cartItem) ? "service" : "product",
+      // productId names a document in `products`. A service line has none, so
+      // it carries serviceId instead and productId is omitted -- not set to
+      // null, because every stock path reaches for products/{productId} and a
+      // null would build the path `products/null` rather than failing loudly.
+      ...(isServiceLine(cartItem)
+        ? { serviceId: cartItem.id }
+        : { productId: cartItem.id }),
       name: cartItem.name,
       category: cartItem.category || "",
       brand: cartItem.brand || "",
@@ -10193,12 +10421,24 @@ function bindEvents() {
             throw new Error(t("txerror.duplicateOrderSubmission", { orderNumber }));
           }
 
-          const productRefs = cart.map((cartItem) => doc(state.db, "users", state.businessOwnerUid, "products", cartItem.id));
+          // Stock lines only (DESIGN-services.md §3). A service has no product
+          // document, so an unfiltered map built products/undefined and the
+          // exists() check below then threw txerror.itemGone -- which failed
+          // not just that line but the whole transaction, taking every real
+          // product in the same basket with it. A bar ringing up a plate of
+          // food beside a bottled beer is the first sale this feature ever
+          // processes, and that is the sale that used to fail.
+          //
+          // stockCart is indexed in step with productRefs/productSnaps below;
+          // `cart` is not, once a service is in it. Reusing `cart` for those
+          // indexes is the mistake this variable exists to prevent.
+          const stockCart = cart.filter((cartItem) => !isServiceLine(cartItem));
+          const productRefs = stockCart.map((cartItem) => doc(state.db, "users", state.businessOwnerUid, "products", cartItem.id));
           const productSnaps = await Promise.all(productRefs.map((ref) => transaction.get(ref)));
           const creditCustomerSnap = creditCustomerRef ? await transaction.get(creditCustomerRef) : null;
 
           productSnaps.forEach((snap, index) => {
-            const cartItem = cart[index];
+            const cartItem = stockCart[index];
             if (!snap.exists()) throw new Error(t("txerror.itemGone", { name: cartItem.name }));
             const currentQuantity = Number(snap.data().quantity || 0);
             if (currentQuantity < cartItem.qty) {
@@ -10207,7 +10447,7 @@ function bindEvents() {
           });
 
           productSnaps.forEach((snap, index) => {
-            const cartItem = cart[index];
+            const cartItem = stockCart[index];
             const currentQuantity = Number(snap.data().quantity || 0);
             const currentSold30 = Number(snap.data().sold30 || 0);
             const currentSold90 = Number(snap.data().sold90 || 0);
