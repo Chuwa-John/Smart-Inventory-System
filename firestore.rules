@@ -146,6 +146,41 @@ service cloud.firestore {
         && (!('taxClass' in d) || d.taxClass in ['standard', 'zeroRated', 'exempt']);
     }
 
+    // A service is a sellable thing with a price and no shelf: a haircut, a
+    // plate of food. See DESIGN-services.md.
+    //
+    // Deliberately NOT a product with quantity 0. validProduct() requires
+    // stockCountInRange(d.quantity) on every write, and a service has no
+    // quantity -- not zero, none. Zero would be actively wrong: stockStatus()
+    // reads it as permanently out of stock, every low-stock and reorder
+    // surface would carry it, and reconcileProductStock() would try to explain
+    // a shelf count that never existed.
+    //
+    // Mirrors validProduct() where the fields genuinely correspond, so the two
+    // stay legible side by side, and omits the four that only mean something
+    // for stock: quantity, reorderLevel, expiryDate, sku.
+    function validService() {
+      let d = request.resource.data;
+      return d.name is string && d.name.size() > 0 && d.name.size() <= 120
+        && moneyInRange(d.price)
+        && d.storeId is string && d.storeId.size() > 0
+        && (!('category' in d) || (d.category is string && d.category.size() <= 60))
+        && (!('description' in d) || (d.description is string && d.description.size() <= 500))
+        // Absent means active. A service withdrawn from the menu is flagged
+        // rather than deleted, because sales already reference it by name and
+        // deleting it would leave that history describing something gone.
+        && (!('active' in d) || d.active is bool)
+        // Same enum and the same default as a product: absent is standard-rated,
+        // per DESIGN-vat.md. Defaulting the other way would under-collect.
+        && (!('taxClass' in d) || d.taxClass in ['standard', 'zeroRated', 'exempt']);
+    }
+
+    function serviceImmutableFieldsUnchanged() {
+      return request.resource.data.id == resource.data.id
+        && request.resource.data.createdAt == resource.data.createdAt
+        && (!('storeId' in resource.data) || request.resource.data.storeId == resource.data.storeId);
+    }
+
     function productImmutableFieldsUnchanged() {
       return request.resource.data.id == resource.data.id
         && request.resource.data.createdAt == resource.data.createdAt
@@ -508,6 +543,30 @@ service cloud.firestore {
         allow update: if tenantNotFrozen(userId) && (
              (isOwner(userId) && validProduct() && productImmutableFieldsUnchanged())
           || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId) && validStockMovementUpdate()));
+        allow delete: if isOwner(userId) && tenantNotFrozen(userId);
+      }
+
+      // Services / menu items (DESIGN-services.md). Sibling to products
+      // because a service has no stock -- see validService() above.
+      //
+      // Read is scoped exactly like products: a cashier must see the menu to
+      // sell from it, but only for a store they are assigned to. The
+      // resource == null branch is the same one products carries, for the same
+      // reason given under /sales.
+      //
+      // Write is owner-only, with NO staff branch at all. products has one
+      // because selling has to decrement stock, so a cashier must be able to
+      // touch that document mid-sale. Selling a service writes nothing back to
+      // it -- there is no shelf to move -- so nothing on the sale path needs
+      // this collection to be writable, and the narrower rule is the correct
+      // one. Pricing the menu stays an owner decision.
+      match /services/{serviceId} {
+        allow read: if isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager", "cashier"])
+              && (resource == null || memberCanAccessStore(userId, resource.data.storeId)));
+        allow create: if isOwner(userId) && tenantNotFrozen(userId) && validService();
+        allow update: if isOwner(userId) && tenantNotFrozen(userId)
+          && validService() && serviceImmutableFieldsUnchanged();
         allow delete: if isOwner(userId) && tenantNotFrozen(userId);
       }
 
