@@ -27,8 +27,9 @@ Do not enable Firebase Functions, Firebase Storage, or a Firebase billing upgrad
 2. For every hosted frontend release, increment all of these together:
    - `app.html`: the `app.js?v=...`, `boot.js?v=...` and `styles.css?v=...` values.
    - `accept-invite.html`, `privacy-policy.html`, `terms.html`: the `styles.css?v=...` value.
-   - `sw.js`: `CACHE_NAME`, and the `app.js`, `boot.js` and `styles.css` entries
-     in `APP_SHELL`.
+   - `index.html`: the `landing.js?v=...` value.
+   - `sw.js`: `CACHE_NAME`, and the `app.js`, `boot.js`, `styles.css` and
+     `landing.js` entries in `APP_SHELL`.
 
    **Bump on the change, not on the deploy.** Any edit to `app.js`,
    `styles.css` or `boot.js` moves the stamp, even when you do not intend to
@@ -40,13 +41,16 @@ Do not enable Firebase Functions, Firebase Storage, or a Firebase billing upgrad
    and not being deployed. `tests/deployment-validation.test.mjs` hashes the
    working tree and fails while it is still a working-tree change.
 
-   Note `index.html` is NOT in that list. It is the landing page, its CSS is
-   inline, and it references no versioned asset — this procedure named it three
-   times and never named `app.html` until 2026-08-07, which is the file that
-   actually points at the bundle. A release made by following the old wording
-   would have bumped nothing and shipped a shell pointing at the previous
-   build. `tests/deployment-validation.test.mjs` now fails if the list here and
-   the files that really carry stamps disagree.
+   `index.html` joined that list on 2026-08-11, when the landing page grew a
+   Kiswahili switch and therefore its first versioned asset (`landing.js`). Its
+   CSS is still inline. For most of this project it was correctly excluded —
+   the procedure named it three times and never named `app.html` until
+   2026-08-07, which is the file that actually points at the bundle, so a
+   release made by following the old wording would have bumped nothing and
+   shipped a shell pointing at the previous build.
+   `tests/deployment-validation.test.mjs` fails if the list here and the files
+   that really carry stamps disagree, which is how the landing page's new stamp
+   was caught rather than discovered during a release.
 
    This prevents an old shell from referencing a new app bundle or vice versa.
 

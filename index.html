@@ -1,8 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" translate="no">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      This page now translates itself, so it opts out of machine translation
+      for the same reason app.html does. landing.js swaps every string and sets
+      <html lang> to match, and that is precisely the signal Chrome's built-in
+      translator watches: switching to Kiswahili announces a Swahili page, and a
+      browser set to always translate Swahili to English turns the real
+      Kiswahili straight back into machine English.
+
+      Before the switch existed this page was deliberately left translatable,
+      because a machine rendering was better than nothing for a reader who had
+      no other option. It now has a better option.
+    -->
+    <meta name="google" content="notranslate" />
     <title>SaviaSmart: know your shop</title>
     <meta name="description" content="Sales, stock, staff and customer credit for Tanzanian shops. Kiswahili and English. Balances the drawer at close of day." />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -296,9 +309,31 @@
         padding-block: 18px;
         overflow: hidden;
       }
-      .trades-in { display: flex; align-items: center; gap: 14px; }
-      .trades-label { flex: none; font-size: 0.76rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
-      .trades-track { display: flex; gap: 10px; flex-wrap: wrap; }
+      .trades-in { display: flex; align-items: center; gap: 20px; }
+      .trades-label { flex: none; font-size: 0.76rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); max-width: 12ch; line-height: 1.35; }
+
+      /* The window is exactly two rows tall, so the roll always has a row
+         entering and a row leaving -- one row would read as a jump, three
+         starts to look like a list that happens to move. The mask fades both
+         edges so pills arrive and leave rather than being clipped mid-word. */
+      .trades-window {
+        flex: 1 1 auto;
+        min-width: 0;
+        height: 84px;
+        overflow: hidden;
+        -webkit-mask-image: linear-gradient(180deg, transparent, #000 22%, #000 78%, transparent);
+        mask-image: linear-gradient(180deg, transparent, #000 22%, #000 78%, transparent);
+      }
+      /* Duplicated at runtime by landing.js, so the list is authored once and
+         translated once. -50% lands exactly on the start of the copy, which is
+         what makes the loop seamless rather than a visible snap. */
+      .trades-track { display: grid; gap: 8px; animation: trades-roll 32s linear infinite; }
+      .trades-row { display: flex; gap: 10px; flex-wrap: nowrap; }
+      @keyframes trades-roll {
+        from { transform: translateY(0); }
+        to { transform: translateY(-50%); }
+      }
+      .trades:hover .trades-track { animation-play-state: paused; }
       .trade {
         padding: 6px 14px;
         border: 1px solid var(--rule-strong);
@@ -310,7 +345,38 @@
       }
       @media (max-width: 760px) {
         .trades-in { flex-direction: column; align-items: flex-start; gap: 12px; }
+        .trades-label { max-width: none; }
+        .trades-window { width: 100%; height: 76px; }
       }
+      /* Decoration, so it stops dead for anyone who has asked for less motion
+         -- and then the rows have to wrap, or the window would show a static
+         slice of a list that is wider than the screen. */
+      @media (prefers-reduced-motion: reduce) {
+        .trades-track { animation: none; }
+        .trades-window { height: auto; -webkit-mask-image: none; mask-image: none; }
+        .trades-row { flex-wrap: wrap; }
+      }
+
+      /* ---- Language toggle --------------------------------------------------
+         Two states on one control, because the page has exactly two languages
+         and a dropdown for two options is a menu nobody needs. */
+      .lang {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 12px;
+        border: 1px solid var(--rule-strong);
+        border-radius: 999px;
+        background: #ffffff;
+        color: var(--ink-soft);
+        font: inherit;
+        font-size: 0.82rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        cursor: pointer;
+      }
+      .lang:hover { border-color: var(--ink-faint); color: var(--ink); }
+      .lang svg { width: 15px; height: 15px; flex: none; color: var(--accent); }
 
       /* ---- Bands ----------------------------------------------------------- */
       .band { padding-block: clamp(56px, 9vh, 108px); border-top: 1px solid var(--rule); }
@@ -366,7 +432,10 @@
       .points { display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: var(--r); overflow: hidden; }
       .points > div { background: #ffffff; padding: clamp(18px, 2.2vw, 24px); }
       .points h3 { display: flex; align-items: baseline; gap: 12px; }
-      .points h3 span { font-family: var(--display); color: var(--accent); font-size: 1.1rem; }
+      /* .num rather than a bare `span`: the heading text now sits in its own
+         span so it can carry a translation, and a descendant selector would
+         have styled that as a second number. */
+      .points h3 .num { font-family: var(--display); color: var(--accent); font-size: 1.1rem; }
       .points p { margin-top: 8px; font-size: 0.93rem; color: var(--ink-soft); }
       @media (max-width: 900px) { .argue { grid-template-columns: 1fr; } }
 
@@ -467,15 +536,22 @@
       <div class="wrap top-in">
         <a class="brand" href="./"><b>Savia</b><i>Smart</i></a>
         <nav class="links" aria-label="Sections">
-          <a href="#day">A day in the shop</a>
-          <a href="#does">What it does</a>
-          <a href="#drawer">The drawer</a>
-          <a href="#plain">Straight answers</a>
-          <a href="#questions">Questions</a>
+          <a href="#day" data-sw="Siku ya duka">A day in the shop</a>
+          <a href="#does" data-sw="Inafanya nini">What it does</a>
+          <a href="#drawer" data-sw="Droo">The drawer</a>
+          <a href="#plain" data-sw="Majibu ya wazi">Straight answers</a>
+          <a href="#questions" data-sw="Maswali">Questions</a>
         </nav>
         <div class="top-actions">
-          <a class="btn btn-ghost" href="./app.html?mode=signin">Sign in</a>
-          <a class="btn" href="./app.html">Get started</a>
+          <!-- The label names the language you would be switching TO, which is
+               the only reading that is unambiguous to someone who cannot read
+               the one currently on screen. -->
+          <button class="lang" id="langToggle" type="button" aria-label="Badilisha lugha / Change language">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>
+            <span id="langLabel">Kiswahili</span>
+          </button>
+          <a class="btn btn-ghost" href="./app.html?mode=signin" data-sw="Ingia">Sign in</a>
+          <a class="btn" href="./app.html" data-sw="Anza sasa">Get started</a>
         </div>
       </div>
     </header>
@@ -484,28 +560,28 @@
       <section class="hero">
         <div class="wrap hero-grid">
           <div>
-            <p class="kicker">For shops, pharmacies and wholesalers in Tanzania</p>
-            <h1>Know your shop the way you know your street.</h1>
-            <p class="lede">
+            <p class="kicker" data-sw="Kwa maduka, famasi na wauzaji wa jumla Tanzania">For shops, pharmacies and wholesalers in Tanzania</p>
+            <h1 data-sw="Fahamu duka lako kama unavyoujua mtaa wako.">Know your shop the way you know your street.</h1>
+            <p class="lede" data-sw="Mauzo, hisa, wafanyakazi na madeni ya wateja &mdash; yote sehemu moja, kwa Kiswahili au Kiingereza, kwenye simu uliyo nayo mfukoni.">
               Sales, stock, staff and the money people owe you, all in one place,
               in Kiswahili or English, on the phone already in your pocket.
             </p>
             <div class="cta">
-              <a class="btn btn-lg" href="./app.html">Get started</a>
-              <a class="btn btn-ghost btn-lg" href="#day">See how a day runs</a>
+              <a class="btn btn-lg" href="./app.html" data-sw="Anza sasa">Get started</a>
+              <a class="btn btn-ghost btn-lg" href="#day" data-sw="Ona siku inavyokwenda">See how a day runs</a>
             </div>
             <div class="chips">
               <span class="chip">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7"/></svg>
-                Keeps selling when the network drops
+                <span data-sw="Inaendelea kuuza hata mtandao ukikatika">Keeps selling when the network drops</span>
               </span>
               <span class="chip">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7"/></svg>
-                Kiswahili na Kiingereza
+                <span data-sw="Kiswahili na Kiingereza">Kiswahili na Kiingereza</span>
               </span>
               <span class="chip">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 10 17.5 19 7"/></svg>
-                No card to start
+                <span data-sw="Huhitaji kadi ya benki kuanza">No card to start</span>
               </span>
             </div>
           </div>
@@ -513,31 +589,71 @@
           <!-- The day's page from the book, because that is what this replaces. -->
           <div class="book">
             <div class="book-head">
-              <strong>Close of day</strong>
+              <strong data-sw="Kufunga siku">Close of day</strong>
               <span>Kariakoo &middot; Asha</span>
             </div>
-            <div class="line"><span>Money in the drawer at open</span><b>20,000</b></div>
-            <div class="line"><span>Sold for cash</span><b>184,500</b></div>
-            <div class="line"><span>Debts repaid in cash</span><b>12,000</b></div>
-            <div class="line"><span>Given back on returns</span><b>3,500</b></div>
-            <div class="line rule-top"><span>Should be in the drawer</span><b>213,000</b></div>
-            <div class="line"><span>Counted at close</span><b>211,500</b></div>
-            <div class="line short"><span>Difference</span><b>1,500 short</b></div>
-            <span class="stamp">Written down &middot; owner told</span>
+            <div class="line"><span data-sw="Fedha kwenye droo asubuhi">Money in the drawer at open</span><b>20,000</b></div>
+            <div class="line"><span data-sw="Mauzo ya taslimu">Sold for cash</span><b>184,500</b></div>
+            <div class="line"><span data-sw="Madeni yaliyolipwa taslimu">Debts repaid in cash</span><b>12,000</b></div>
+            <div class="line"><span data-sw="Yaliyorudishwa kwa marejesho">Given back on returns</span><b>3,500</b></div>
+            <div class="line rule-top"><span data-sw="Inapaswa kuwepo kwenye droo">Should be in the drawer</span><b>213,000</b></div>
+            <div class="line"><span data-sw="Zilizohesabiwa wakati wa kufunga">Counted at close</span><b>211,500</b></div>
+            <div class="line short"><span data-sw="Tofauti">Difference</span><b data-sw="1,500 pungufu">1,500 short</b></div>
+            <span class="stamp" data-sw="Imeandikwa &middot; mwenye duka amejulishwa">Written down &middot; owner told</span>
           </div>
         </div>
       </section>
 
+      <!-- A vertical roll rather than the static row this was. The list is
+           authored once here and duplicated by landing.js, so a translation is
+           written once and the loop still closes without a visible jump.
+
+           Honest about what it claims: the app ships category templates for six
+           of these, and the rest run on the general setup, which is a real
+           thing a shop can do rather than a promise. Hence "made for shops like
+           these" and not "set up for". -->
       <div class="trades">
         <div class="wrap trades-in">
-          <span class="trades-label">Set up for</span>
-          <div class="trades-track">
-            <span class="trade">Duka / general store</span>
-            <span class="trade">Pharmacy</span>
-            <span class="trade">Hardware</span>
-            <span class="trade">Salon</span>
-            <span class="trade">Bar / restaurant</span>
-            <span class="trade">Wholesale</span>
+          <span class="trades-label" data-sw="Imetengenezwa kwa maduka kama haya">Made for shops like these</span>
+          <div class="trades-window">
+            <div class="trades-track" id="tradesTrack">
+              <div class="trades-row">
+                <span class="trade" data-sw="Duka la jumla">Duka / general store</span>
+                <span class="trade" data-sw="Mini market">Mini market</span>
+                <span class="trade" data-sw="Duka la vyakula">Grocery</span>
+                <span class="trade" data-sw="Famasi">Pharmacy</span>
+              </div>
+              <div class="trades-row">
+                <span class="trade" data-sw="Duka la vifaa">Hardware</span>
+                <span class="trade" data-sw="Vifaa vya ujenzi">Building materials</span>
+                <span class="trade" data-sw="Saluni">Salon</span>
+                <span class="trade" data-sw="Kinyozi">Barber shop</span>
+              </div>
+              <div class="trades-row">
+                <span class="trade" data-sw="Baa / Mkahawa">Bar / restaurant</span>
+                <span class="trade" data-sw="Mgahawa">Caf&eacute;</span>
+                <span class="trade" data-sw="Uuzaji wa jumla">Wholesale</span>
+                <span class="trade" data-sw="Nguo na viatu">Clothing &amp; shoes</span>
+              </div>
+              <div class="trades-row">
+                <span class="trade" data-sw="Vipodozi">Cosmetics</span>
+                <span class="trade" data-sw="Elektroniki">Electronics</span>
+                <span class="trade" data-sw="Simu na vifaa vyake">Phone &amp; accessories</span>
+                <span class="trade" data-sw="Vifaa vya ofisi na vitabu">Stationery &amp; books</span>
+              </div>
+              <div class="trades-row">
+                <span class="trade" data-sw="Bucha">Butchery</span>
+                <span class="trade" data-sw="Mkate na keki">Bakery</span>
+                <span class="trade" data-sw="Pembejeo za kilimo">Agrovet &amp; farm inputs</span>
+                <span class="trade" data-sw="Vipuri">Spare parts</span>
+              </div>
+              <div class="trades-row">
+                <span class="trade" data-sw="Gesi na maji">Gas &amp; water depot</span>
+                <span class="trade" data-sw="Butiki">Boutique</span>
+                <span class="trade" data-sw="Vitu vya watoto">Baby &amp; kids</span>
+                <span class="trade" data-sw="Vipuri vya magari">Auto parts</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -545,33 +661,33 @@
       <section id="day" class="band">
         <div class="wrap">
           <div class="band-head">
-            <p class="kicker">The shape of the day</p>
-            <h2>A day, from opening the shutter to locking up.</h2>
-            <p class="say">
+            <p class="kicker" data-sw="Mpangilio wa siku">The shape of the day</p>
+            <h2 data-sw="Siku nzima, kutoka kufungua hadi kufunga duka.">A day, from opening the shutter to locking up.</h2>
+            <p class="say" data-sw="Hakuna kinachokutaka ubadili jinsi unavyofanya biashara. Kinafuata jinsi siku inavyokwenda tayari.">
               Nothing here asks you to change how you trade. It follows the way the day
               already goes.
             </p>
           </div>
           <div class="day">
             <div class="hour">
-              <span class="when">Morning</span>
-              <h3>Open the till</h3>
-              <p>Whoever is on the counter writes down the money they are starting with. One person, one till.</p>
+              <span class="when" data-sw="Asubuhi">Morning</span>
+              <h3 data-sw="Fungua droo">Open the till</h3>
+              <p data-sw="Aliye kwenye kaunta anaandika fedha anayoanzia nayo. Mtu mmoja, droo moja.">Whoever is on the counter writes down the money they are starting with. One person, one till.</p>
             </div>
             <div class="hour">
-              <span class="when">Through the day</span>
-              <h3>Sell, and the shelf follows</h3>
-              <p>Every sale takes the item off the shelf count at the same moment. Nobody has to remember to do it twice.</p>
+              <span class="when" data-sw="Mchana kutwa">Through the day</span>
+              <h3 data-sw="Uza, na hisa ipungue yenyewe">Sell, and the shelf follows</h3>
+              <p data-sw="Kila mauzo yanaondoa bidhaa kwenye hesabu ya hisa wakati huo huo. Hakuna anayepaswa kukumbuka kuifanya mara mbili.">Every sale takes the item off the shelf count at the same moment. Nobody has to remember to do it twice.</p>
             </div>
             <div class="hour">
-              <span class="when">When a regular asks</span>
-              <h3>Give credit with a record</h3>
-              <p>Put it on their name. Going past what you set for them needs a manager, and it is written down.</p>
+              <span class="when" data-sw="Mteja wa kawaida akiomba">When a regular asks</span>
+              <h3 data-sw="Toa deni likiwa limeandikwa">Give credit with a record</h3>
+              <p data-sw="Liweke kwa jina lake. Kuvuka kiwango ulichomwekea kunahitaji meneja, na kunaandikwa.">Put it on their name. Going past what you set for them needs a manager, and it is written down.</p>
             </div>
             <div class="hour">
-              <span class="when">Evening</span>
-              <h3>Count, and compare</h3>
-              <p>Count the drawer. The difference is recorded whether it is short, over, or exactly right.</p>
+              <span class="when" data-sw="Jioni">Evening</span>
+              <h3 data-sw="Hesabu, kisha linganisha">Count, and compare</h3>
+              <p data-sw="Hesabu droo. Tofauti inaandikwa ikiwa ni pungufu, ziada, au sawa kabisa.">Count the drawer. The difference is recorded whether it is short, over, or exactly right.</p>
             </div>
           </div>
         </div>
@@ -580,39 +696,39 @@
       <section id="does" class="band band-warm">
         <div class="wrap">
           <div class="band-head">
-            <p class="kicker">What it does</p>
-            <h2>Everything the counter needs, and nothing it does not.</h2>
+            <p class="kicker" data-sw="Inafanya nini">What it does</p>
+            <h2 data-sw="Kila kitu kaunta inachohitaji, na hakuna kisichohitajika.">Everything the counter needs, and nothing it does not.</h2>
           </div>
           <div class="does">
             <div class="card">
               <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h12"/></svg></span>
-              <h3>Sales and stock together</h3>
-              <p>Scan a barcode or search by name. The shelf count is a consequence of selling, not a separate chore.</p>
+              <h3 data-sw="Mauzo na hisa kwa pamoja">Sales and stock together</h3>
+              <p data-sw="Skani barcode au tafuta kwa jina. Hesabu ya hisa inapungua kutokana na mauzo, si kazi ya ziada.">Scan a barcode or search by name. The shelf count is a consequence of selling, not a separate chore.</p>
             </div>
             <div class="card">
               <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 20v-2a4 4 0 0 0-8 0v2"/><circle cx="12" cy="8" r="4"/></svg></span>
-              <h3>Who owes you what</h3>
-              <p>Customer balances, part payments, and an alert level you choose for each person.</p>
+              <h3 data-sw="Nani anakudai nini">Who owes you what</h3>
+              <p data-sw="Salio la kila mteja, malipo ya sehemu, na kiwango cha tahadhari unachomwekea kila mmoja.">Customer balances, part payments, and an alert level you choose for each person.</p>
             </div>
             <div class="card">
               <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V8l8-5 8 5v13"/><path d="M9 21v-6h6v6"/></svg></span>
-              <h3>More than one shop</h3>
-              <p>Each branch keeps its own stock and its own till. Move goods between them and the move is recorded.</p>
+              <h3 data-sw="Zaidi ya duka moja">More than one shop</h3>
+              <p data-sw="Kila tawi lina hisa yake na droo yake. Hamisha bidhaa kati yao na uhamisho unaandikwa.">Each branch keeps its own stock and its own till. Move goods between them and the move is recorded.</p>
             </div>
             <div class="card">
               <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M5 8h14M5 16h14"/></svg></span>
-              <h3>Staff who see their own work</h3>
-              <p>A cashier sees the counter. A manager sees the branch. You see all of it.</p>
+              <h3 data-sw="Wafanyakazi wanaona kazi yao">Staff who see their own work</h3>
+              <p data-sw="Cashier anaona kaunta. Meneja anaona tawi. Wewe unaona yote.">A cashier sees the counter. A manager sees the branch. You see all of it.</p>
             </div>
             <div class="card">
               <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></span>
-              <h3>Ask about your own numbers</h3>
-              <p>What is not selling, what to reorder, what a slow week looked like, answered from your shop's own figures.</p>
+              <h3 data-sw="Uliza kuhusu namba zako mwenyewe">Ask about your own numbers</h3>
+              <p data-sw="Nini hakiuzwi, nini uagize tena, wiki ya kusuasua ilikuwaje &mdash; majibu yanatoka kwenye takwimu za duka lako mwenyewe.">What is not selling, what to reorder, what a slow week looked like, answered from your shop's own figures.</p>
             </div>
             <div class="card">
               <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l5 5v13H6z"/><path d="M15 3v5h5"/><path d="M9 14h6M9 17h4"/></svg></span>
-              <h3>Reports you can carry</h3>
-              <p>Takings, staff, stock value. Save as PDF or spreadsheet and take it to the bank.</p>
+              <h3 data-sw="Ripoti unazoweza kubeba">Reports you can carry</h3>
+              <p data-sw="Mapato, wafanyakazi, thamani ya hisa. Hifadhi kama PDF au Excel na uende nayo benki.">Takings, staff, stock value. Save as PDF or spreadsheet and take it to the bank.</p>
             </div>
           </div>
         </div>
@@ -621,9 +737,9 @@
       <section id="drawer" class="band">
         <div class="wrap argue">
           <div class="band-head">
-            <p class="kicker">The drawer</p>
-            <h2>Most systems tell you what you sold.</h2>
-            <p class="say">
+            <p class="kicker" data-sw="Droo">The drawer</p>
+            <h2 data-sw="Mifumo mingi inakuambia uliuza nini.">Most systems tell you what you sold.</h2>
+            <p class="say" data-sw="Swali gumu zaidi ni kama fedha ipo kweli. Hilo ndilo daftari haliwezi kulijibu kwa ukweli, kwa sababu daftari linaweza kuandikwa upya baadaye.">
               The harder question is whether the money is actually there. That is the
               one a notebook can never answer honestly, because a notebook can be
               rewritten after the fact.
@@ -631,16 +747,16 @@
           </div>
           <div class="points">
             <div>
-              <h3><span>01</span> One till, one person, one shift</h3>
-              <p>Two people cannot both be responsible for the same drawer at the same time.</p>
+              <h3><span class="num">01</span> <span data-sw="Droo moja, mtu mmoja, zamu moja">One till, one person, one shift</span></h3>
+              <p data-sw="Watu wawili hawawezi kuwajibika kwa droo moja kwa wakati mmoja.">Two people cannot both be responsible for the same drawer at the same time.</p>
             </div>
             <div>
-              <h3><span>02</span> The sum is done for you</h3>
-              <p>Opening money, plus cash sales, plus debts repaid in cash, less refunds. Then you count.</p>
+              <h3><span class="num">02</span> <span data-sw="Hesabu inafanywa kwa ajili yako">The sum is done for you</span></h3>
+              <p data-sw="Fedha ya kuanzia, jumlisha mauzo ya taslimu, jumlisha madeni yaliyolipwa taslimu, toa marejesho. Kisha unahesabu.">Opening money, plus cash sales, plus debts repaid in cash, less refunds. Then you count.</p>
             </div>
             <div>
-              <h3><span>03</span> A short day stays short</h3>
-              <p>Closing a shift cannot go back and change how it opened. That is the only reason the record is worth having.</p>
+              <h3><span class="num">03</span> <span data-sw="Siku yenye upungufu inabaki hivyo">A short day stays short</span></h3>
+              <p data-sw="Kufunga zamu hakuwezi kurudi nyuma kubadili jinsi ilivyofunguliwa. Ndiyo sababu pekee rekodi ina thamani.">Closing a shift cannot go back and change how it opened. That is the only reason the record is worth having.</p>
             </div>
           </div>
         </div>
@@ -649,29 +765,29 @@
       <section id="plain" class="band band-warm">
         <div class="wrap">
           <div class="band-head">
-            <p class="kicker">Straight answers</p>
-            <h2>What we will and will not claim.</h2>
+            <p class="kicker" data-sw="Majibu ya wazi">Straight answers</p>
+            <h2 data-sw="Tutakachodai na tusichokidai.">What we will and will not claim.</h2>
           </div>
           <div class="plainly">
             <div>
               <span class="mark">&#10003;</span>
-              <h3>It works when the network does not</h3>
-              <p>Your stock and prices stay readable offline, and a cash sale is held on the device until the line comes back. Credit and card still need the network, and it says so plainly instead of pretending.</p>
+              <h3 data-sw="Inafanya kazi hata mtandao ukikosekana">It works when the network does not</h3>
+              <p data-sw="Hisa na bei zinabaki zinasomeka bila mtandao, na mauzo ya taslimu yanahifadhiwa kwenye kifaa hadi mtandao urudi. Deni na kadi bado vinahitaji mtandao, na inasema hivyo wazi badala ya kujifanya.">Your stock and prices stay readable offline, and a cash sale is held on the device until the line comes back. Credit and card still need the network, and it says so plainly instead of pretending.</p>
             </div>
             <div>
               <span class="mark">&#10003;</span>
-              <h3>Kiswahili throughout</h3>
-              <p>Every screen and every message, not just the menus. Nobody works in a language they are guessing at.</p>
+              <h3 data-sw="Kiswahili kila mahali">Kiswahili throughout</h3>
+              <p data-sw="Kila skrini na kila ujumbe, si menyu tu. Hakuna anayefanya kazi kwa lugha anayoibahatisha.">Every screen and every message, not just the menus. Nobody works in a language they are guessing at.</p>
             </div>
             <div>
               <span class="mark">&#10003;</span>
-              <h3>Built for the phone you own</h3>
-              <p>Made to load quickly on an ordinary Android over an ordinary connection.</p>
+              <h3 data-sw="Imejengwa kwa simu uliyo nayo">Built for the phone you own</h3>
+              <p data-sw="Imetengenezwa ipakie haraka kwenye Android ya kawaida kwa mtandao wa kawaida.">Made to load quickly on an ordinary Android over an ordinary connection.</p>
             </div>
             <div>
               <span class="mark">&#10003;</span>
-              <h3>Two tills, one last tin</h3>
-              <p>Two people selling the same last item cannot both succeed. That is tested against a real database, not assumed.</p>
+              <h3 data-sw="Droo mbili, kopo moja la mwisho">Two tills, one last tin</h3>
+              <p data-sw="Watu wawili wanaouza bidhaa ile ile ya mwisho hawawezi kufanikiwa wote wawili. Hilo limejaribiwa kwenye database halisi, si kudhaniwa.">Two people selling the same last item cannot both succeed. That is tested against a real database, not assumed.</p>
             </div>
           </div>
         </div>
@@ -680,33 +796,33 @@
       <section id="questions" class="band">
         <div class="wrap">
           <div class="band-head">
-            <p class="kicker">Questions</p>
-            <h2>The things shopkeepers ask first.</h2>
+            <p class="kicker" data-sw="Maswali">Questions</p>
+            <h2 data-sw="Mambo ambayo wenye maduka huuliza kwanza.">The things shopkeepers ask first.</h2>
           </div>
           <div class="qs">
             <details class="q">
-              <summary>Do I need to buy any equipment?</summary>
-              <p>No. It runs in the browser on the phone or computer you already have. If you own a barcode scanner it will work, and if you do not, you can search for a product by name instead.</p>
+              <summary data-sw="Je, ninahitaji kununua vifaa vyovyote?">Do I need to buy any equipment?</summary>
+              <p data-sw="Hapana. Inafanya kazi kwenye kivinjari cha simu au kompyuta uliyo nayo. Ukiwa na skana ya barcode itafanya kazi, na kama huna, unaweza kutafuta bidhaa kwa jina.">No. It runs in the browser on the phone or computer you already have. If you own a barcode scanner it will work, and if you do not, you can search for a product by name instead.</p>
             </details>
             <details class="q">
-              <summary>What happens when the internet goes down?</summary>
-              <p>You keep selling for cash, and those sales are held on the device and sync when the line returns. Your stock list and prices stay readable the whole time. Credit sales and card payments need the connection, because both have to be checked against something the device cannot see on its own. The till tells you so rather than failing quietly.</p>
+              <summary data-sw="Nini hutokea mtandao ukikatika?">What happens when the internet goes down?</summary>
+              <p data-sw="Unaendelea kuuza kwa taslimu, na mauzo hayo yanahifadhiwa kwenye kifaa kisha kusawazishwa mtandao ukirudi. Orodha ya hisa na bei zinabaki zinasomeka muda wote. Mauzo ya deni na malipo ya kadi yanahitaji mtandao, kwa sababu vyote vinapaswa kuthibitishwa dhidi ya kitu ambacho kifaa hakiwezi kukiona chenyewe. Droo inakuambia hivyo badala ya kushindwa kimyakimya.">You keep selling for cash, and those sales are held on the device and sync when the line returns. Your stock list and prices stay readable the whole time. Credit sales and card payments need the connection, because both have to be checked against something the device cannot see on its own. The till tells you so rather than failing quietly.</p>
             </details>
             <details class="q">
-              <summary>Can my staff see everything?</summary>
-              <p>Only what you give them. A cashier sees the counter they are working. A manager sees their branch. The whole business is yours alone, and changing what someone can reach takes effect on their next action, not their next sign-in.</p>
+              <summary data-sw="Je, wafanyakazi wangu wanaona kila kitu?">Can my staff see everything?</summary>
+              <p data-sw="Ni kile tu unachowapa. Cashier anaona kaunta anayoifanyia kazi. Meneja anaona tawi lake. Biashara nzima ni yako peke yako, na kubadilisha anachoweza kufikia mtu huanza kufanya kazi kwenye kitendo chake kinachofuata, si kwenye kuingia kwake kunakofuata.">Only what you give them. A cashier sees the counter they are working. A manager sees their branch. The whole business is yours alone, and changing what someone can reach takes effect on their next action, not their next sign-in.</p>
             </details>
             <details class="q">
-              <summary>Is my data mine?</summary>
-              <p>Yes. You can download a full copy of your business (products, sales, customers) as a file, at any time, without asking us.</p>
+              <summary data-sw="Je, taarifa zangu ni zangu?">Is my data mine?</summary>
+              <p data-sw="Ndiyo. Unaweza kupakua nakala kamili ya biashara yako (bidhaa, mauzo, wateja) kama faili, wakati wowote, bila kutuomba.">Yes. You can download a full copy of your business (products, sales, customers) as a file, at any time, without asking us.</p>
             </details>
             <details class="q">
-              <summary>Does it handle VAT?</summary>
-              <p>If you are registered, yes: prices are VAT-inclusive the way they are quoted in Tanzanian retail, tax is set per product, and the return reconciles to what the drawer actually took. If you are not registered, none of it appears and nothing changes.</p>
+              <summary data-sw="Je, inashughulikia VAT?">Does it handle VAT?</summary>
+              <p data-sw="Kama umesajiliwa, ndiyo: bei zinajumuisha VAT kama zinavyotajwa kwenye rejareja ya Tanzania, kodi inawekwa kwa kila bidhaa, na ripoti inalingana na kile droo ilichopokea. Kama hujasajiliwa, hakuna kinachoonekana na hakuna kinachobadilika.">If you are registered, yes: prices are VAT-inclusive the way they are quoted in Tanzanian retail, tax is set per product, and the return reconciles to what the drawer actually took. If you are not registered, none of it appears and nothing changes.</p>
             </details>
             <details class="q">
-              <summary>How far along is it?</summary>
-              <p>In use by a small number of shops while we work closely with them. We would rather say that than claim a number we have not earned.</p>
+              <summary data-sw="Imefika hatua gani kwa sasa?">How far along is it?</summary>
+              <p data-sw="Inatumika na maduka machache tunayofanya nayo kazi kwa karibu. Tunapendelea kusema hivyo kuliko kudai idadi ambayo hatujaipata.">In use by a small number of shops while we work closely with them. We would rather say that than claim a number we have not earned.</p>
             </details>
           </div>
         </div>
@@ -714,17 +830,17 @@
 
       <section class="close-band">
         <div class="wrap">
-          <p class="kicker" style="justify-content:center;">Get started</p>
-          <h2>Tell us how your shop runs today.</h2>
-          <p class="say">
+          <p class="kicker" style="justify-content:center;" data-sw="Anza sasa">Get started</p>
+          <h2 data-sw="Tuambie duka lako linaendeshwaje kwa sasa.">Tell us how your shop runs today.</h2>
+          <p class="say" data-sw="Tunafanya kazi na maduka machache kabla ya kuifungua kwa wote. Kama unaweka daftari nyuma ya kaunta, tungependa kuliona.">
             We are working with a small number of shops before opening it up. If you
             keep a book behind the counter, we would like to see it.
           </p>
           <div class="cta">
-            <a class="btn btn-lg" href="./app.html">Get started</a>
-            <a class="btn btn-ghost btn-lg" href="./app.html?mode=signin">I already have an account</a>
+            <a class="btn btn-lg" href="./app.html" data-sw="Anza sasa">Get started</a>
+            <a class="btn btn-ghost btn-lg" href="./app.html?mode=signin" data-sw="Tayari nina akaunti">I already have an account</a>
           </div>
-          <p class="fineprint">Currently onboarding a small number of shops.</p>
+          <p class="fineprint" data-sw="Kwa sasa tunapokea maduka machache.">Currently onboarding a small number of shops.</p>
         </div>
       </section>
     </main>
@@ -734,38 +850,42 @@
         <div class="foot-grid">
           <div>
             <span class="brand"><b>Savia</b><i>Smart</i></span>
-            <p class="foot-blurb">Business software for Tanzanian shops. Kiswahili na Kiingereza.</p>
+            <p class="foot-blurb" data-sw="Programu ya biashara kwa maduka ya Tanzania. Kiswahili na Kiingereza.">Business software for Tanzanian shops. Kiswahili na Kiingereza.</p>
           </div>
           <div>
-            <h4>Product</h4>
+            <h4 data-sw="Bidhaa">Product</h4>
             <ul>
-              <li><a href="#does">What it does</a></li>
-              <li><a href="#day">A day in the shop</a></li>
-              <li><a href="#drawer">The drawer</a></li>
-              <li><a href="#questions">Questions</a></li>
+              <li><a href="#does" data-sw="Inafanya nini">What it does</a></li>
+              <li><a href="#day" data-sw="Siku ya duka">A day in the shop</a></li>
+              <li><a href="#drawer" data-sw="Droo">The drawer</a></li>
+              <li><a href="#questions" data-sw="Maswali">Questions</a></li>
             </ul>
           </div>
           <div>
-            <h4>Get started</h4>
+            <h4 data-sw="Anza">Get started</h4>
             <ul>
-              <li><a href="./app.html">Create an account</a></li>
-              <li><a href="./app.html?mode=signin">Sign in</a></li>
+              <li><a href="./app.html" data-sw="Fungua akaunti">Create an account</a></li>
+              <li><a href="./app.html?mode=signin" data-sw="Ingia">Sign in</a></li>
             </ul>
           </div>
           <div>
-            <h4>Legal</h4>
+            <h4 data-sw="Kisheria">Legal</h4>
             <ul>
-              <li><a href="./terms.html">Terms &amp; Conditions</a></li>
-              <li><a href="./privacy-policy.html">Privacy Policy</a></li>
+              <li><a href="./terms.html" data-sw="Masharti na Vigezo">Terms &amp; Conditions</a></li>
+              <li><a href="./privacy-policy.html" data-sw="Sera ya Faragha">Privacy Policy</a></li>
             </ul>
           </div>
         </div>
         <div class="foot-base">
           <span>&copy; 2026 SaviaSmart</span>
-          <span>Built for shops in Tanzania</span>
+          <span data-sw="Imejengwa kwa maduka ya Tanzania">Built for shops in Tanzania</span>
         </div>
       </div>
     </footer>
 
+    <!-- A FILE, not an inline script: the production CSP is script-src 'self'
+         with no unsafe-inline, so an inline version is blocked outright and the
+         page would ship stuck in English behind a dead toggle. -->
+    <script src="./landing.js?v=20260808j"></script>
   </body>
 </html>

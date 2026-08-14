@@ -16,6 +16,11 @@ const APP_SHELL = [
   // fails if this drifts from app.html again.
   "./app.js?v=20260808j",
   "./boot.js?v=20260808j",
+  // The landing page's language switch. Versioned and pre-cached for the
+  // same reason the bundle is: without an entry here it is fetched from the
+  // network on every visit and is simply absent offline, which would leave
+  // the page stuck in English behind a dead button.
+  "./landing.js?v=20260808j",
   // Unversioned by design -- these are pointers, like app.html and sw.js, not
   // versioned payload. Pre-cached so the app can still boot offline, and
   // served network-first below so a rotated Firebase project or proxy URL

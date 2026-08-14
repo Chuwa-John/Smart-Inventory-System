@@ -113,12 +113,20 @@ console.log("\n=== the app translates itself, and says so ===");
     /<html lang="en" class="js-pending" translate="no">/.test(index) &&
     /<meta name="google" content="notranslate" \/>/.test(index),
     "without this the browser fights setLanguage() and wins");
-  // The narrow scope is the point. These pages have no switcher of their own,
-  // so a reader translating them is being served, not overridden.
-  for (const [name, page] of [["the landing page", landing], ["the invite page", invite]]) {
-    check(`${name} is still translatable`, !/notranslate|translate="no"/.test(page),
-      "opting out here would take away the only translation those readers have");
-  }
+  // The landing page joined the app the moment it grew its own Kiswahili
+  // switch: it swaps every string and sets <html lang>, so the translator
+  // fights it in exactly the same way. Before that switch existed it was
+  // deliberately left translatable, because a machine rendering beat nothing
+  // for a reader with no other option. It now has a better option.
+  check("the landing page opts out too, because it now translates itself",
+    /<html lang="en" translate="no">/.test(landing) &&
+    /<meta name="google" content="notranslate" \/>/.test(landing) &&
+    /data-sw=/.test(landing),
+    "the opt-out is only justified while the page carries its own translation");
+  // The invite page still has no switcher, so this remains the narrow scope it
+  // was: a reader translating it is being served, not overridden.
+  check("the invite page is still translatable", !/notranslate|translate="no"/.test(invite),
+    "opting out here would take away the only translation that reader has");
   // The other way to silence the CSP error is to let the translator's
   // stylesheet load. That trades a security header on a page handling money
   // for a feature whose effect here is to overwrite the real translation.
@@ -172,7 +180,10 @@ console.log("\n=== the landing page is a real page, not a mock ===");
   check("it ships in the repo, not only as an artifact", landing.length > 4000);
   check("it carries a description for search and sharing",
     /<meta name="description"/.test(landing));
-  check("it declares a language", /<html lang="en">/.test(landing));
+  // Matched without the closing bracket: the tag now also carries translate="no"
+  // (see the machine-translation section above), and the property here is that
+  // a language is declared at all.
+  check("it declares a language", /<html lang="en"[ >]/.test(landing));
   check("it loads nothing from outside this origin",
     !/https?:\/\/(?!schema)/.test(landing.replace(/<!--[\s\S]*?-->/g, "")),
     "an external font or script would be blocked by the production CSP");
