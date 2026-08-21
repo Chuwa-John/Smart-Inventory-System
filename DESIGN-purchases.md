@@ -1,0 +1,582 @@
+# Design — purchases, expenses and profit
+
+Status: **written 2026-08-21, nothing built.** Production is on `20260808o`;
+`main` is on `20260808p` and carries Services A–E undeployed. None of this
+exists in either.
+
+Requested by the shop owner: record what stock cost when it is bought — *"if
+they added 200 body lotions they record the total amount"* — so that profit can
+be tracked against what it is then sold for, plus a place to record daily
+expenses.
+
+This is the first release of the Accounts work scoped in `RESEARCH-accounts.md`
+§11, and it is chosen deliberately as the shared foundation both ends of the
+market need: input VAT, real cost of goods, stock valuation, the P&L and the
+readiness score are all downstream of purchases and expenses, and neither
+collection can break a sale.
+
+The document exists because three of the decisions below are not obvious, one
+of them touches the sale path, and one of them is a number that is wrong on the
+dashboard today.
+
+---
+
+## 1. Scope
+
+**In:**
+
+- A `purchases` collection: one document per batch bought, carrying the
+  **quantity and the total paid**, plus the fields that make input VAT
+  claimable.
+- Cost capture on the two paths that add stock: **restock**, and **product
+  create**.
+- A **weighted average** unit cost maintained on the product.
+- `unitCost` written onto each sale line at the time of sale.
+- An `expenses` collection, with a closed category set.
+- A profit surface that separates what is computed from what is self-reported.
+
+**Out, deliberately:**
+
+| Excluded | Why |
+|---|---|
+| Multi-line supplier invoices | One purchase per product per delivery. §9 shows why a line-item document is not free here, and §13 shows how this shape grows into one without a migration. |
+| FIFO or specific-identification costing | §4. Weighted average is the only method that does not require batch tracking through the sale path. |
+| Accounts payable / credit from suppliers | A purchase is recorded as paid. Supplier balances are a separate feature. |
+| Backfilling cost onto historic stock | §4.3. Forward-only, the same call `DESIGN-vat.md` made. |
+| Wiring till-paid expenses into shift reconciliation | §8.3. The field is captured from day one; the shift path is not touched in phase 1. |
+| A general ledger, trial balance, P&L, balance sheet | `RESEARCH-accounts.md` §8. Compulsory above TZS 100m, and a much larger build. §12 records what this design does to keep that door open. |
+| Payroll, fixed assets, withholding tax | Same. Separate programmes. |
+
+---
+
+## 2. The number that is wrong today
+
+Worth stating first, because it changes this from an enhancement to a fix.
+
+`costPrice` is validated in `firestore.rules` (`validProduct()`), read in four
+places in `app.js`, and **written in none.** There is no input for it in the
+product form or the restock dialog. `app.js:11150` already says so:
+
+> costPrice has no input in this form today and arrives as 0
+
+So on the owner's control panel right now:
+
+- **Stock at cost** reads **TZS 0**, on the panel and in the per-store table.
+- **Gross margin** reads **100%**, because `cogs` sums to zero.
+- The note under it reads the confident *"Revenue less cost of goods sold"*
+  rather than *"Incomplete — some items have no cost price"*, because the guard
+  is `costById.has(item.productId)` — **presence, not value**. A cost that is
+  present and zero passes it.
+
+Eight shops are being shown a 100% margin labelled as known. Two consequences
+for this design:
+
+1. **The `costKnown` guard is wrong independently of this feature** and should be
+   fixed on its own, ahead of any of the work below. It is a one-line change
+   from presence to a real known-cost test, and it makes the tile honest
+   immediately rather than in four phases' time.
+2. **Every existing product has `costPrice` absent, not zero-but-true.** §4.3
+   turns on that distinction.
+
+---
+
+## 3. What a purchase is: the batch, not the unit
+
+The owner's framing is right and it should survive into the schema: what happens
+in the world is *200 lotions, 400,000 shillings*. That is what an invoice says
+and what a fiscal receipt says.
+
+**Store the batch. Derive the unit.**
+
+```
+purchases/{purchaseId}
+  storeId          string    the branch the stock landed in
+  productId        string
+  productName      string    denormalised, so the book survives a product delete
+  quantity         number    units received, > 0
+  totalPaid        number    what was actually paid for the batch
+  unitCost         number    totalPaid / quantity -- derived, NOT rounded
+  supplierName     string    optional, free text for now
+  supplierTin      string    optional
+  receiptNumber    string    optional, the fiscal receipt number
+  receiptDate      timestamp optional
+  hasFiscalReceipt bool      optional -- decides input VAT claimability
+  recordedByUid    string
+  createdAt        timestamp
+```
+
+Two things this shape buys, and one trap it avoids.
+
+**The trap.** 100 items for 33,333 is 333.33 each. If the unit cost is stored
+rounded to 333 and the total discarded, the batch no longer reconciles to the
+invoice — by 33 shillings, every time, compounding across a year of deliveries.
+`totalPaid` is the recorded truth and `unitCost` bends to it. This is the same
+discipline as `netTotal + taxTotal == total` in `validSale()`: the figure that
+was actually transacted is the one that is authoritative.
+
+`moneyInRange()` is `v is number && v >= 0 && v <= 1e9` — **no integer
+requirement** — so a fractional `unitCost` is already permitted by the rules.
+Round at the display boundary, never in the middle.
+
+**What it buys.** The Purchase Book of `RESEARCH-accounts.md` §6 falls straight
+out of this collection, and `receiptNumber` / `receiptDate` /
+`hasFiscalReceipt` / `supplierTin` are exactly the fields §5.3 of that document
+identifies as the ones that make input VAT claimable — the six-month window runs
+from the **fiscal receipt date**, not the invoice date. One capture, two
+payoffs, and a shop that records purchases without them loses a claim it was
+entitled to.
+
+---
+
+## 4. The costing method
+
+### 4.1 Weighted average, and why not FIFO
+
+Once batches exist at different prices, selling 250 units when the shelf holds
+200 bought at 2,000 and 100 bought at 2,200 needs a rule.
+
+| Method | Accuracy | Cost |
+|---|---|---|
+| **FIFO** | Exact | Requires batch tracking **through the sale path** — the sale transaction must consume from batches in order. That is a change to `completeSale()`, offline replay, returns and voids. |
+| **Weighted average** | Exact in aggregate, approximate per line | One number on the product, recomputed where stock arrives. **The till never touches it.** |
+| Current cost (today) | Wrong | A price change rewrites last month's profit. |
+
+**Weighted average.** It is permitted under IFRS for SMEs, which NBAA has
+adopted without modification, so it is defensible in audited accounts. It is
+what a shopkeeper does mentally. And decisively for this codebase: the two paths
+where it must be recomputed — restock and transfer-in — are **already online-only
+and already read the product inside a transaction.**
+
+`OFFLINE-CAPABILITIES.md:52` and `:55`:
+
+> Restocking — *Refused until the connection returns.*
+> Transferring stock between branches — *Refused.*
+
+That matters more than it looks. The constraint that shapes everything else in
+this system is that offline writes must be relative (`increment()`) because they
+cannot read first. A weighted average needs read-then-write, which would
+normally be fatal. It is not, because neither path was ever offline. **This
+design adds no new online requirement to anything.**
+
+### 4.2 The arithmetic, and the two edge cases
+
+```
+newQuantity  = oldQuantity + deliveredQuantity
+newUnitCost  = (oldQuantity × oldUnitCost + totalPaid) / newQuantity
+```
+
+**Edge case one: stock can be negative.** `stockCountInRange()` permits
+`-1,000,000` to `1,000,000`, deliberately — offline oversell is taken and
+flagged rather than refused (`DESIGN-offline-selling.md`). So `oldQuantity` may
+be negative, and `oldQuantity + deliveredQuantity` may be zero. A division by
+zero on the restock path is a till-adjacent outage.
+
+**Rule: if `oldQuantity <= 0`, do not average — take the batch's own unit cost.**
+There is no meaningful quantity of old stock to weight against, and the incoming
+batch is the only real information.
+
+**Edge case two: the existing cost may be unknown rather than zero.** §4.3.
+
+### 4.3 Forward-only, and why absent must not mean zero
+
+Every product in production today has no `costPrice`. If absent is read as zero,
+the first purchase averages 100 units of "free" stock against 200 units bought
+at 2,000 and produces a unit cost of 1,333 — **understating cost, overstating
+profit**, on the shop's very first delivery under the new feature.
+
+The units on hand before this ships have an unknown cost, not a zero cost, and
+the difference is the whole feature.
+
+**Rule: the first purchase for a product sets `unitCost` outright. Subsequent
+purchases average.** A product carries `costKnownFrom` (a timestamp) written by
+that first purchase, and every profit surface reads it the way
+`salesCoverageFromMs()` is already read: a period that begins before
+`costKnownFrom` reports what it can and **says so**, rather than showing a
+confident figure computed over stock whose cost nobody ever recorded.
+
+This is the same call `DESIGN-vat.md` made — *"a sale from before the business
+registered is outside the scheme rather than taxed at zero"* — and for the same
+reason.
+
+---
+
+## 5. Cost on the sale line — the one sale-path change
+
+Weighted average on the product alone does **not** fix profit history. If cost
+is read from the product at report time, a restock at a new price still rewrites
+last month's margin — which is precisely the flaw `app.js:8220` documents today.
+
+To make profit correct and permanent, the cost has to be written onto the sale
+at the moment of sale:
+
+```
+saleItems[].unitCost   number, optional
+```
+
+**This is a sale-path change and it should not be presented as anything else.**
+Three things make it the acceptable kind:
+
+1. **It costs zero rules expressions.** `validSaleItems()` deliberately does not
+   validate per-item content — the comment above it records why, at length: 40
+   unrolled per-item slots blew Firestore's 1,000-expression cap and every
+   cashier hit permission-denied on their second line item, while owners sold
+   fine. Per-item iteration was removed and the cost made constant. Adding an
+   optional field to an item therefore requires **no rules change at all**.
+2. **There is a precedent that worked.** Per-line `taxClass` was added to sale
+   items on 2026-08-07 in exactly this shape and did not destabilise anything.
+3. **Absent is meaningful.** A sale line with no `unitCost` is a line whose cost
+   was not known — pre-feature, or a product with no purchase yet. It is not a
+   line that cost nothing. Every reader must treat it as unknown, and a period
+   containing such lines must say its cost is partial.
+
+What we give up, and accept: as with `kind` in `DESIGN-services.md` §8, a client
+bug that fails to write `unitCost` is caught by no rule — only by the client
+always writing it, and by a test that says so.
+
+**Offline sales.** An offline sale reads the product from the local cache, which
+carries `costPrice`, so it can write `unitCost` with no connection. The cached
+cost may be stale if another device restocked. Accepted: the recorded cost is
+the cost the device knew, which is a rounding-scale error, not a structural one.
+
+---
+
+## 6. VAT: there are two different profits
+
+For a business that is not VAT-registered, profit is revenue minus cost and both
+are gross. Nothing branches.
+
+For a registered one, the 400,000 paid for lotions **includes input VAT** if the
+supplier was registered and issued a fiscal receipt. Comparing that gross cost
+against gross revenue is wrong at both ends.
+
+**Rule: where `vatRegistered` is true, profit compares VAT-exclusive cost
+against VAT-exclusive revenue.** The revenue side already exists — `netTotal` is
+stored on every sale and rule-enforced to reconcile. The cost side is derived
+from `totalPaid` and the product's `taxClass`, and only when
+`hasFiscalReceipt` is true, because without one the input VAT is not
+recoverable and the full amount paid **is** the cost.
+
+That last clause is the one worth the care. A shop that buys from an
+unregistered supplier genuinely bears the whole price as cost, and treating it
+as VAT-inclusive would understate cost and overstate profit — the dangerous
+direction (§11).
+
+Out of scope here: computing and filing the input VAT claim itself. This design
+captures the fields; the return is later work.
+
+---
+
+## 7. Transfers are a cost event, and today they are not treated as one
+
+Found while auditing `confirmTransfer()` (`app.js:5872`):
+
+- **First transfer into a branch** does `const { id, ...rest } = product` and
+  writes the whole product to the destination. `costPrice` travels with it.
+  Correct — by accident.
+- **Every transfer after that** does
+  `transaction.update(destinationRef, { quantity: destinationQty + qty, ... })`
+  — **quantity only.** Branch B receives 50 units that cost 2,200 and its unit
+  cost stays at whatever it already was. Silently wrong, and it compounds with
+  every subsequent transfer.
+
+A transfer-in is stock arriving at a known cost. It is the same event as a
+restock and needs the same recomputation, using the **source's** unit cost as
+the incoming batch price.
+
+The fix is cheap because **the transaction already reads the destination
+snapshot** when the destination exists — it is a recompute inside a read that is
+already there, not a new read and not a new transaction.
+
+Transfer-*out* needs nothing: removing units at the prevailing average does not
+change the average.
+
+**A transfer is not a purchase.** It moves cost between branches; it does not
+create any. No `purchases` document is written, or the Purchase Book would
+double-count the group's buying.
+
+---
+
+## 8. Expenses
+
+### 8.1 Shape
+
+```
+expenses/{expenseId}
+  storeId        string
+  category       string     from the closed set below
+  amount         number     > 0
+  note           string     optional, <= 200
+  spentAt        timestamp  the date the money left, not the date it was typed
+  paidFrom       string     'till' | 'other'   -- see §8.3
+  recordedByUid  string
+  createdAt      timestamp
+```
+
+`spentAt` separate from `createdAt` because expenses are routinely entered late,
+and a period report keyed on the typing date is wrong.
+
+**Offline for free.** An expense is a create with no read, so it queues and
+replays like any other offline write with no extra machinery. Worth having: a
+shop pays for transport with no signal.
+
+### 8.2 Categories
+
+A closed set, because free text cannot be reported on and cannot be mapped to a
+tax treatment later:
+
+`rent`, `utilities`, `wages`, `transport`, `supplies`, `repairs`,
+`licences`, `marketing`, `other`
+
+Two of these carry tax consequences already documented in
+`RESEARCH-accounts.md` §3.4 and §3.3, and are worth capturing correctly now even
+though nothing acts on them yet: **rent** to a resident landlord triggers a
+**10% withholding obligation on the payer**, and input VAT on **entertainment**
+is not deductible — which is one reason there is no entertainment category and
+such spending belongs in `other` with a note until there is a treatment for it.
+
+### 8.3 The shift interaction — captured now, wired later
+
+`reconcileShiftCash()` computes expected cash as:
+
+```
+openingFloat + cashSales − cashRefunds + cashRepayments
+```
+
+There is **no expense term.** If a manager takes 10,000 from the drawer for
+transport, the drawer comes up 10,000 short at close and the reconciliation
+reads it as an unexplained shortfall — which is exactly the signal that surface
+exists to raise.
+
+`paidFrom` is captured from day one because it is one field and retrofitting it
+means guessing at history. **It is deliberately not wired into
+`reconcileShiftCash()` in phase 1**, because that function is the cash-control
+surface and `KNOWN-LIMITATIONS.md` L-1 already records that expected cash cannot
+be proven. Changing it is its own phase, with its own tests, and it must not
+ride along with a new collection.
+
+Until then, a till-paid expense still explains a shortfall to a human reading
+both screens — which is strictly better than today, where nothing does.
+
+---
+
+## 9. Rules: the closed lists this touches
+
+This project has been bitten by closed allowlists before —
+`DESIGN-vat.md` §139 records the audit action enum and the audit field
+allowlist not knowing about `VAT_REGISTRATION_ENABLED`, caught by tests rather
+than review. Enumerating them up front:
+
+| Closed list | Change needed | Note |
+|---|---|---|
+| `validSaleItems()` | **None** | Per-item content is deliberately unvalidated (expression budget). `unitCost` is free. |
+| `validProduct()` | Add `costKnownFrom` | `costPrice` is already permitted. |
+| **`validStockMovementUpdate()`** | **`affectedKeys()` must gain `costPrice` and `costKnownFrom`** | **The one that will fail silently.** See below. |
+| `auditLogFields()` | Add the purchase fields carried on `PRODUCT_RESTOCKED` | Currently allows `qtyAdded` and `sellingPrice` but no cost field. |
+| `cashierAuditActions()` / `managerAuditActions()` | New actions for purchase and expense records | `PRODUCT_RESTOCKED` is already cashier-writable. §10. |
+| New: `validPurchase()`, `validExpense()` | New | Plus `match` blocks and read/write rules, in the `tenantNotFrozen()` pattern. |
+
+**`validStockMovementUpdate()` is the trap.** It restricts a
+manager's or cashier's product update to
+`['quantity', 'sold30', 'sold90', 'updatedAt', 'movementReason']`. `confirmRestock()`
+writes exactly `quantity`, `updatedAt`, `movementReason` — inside the
+allowlist. **Add `costPrice` to that write without widening the allowlist and
+every restock by a non-owner is refused**, while the owner's own testing passes,
+because `isOwner()` takes the other branch entirely. That is the precise shape
+of the outage the expression-budget comment describes: invisible to owner-side
+testing, total for staff.
+
+**The expression budget is a live constraint, not a theoretical one.** The cap is
+1,000 expressions per evaluation and the sale path has already had to give
+ground to stay under it; `tests/rules-budget-probe.mjs`,
+`rules-budget-probe2.mjs` and `sale-budget-probe.mjs` exist to measure it. Two
+consequences: `validPurchase()` and `validExpense()` must be flat, constant-cost
+validators with no iteration, and **this is the structural argument against
+multi-line purchase documents** (§1) — a line-item purchase would face exactly
+the per-item unrolling problem the sale path lost.
+
+Every rules change is re-measured with the probes before the phase closes.
+
+---
+
+## 10. Roles: who may know what a thing cost
+
+`PRODUCT_RESTOCKED` is a **cashier-writable** audit action today, and
+managers and cashiers can restock. Purchase cost is commercially sensitive in a
+way stock quantity is not: a cashier who knows the buying price of every item
+knows the shop's margin on every sale.
+
+**Recommendation:**
+
+| Action | Owner | Manager | Cashier |
+|---|---|---|---|
+| Restock (quantity only) | yes | yes | yes |
+| Restock **with cost** | yes | yes | **no** |
+| Read `purchases` | yes | yes | **no** |
+| Record an expense | yes | yes | **no** |
+| Read the profit surface | yes | **decide** | no |
+
+A cashier restocking without cost is a real and acceptable case — a delivery
+arrives, someone counts it in. That batch simply has no purchase record, the
+product's unit cost is unchanged, and the units are absorbed at the prevailing
+average. That is a small, bounded inaccuracy, and it is much better than either
+refusing the restock or showing the cashier the margins.
+
+**Open for the owner to decide:** whether a manager sees the profit surface.
+Managers already see revenue, shift variance and staff performance. Profit
+exposes buying prices by inference. This is a business call, not a technical
+one, and it should be made before the surface is built rather than adjusted
+after.
+
+---
+
+## 11. Profit: three numbers, two trust levels
+
+There are three figures and they must not be conflated:
+
+| Figure | Computed from | Trust |
+|---|---|---|
+| **Gross profit** | `netTotal` (or `total`) − Σ(`unitCost` × qty) on sale lines | Computed from data the system controls. Trustworthy where cost is known. |
+| **Stock at cost** | Σ(quantity × unitCost) | Trustworthy where cost is known. |
+| **Net profit** | Gross profit − expenses | **Only as complete as what the owner typed.** |
+
+**Net profit is the dangerous direction of error.** `KNOWN-LIMITATIONS.md` L-12
+overstates VAT owed, which is safe — the shop pays more than it should, never
+less. Net profit fails the other way: a shop that forgets to log transport sees
+profit that is **too high**, and prices, restocks or files against it.
+
+Three rules follow:
+
+1. **Gross and net are labelled differently and never summed into one
+   headline.** Gross profit says how much it is computed from; net profit says
+   it depends on expenses being complete.
+2. **Cost completeness is stated, not assumed.** A period where some sale lines
+   carry no `unitCost` reports the proportion covered. This is the fix to §2's
+   guard, generalised.
+3. **A period that cannot be computed completely refuses rather than
+   estimating.** `KNOWN-LIMITATIONS.md` L-11 — reports see only the newest 1,000
+   sales — applies in full. A day or a week is fine; a month for a busy shop is
+   past the window, and `salesCoverageFromMs()` already answers that question and
+   is already wired into the monthly report. The profit surface reads it too.
+
+---
+
+## 12. What we are accepting
+
+| Accepted | Consequence |
+|---|---|
+| Weighted average, not FIFO | Per-line profit is approximate where a product was bought at different prices; aggregate profit is right. Choosing otherwise means batch tracking through `completeSale()`, the offline queue, returns and voids. |
+| Forward-only cost | Stock on hand before this ships has no cost, and periods before `costKnownFrom` cannot report a complete margin. No backfill, no invented opening cost. Same call as VAT. |
+| `unitCost` unvalidated by rules | Per §5. A client bug that fails to write it produces a line read as cost-unknown — degraded, not wrong. Covered by a client test, not a rules test. |
+| Cashier restock has no cost | Those units are absorbed at the prevailing average. Bounded inaccuracy, chosen over exposing margins to the till. |
+| One purchase per product per delivery | The Purchase Book does not reconcile to a multi-line supplier invoice. §13 keeps the door open; §9 explains why the door is not opened now. |
+| No accounts payable | A purchase is recorded as paid. A shop buying on supplier credit records the payment, not the debt. |
+| Till-paid expenses do not adjust expected cash | §8.3. The field is there; the shift path is untouched in phase 1. |
+| Net profit depends on self-reporting | §11. Mitigated by labelling, not by mechanism. |
+| Stale cost on an offline sale | §5. The device records the cost it knew. |
+
+**Keeping the ledger door open.** `RESEARCH-accounts.md` §11 concluded that
+above TZS 100m double entry is compulsory, and that retrofitting a ledger onto a
+single-entry store is the expensive version of this work. Three properties of
+this design are chosen so a ledger can be layered over it rather than replacing
+it: every money movement is a **document with a date, an amount and a store**
+(not a mutation of a running total); `purchases` and `expenses` are separate
+collections rather than fields on a product; and cost is recorded as a
+**transaction** (`totalPaid` on a batch) with the product's `unitCost` as a
+derived cache. A ledger posting can be generated from any of those later. It
+cannot be generated from a mutable `costPrice` field, which is what exists
+today.
+
+---
+
+## 13. Phases
+
+Ordered so that each phase is independently shippable, and the ones that touch
+existing paths come after the ones that cannot.
+
+- **Phase 0 — the honest label.** Fix the `costKnown` guard in §2 from a
+  presence test to a real known-cost test, so the margin tile stops claiming a
+  100% margin is known. One line plus a test. Independent of everything below
+  and worth shipping on its own.
+
+- **Phase A — expenses.** `expenses` collection, `validExpense()`, rules, the
+  category set, capture UI, a period list and total. Entirely additive; touches
+  no existing path; offline for free. Chosen first because it is the safest
+  thing here and immediately useful.
+
+- **Phase B — purchases, captured.** `purchases` collection, `validPurchase()`,
+  rules, and cost capture in the restock dialog and the product form.
+  **Widen `validStockMovementUpdate()` first** (§9) and prove a non-owner
+  restock passes against the emulator before any client change. Writes
+  `costPrice` and `costKnownFrom` on the product with the §4.2 arithmetic and the
+  §4.3 first-purchase rule.
+
+- **Phase C — transfers carry cost.** §7. Recompute the destination's unit cost
+  inside the existing transaction. Small, but it touches a path that has already
+  had a double-click defect, so it gets its own phase and its own negative
+  control.
+
+- **Phase D — cost on the sale line.** §5. `unitCost` on sale items, in
+  `completeSale()`, the offline queue, returns and voids. **The sale-path
+  phase.** No rules change; a client test that fails if the field stops being
+  written; and the four call sites audited the way `DESIGN-services.md` §3
+  audited them, because this is the same shape of change.
+
+- **Phase E — the profit surface.** Gross profit, stock at cost, net profit, all
+  labelled per §11, all reading `costKnownFrom` and `salesCoverageFromMs()`
+  before reporting a period.
+
+**Later, not in this design:** input VAT computed and claimed; multi-line
+supplier invoices; supplier balances; till-paid expenses in shift
+reconciliation; the ledger.
+
+**Deployment:** nothing here is deployed without an explicit go-ahead, and the
+same isolation pattern applies as for the credit fix — branch from the deployed
+commit, apply the subset, deploy from the branch, merge back. Phase 0 is a
+plausible candidate for that treatment on its own, since it corrects a live
+wrong number and touches nothing else.
+
+---
+
+## 14. Test plan
+
+Every phase closes with negative controls: reintroduce the defect, confirm the
+suite goes red. A suite that cannot fail has not been shown to pass.
+
+**Rules (emulator):**
+
+- `validPurchase()` / `validExpense()`: required fields, bounds, `quantity > 0`,
+  `amount > 0`, category in the closed set, oversized strings refused.
+- A **cashier** restock still succeeds after `validStockMovementUpdate()` is
+  widened — the §9 trap, tested from the role that would hit it.
+- A cashier is refused a `purchases` read and an `expenses` write.
+- `tenantNotFrozen()` applies to both new collections.
+- **Budget probes re-run** (`rules-budget-probe*.mjs`, `sale-budget-probe.mjs`)
+  after every rules change, with the measured headroom recorded in the phase
+  note. Measured, not assumed.
+
+**Arithmetic (pure functions, before anything calls them):**
+
+- Weighted average across a sequence of purchases at different prices; assert
+  that total stock value equals the sum of what was actually paid, which is the
+  invariant the whole feature is judged on.
+- `oldQuantity <= 0` takes the batch price and does not divide by zero —
+  including exactly `oldQuantity = -deliveredQuantity`.
+- First purchase sets rather than averages; second averages.
+- `totalPaid` that does not divide evenly: the batch total is preserved and the
+  unit cost is fractional.
+- VAT-registered and non-registered profit both computed from the same fixture,
+  and `hasFiscalReceipt: false` treated as fully-borne cost.
+
+**Client:**
+
+- `unitCost` is written on every sale line, online and offline — matched at
+  **every** call site, not the first one found. (This is the failure mode that
+  recurred four times during the offline-selling work: an assertion that matched
+  one of two sites and passed against half-broken code.)
+- A sale line with no `unitCost` reports as cost-unknown, never as zero cost.
+- A period beginning before `costKnownFrom` says so rather than reporting a
+  confident margin.
+- A period beyond `salesCoverageFromMs()` refuses, per L-11.
+- Transfer into a branch that already stocks the item recomputes the
+  destination's cost; transfer-out leaves the source's cost unchanged.
+- The §2 guard: a product with cost present-and-zero reports cost as unknown.
