@@ -8489,6 +8489,28 @@ async function initFirebase() {
       if (typeof window.process === "undefined") {
         window.process = { env: {} };
       }
+      // App Check debug token, and ONLY on a machine serving this locally.
+      //
+      // The reCAPTCHA site key is registered for the deployed domain, so on
+      // localhost the token exchange fails with appCheck/recaptcha-error, and
+      // because App Check is ENFORCED on Firebase Auth every sign-in then comes
+      // back 401 auth/firebase-app-check-token-is-invalid. That makes the app
+      // impossible to exercise locally before a release -- which is exactly
+      // when it most needs exercising.
+      //
+      // This is Firebase's documented mechanism for that, not a bypass: the
+      // flag makes the SDK mint a debug token and print it to the console, and
+      // the token does nothing at all until the project owner registers it in
+      // Firebase Console -> App Check -> Apps -> Manage debug tokens.
+      //
+      // The hostname guard is what makes it safe to ship. On the deployed
+      // domain the condition is false, so the flag is never set and production
+      // verifies through reCAPTCHA exactly as before. Someone serving a copy of
+      // this file from their own localhost would get a debug token that no
+      // project has registered, which authorises nothing.
+      const servedLocally = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+      if (servedLocally) self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+
       const { initializeAppCheck, ReCaptchaV3Provider } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-app-check.js");
       initializeAppCheck(app, {
         provider: new ReCaptchaV3Provider("6LdtGFEtAAAAABK4HX_ufjUMskc7pix12Lz2NMGd"),
