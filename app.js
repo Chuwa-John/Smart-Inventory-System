@@ -663,6 +663,37 @@ const DICTIONARY = {
     "toast.outOfStock": "This product is out of stock.",
     "toast.selectStoreToSell": "Select a specific store to make a sale.",
     "services.title": "Services",
+    "services.eyebrow": "Priced work",
+    "services.intro": "Things you sell that have a price but no shelf. They ring up in the till beside your stock, and selling one never changes a stock count.",
+    "services.addButton": "Add Service",
+    "services.thName": "Service",
+    "services.thItem": "Item",
+    "services.thCategory": "Category",
+    "services.thPrice": "Price",
+    "services.thStatus": "Status",
+    "services.thActions": "Actions",
+    "services.statusActive": "On the till",
+    "services.statusWithdrawn": "Withdrawn",
+    "services.withdrawButton": "Withdraw",
+    "services.restoreButton": "Put back",
+    "services.withdrawConfirm": "Take {name} off the till? Past sales keep it, and you can put it back at any time.",
+    "services.emptyState": "Nothing priced yet. Add your first one.",
+    "services.dialogAddTitle": "Add to {label}",
+    "services.dialogEditTitle": "Edit {label}",
+    "services.nameLabel": "Name",
+    "services.namePlaceholder": "e.g. Braiding",
+    "services.nameRequired": "Give it a name.",
+    "services.priceLabel": "Price",
+    "services.pricePlaceholder": "e.g. 15000",
+    "services.categoryLabel": "Category",
+    "services.categoryPlaceholder": "e.g. Hair",
+    "services.taxClassLabel": "Tax class",
+    "services.saveButton": "Save Service",
+    "toast.serviceAdded": "{name} added.",
+    "toast.serviceUpdated": "{name} updated.",
+    "toast.serviceWithdrawn": "{name} taken off the till.",
+    "toast.serviceRestored": "{name} put back on the till.",
+    "toast.serviceSaveFailed": "Could not save that. Please try again.",
     "services.menuTitle": "Menu",
     "services.posEmpty": "No services priced yet.",
     "toast.serviceUnavailable": "That service is no longer on the list.",
@@ -1374,6 +1405,37 @@ const DICTIONARY = {
     "toast.outOfStock": "Bidhaa hii haipo kwenye hisa.",
     "toast.selectStoreToSell": "Chagua duka mahususi kufanya mauzo.",
     "services.title": "Huduma",
+    "services.eyebrow": "Kazi zenye bei",
+    "services.intro": "Vitu unavyouza vyenye bei lakini havina hisa. Vinapigwa kwenye droo pamoja na bidhaa zako, na kuuza kimoja hakubadilishi hesabu ya hisa.",
+    "services.addButton": "Ongeza Huduma",
+    "services.thName": "Huduma",
+    "services.thItem": "Kitu",
+    "services.thCategory": "Aina",
+    "services.thPrice": "Bei",
+    "services.thStatus": "Hali",
+    "services.thActions": "Vitendo",
+    "services.statusActive": "Iko kwenye droo",
+    "services.statusWithdrawn": "Imeondolewa",
+    "services.withdrawButton": "Ondoa",
+    "services.restoreButton": "Rudisha",
+    "services.withdrawConfirm": "Ondoa {name} kwenye droo? Mauzo ya zamani yatabaki nayo, na unaweza kuirudisha wakati wowote.",
+    "services.emptyState": "Hakuna kilichowekewa bei bado. Ongeza cha kwanza.",
+    "services.dialogAddTitle": "Ongeza kwenye {label}",
+    "services.dialogEditTitle": "Hariri {label}",
+    "services.nameLabel": "Jina",
+    "services.namePlaceholder": "mfano Kusuka",
+    "services.nameRequired": "Weka jina.",
+    "services.priceLabel": "Bei",
+    "services.pricePlaceholder": "mfano 15000",
+    "services.categoryLabel": "Aina",
+    "services.categoryPlaceholder": "mfano Nywele",
+    "services.taxClassLabel": "Aina ya kodi",
+    "services.saveButton": "Hifadhi Huduma",
+    "toast.serviceAdded": "{name} imeongezwa.",
+    "toast.serviceUpdated": "{name} imesasishwa.",
+    "toast.serviceWithdrawn": "{name} imeondolewa kwenye droo.",
+    "toast.serviceRestored": "{name} imerudishwa kwenye droo.",
+    "toast.serviceSaveFailed": "Imeshindwa kuhifadhi. Tafadhali jaribu tena.",
     "services.menuTitle": "Menyu",
     "services.posEmpty": "Hakuna huduma zilizowekewa bei bado.",
     "toast.serviceUnavailable": "Huduma hiyo haipo tena kwenye orodha.",
@@ -2386,6 +2448,218 @@ function renderPosServices(term) {
 // the word differs, the way CATEGORY_TEMPLATES already varies by business type.
 function serviceLabelKey() {
   return currentBusinessType() === "bar" ? "services.menuTitle" : "services.title";
+}
+
+// Suggested categories, the way CATEGORY_TEMPLATES does it for stock. A bar
+// groups a menu by course and a salon by the kind of work, and neither wants
+// the other's list.
+const SERVICE_CATEGORY_TEMPLATES = {
+  bar: ["Mains", "Grills", "Sides", "Breakfast", "Drinks", "Desserts"],
+  salon: ["Hair", "Braiding", "Nails", "Skin & facial", "Barbering", "Massage"]
+};
+
+// The tab, and the screen behind it.
+//
+// Gated per STORE rather than per account: businessType lives on the store
+// document, so an owner running a salon and a duka must see the tab appear and
+// disappear as they switch branches. That is why this runs from renderAll()
+// rather than once at sign-in.
+//
+// "Hide, don't disable", the same convention applyStoreOwnerControlsVisibility()
+// uses -- a duka owner is never shown a tab that would only tell them their
+// business type is wrong.
+function renderServices() {
+  const nav = qs("#servicesNavItem");
+  const view = qs("#services");
+  if (!nav || !view) return;
+
+  const sells = storeSellsServices();
+  // Managers and owners only, matching every other stock-editing surface.
+  // canOpenView() is the real gate; this keeps the nav honest about it.
+  nav.hidden = !sells || !isManagerOrOwnerRole();
+
+  // A tab that vanishes under the person standing on it would leave them on a
+  // blank screen. Send them somewhere real instead.
+  if (nav.hidden && view.classList.contains("active")) openView("dashboard");
+  if (nav.hidden) return;
+
+  // Writes are owner-only in firestore.rules (allow create/update: isOwner).
+  // A manager still sees the list -- knowing the menu is part of running the
+  // floor -- but not a control that would be refused. Exactly what
+  // renderInventory() does with Edit and Delete on a product row.
+  const canEdit = isOwnerRole();
+  const addButton = qs("#servicesAddButton");
+  if (addButton) addButton.hidden = !canEdit;
+
+  const label = t(serviceLabelKey());
+  nav.textContent = label;
+  qs("#servicesTitle").textContent = label;
+  qs("#servicesThName").textContent = label === t("services.menuTitle")
+    ? t("services.thItem")
+    : t("services.thName");
+
+  const rows = storeServicesForEditing();
+  qs("#servicesTable").innerHTML = rows
+    .map((service) => `<tr>
+      <td>${esc(service.name || "")}</td>
+      <td>${esc(service.category || "-")}</td>
+      <td>${money(service.price)}</td>
+      <td><span class="status ${service.active === false ? "out" : "healthy"}">${
+        service.active === false ? esc(t("services.statusWithdrawn")) : esc(t("services.statusActive"))
+      }</span></td>
+      <td class="table-actions">${canEdit ? `
+        <button class="ghost-button compact" data-edit-service="${esc(service.id)}">${t("inventory.edit")}</button>
+        <button class="ghost-button compact${service.active === false ? "" : " danger"}" data-toggle-service="${esc(service.id)}">${
+          service.active === false ? t("services.restoreButton") : t("services.withdrawButton")
+        }</button>` : ""}
+      </td>
+    </tr>`)
+    .join("") || `<tr><td colspan="5" class="empty-state">${esc(t("services.emptyState"))}</td></tr>`;
+}
+
+// The editing list, which is NOT storeServices(): that one drops withdrawn
+// items because the till must not offer them, and this screen is the one place
+// they have to remain visible or they could never be brought back.
+function storeServicesForEditing() {
+  if (!state.currentStoreId) return [];
+  const scoped = state.currentStoreId === "all"
+    ? state.services
+    : state.services.filter((service) => service.storeId === state.currentStoreId);
+  return [...scoped].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+}
+
+function openServiceDialog(service = null) {
+  const form = qs("#serviceForm");
+  form.reset();
+  form.elements.id.value = service?.id || "";
+  form.elements.name.value = service?.name || "";
+  form.elements.price.value = service?.price ?? "";
+  form.elements.category.value = service?.category || "";
+
+  const label = t(serviceLabelKey());
+  qs("#serviceDialogTitle").textContent = service
+    ? t("services.dialogEditTitle", { label })
+    : t("services.dialogAddTitle", { label });
+
+  populateServiceCategorySuggestions();
+
+  // Same rule the product form follows: a shop that is not registered is never
+  // asked to classify anything, and the select does not submit a taxClass it
+  // was never shown.
+  const taxRow = qs("#serviceTaxClassRow");
+  const registered = vatSettings().registered;
+  taxRow.hidden = !registered;
+  if (registered) form.elements.taxClass.value = service?.taxClass || "standard";
+
+  qs("#serviceNameError").textContent = "";
+  qs("#servicePriceError").textContent = "";
+  qs("#serviceDialog").showModal();
+}
+
+function populateServiceCategorySuggestions() {
+  const list = qs("#serviceCategorySuggestions");
+  if (!list) return;
+  const template = SERVICE_CATEGORY_TEMPLATES[currentBusinessType()] || [];
+  // What the shop already uses comes first: a category they typed themselves
+  // is a better suggestion than one we guessed for their trade.
+  const used = state.services.map((service) => service.category).filter(Boolean);
+  const seen = new Set();
+  const options = [...used, ...template].filter((name) => {
+    const key = String(name).trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  list.innerHTML = options.map((name) => `<option value="${esc(name)}"></option>`).join("");
+}
+
+async function saveService(input) {
+  // "all stores" cannot own a document. Same refusal saveProduct() makes, and
+  // for the same reason: the record has to name one branch.
+  if (!input.id && state.currentStoreId === "all") {
+    showToast(t("toast.selectStoreBeforeAdd"));
+    return;
+  }
+  if (!input.id && !state.currentStoreId) {
+    showToast(t("toast.loadingStore"));
+    return;
+  }
+  if (!state.db || !state.user || !state.businessOwnerUid) {
+    showToast(t("toast.signInToAddStore"));
+    return;
+  }
+
+  const existing = input.id ? state.services.find((item) => item.id === input.id) : null;
+  const name = String(input.name || "").trim().slice(0, 120);
+  const price = clampNonNegativeNumber(input.price, MAX_MONEY);
+  if (!name) {
+    qs("#serviceNameError").textContent = t("services.nameRequired");
+    return;
+  }
+  if (price === null) {
+    qs("#servicePriceError").textContent = t("toast.numberOutOfRange", {
+      field: t("services.priceLabel"), max: MAX_MONEY.toLocaleString()
+    });
+    return;
+  }
+
+  const saveButton = qs("#saveServiceButton");
+  if (saveButton.disabled) return;
+  saveButton.disabled = true;
+
+  try {
+    const { collection, doc, serverTimestamp, setDoc } = state.firebaseApi.firestore;
+    const id = existing?.id || doc(collection(state.db, "users", state.businessOwnerUid, "services")).id;
+    const payload = {
+      id,
+      name,
+      price,
+      category: String(input.category || "").trim().slice(0, 60),
+      // An existing service keeps the branch it was created in. Moving one
+      // between branches is not a thing this screen offers, and letting the
+      // current store silently rewrite it would move a menu item by accident.
+      storeId: existing?.storeId || state.currentStoreId,
+      active: existing ? existing.active !== false : true,
+      updatedAt: serverTimestamp(),
+      ...(existing ? {} : { createdAt: serverTimestamp() }),
+      ...(vatSettings().registered ? { taxClass: input.taxClass || "standard" } : {})
+    };
+    await setDoc(doc(state.db, "users", state.businessOwnerUid, "services", id), payload, { merge: true });
+    qs("#serviceDialog").close();
+    showToast(t(existing ? "toast.serviceUpdated" : "toast.serviceAdded", { name }));
+  } catch (error) {
+    console.warn(error);
+    showToast(describeOperationError(error, "toast.serviceSaveFailed"));
+  } finally {
+    saveButton.disabled = false;
+  }
+}
+
+// Withdrawn, never deleted. Sales already reference this document by name and
+// price, and deleting it would leave that history describing something gone --
+// the same reason a product is archived rather than removed. A withdrawn
+// service disappears from the till and stays on this screen so it can come
+// back.
+async function toggleServiceActive(serviceId) {
+  const service = state.services.find((item) => item.id === serviceId);
+  if (!service) return;
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
+
+  const nextActive = service.active === false;
+  if (!nextActive && !window.confirm(t("services.withdrawConfirm", { name: service.name || "" }))) return;
+
+  try {
+    const { doc, serverTimestamp, setDoc } = state.firebaseApi.firestore;
+    await setDoc(
+      doc(state.db, "users", state.businessOwnerUid, "services", serviceId),
+      { active: nextActive, updatedAt: serverTimestamp() },
+      { merge: true }
+    );
+    showToast(t(nextActive ? "toast.serviceRestored" : "toast.serviceWithdrawn", { name: service.name || "" }));
+  } catch (error) {
+    console.warn(error);
+    showToast(describeOperationError(error, "toast.serviceSaveFailed"));
+  }
 }
 
 function cartSubtotal() {
@@ -9631,6 +9905,11 @@ function warmUpAiProxy() {
 const CASHIER_ALLOWED_VIEWS = ["pos"];
 
 function canOpenView(viewId) {
+  // The services screen is gated by business type as well as by role. The nav
+  // item is hidden for a duka, but openView() is also reached from the command
+  // palette and from a stale click handler, and this is the choke point that
+  // makes hiding it mean something.
+  if (viewId === "services" && !storeSellsServices()) return false;
   return isManagerOrOwnerRole() || CASHIER_ALLOWED_VIEWS.includes(viewId);
 }
 
@@ -9772,6 +10051,7 @@ function renderAll() {
   renderMovement();
   renderInventory();
   renderPos();
+  renderServices();
   renderManagerControl();
   renderAdminControl();
   // Depends on the resolved account name, which arrives with the role after
@@ -9898,6 +10178,13 @@ function bindEvents() {
   qs("#closeTransferDialog")?.addEventListener("click", () => qs("#transferDialog").close());
   qs("#cancelTransferDialog")?.addEventListener("click", () => qs("#transferDialog").close());
   qs("#confirmTransferButton")?.addEventListener("click", confirmTransfer);
+  qs("#servicesAddButton")?.addEventListener("click", () => openServiceDialog());
+  qs("#closeServiceDialog")?.addEventListener("click", () => qs("#serviceDialog").close());
+  qs("#cancelServiceDialog")?.addEventListener("click", () => qs("#serviceDialog").close());
+  qs("#serviceForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveService(Object.fromEntries(new FormData(event.currentTarget).entries()));
+  });
   qs("#closeRestockDialog")?.addEventListener("click", () => qs("#restockDialog").close());
   qs("#cancelRestockDialog")?.addEventListener("click", () => qs("#restockDialog").close());
   qs("#confirmRestockButton")?.addEventListener("click", confirmRestock);
@@ -10123,6 +10410,19 @@ function bindEvents() {
       // list and the KPI row reads its own unfiltered source, so clearing it
       // here has to put every view back in agreement.
       renderAll();
+      return;
+    }
+
+    const editServiceButton = event.target.closest("[data-edit-service]");
+    if (editServiceButton) {
+      const service = state.services.find((item) => item.id === editServiceButton.dataset.editService);
+      if (service) openServiceDialog(service);
+      return;
+    }
+
+    const toggleServiceButton = event.target.closest("[data-toggle-service]");
+    if (toggleServiceButton) {
+      toggleServiceActive(toggleServiceButton.dataset.toggleService);
       return;
     }
 

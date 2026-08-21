@@ -19,6 +19,7 @@ import { readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const html = readFileSync(new URL("../app.html", import.meta.url), "utf8");
+const rules = readFileSync(new URL("../firestore.rules", import.meta.url), "utf8");
 const noComments = src.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
 
 const results = [];
@@ -330,6 +331,130 @@ console.log("\n=== Phase D: the offline queue, which is the one that fails silen
   check("...and it would have taken the real products down with it",
     unguarded.length === 3 && unguarded.includes("p1") && unguarded.includes("p2"),
     "the beer and the soda are in the same batch as the broken path");
+}
+
+console.log("\n=== Phase E: the tab, and who is allowed to touch it ===");
+{
+  // Gated per STORE, not per account: businessType lives on the store document,
+  // so an owner running a salon and a duka must see the tab appear and vanish
+  // as they switch branches. That is why it runs from renderAll().
+  check("the tab is rendered on every pass, not once at sign-in",
+    /renderServices\(\);\s*renderManagerControl\(\);/.test(noComments),
+    "businessType is per store, so the tab has to follow the store switcher");
+  check("the nav item is hidden for a business that sells no services",
+    /nav\.hidden = !sells \|\| !isManagerOrOwnerRole\(\);/.test(noComments));
+  check("it ships hidden in the markup",
+    /<button class="nav-item" data-view="services" id="servicesNavItem" hidden>/.test(html),
+    "a duka must not see it flash before the first render");
+
+  // Hiding a nav item is not a gate. openView() is also reached from the
+  // command palette and from a stale click handler.
+  check("the view itself is refused for a business that sells no services",
+    /if \(viewId === "services" && !storeSellsServices\(\)\) return false;/.test(noComments),
+    "canOpenView is the choke point; the hidden nav item is only the courtesy");
+  check("someone standing on the tab when it disappears is moved somewhere real",
+    /if \(nav\.hidden && view\.classList\.contains\("active"\)\) openView\("dashboard"\);/.test(noComments),
+    "switching from a salon to a duka would otherwise leave a blank screen");
+
+  // firestore.rules makes service writes owner-only. Showing a manager a
+  // control that will be refused is the thing "hide, don't disable" exists to
+  // prevent, and renderInventory() already draws this exact line on a product.
+  check("editing is owner-only in the client",
+    /const canEdit = isOwnerRole\(\);/.test(noComments));
+  check("the add button is hidden from a manager",
+    /if \(addButton\) addButton\.hidden = !canEdit;/.test(noComments));
+  check("row controls are hidden from a manager",
+    /<td class="table-actions">\$\{canEdit \? `/.test(noComments));
+  check("...and the rules agree that writes are owner-only",
+    /allow create: if isOwner\(userId\) && tenantNotFrozen\(userId\) && validService\(\);/.test(rules),
+    "the client gate is a courtesy; this is the boundary");
+}
+
+console.log("\n=== Phase E: the screen says the right word ===");
+{
+  check("the heading follows the business type",
+    /nav\.textContent = label;\s*qs\("#servicesTitle"\)\.textContent = label;/.test(noComments));
+  // Caught in the browser: translateStaticDom() applies every data-i18n key
+  // with no parameters, so a key taking {label} rendered literally as
+  // "Add to {label}" until the dialog was opened. openServiceDialog() is the
+  // only thing that may set it.
+  check("the dialog title is not applied by the static translator",
+    !/id="serviceDialogTitle" data-i18n=/.test(html),
+    "a parameterised key in data-i18n renders its own placeholder");
+  check("...and is set with its parameter when the dialog opens",
+    /t\("services\.dialogEditTitle", \{ label \}\)/.test(noComments) &&
+    /t\("services\.dialogAddTitle", \{ label \}\)/.test(noComments));
+  check("a bar's column header says Item, a salon's says Service",
+    /qs\("#servicesThName"\)\.textContent = label === t\("services\.menuTitle"\)/.test(noComments),
+    "a bar prices dishes, not services");
+  for (const key of ["services.eyebrow", "services.intro", "services.addButton", "services.emptyState",
+                     "services.statusActive", "services.statusWithdrawn", "services.withdrawButton",
+                     "services.restoreButton", "services.saveButton", "services.thItem",
+                     "toast.serviceAdded", "toast.serviceWithdrawn", "toast.serviceSaveFailed"]) {
+    check(`${key} exists in both languages`,
+      (src.match(new RegExp(`"${key.replace(/\./g, "\\.")}"`, "g")) || []).length >= 2);
+  }
+}
+
+console.log("\n=== Phase E: a service is withdrawn, never deleted ===");
+{
+  const fn = noComments.slice(noComments.indexOf("async function toggleServiceActive("));
+  const body = fn.slice(0, fn.indexOf("\nfunction ") > 0 ? fn.indexOf("\nfunction ") : 3000);
+  check("withdrawing flips a flag rather than removing the document",
+    /\{ active: nextActive, updatedAt: serverTimestamp\(\) \}/.test(body) && !/deleteDoc/.test(body),
+    "sales reference it by name and price; deleting leaves that history describing something gone");
+  check("withdrawing asks first, restoring does not",
+    /if \(!nextActive && !window\.confirm/.test(body),
+    "putting something back on the till needs no confirmation");
+
+  // The editing screen must show withdrawn items or they could never return.
+  // The till must not. Two different lists, deliberately.
+  const editing = noComments.slice(noComments.indexOf("function storeServicesForEditing("));
+  const editingBody = editing.slice(0, editing.indexOf("\nfunction "));
+  check("the editing list keeps withdrawn items visible",
+    !/active !== false/.test(editingBody),
+    "filtering them here would make a withdrawal permanent by accident");
+  const till = noComments.slice(noComments.indexOf("function storeServices("));
+  const tillBody = till.slice(0, till.indexOf("\nfunction "));
+  check("the till list drops them", /service\.active !== false/.test(tillBody));
+}
+
+console.log("\n=== Phase E: the write matches what the rules will accept ===");
+{
+  const fn = noComments.slice(noComments.indexOf("async function saveService("));
+  const body = fn.slice(0, fn.indexOf("\nasync function "));
+
+  // serviceImmutableFieldsUnchanged() rejects an update that moves any of
+  // these, so the client must not send a different one.
+  check("an existing service keeps its branch",
+    /storeId: existing\?\.storeId \|\| state\.currentStoreId,/.test(body),
+    "letting the current store rewrite it would move a menu item between branches by accident");
+  check("createdAt is written only on create",
+    /\.\.\.\(existing \? \{\} : \{ createdAt: serverTimestamp\(\) \}\)/.test(body),
+    "the rules require createdAt unchanged on update");
+  check("the id is stable across an edit",
+    /const id = existing\?\.id \|\| doc\(collection\(/.test(body));
+
+  // Same two refusals saveProduct() makes, for the same reason: a document has
+  // to name one branch.
+  check("adding across all stores is refused",
+    /!input\.id && state\.currentStoreId === "all"/.test(body));
+  check("adding with no store resolved is refused",
+    /!input\.id && !state\.currentStoreId/.test(body));
+
+  check("the price is bounded, not merely non-negative",
+    /clampNonNegativeNumber\(input\.price, MAX_MONEY\)/.test(body),
+    "moneyInRange in the rules would reject it anyway; this names the field instead");
+  check("a nameless service is refused before the write",
+    /services\.nameRequired/.test(body));
+  check("tax class is written only for a registered business",
+    /\.\.\.\(vatSettings\(\)\.registered \? \{ taxClass: input\.taxClass \|\| "standard" \} : \{\}\)/.test(body),
+    "a shop that does not collect VAT must not have its menu classified for it");
+
+  // The same double-submit guard the till and the transfer dialog carry.
+  check("the save button cannot be double-submitted",
+    /if \(saveButton\.disabled\) return;\s*saveButton\.disabled = true;/.test(body) &&
+    /finally \{\s*saveButton\.disabled = false;/.test(body));
 }
 
 const failed = results.filter((r) => !r.pass);

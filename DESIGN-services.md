@@ -1,8 +1,8 @@
 # Design — services for bar/restaurant and salon/beauty
 
-Status: **Phases A–D built and tested; nothing deployed.** Written 2026-08-11
-ahead of any code; A and B built the same day, C and D on 2026-08-12. Phase E
-(the nav tab and the screen for authoring a menu) is the remainder.
+Status: **Phases A–E built and tested; nothing deployed.** Written 2026-08-11
+ahead of any code; A and B built the same day, C and D on 2026-08-12, E on
+2026-08-13. The feature is complete as scoped in §1.
 
 Production is on `20260808i` and carries none of this. The working tree is
 ahead deliberately — see the deployment note at the end of §9.
@@ -237,20 +237,47 @@ Tanzanian practice is outside what I know to decide here — default to
   later, with no toast and nobody watching. The sale document still carries
   every line, services included: what was sold is what was sold, and takings
   must not change because of how stock happens to be accounted.
-- **Phase E (nav + UI).** The tab itself, gated per store, labelled per
-  business type.
+- **Phase E (nav + UI).** *Built 2026-08-13.* The tab, the table and the
+  dialog that authors a menu. Gated per store rather than per account, because
+  `businessType` is on the store document — so it runs from `renderAll()` and
+  follows the store switcher. `canOpenView()` refuses the view as well, since
+  the command palette reaches `openView()` without going near the nav item, and
+  anyone standing on the tab when it disappears is moved to the dashboard
+  rather than left on a blank screen.
+
+  Editing is owner-only in the client because `firestore.rules` makes service
+  writes owner-only. A manager still sees the list — knowing the menu is part
+  of running the floor — but not a control that would be refused, which is the
+  line `renderInventory()` already draws on a product row.
+
+  A service is **withdrawn, never deleted**: sales reference it by name and
+  price, and deleting would leave that history describing something gone. That
+  needs two lists, deliberately — `storeServices()` drops withdrawn items so
+  the till cannot offer them, and `storeServicesForEditing()` keeps them so
+  they can be brought back.
+
+  Two things found while building it. The dialog title takes a `{label}`
+  parameter, and `translateStaticDom()` applies every `data-i18n` key with no
+  parameters — so the heading rendered literally as "Add to {label}" until the
+  dialog was opened. Caught in a browser, not by a test, and now pinned by one.
+  And the rules make writes owner-only while the first draft showed the
+  controls to any manager, which would have offered a button that always
+  failed.
 
 Each phase is independently testable and independently shippable in that
 order; B cannot safely ship before A, and D is the one most worth its own
 emulator test given how quietly it fails.
 
-**Where A–D leaves it.** Every path that touches money or stock is now guarded,
-so this is safe to deploy from a data-integrity standpoint — which is a
-different question from whether it is finished. It is not: without Phase E
-there is no screen for authoring a menu, so a service can only be created by
-writing to Firestore directly. A `bar` or `salon` store would see an empty
-"Menu"/"Services" panel in the POS and no way to fill it. Everyone else sees
-nothing at all, since `storeSellsServices()` is false for every other type.
+**Where A–E leaves it.** Every path that touches money or stock is guarded, and
+a `bar` or `salon` owner can now author a menu, sell from it, void a sale that
+contains one, and sell offline. Everyone else sees nothing at all, since
+`storeSellsServices()` is false for every other business type — which is what
+makes this safe to put in front of the existing shops whenever it goes.
+
+Still out of scope, and worth saying plainly rather than leaving to be
+discovered: no recipe or ingredient consumption (selling "Chicken and Chips"
+decrements no chicken), no per-line return of a service, no commission or tips,
+and no bookings. §1 and §8 record why for each.
 
 Not deployed, at the owner's instruction, until the local build has been
 exercised by hand.

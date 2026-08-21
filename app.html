@@ -28,7 +28,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260808k" />
+    <link rel="stylesheet" href="./styles.css?v=20260808l" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#0b0d10" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -48,7 +48,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260808k"></script>
+    <script type="module" src="./boot.js?v=20260808l"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -84,6 +84,11 @@
           <button class="nav-item active" data-view="dashboard" data-i18n="nav.dashboard">Dashboard</button>
           <button class="nav-item" data-view="inventory" data-i18n="nav.inventory">Inventory</button>
           <button class="nav-item" data-view="pos" data-i18n="nav.pos">Point of Sale</button>
+          <!-- Bar/restaurant and salon only (DESIGN-services.md §5). Hidden
+               by default and re-evaluated on every store switch, because
+               businessType is per store: one owner may run a salon and a duka
+               and the tab has to follow which branch they are looking at. -->
+          <button class="nav-item" data-view="services" id="servicesNavItem" hidden>Services</button>
           <button class="nav-item" data-view="reports" data-i18n="nav.reports">Reports</button>
           <button class="nav-item" data-view="ai" data-i18n="nav.ai">AI Advisor</button>
         </nav>
@@ -349,6 +354,35 @@
                 </tr>
               </thead>
               <tbody id="inventoryTable"></tbody>
+            </table>
+          </article>
+        </section>
+
+        <section class="view" id="services">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow" id="servicesEyebrow" data-i18n="services.eyebrow">Priced work</p>
+              <h1 id="servicesTitle">Services</h1>
+            </div>
+            <div class="button-row">
+              <button class="primary-button" id="servicesAddButton" type="button" data-i18n="services.addButton">Add Service</button>
+            </div>
+          </div>
+
+          <p class="muted" id="servicesIntro" data-i18n="services.intro">Things you sell that have a price but no shelf. They ring up in the till beside your stock, and selling one never changes a stock count.</p>
+
+          <article class="panel table-panel">
+            <table>
+              <thead>
+                <tr>
+                  <th id="servicesThName" data-i18n="services.thName">Service</th>
+                  <th data-i18n="services.thCategory">Category</th>
+                  <th data-i18n="services.thPrice">Price</th>
+                  <th data-i18n="services.thStatus">Status</th>
+                  <th data-i18n="services.thActions">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="servicesTable"></tbody>
             </table>
           </article>
         </section>
@@ -823,6 +857,48 @@
       </div>
     </dialog>
 
+    <dialog id="serviceDialog">
+      <div class="dialog-head">
+        <!-- No data-i18n: this string takes a {label} parameter and
+             translateStaticDom() applies keys without parameters, which
+             rendered the placeholder literally as "Add to {label}".
+             openServiceDialog() sets it with the parameter every time. -->
+        <h2 id="serviceDialogTitle">Add Service</h2>
+        <button class="icon-button" type="button" id="closeServiceDialog" aria-label="Close">&times;</button>
+      </div>
+      <form id="serviceForm" novalidate>
+        <input type="hidden" name="id" />
+        <div class="form-grid">
+          <label><span data-i18n="services.nameLabel">Name</span>
+            <input name="name" required maxlength="120" placeholder="e.g. Braiding" data-i18n-placeholder="services.namePlaceholder" autocomplete="off" />
+            <span class="field-error" id="serviceNameError"></span>
+          </label>
+          <label><span data-i18n="services.priceLabel">Price</span>
+            <input name="price" type="number" min="0" step="1" required placeholder="e.g. 15000" data-i18n-placeholder="services.pricePlaceholder" autocomplete="off" />
+            <span class="field-error" id="servicePriceError"></span>
+          </label>
+          <label><span data-i18n="services.categoryLabel">Category</span>
+            <input name="category" list="serviceCategorySuggestions" maxlength="60" placeholder="e.g. Hair" data-i18n-placeholder="services.categoryPlaceholder" autocomplete="off" />
+            <datalist id="serviceCategorySuggestions"></datalist>
+          </label>
+          <!-- Only rendered for a VAT-registered business, exactly like the
+               product form: a shop that does not collect VAT must not be
+               asked to classify anything. -->
+          <label id="serviceTaxClassRow" hidden><span data-i18n="services.taxClassLabel">Tax class</span>
+            <select name="taxClass">
+              <option value="standard" data-i18n="vat.classStandard">Standard rated</option>
+              <option value="zeroRated" data-i18n="vat.classZeroRated">Zero rated</option>
+              <option value="exempt" data-i18n="vat.classExempt">Exempt</option>
+            </select>
+          </label>
+        </div>
+        <div class="button-row end">
+          <button class="ghost-button" type="button" id="cancelServiceDialog" data-i18n="product.cancel">Cancel</button>
+          <button class="primary-button" type="submit" id="saveServiceButton" data-i18n="services.saveButton">Save Service</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="restockDialog">
       <div class="dialog-head">
         <h2 data-i18n="restock.dialogTitle">Restock Product</h2>
@@ -1106,6 +1182,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260808k"></script>
+    <script type="module" src="./app.js?v=20260808l"></script>
   </body>
 </html>
