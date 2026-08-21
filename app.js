@@ -10907,17 +10907,43 @@ function bindEvents() {
           // fire left no trace whatsoever.
           if (creditLimitDecision.limitChecked === false && creditBalanceDue > 0) {
             const uncheckedRef = doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs"));
-            transaction.set(uncheckedRef, {
+            // OMITTED, not null. auditStringsBounded() in firestore.rules reads
+            // `!('customerId' in d) || d.customerId is string` -- absent is
+            // fine, null is refused, because the key is present and null is not
+            // a string. That refusal took the WHOLE credit sale down with it:
+            // all six writes are one transaction, so an audit entry the rules
+            // will not accept means no sale, no stock movement, no customer
+            // balance, and a cashier told "your account is not allowed to do
+            // this" with a customer standing in front of them.
+            //
+            // It fired on exactly the case this entry exists to record: a
+            // first-time credit customer, whose document is created moments
+            // later and so is not in local state when the limit check runs, and
+            // a cashier serving another branch's customer (QA-110). An
+            // established customer with no limit set sends a real customerId,
+            // which is why the other unchecked path always worked and this one
+            // never did.
+            //
+            // validSale() does allow customerId: null, which is what made the
+            // asymmetry easy to miss -- the sale document and the audit
+            // document disagree about how to say "nobody".
+            const uncheckedEntry = {
               action: "CREDIT_LIMIT_UNCHECKED",
-              customerId: creditLimitDecision.customerId || null,
-              customerName: customerName || null,
               reason: creditLimitDecision.uncheckedReason || "unknown",
-              previousBalance: creditLimitDecision.previousBalance ?? null,
               saleTotal: total,
               storeId: state.currentStoreId,
               uid: state.user?.uid || null,
               createdAt: serverTimestamp()
-            });
+            };
+            if (creditLimitDecision.customerId) uncheckedEntry.customerId = creditLimitDecision.customerId;
+            if (customerName) uncheckedEntry.customerName = customerName;
+            // A number field, and auditStringsBounded() does not type-check it,
+            // so null would pass -- omitted anyway so "not known" is expressed
+            // one way throughout this entry rather than two.
+            if (creditLimitDecision.previousBalance != null) {
+              uncheckedEntry.previousBalance = creditLimitDecision.previousBalance;
+            }
+            transaction.set(uncheckedRef, uncheckedEntry);
           }
 
           // Written in the same transaction as the sale it justifies. A record
@@ -10927,7 +10953,12 @@ function bindEvents() {
             transaction.set(overrideRef, {
               action: "CREDIT_LIMIT_EXCEEDED",
               customerId: creditLimitDecision.customerId,
-              customerName: customerName || null,
+              // Spread, not `|| null`. Same rule, same failure as the unchecked
+              // entry below it: auditStringsBounded() types customerName as a
+              // string when the key is present, so a crossing recorded for a
+              // customer whose name nobody typed would be refused -- and this
+              // write is inside the sale transaction, so the sale goes with it.
+              ...(customerName ? { customerName } : {}),
               limit: creditLimitDecision.limit,
               previousBalance: creditLimitDecision.previousBalance,
               projectedTotal: creditLimitDecision.projectedTotal,

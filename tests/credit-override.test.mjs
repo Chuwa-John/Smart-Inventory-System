@@ -147,7 +147,11 @@ console.log("\n=== a crossing is always recorded ===");
     "audit write is outside the sale transaction");
   check("it is written through the transaction object",
     /if \(creditLimitDecision\.overridden\)[\s\S]{0,200}transaction\.set\(/.test(app));
-  check("it records who authorised it", /action: "CREDIT_LIMIT_EXCEEDED"[\s\S]{0,900}uid:/.test(app));
+  // Window widened from 900: the entry gained a comment explaining why
+  // customerName is spread rather than defaulted to null (see
+  // tests/audit-null-fields.test.mjs). The property is unchanged -- the
+  // entry still records who authorised the crossing.
+  check("it records who authorised it", /action: "CREDIT_LIMIT_EXCEEDED"[\s\S]{0,1400}uid:/.test(app));
   check("it records the customer and the amounts",
     /action: "CREDIT_LIMIT_EXCEEDED"[\s\S]{0,900}customerId:[\s\S]{0,900}saleTotal:/.test(app));
 }
