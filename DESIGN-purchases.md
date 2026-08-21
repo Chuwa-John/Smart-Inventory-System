@@ -1,8 +1,8 @@
 # Design — purchases, expenses and profit
 
-Status: **written 2026-08-21, nothing built.** Production is on `20260808o`;
-`main` is on `20260808p` and carries Services A–E undeployed. None of this
-exists in either.
+Status: **written 2026-08-21. Phase 0 built and tested the same day; A–E not
+started.** Production is on `20260808o`; `main` is on `20260808q` and carries
+Services A–E and Phase 0, neither deployed.
 
 Requested by the shop owner: record what stock cost when it is bought — *"if
 they added 200 body lotions they record the total amount"* — so that profit can
@@ -421,11 +421,27 @@ product's unit cost is unchanged, and the units are absorbed at the prevailing
 average. That is a small, bounded inaccuracy, and it is much better than either
 refusing the restock or showing the cashier the margins.
 
-**Open for the owner to decide:** whether a manager sees the profit surface.
-Managers already see revenue, shift variance and staff performance. Profit
-exposes buying prices by inference. This is a business call, not a technical
-one, and it should be made before the surface is built rather than adjusted
-after.
+**Decided by the owner, 2026-08-21.**
+
+*The profit surface is owner-only.* Not manager, not cashier. Profit exposes
+buying prices by inference, and that is the owner's information. Conveniently,
+the surface this design extends is already gated that way: `renderAdminControl()`
+opens with `panel.hidden = !isOwnerRole()`, and `isOwnerRole()` is
+`state.currentUserRole === "owner"` — a manager never renders it. So the
+decision is already enforced for everything on that panel, and the rule for the
+rest of this design is that **anything deriving cost or profit belongs inside an
+owner-gated surface, and no manager-visible screen gains a cost figure.** Phase
+E adds nothing outside `#adminControlPanel` without that being an explicit,
+separate decision.
+
+*A cashier may restock.* Confirmed as recommended — a trusted cashier records
+a delivery when the manager is not there, and refusing that to protect a cost
+field would break a real working pattern to solve a problem that is not the
+cashier's. Quantity only: the cashier sees no buying price, records no purchase,
+and the batch is absorbed at the prevailing average. This is why widening
+`validStockMovementUpdate()` in Phase B has to be proven **from a cashier
+account** against the emulator, not an owner one — the cashier restock is now
+a supported path, not a tolerated one.
 
 ---
 
@@ -534,6 +550,65 @@ same isolation pattern applies as for the credit fix — branch from the deploye
 commit, apply the subset, deploy from the branch, merge back. Phase 0 is a
 plausible candidate for that treatment on its own, since it corrects a live
 wrong number and touches nothing else.
+
+---
+
+## 13a. Phase 0 record — built 2026-08-21
+
+Larger than the "one line plus a test" this document estimated, because the same
+defect had three faces, not one, and fixing the caption while leaving the value
+would have been the worse half of the job.
+
+**What changed.** The coverage loop moved out of `renderAdminControl()` into
+`summariseCostOfGoods(sales, costByProductId)` — a pure function returning
+`{ cogs, costedLines, uncostedLines, anyCostKnown, allCostKnown }` — so the
+arithmetic is testable without a DOM, per the `DESIGN-vat.md` order of work. The
+guard now asks whether a cost is greater than zero rather than whether the key
+is present. Three surfaces then follow it:
+
+- **Gross margin** shows `—` with *"No cost prices recorded"* when nothing is
+  costed, rather than a fabricated 100%; the danger tone is suppressed in that
+  state, because there is no margin to judge. Where cost is partial it names the
+  count: *"{missing} of {total} sold lines have no cost price."*
+- **Stock at cost** shows `—` rather than TZS 0, and keeps retail value in the
+  note, which is known either way.
+- **The per-store column** applies the same rule.
+
+**One thing the fix had to add that the design did not anticipate.** Service
+lines are skipped rather than counted as unknown. A haircut has no cost of
+goods, so it is not a gap in the data — and with Services on `main`, counting
+it as one would have reported every bar and salon month incomplete for a hole
+that does not exist. `isServiceLine()` already existed; this is the first
+non-Services surface to need it.
+
+**Nothing in `firestore.rules` changed.** Phase 0 is client-only.
+
+**Proven, not asserted.** 102/102 in `tests/control-panel-math.test.mjs`, and
+all 39 client suites green with a tally each. Five negative controls, each
+reintroduced and each confirmed to turn the suite red:
+
+| Defect reintroduced | Caught by |
+|---|---|
+| `has(productId)` presence test restored | 7 assertions, led by *"production today: cost of goods is not claimed to be zero"* |
+| Service-line skip removed | *"a service line is skipped, not counted as uncosted"* |
+| Margin tile shows a percentage regardless | *"with no known cost the margin tile shows a dash"* |
+| Stock at cost prints TZS 0 again | *"stock at cost shows a dash rather than TZS 0"* |
+| Voided sales allowed to contribute cost | *"a voided sale contributes no cost of goods"* |
+
+The first case is named *production today* deliberately: real sales, a real
+catalogue, and not one cost price anywhere — the exact state of the eight live
+shops, which the old guard reported as a perfect margin.
+
+**Stamp.** `tests/deployment-validation.test.mjs` refused the working tree until
+`20260808p` was bumped, correctly: the stamp is the bundle's identity, not a
+deploy marker. Now `20260808q` / `savia-shell-v115`, both verified unused in
+history.
+
+**Portability note if Phase 0 ships alone.** It calls `isServiceLine()`, which
+production does not have. A release branch cut from `20260808o` must carry that
+three-line helper across, or inline the `kind === "service"` test. On production
+no sale carries `kind` at all, so the check is a no-op there — but it must
+still be defined, or the panel throws.
 
 ---
 

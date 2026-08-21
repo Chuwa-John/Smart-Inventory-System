@@ -279,6 +279,131 @@ console.log("\n=== the repayment figure is wired where it is claimed to be ===")
   }
 }
 
+// ---------------------------------------------------------------------------
+// Cost of goods -- DESIGN-purchases.md phase 0.
+//
+// The bug this replaces: the coverage guard asked costById.has(productId),
+// which is presence, not value. costPrice has no input anywhere in the app, so
+// every product carried an absent cost that safeNumber() reads as 0, every
+// lookup passed, and the panel reported cost of goods as zero, gross margin as
+// 100% of revenue, and captioned it "Revenue less cost of goods sold".
+//
+// The case named "production today" below is the exact shape of that: real
+// sales, a real catalogue, and not one cost price anywhere. It must report
+// nothing rather than a perfect margin.
+const { summariseCostOfGoods } = new Function(
+  `${extract("safeNumber")}
+   ${extract("isServiceLine")}
+   ${extract("summariseCostOfGoods")}
+   return { summariseCostOfGoods };`
+)();
+
+console.log("\n=== cost of goods: coverage is not presence ===");
+{
+  const costs = (pairs) => new Map(pairs);
+  const line = (productId, qty, over = {}) => ({ productId, qty, ...over });
+  const withItems = (items, over = {}) => ({ voided: false, items, ...over });
+
+  // Production today: a catalogue that exists, and no cost price in it.
+  const productionToday = summariseCostOfGoods(
+    [withItems([line("p1", 3), line("p2", 1)])],
+    costs([["p1", 0], ["p2", 0]])
+  );
+  check("production today: cost of goods is not claimed to be zero",
+    productionToday.anyCostKnown, false);
+  check("production today: every line counts as uncosted",
+    productionToday.uncostedLines, 2);
+  check("production today: nothing is treated as costed",
+    productionToday.costedLines, 0);
+  check("production today: allCostKnown is false, not true",
+    productionToday.allCostKnown, false);
+
+  // The negative control for the exact defect: presence must not equal known.
+  // A Map that HAS the key with value 0 is the state the old guard passed on.
+  check("a cost of exactly zero is unknown, not free",
+    summariseCostOfGoods([withItems([line("p1", 1)])], costs([["p1", 0]])).costedLines, 0);
+
+  const fully = summariseCostOfGoods(
+    [withItems([line("p1", 3), line("p2", 2)])],
+    costs([["p1", 1500], ["p2", 400]])
+  );
+  check("cost of goods sums unit cost x quantity", fully.cogs, 3 * 1500 + 2 * 400);
+  check("a fully costed month reports complete", fully.allCostKnown, true);
+  check("...and counts no gaps", fully.uncostedLines, 0);
+
+  const partial = summariseCostOfGoods(
+    [withItems([line("p1", 2), line("p2", 5)])],
+    costs([["p1", 1000], ["p2", 0]])
+  );
+  check("a partly costed month counts what it knows", partial.cogs, 2000);
+  check("...reports a figure is available", partial.anyCostKnown, true);
+  check("...but does not claim to be complete", partial.allCostKnown, false);
+  check("...and names how many lines are missing", partial.uncostedLines, 1);
+  check("...out of how many", partial.costedLines + partial.uncostedLines, 2);
+
+  check("a voided sale contributes no cost of goods",
+    summariseCostOfGoods(
+      [withItems([line("p1", 10)], { voided: true })], costs([["p1", 1000]])
+    ).cogs, 0);
+  check("...and is not counted as a coverage gap either",
+    summariseCostOfGoods(
+      [withItems([line("p1", 10)], { voided: true })], costs([["p1", 1000]])
+    ).uncostedLines, 0);
+
+  // A haircut has no cost of goods. Counting it as unknown would report every
+  // bar and salon month incomplete for a gap that does not exist.
+  const mixed = summariseCostOfGoods(
+    [withItems([line("p1", 1), line("svc1", 1, { kind: "service" })])],
+    costs([["p1", 800]])
+  );
+  check("a service line is skipped, not counted as uncosted", mixed.uncostedLines, 0);
+  check("...so a mixed basket can still report complete", mixed.allCostKnown, true);
+  check("...and the service adds nothing to cost of goods", mixed.cogs, 800);
+
+  // The old guard's one genuine signal, preserved: a sale referencing a product
+  // that is no longer in the catalogue is a real gap.
+  check("a product missing from the catalogue is a gap",
+    summariseCostOfGoods([withItems([line("gone", 1)])], costs([])).uncostedLines, 1);
+
+  check("an empty month reports nothing known rather than complete",
+    summariseCostOfGoods([], costs([])).anyCostKnown, false);
+}
+
+console.log("\n=== the tiles say what they know ===");
+{
+  const noComments = src.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+
+  check("the panel calls the extracted function rather than inlining the loop",
+    /const goods = summariseCostOfGoods\(monthSales, costById\);/.test(noComments), true);
+  check("the old presence test is gone",
+    /costById\.has\(/.test(noComments), false);
+
+  const grid = noComments.slice(noComments.indexOf('controlTile(t("control.grossMargin")'));
+  check("the margin tile was located", grid.length > 200, true);
+  check("with no known cost the margin tile shows a dash, not a percentage",
+    /goods\.anyCostKnown \? [^:]+ : "\u2014"/.test(grid), true);
+  check("...and captions it as no cost recorded",
+    /t\("control\.marginNoCost"\)/.test(grid), true);
+  check("the incomplete caption reports the counts it found",
+    /control\.marginIncomplete"[\s\S]{0,160}missing:[\s\S]{0,80}total:/.test(grid), true);
+  check("the danger tone is suppressed when there is no cost to judge",
+    /goods\.anyCostKnown && margin <= 0/.test(grid), true);
+
+  check("stock at cost shows a dash rather than TZS 0 when no cost is recorded",
+    /anyProductCosted \? money\(stockAtCost\) : "\u2014"/.test(noComments), true);
+  check("...and still reports retail value, which is known either way",
+    /control\.stockAtCostUnknown", \{ value: money\(stockAtRetail\) \}/.test(noComments), true);
+  check("the per-store column applies the same rule",
+    /storeCosted \? money\(cost\) : "\u2014"/.test(noComments), true);
+
+  for (const key of ["control.marginNoCost", "control.stockAtCostUnknown"]) {
+    check(`${key} exists in both languages and is used`,
+      (src.match(new RegExp(`"${key.replace(/\./g, "\\.")}"`, "g")) || []).length >= 3, true);
+  }
+  check("control.marginIncomplete carries the placeholders it is called with",
+    (src.match(/"control\.marginIncomplete": "[^"]*\{missing\}[^"]*\{total\}[^"]*"/g) || []).length, 2);
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 process.exit(failed.length ? 1 : 0);

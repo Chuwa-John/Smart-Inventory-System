@@ -344,9 +344,11 @@ const DICTIONARY = {
     "control.salesCountNote": "{count} sales this month",
     "control.grossMargin": "Gross margin (est.)",
     "control.marginNote": "Revenue less cost of goods sold",
-    "control.marginIncomplete": "Incomplete — some items have no cost price",
+    "control.marginIncomplete": "Incomplete — {missing} of {total} sold lines have no cost price",
+    "control.marginNoCost": "No cost prices recorded, so margin cannot be worked out",
     "control.stockAtCost": "Stock value at cost",
     "control.stockAtRetail": "At retail {value}",
+    "control.stockAtCostUnknown": "No cost prices recorded. At retail {value}",
     "control.creditOwed": "Credit outstanding",
     "control.voidsMonth": "Voids this month",
     "control.refundsMonth": "Refunds this month",
@@ -1085,9 +1087,11 @@ const DICTIONARY = {
     "control.salesCountNote": "Mauzo {count} mwezi huu",
     "control.grossMargin": "Faida ghafi (makadirio)",
     "control.marginNote": "Mapato ukiondoa gharama ya bidhaa",
-    "control.marginIncomplete": "Haijakamilika — baadhi ya bidhaa hazina bei ya gharama",
+    "control.marginIncomplete": "Haijakamilika — safu {missing} kati ya {total} zilizouzwa hazina bei ya gharama",
+    "control.marginNoCost": "Hakuna bei za gharama zilizorekodiwa, hivyo faida haiwezi kupigwa hesabu",
     "control.stockAtCost": "Thamani ya hisa kwa gharama",
     "control.stockAtRetail": "Kwa bei ya rejareja {value}",
+    "control.stockAtCostUnknown": "Hakuna bei za gharama zilizorekodiwa. Kwa bei ya rejareja {value}",
     "control.creditOwed": "Mkopo unaodaiwa",
     "control.voidsMonth": "Yaliyofutwa mwezi huu",
     "control.refundsMonth": "Marejesho mwezi huu",
@@ -8205,6 +8209,42 @@ async function loadFaults() {
   }
 }
 
+// Cost of goods for a set of sales, given the cost the catalogue currently
+// carries for each product. Extracted from renderAdminControl() so the
+// arithmetic can be tested without a DOM -- tests/control-panel-math.test.mjs
+// evaluates this function itself rather than a copy of it.
+//
+// It reports coverage as well as a total, because the caller cannot tell a
+// genuine zero from an unknown otherwise, and that distinction is the whole
+// point of the guard: DESIGN-purchases.md 4.3.
+function summariseCostOfGoods(sales, costByProductId) {
+  let cogs = 0;
+  let costedLines = 0;
+  let uncostedLines = 0;
+  for (const sale of sales) {
+    if (sale.voided) continue;
+    for (const item of sale.items || []) {
+      // A haircut has no cost of goods, so it is not a gap in the data.
+      // Counting it as one would report every bar and salon month incomplete.
+      if (isServiceLine(item)) continue;
+      const unitCost = safeNumber(costByProductId.get(item.productId));
+      if (unitCost > 0) {
+        cogs += unitCost * safeNumber(item.qty);
+        costedLines += 1;
+      } else {
+        uncostedLines += 1;
+      }
+    }
+  }
+  return {
+    cogs,
+    costedLines,
+    uncostedLines,
+    anyCostKnown: costedLines > 0,
+    allCostKnown: costedLines > 0 && uncostedLines === 0
+  };
+}
+
 function renderAdminControl() {
   const panel = qs("#adminControlPanel");
   if (!panel) return;
@@ -8220,20 +8260,26 @@ function renderAdminControl() {
   // Cost of goods is estimated from each product's CURRENT costPrice, because
   // sale items do not carry the cost they were bought at. A price change
   // therefore rewrites history here -- fine for a running indicator, not for
-  // accounts, which is why the tile says estimated.
+  // accounts, which is why the tile says estimated. DESIGN-purchases.md phase D
+  // puts the cost on the sale line and closes that.
+  //
+  // The coverage guard asks whether a cost is KNOWN, not whether the product is
+  // still in the catalogue. It used to ask costById.has(productId), which is
+  // presence -- and costPrice has no input anywhere in this app (see the note in
+  // the numeric-field validation), so every product carried an absent cost that
+  // safeNumber() reads as 0, every lookup passed, and this panel reported cost
+  // of goods as zero, gross margin as 100% of revenue, and captioned it
+  // "Revenue less cost of goods sold" rather than incomplete. An absent cost
+  // means unknown, never free.
   const costById = new Map(state.products.map((p) => [p.id, safeNumber(p.costPrice)]));
-  let cogs = 0;
-  let costKnown = true;
-  for (const sale of monthSales) {
-    if (sale.voided) continue;
-    for (const item of sale.items || []) {
-      if (!costById.has(item.productId)) costKnown = false;
-      cogs += (costById.get(item.productId) || 0) * safeNumber(item.qty);
-    }
-  }
+  const goods = summariseCostOfGoods(monthSales, costById);
+  const cogs = goods.cogs;
   const margin = month.net - cogs;
   const marginPct = month.net > 0 ? Math.round((margin / month.net) * 100) : 0;
 
+  // The same rule for the stock tiles. With no cost prices recorded anywhere,
+  // "TZS 0" is a claim that the shelves are worthless, not an absence of data.
+  const anyProductCosted = state.products.some((p) => safeNumber(p.costPrice) > 0);
   const stockAtCost = state.products.reduce((sum, p) => sum + safeNumber(p.quantity) * safeNumber(p.costPrice), 0);
   const stockAtRetail = state.products.reduce((sum, p) => sum + safeNumber(p.quantity) * safeNumber(p.sellingPrice), 0);
   const creditOwed = state.customers.reduce((sum, c) => sum + safeNumber(c.balanceOwed), 0);
@@ -8245,11 +8291,26 @@ function renderAdminControl() {
     controlTile(t("control.revenueToday"), money(today.net)),
     controlTile(t("control.revenueMonth"), money(month.net), "accent",
       t("control.salesCountNote", { count: String(month.count) })),
-    controlTile(t("control.grossMargin"), `${money(margin)} · ${marginPct}%`,
-      margin <= 0 && month.net > 0 ? "danger" : "",
-      costKnown ? t("control.marginNote") : t("control.marginIncomplete")),
-    controlTile(t("control.stockAtCost"), money(stockAtCost), "",
-      t("control.stockAtRetail", { value: money(stockAtRetail) })),
+    // No known cost at all means there is no margin to show -- not a margin of
+    // 100%. The dash is the honest value; the note says why it is a dash.
+    controlTile(t("control.grossMargin"),
+      goods.anyCostKnown ? `${money(margin)} · ${marginPct}%` : "—",
+      goods.anyCostKnown && margin <= 0 && month.net > 0 ? "danger" : "",
+      !goods.anyCostKnown
+        ? t("control.marginNoCost")
+        : goods.allCostKnown
+          ? t("control.marginNote")
+          : t("control.marginIncomplete", {
+              missing: String(goods.uncostedLines),
+              total: String(goods.costedLines + goods.uncostedLines)
+            })),
+    // Retail value is known either way and stays in the note, so the tile is
+    // still worth reading when cost is not.
+    controlTile(t("control.stockAtCost"),
+      anyProductCosted ? money(stockAtCost) : "—", "",
+      anyProductCosted
+        ? t("control.stockAtRetail", { value: money(stockAtRetail) })
+        : t("control.stockAtCostUnknown", { value: money(stockAtRetail) })),
     controlTile(t("control.creditOwed"), money(creditOwed), creditOwed > 0 ? "warn" : ""),
     controlTile(t("control.voidsMonth"), `${month.voidCount} · ${money(month.voidValue)}`,
       month.voidCount > 0 ? "warn" : ""),
@@ -8280,12 +8341,13 @@ function renderAdminControl() {
           return qty > 0 && qty <= safeNumber(p.reorderLevel);
         }).length;
         const cost = storeProducts.reduce((sum, p) => sum + safeNumber(p.quantity) * safeNumber(p.costPrice), 0);
+        const storeCosted = storeProducts.some((p) => safeNumber(p.costPrice) > 0);
         return `<tr>
           <td>${esc(store.name || t("storeSwitcher.fallbackName"))}</td>
           <td>${money(storeToday.net)}</td>
           <td><strong>${money(storeMonth.net)}</strong></td>
           <td class="${out > 0 ? "cell-danger" : (low > 0 ? "cell-warn" : "")}">${low} / ${out}</td>
-          <td>${money(cost)}</td>
+          <td>${storeCosted ? money(cost) : "—"}</td>
         </tr>`;
       }).join("")
     : `<tr><td colspan="5" class="empty-state">${t("control.noStores")}</td></tr>`;
