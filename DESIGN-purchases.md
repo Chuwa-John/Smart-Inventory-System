@@ -1,8 +1,8 @@
 # Design — purchases, expenses and profit
 
-Status: **written 2026-08-21. Phase 0 built and tested the same day; A–E not
-started.** Production is on `20260808o`; `main` is on `20260808q` and carries
-Services A–E and Phase 0, neither deployed.
+Status: **written 2026-08-21. Phase 0 and Phase A built and tested the same
+day; B–E not started.** Production is on `20260808o`; `main` is on
+`20260808r` and carries Services A–E, Phase 0 and Phase A, none deployed.
 
 Requested by the shop owner: record what stock cost when it is bought — *"if
 they added 200 body lotions they record the total amount"* — so that profit can
@@ -609,6 +609,157 @@ production does not have. A release branch cut from `20260808o` must carry that
 three-line helper across, or inline the `kind === "service"` test. On production
 no sale carries `kind` at all, so the check is a no-op there — but it must
 still be defined, or the panel throws.
+
+---
+
+## 13b. Phase A record — built 2026-08-21
+
+### What landed
+
+`firestore.rules`: `validExpense()`, `expenseImmutableFieldsUnchanged()`, and a
+`match /expenses/{expenseId}` block. `app.js`: `EXPENSE_CATEGORIES`,
+`summariseExpenses()` and `localMonthKey()` as pure functions,
+`subscribeToExpenses()`, `saveExpense()`, `deleteExpense()`, `renderExpenses()`,
+`openExpenseDialog()`, plus the state fields, the sign-in subscription, the
+sign-out teardown, the `renderAll()` hook and the listeners. `app.html`: a nav
+item, the view with three month tiles, and the capture dialog. 38 new string
+keys in each language.
+
+### Not quite "touches no existing path"
+
+§13 called Phase A *"entirely additive; touches no existing path"*. That was
+almost true and worth correcting. The collection is additive, but four existing
+places had to change: `renderAll()`, the sign-in subscription block, the
+sign-out teardown block, and one assertion in
+`tests/services-sale-path.test.mjs`. None of them is on the sale path, which was
+the property that mattered — but "additive" and "touches nothing" are not the
+same claim.
+
+### The nav item is in the wrong place, deliberately
+
+Expenses sits at top level in the sidebar. The owner's stated end-state is an
+**Accounts** section with a dropdown, and this belongs under it. Building the
+dropdown for a single child would be premature; it folds under Accounts when
+purchases join it in Phase B. Recorded here so the move is a planned step rather
+than a discovery.
+
+### Roles, as decided in §10
+
+Owner and manager write; **a cashier neither reads nor writes**, because these
+feed net profit and `wages` is a category. `subscribeToExpenses()` returns early
+for a cashier rather than subscribing and being refused — otherwise every
+cashier gets a permission-denied in the console on every sign-in, which teaches
+everyone to ignore that error.
+
+**Only the owner corrects.** A manager can create but not edit or delete. An
+expense is a book entry; letting whoever spent the money rewrite the amount
+removes the only control the collection provides. `rules-expenses.test.mjs`
+pins this from the manager's own account, and the negative control confirms that
+widening `allow update` to managers turns it red.
+
+### Two decisions that showed up in the code
+
+**`spentAt` is separate from `createdAt`.** Expenses are routinely entered late,
+and a period keyed on the typing date puts last week's transport in this week's
+total. The date input is parsed into local parts at midday rather than through
+`new Date("2026-08-21")`, which is UTC midnight and therefore the previous day
+west of Greenwich.
+
+**`paidFrom` is captured and deliberately not wired.** §8.3. Nothing subtracts
+till-paid spending from expected cash yet, and `reconcileShiftCash()` is
+untouched. The tile says what the figure means rather than implying the shift
+knows about it.
+
+### Four defects found after the implementation looked finished
+
+A subagent writing the client suite found these; all four were mine.
+
+1. **The state default shipped the exact defect this document warns about.**
+   `expenseMonthSelection: new Date().toISOString().slice(0, 7)`. Everything that
+   *reads* the bucket uses local parts — but the value they were all compared
+   against was a UTC slice. In Nairobi that disagrees between 00:00 and 03:00 on
+   the 1st: the screen opens on last month's total and an expense recorded that
+   morning is invisible. Writing the warning into §4.3 did not stop me writing
+   the bug forty lines further down.
+   Fixed by extracting **`localMonthKey()`** as the single definition, now used
+   by the default, the totals and the row filter. The row filter and
+   `summariseExpenses()` had been carrying two copies of the same arithmetic,
+   which is how they would have drifted.
+2. **`deleteExpense()` awaited while `saveExpense()` did not.** One collection,
+   two offline behaviours depending on which button was pressed: offline the
+   delete promise does not settle until reconnect, so the row vanished from the
+   local cache and neither the success nor the failure toast ever fired.
+3. **Unguarded `qs()`** in paths where every sibling used `?.`. Replaced with
+   `clearExpenseErrors()` / `setExpenseError()`.
+4. **`expenses.recordedBy` was defined in both dictionaries and rendered
+   nowhere.** `firestore.rules` pins `recordedByUid` to the caller precisely so
+   an owner reviewing a manager's spending can trust the name — so it is now
+   shown, blank for the owner's own entries rather than echoing a raw uid.
+
+### A test that failed on a fix rather than a defect
+
+`tests/services-sale-path.test.mjs` asserted `renderServices(); renderManagerControl();`
+as adjacent text, and went red the moment `renderExpenses()` was inserted
+between them. This is the second time an adjacency regex in this repo has failed
+on an unrelated insertion — `tests/offline-selling.test.mjs` did the same thing
+when `subscribeToServices()` landed. Both are now written as membership of the
+enclosing function rather than adjacency to a neighbour, and the negative
+control confirms the loosened version still catches the real defect: removing
+`renderServices()` from `renderAll()` turns it red.
+
+### A false green worth recording
+
+The first emulator run reported exit 0 and had **not started the emulator**.
+Two independent causes, either of which alone would have been enough:
+
+- The global `firebase` CLI (15.25.1) shadowed the pinned one
+  (`^13.35.1` in `tests/package.json`). firebase-tools 14+ requires Java 21;
+  this machine has 17. `emulators:exec` **exits 0** on that path.
+- I piped the output to `tail`, so the exit code I read was `tail`'s.
+
+Caught only because **no suite printed a tally**. That is the same detection
+rule `OPERATIONS.md` already records, and it is why the tally is not optional.
+`README.md` now carries the warning; running through npm avoids the shadowing.
+
+The second run failed honestly — port 8085 was already held by an emulator left
+running from an earlier session. The suites connect to that port directly, so
+they were run against it without `emulators:exec` at all.
+
+### Proven, not asserted
+
+| Suite | Result |
+|---|---|
+| `rules-expenses.test.mjs` | **55/55** |
+| `expenses.test.mjs` | **272/272** |
+| All 40 client suites | green, every one with a tally |
+| 8 emulator rules suites | access 20, services 39, workflow 50, multibranch 20, audit-log 66, stock-ledger 45, deletion 29 |
+| `manager-paths-probe` | **18/18**, including *"manager CAN sell a 40-item basket"* |
+| `sale-budget-probe` | 40 accepted, 41 denied — the designed cap, unchanged |
+
+The last two are the §9 requirement: `validExpense()` added no expression cost
+to the sale path.
+
+**16 negative controls, all confirmed red and restored:**
+
+- **Rules (9)** — manager allowed to edit; cashier let in; category set opened to
+  free text; zero amount allowed; recorder no longer pinned to the caller;
+  `paidFrom` opened; `spentAt` no longer a timestamp; manager allowed to write
+  against any branch; immutable-field guard removed.
+- **Client (7)** — the default month back to a UTC slice; the month rule
+  re-implemented inline in the row filter; `summariseExpenses` bucketing by ISO
+  slice; the delete awaiting again; the recorder name dropped; the owner's own
+  entries attributed back to them; the note cell unescaped.
+
+Restored cleanly after each, verified by a real tally rather than an exit code.
+
+### Owed
+
+The adversarial audit of this phase did not complete — the subagent running it
+hit a session limit partway through. Its brief was security and roles, the
+expression budget, timezone handling, offline, multi-store `"all"`, escaping and
+lifecycle. Of those, everything except a fresh adversarial read is now covered
+by the suites and probes above, but the audit itself is still owed and should be
+run before Phase B builds on this.
 
 ---
 

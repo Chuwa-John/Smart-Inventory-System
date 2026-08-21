@@ -113,6 +113,14 @@ const state = {
   language: localStorage.getItem("savia:lang") || localStorage.getItem("sanitaryflow:lang") || "en",
   monthlyReports: [],
   unsubscribeMonthlyReports: null,
+  expenses: [],
+  unsubscribeExpenses: null,
+  // localMonthKey(), not toISOString().slice(0, 7). Everything that reads
+  // this bucket by local month, and a UTC slice disagrees with them between
+  // midnight and 03:00 EAT on the 1st -- so a shop opening this screen early
+  // on the first of the month would be shown the previous month's total, and
+  // an expense recorded that morning would not appear in the list.
+  expenseMonthSelection: localMonthKey(new Date()),
   reportMonthSelection: new Date().toISOString().slice(0, 7),
   openMonthlyReportId: null,
   barcodeScanTarget: null,
@@ -280,6 +288,7 @@ function debounce(fn, delay) {
 const DICTIONARY = {
   en: {
     "nav.dashboard": "Dashboard", "nav.inventory": "Inventory", "nav.pos": "Point of Sale",
+    "nav.expenses": "Expenses",
     "nav.reports": "Reports", "nav.ai": "AI Advisor",
     "brand.tagline": "AI Inventory ERP",
     "sidebar.connectionHintSignedOut": "Sign in to sync inventory",
@@ -341,6 +350,57 @@ const DICTIONARY = {
     "control.noSalesToday": "No sales recorded yet today.",
     "control.revenueToday": "Revenue today",
     "control.revenueMonth": "Revenue month to date",
+    "expenses.eyebrow": "Money out",
+    "expenses.title": "Expenses",
+    "expenses.addButton": "Record Expense",
+    "expenses.intro": "What the shop spends, day by day. Rent, power, transport, wages, repairs. These are not stock purchases \u2014 they are the running costs that sit between what you sell for and what you keep.",
+    "expenses.listTitle": "Recorded",
+    "expenses.monthLabel": "Month",
+    "expenses.thDate": "Date",
+    "expenses.thCategory": "Category",
+    "expenses.thNote": "Note",
+    "expenses.thPaidFrom": "Paid from",
+    "expenses.thAmount": "Amount",
+    "expenses.thActions": "Actions",
+    "expenses.dialogTitle": "Record Expense",
+    "expenses.editDialogTitle": "Edit Expense",
+    "expenses.amountLabel": "Amount",
+    "expenses.amountPlaceholder": "e.g. 15000",
+    "expenses.categoryLabel": "Category",
+    "expenses.dateLabel": "Date spent",
+    "expenses.paidFromLabel": "Paid from",
+    "expenses.paidFromTill": "The till",
+    "expenses.paidFromOther": "Elsewhere (bank, mobile money, pocket)",
+    "expenses.noteLabel": "Note (optional)",
+    "expenses.notePlaceholder": "e.g. Boda to the market",
+    "expenses.saveButton": "Save Expense",
+    "expenses.monthTotal": "Spent this month",
+    "expenses.monthCount": "{count} recorded",
+    "expenses.fromTill": "Paid from the till",
+    "expenses.fromTillNote": "Counted separately \u2014 the drawer will be short by this much",
+    "expenses.topCategory": "Biggest category",
+    "expenses.empty": "Nothing recorded for this month yet.",
+    "expenses.emptyNoStore": "Pick a branch to record what it spends.",
+    "expenses.amountRequired": "Enter an amount greater than zero.",
+    "expenses.dateRequired": "Pick the date the money was spent.",
+    "expenses.dateFuture": "That date is in the future.",
+    "expenses.edit": "Edit",
+    "expenses.delete": "Delete",
+    "expenses.confirmDelete": "Delete this expense? The month total will change.",
+    "expenses.recordedBy": "by {name}",
+    "cat.rent": "Rent",
+    "cat.utilities": "Power and water",
+    "cat.wages": "Wages",
+    "cat.transport": "Transport",
+    "cat.supplies": "Shop supplies",
+    "cat.repairs": "Repairs",
+    "cat.licences": "Licences and fees",
+    "cat.marketing": "Marketing",
+    "cat.other": "Other",
+    "toast.expenseSaved": "Expense recorded",
+    "toast.expenseUpdated": "Expense updated",
+    "toast.expenseDeleted": "Expense deleted",
+    "toast.expenseFailed": "Could not save that expense. Try again.",
     "control.salesCountNote": "{count} sales this month",
     "control.grossMargin": "Gross margin (est.)",
     "control.marginNote": "Revenue less cost of goods sold",
@@ -1023,6 +1083,7 @@ const DICTIONARY = {
   },
   sw: {
     "nav.dashboard": "Dashibodi", "nav.inventory": "Hisa", "nav.pos": "Mauzo",
+    "nav.expenses": "Matumizi",
     "nav.reports": "Ripoti", "nav.ai": "Mshauri wa AI",
     "brand.tagline": "ERP ya Hisa yenye AI",
     "sidebar.connectionHintSignedOut": "Ingia ili kusawazisha hisa yako",
@@ -1084,6 +1145,57 @@ const DICTIONARY = {
     "control.noSalesToday": "Hakuna mauzo yaliyorekodiwa leo.",
     "control.revenueToday": "Mapato leo",
     "control.revenueMonth": "Mapato mwezi hadi leo",
+    "expenses.eyebrow": "Fedha zinazotoka",
+    "expenses.title": "Matumizi",
+    "expenses.addButton": "Rekodi Matumizi",
+    "expenses.intro": "Kile duka linatumia, siku hadi siku. Kodi, umeme, usafiri, mishahara, matengenezo. Haya si manunuzi ya bidhaa \u2014 ni gharama za uendeshaji zilizo kati ya unachouza na unachobakiza.",
+    "expenses.listTitle": "Yaliyorekodiwa",
+    "expenses.monthLabel": "Mwezi",
+    "expenses.thDate": "Tarehe",
+    "expenses.thCategory": "Aina",
+    "expenses.thNote": "Maelezo",
+    "expenses.thPaidFrom": "Yalitolewa",
+    "expenses.thAmount": "Kiasi",
+    "expenses.thActions": "Vitendo",
+    "expenses.dialogTitle": "Rekodi Matumizi",
+    "expenses.editDialogTitle": "Hariri Matumizi",
+    "expenses.amountLabel": "Kiasi",
+    "expenses.amountPlaceholder": "mfano, 15000",
+    "expenses.categoryLabel": "Aina",
+    "expenses.dateLabel": "Tarehe ya matumizi",
+    "expenses.paidFromLabel": "Yalitolewa wapi",
+    "expenses.paidFromTill": "Kwenye mashine ya fedha",
+    "expenses.paidFromOther": "Kwingine (benki, simu, mfukoni)",
+    "expenses.noteLabel": "Maelezo (si lazima)",
+    "expenses.notePlaceholder": "mfano, Bodaboda sokoni",
+    "expenses.saveButton": "Hifadhi Matumizi",
+    "expenses.monthTotal": "Yaliyotumika mwezi huu",
+    "expenses.monthCount": "{count} yamerekodiwa",
+    "expenses.fromTill": "Yaliyotolewa kwenye mashine",
+    "expenses.fromTillNote": "Yanahesabiwa peke yake \u2014 mashine itapungukiwa kwa kiasi hiki",
+    "expenses.topCategory": "Aina kubwa zaidi",
+    "expenses.empty": "Hakuna kilichorekodiwa mwezi huu bado.",
+    "expenses.emptyNoStore": "Chagua tawi ili kurekodi matumizi yake.",
+    "expenses.amountRequired": "Weka kiasi kikubwa kuliko sifuri.",
+    "expenses.dateRequired": "Chagua tarehe fedha zilipotumika.",
+    "expenses.dateFuture": "Tarehe hiyo ipo mbeleni.",
+    "expenses.edit": "Hariri",
+    "expenses.delete": "Futa",
+    "expenses.confirmDelete": "Futa matumizi haya? Jumla ya mwezi itabadilika.",
+    "expenses.recordedBy": "na {name}",
+    "cat.rent": "Kodi ya pango",
+    "cat.utilities": "Umeme na maji",
+    "cat.wages": "Mishahara",
+    "cat.transport": "Usafiri",
+    "cat.supplies": "Vifaa vya duka",
+    "cat.repairs": "Matengenezo",
+    "cat.licences": "Leseni na ada",
+    "cat.marketing": "Matangazo",
+    "cat.other": "Mengineyo",
+    "toast.expenseSaved": "Matumizi yamerekodiwa",
+    "toast.expenseUpdated": "Matumizi yamesasishwa",
+    "toast.expenseDeleted": "Matumizi yamefutwa",
+    "toast.expenseFailed": "Imeshindwa kuhifadhi matumizi hayo. Jaribu tena.",
     "control.salesCountNote": "Mauzo {count} mwezi huu",
     "control.grossMargin": "Faida ghafi (makadirio)",
     "control.marginNote": "Mapato ukiondoa gharama ya bidhaa",
@@ -4917,6 +5029,373 @@ function renderCustomerAccounts() {
 // mean a multi-branch owner switching from a duka to their salon would need a
 // resubscribe to see the menu, on the one screen where a pause is least
 // affordable. An empty collection costs one listener and no documents.
+// ---------------------------------------------------------------------------
+// Expenses -- DESIGN-purchases.md phase A.
+//
+// Running costs, not stock purchases: rent, power, transport, wages, repairs.
+// A plain create with no read, so it queues offline like any other write with
+// no extra machinery -- a shop pays a boda with no signal.
+//
+// Owner and manager write; a cashier neither reads nor writes, because these
+// feed net profit and wages is a category. Corrections are the owner's: an
+// expense is a book entry, and letting whoever wrote it silently rewrite the
+// amount removes the control the collection exists to provide.
+const EXPENSE_CATEGORIES = ["rent", "utilities", "wages", "transport",
+                            "supplies", "repairs", "licences", "marketing", "other"];
+
+function expenseCategoryLabel(category) {
+  const key = `cat.${category}`;
+  const label = t(key);
+  // t() falls back to the key itself, which would print "cat.rent" in a table
+  // cell. A category from a future build this client does not know about is
+  // shown raw rather than as a translation key.
+  return label === key ? String(category || "") : label;
+}
+
+// spentAt is a Firestore timestamp once the write lands, but it is a plain Date
+// for the moment the local echo of an offline write is on screen. Both have to
+// render, or an expense recorded with no signal shows a blank date until sync.
+function expenseSpentAt(expense) {
+  const at = expense?.spentAt;
+  if (at?.toDate) return at.toDate();
+  if (at instanceof Date) return at;
+  const parsed = at ? new Date(at) : null;
+  return parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;
+}
+
+function storeExpenses() {
+  if (!state.currentStoreId) return [];
+  if (state.currentStoreId === "all") return state.expenses;
+  return state.expenses.filter((expense) => expense.storeId === state.currentStoreId);
+}
+
+// Totals for one month, from a list already scoped to a branch. Pure, so
+// tests/expenses.test.mjs can evaluate it rather than a copy of it.
+function summariseExpenses(expenses, monthKey) {
+  let total = 0;
+  let fromTill = 0;
+  let count = 0;
+  const byCategory = new Map();
+  for (const expense of expenses) {
+    const at = expenseSpentAt(expense);
+    if (!at) continue;
+    if (localMonthKey(at) !== monthKey) continue;
+    const amount = safeNumber(expense.amount);
+    total += amount;
+    count += 1;
+    if (expense.paidFrom === "till") fromTill += amount;
+    byCategory.set(expense.category, safeNumber(byCategory.get(expense.category)) + amount);
+  }
+  let topCategory = null;
+  let topAmount = 0;
+  for (const [category, amount] of byCategory) {
+    if (amount > topAmount) { topCategory = category; topAmount = amount; }
+  }
+  return { total, fromTill, count, topCategory, topAmount };
+}
+
+async function subscribeToExpenses() {
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
+  if (state.unsubscribeExpenses) state.unsubscribeExpenses();
+  // A cashier is refused this collection by firestore.rules. Subscribing anyway
+  // would put a permission-denied in every cashier's console on every sign-in
+  // and teach everyone to ignore that error.
+  if (!isManagerOrOwnerRole()) {
+    state.expenses = [];
+    return;
+  }
+  try {
+    const { collection, onSnapshot, query, where } = state.firebaseApi.firestore;
+    const expensesRef = collection(state.db, "users", state.businessOwnerUid, "expenses");
+    const queryStoreIds = await resolveQueryStoreIds();
+    // Same reasoning as products and services: Firestore rejects an empty `in`
+    // filter outright, so a member with no store access subscribes to nothing.
+    if (queryStoreIds !== null && queryStoreIds.length === 0) {
+      state.expenses = [];
+      scheduleRenderAll();
+      return;
+    }
+    const expensesQuery = queryStoreIds === null
+      ? expensesRef
+      : query(expensesRef, where("storeId", "in", queryStoreIds));
+    state.unsubscribeExpenses = onSnapshot(
+      expensesQuery,
+      (snapshot) => {
+        state.expenses = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        scheduleRenderAll();
+      },
+      (error) => {
+        console.warn("[expenses listener]", error.code || error, "queryStoreIds=", queryStoreIds);
+      }
+    );
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
+// Guarded, because the rest of the expense wiring uses ?. throughout and a
+// mixed convention is how a trimmed template turns a validation message into a
+// thrown exception.
+const EXPENSE_ERROR_SLOTS = ["#expenseAmountError", "#expenseDateError", "#expenseFormError"];
+
+function clearExpenseErrors() {
+  for (const id of EXPENSE_ERROR_SLOTS) {
+    const node = qs(id);
+    if (node) node.textContent = "";
+  }
+}
+
+function setExpenseError(slot, message) {
+  const node = qs(slot);
+  if (node) node.textContent = message;
+}
+
+function openExpenseDialog(expenseId) {
+  const dialog = qs("#expenseDialog");
+  const form = qs("#expenseForm");
+  if (!dialog || !form) return;
+
+  const existing = expenseId ? state.expenses.find((item) => item.id === expenseId) : null;
+  // Editing is owner-only in firestore.rules. Opening the dialog for a manager
+  // would let them fill it in and then be refused on save.
+  if (existing && !isOwnerRole()) return;
+
+  const select = qs("#expenseCategorySelect");
+  if (select) {
+    select.innerHTML = EXPENSE_CATEGORIES
+      .map((category) => `<option value="${esc(category)}">${esc(expenseCategoryLabel(category))}</option>`)
+      .join("");
+  }
+
+  form.reset();
+  clearExpenseErrors();
+  const title = qs("#expenseDialogTitle");
+  if (title) title.textContent = t(existing ? "expenses.editDialogTitle" : "expenses.dialogTitle");
+
+  form.elements.id.value = existing?.id || "";
+  form.elements.amount.value = existing ? safeNumber(existing.amount) : "";
+  form.elements.category.value = existing?.category || "other";
+  form.elements.paidFrom.value = existing?.paidFrom || "other";
+  const at = existing ? expenseSpentAt(existing) : new Date();
+  form.elements.spentAt.value = at ? localDateInputValue(at) : "";
+  form.elements.note.value = existing?.note || "";
+
+  dialog.showModal();
+}
+
+// toISOString() would shift the date by the timezone offset, which for a shop
+// recording an evening expense in EAT lands it on the previous day.
+// The month bucket, in LOCAL parts. Extracted because three places need to
+// agree on it -- the default selection, the totals, and the row filter -- and
+// two copies of a date rule is how they drift. toISOString().slice(0, 7) is the
+// tempting one-liner and it is wrong for every shop this serves: Tanzania is
+// UTC+3, so it reports the previous month for the first three hours of the 1st.
+function localMonthKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function localDateInputValue(date) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+async function saveExpense(input) {
+  const existing = input.id ? state.expenses.find((item) => item.id === input.id) : null;
+
+  // "all stores" cannot own a document. Same refusal saveProduct() and
+  // saveService() make: the record has to name one branch.
+  if (!existing && state.currentStoreId === "all") {
+    showToast(t("toast.selectStoreBeforeAdd"));
+    return;
+  }
+  if (!existing && !state.currentStoreId) {
+    showToast(t("toast.loadingStore"));
+    return;
+  }
+  if (!state.db || !state.user || !state.businessOwnerUid) {
+    showToast(t("toast.signInToAddStore"));
+    return;
+  }
+
+  clearExpenseErrors();
+
+  // Strictly positive. clampNonNegativeNumber() would accept 0, and a zero
+  // expense is a mis-key rather than a record; the rules refuse it too.
+  const amount = clampNonNegativeNumber(input.amount, MAX_MONEY);
+  if (amount === null || amount <= 0) {
+    setExpenseError("#expenseAmountError", t("expenses.amountRequired"));
+    return;
+  }
+
+  const spentAtRaw = String(input.spentAt || "").trim();
+  if (!spentAtRaw) {
+    setExpenseError("#expenseDateError", t("expenses.dateRequired"));
+    return;
+  }
+  // Parsed as local midnight, not UTC: new Date("2026-08-21") is UTC midnight,
+  // which is the previous day in any timezone west of Greenwich and the wrong
+  // month on the 1st for anyone east of it.
+  const [y, m, d] = spentAtRaw.split("-").map(Number);
+  const spentAt = new Date(y, (m || 1) - 1, d || 1, 12, 0, 0);
+  if (Number.isNaN(spentAt.getTime())) {
+    setExpenseError("#expenseDateError", t("expenses.dateRequired"));
+    return;
+  }
+  // A future date is a typo, and it would drop the expense out of every period
+  // report until that date arrives.
+  if (spentAt.getTime() > Date.now() + 24 * 60 * 60 * 1000) {
+    setExpenseError("#expenseDateError", t("expenses.dateFuture"));
+    return;
+  }
+
+  const category = EXPENSE_CATEGORIES.includes(input.category) ? input.category : "other";
+  const paidFrom = input.paidFrom === "till" ? "till" : "other";
+  const note = String(input.note || "").trim().slice(0, 200);
+
+  const saveButton = qs("#saveExpenseButton");
+  if (saveButton?.disabled) return;
+  if (saveButton) saveButton.disabled = true;
+
+  try {
+    const { collection, doc, serverTimestamp, setDoc, Timestamp } = state.firebaseApi.firestore;
+    const id = existing?.id || doc(collection(state.db, "users", state.businessOwnerUid, "expenses")).id;
+    const payload = {
+      // An existing expense keeps the branch and the recorder it was created
+      // with -- firestore.rules enforces both, so sending anything else here
+      // would be refused rather than silently moving spending between branches.
+      storeId: existing?.storeId || state.currentStoreId,
+      recordedByUid: existing?.recordedByUid || state.user.uid,
+      category,
+      amount,
+      paidFrom,
+      spentAt: Timestamp.fromDate(spentAt),
+      ...(note ? { note } : {}),
+      ...(existing ? {} : { createdAt: serverTimestamp() })
+    };
+    // No await on the write completing before the dialog closes: this is a
+    // plain create, so offline it queues and resolves on reconnect. Awaiting it
+    // would hang the dialog open with no signal, which is the state this
+    // collection is specifically meant to work in.
+    setDoc(doc(state.db, "users", state.businessOwnerUid, "expenses", id), payload, { merge: true })
+      .catch((error) => {
+        console.warn(error);
+        showToast(t("toast.expenseFailed"));
+      });
+    qs("#expenseDialog").close();
+    showToast(t(existing ? "toast.expenseUpdated" : "toast.expenseSaved"));
+  } catch (error) {
+    console.warn(error);
+    setExpenseError("#expenseFormError", t("toast.expenseFailed"));
+  } finally {
+    if (saveButton) saveButton.disabled = false;
+  }
+}
+
+async function deleteExpense(expenseId) {
+  // Owner-only, matching firestore.rules. A manager records; only the owner
+  // corrects.
+  if (!isOwnerRole()) return;
+  const expense = state.expenses.find((item) => item.id === expenseId);
+  if (!expense) return;
+  if (!window.confirm(t("expenses.confirmDelete"))) return;
+  try {
+    const { doc, deleteDoc } = state.firebaseApi.firestore;
+    // Not awaited, for the same reason saveExpense() does not await: offline the
+    // promise does not settle until reconnect, so awaiting would swallow the
+    // toast entirely -- the row would vanish from the local cache with no
+    // confirmation and no error. One collection must not have two offline
+    // behaviours depending on which button was pressed.
+    deleteDoc(doc(state.db, "users", state.businessOwnerUid, "expenses", expenseId))
+      .catch((error) => {
+        console.warn(error);
+        showToast(t("toast.expenseFailed"));
+      });
+    showToast(t("toast.expenseDeleted"));
+  } catch (error) {
+    console.warn(error);
+    showToast(t("toast.expenseFailed"));
+  }
+}
+
+// firestore.rules pins recordedByUid to the caller, so this is the one thing an
+// owner reviewing a manager's spending can rely on. Blank rather than a raw uid
+// when the member is not loaded: a hex string in a table teaches nobody
+// anything, and the owner's own entries do not need attributing to themselves.
+function recorderName(expense) {
+  const uid = expense?.recordedByUid;
+  if (!uid || uid === state.businessOwnerUid) return "";
+  const member = (state.members || []).find((item) => item.id === uid);
+  return String(member?.name || "").trim();
+}
+
+function renderExpenses() {
+  const view = qs("#expenses");
+  const table = qs("#expensesTable");
+  const totals = qs("#expenseTotals");
+  if (!view || !table || !totals) return;
+
+  // canOpenView() is the real gate -- expenses is absent from
+  // CASHIER_ALLOWED_VIEWS -- and applyRoleViewVisibility() hides the nav item.
+  // Nothing to render for a cashier, and state.expenses is empty for them
+  // anyway because subscribeToExpenses() does not subscribe.
+  if (!isManagerOrOwnerRole()) return;
+
+  const monthInput = qs("#expenseMonthInput");
+  if (monthInput && monthInput.value !== state.expenseMonthSelection) {
+    monthInput.value = state.expenseMonthSelection;
+  }
+
+  const scoped = storeExpenses();
+  const monthKey = state.expenseMonthSelection;
+  const summary = summariseExpenses(scoped, monthKey);
+
+  totals.innerHTML = [
+    controlTile(t("expenses.monthTotal"), money(summary.total), summary.total > 0 ? "warn" : "",
+      t("expenses.monthCount", { count: String(summary.count) })),
+    // Shown separately because it is the figure that explains a short drawer.
+    // Nothing subtracts it from expected cash yet -- DESIGN-purchases.md 8.3 --
+    // so the note says what it means rather than implying the shift knows.
+    controlTile(t("expenses.fromTill"), money(summary.fromTill), "",
+      summary.fromTill > 0 ? t("expenses.fromTillNote") : ""),
+    controlTile(t("expenses.topCategory"),
+      summary.topCategory ? expenseCategoryLabel(summary.topCategory) : "—",
+      "",
+      summary.topCategory ? money(summary.topAmount) : "")
+  ].join("");
+
+  const rows = scoped
+    .filter((expense) => {
+      const at = expenseSpentAt(expense);
+      return at ? localMonthKey(at) === monthKey : false;
+    })
+    .sort((a, b) => {
+      const bt = expenseSpentAt(b)?.getTime() || 0;
+      const at = expenseSpentAt(a)?.getTime() || 0;
+      return bt - at;
+    });
+
+  if (!rows.length) {
+    const message = state.currentStoreId ? t("expenses.empty") : t("expenses.emptyNoStore");
+    table.innerHTML = `<tr><td colspan="6" class="empty-state">${esc(message)}</td></tr>`;
+    return;
+  }
+
+  const canEdit = isOwnerRole();
+  table.innerHTML = rows.map((expense) => {
+    const at = expenseSpentAt(expense);
+    return `<tr>
+      <td>${esc(at ? at.toLocaleDateString() : "—")}</td>
+      <td>${esc(expenseCategoryLabel(expense.category))}</td>
+      <td>${esc(expense.note || "")}${recorderName(expense) ? ` <span class="muted">${esc(t("expenses.recordedBy", { name: recorderName(expense) }))}</span>` : ""}</td>
+      <td>${esc(t(expense.paidFrom === "till" ? "expenses.paidFromTill" : "expenses.paidFromOther"))}</td>
+      <td><strong>${money(safeNumber(expense.amount))}</strong></td>
+      <td>${canEdit ? `
+        <button class="ghost-button compact" type="button" data-edit-expense="${esc(expense.id)}">${esc(t("expenses.edit"))}</button>
+        <button class="ghost-button compact" type="button" data-delete-expense="${esc(expense.id)}">${esc(t("expenses.delete"))}</button>` : ""}</td>
+    </tr>`;
+  }).join("");
+}
+
 async function subscribeToServices() {
   if (!state.db || !state.user || !state.businessOwnerUid) return;
   if (state.unsubscribeServices) state.unsubscribeServices();
@@ -8634,6 +9113,7 @@ async function initFirebase() {
         subscribeToCustomers();
         subscribeToTransfers();
         subscribeToServices();
+        subscribeToExpenses();
         watchServerConnection();
       } else {
         stopIdleWatcher();
@@ -8661,6 +9141,9 @@ async function initFirebase() {
         if (state.unsubscribeServices) state.unsubscribeServices();
         state.unsubscribeServices = null;
         state.services = [];
+        if (state.unsubscribeExpenses) state.unsubscribeExpenses();
+        state.unsubscribeExpenses = null;
+        state.expenses = [];
         if (state.unsubscribeConnection) state.unsubscribeConnection();
         state.unsubscribeConnection = null;
         // Money figures must not outlive the session that fetched them: the
@@ -10136,6 +10619,7 @@ function renderAll() {
   renderInventory();
   renderPos();
   renderServices();
+  renderExpenses();
   renderManagerControl();
   renderAdminControl();
   // Depends on the resolved account name, which arrives with the role after
@@ -10262,6 +10746,25 @@ function bindEvents() {
   qs("#closeTransferDialog")?.addEventListener("click", () => qs("#transferDialog").close());
   qs("#cancelTransferDialog")?.addEventListener("click", () => qs("#transferDialog").close());
   qs("#confirmTransferButton")?.addEventListener("click", confirmTransfer);
+  qs("#expenseAddButton")?.addEventListener("click", () => openExpenseDialog());
+  qs("#closeExpenseDialog")?.addEventListener("click", () => qs("#expenseDialog").close());
+  qs("#cancelExpenseDialog")?.addEventListener("click", () => qs("#expenseDialog").close());
+  qs("#expenseForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveExpense(Object.fromEntries(new FormData(event.currentTarget).entries()));
+  });
+  qs("#expenseMonthInput")?.addEventListener("change", (event) => {
+    state.expenseMonthSelection = event.currentTarget.value || state.expenseMonthSelection;
+    renderExpenses();
+  });
+  // Delegated: the rows are re-rendered on every snapshot, so per-row listeners
+  // would be re-bound on each one and leak.
+  qs("#expensesTable")?.addEventListener("click", (event) => {
+    const edit = event.target.closest("[data-edit-expense]");
+    if (edit) return openExpenseDialog(edit.dataset.editExpense);
+    const remove = event.target.closest("[data-delete-expense]");
+    if (remove) deleteExpense(remove.dataset.deleteExpense);
+  });
   qs("#servicesAddButton")?.addEventListener("click", () => openServiceDialog());
   qs("#closeServiceDialog")?.addEventListener("click", () => qs("#serviceDialog").close());
   qs("#cancelServiceDialog")?.addEventListener("click", () => qs("#serviceDialog").close());

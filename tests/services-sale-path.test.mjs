@@ -338,8 +338,13 @@ console.log("\n=== Phase E: the tab, and who is allowed to touch it ===");
   // Gated per STORE, not per account: businessType lives on the store document,
   // so an owner running a salon and a duka must see the tab appear and vanish
   // as they switch branches. That is why it runs from renderAll().
+  // Asserted as membership of renderAll(), not as adjacency to whichever call
+  // happened to follow it. The original pinned `renderServices(); renderManagerControl();`
+  // and went red the moment renderExpenses() was inserted between them -- a test
+  // failing on an unrelated addition rather than on a defect. The property is
+  // that the tab is repainted on every pass; its neighbours are not the point.
   check("the tab is rendered on every pass, not once at sign-in",
-    /renderServices\(\);\s*renderManagerControl\(\);/.test(noComments),
+    /function renderAll\(\)\s*\{[\s\S]*?renderServices\(\);[\s\S]*?\n\}/.test(noComments),
     "businessType is per store, so the tab has to follow the store switcher");
   check("the nav item is hidden for a business that sells no services",
     /nav\.hidden = !sells \|\| !isManagerOrOwnerRole\(\);/.test(noComments));

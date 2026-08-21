@@ -28,7 +28,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260808q" />
+    <link rel="stylesheet" href="./styles.css?v=20260808r" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#0b0d10" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -48,7 +48,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260808q"></script>
+    <script type="module" src="./boot.js?v=20260808r"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -89,6 +89,12 @@
                businessType is per store: one owner may run a salon and a duka
                and the tab has to follow which branch they are looking at. -->
           <button class="nav-item" data-view="services" id="servicesNavItem" hidden>Services</button>
+          <!-- Owner and manager only; canOpenView() is the real gate and
+               excludes it from CASHIER_ALLOWED_VIEWS. Sits at top level for now
+               because it is the only thing in Accounts; DESIGN-purchases.md
+               13b records that it folds under a dropdown once purchases join
+               it. -->
+          <button class="nav-item" data-view="expenses" data-i18n="nav.expenses">Expenses</button>
           <button class="nav-item" data-view="reports" data-i18n="nav.reports">Reports</button>
           <button class="nav-item" data-view="ai" data-i18n="nav.ai">AI Advisor</button>
         </nav>
@@ -384,6 +390,47 @@
               </thead>
               <tbody id="servicesTable"></tbody>
             </table>
+          </article>
+        </section>
+
+        <section class="view" id="expenses">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow" data-i18n="expenses.eyebrow">Money out</p>
+              <h1 data-i18n="expenses.title">Expenses</h1>
+            </div>
+            <div class="button-row">
+              <button class="primary-button" id="expenseAddButton" type="button" data-i18n="expenses.addButton">Record Expense</button>
+            </div>
+          </div>
+
+          <p class="muted" data-i18n="expenses.intro">What the shop spends, day by day. Rent, power, transport, wages, repairs. These are not stock purchases &mdash; they are the running costs that sit between what you sell for and what you keep.</p>
+
+          <div class="kpi-grid" id="expenseTotals"></div>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h2 data-i18n="expenses.listTitle">Recorded</h2>
+              <label style="flex-direction:row;align-items:center;gap:6px;color:inherit">
+                <span data-i18n="expenses.monthLabel">Month</span>
+                <input id="expenseMonthInput" type="month" autocomplete="off" />
+              </label>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="expenses.thDate">Date</th>
+                    <th data-i18n="expenses.thCategory">Category</th>
+                    <th data-i18n="expenses.thNote">Note</th>
+                    <th data-i18n="expenses.thPaidFrom">Paid from</th>
+                    <th data-i18n="expenses.thAmount">Amount</th>
+                    <th data-i18n="expenses.thActions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="expensesTable"></tbody>
+              </table>
+            </div>
           </article>
         </section>
 
@@ -857,6 +904,46 @@
       </div>
     </dialog>
 
+    <dialog id="expenseDialog">
+      <div class="dialog-head">
+        <h2 id="expenseDialogTitle" data-i18n="expenses.dialogTitle">Record Expense</h2>
+        <button class="icon-button" type="button" id="closeExpenseDialog" aria-label="Close">&times;</button>
+      </div>
+      <form id="expenseForm" novalidate>
+        <input type="hidden" name="id" />
+        <div class="form-grid">
+          <label><span data-i18n="expenses.amountLabel">Amount</span>
+            <input name="amount" type="number" min="1" step="1" required placeholder="e.g. 15000" data-i18n-placeholder="expenses.amountPlaceholder" autocomplete="off" />
+            <span class="field-error" id="expenseAmountError"></span>
+          </label>
+          <label><span data-i18n="expenses.categoryLabel">Category</span>
+            <select name="category" id="expenseCategorySelect"></select>
+          </label>
+          <!-- The day the money left, not the day it was typed. Expenses are
+               routinely entered late and a period keyed on the typing date puts
+               last week's transport in this week's total. -->
+          <label><span data-i18n="expenses.dateLabel">Date spent</span>
+            <input name="spentAt" type="date" required />
+            <span class="field-error" id="expenseDateError"></span>
+          </label>
+          <label><span data-i18n="expenses.paidFromLabel">Paid from</span>
+            <select name="paidFrom" id="expensePaidFromSelect">
+              <option value="other" data-i18n="expenses.paidFromOther">Elsewhere (bank, mobile money, pocket)</option>
+              <option value="till" data-i18n="expenses.paidFromTill">The till</option>
+            </select>
+          </label>
+          <label><span data-i18n="expenses.noteLabel">Note (optional)</span>
+            <input name="note" maxlength="200" placeholder="e.g. Boda to the market" data-i18n-placeholder="expenses.notePlaceholder" autocomplete="off" />
+          </label>
+        </div>
+        <span class="field-error" id="expenseFormError"></span>
+        <div class="button-row end">
+          <button class="ghost-button" type="button" id="cancelExpenseDialog" data-i18n="product.cancel">Cancel</button>
+          <button class="primary-button" type="submit" id="saveExpenseButton" data-i18n="expenses.saveButton">Save Expense</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="serviceDialog">
       <div class="dialog-head">
         <!-- No data-i18n: this string takes a {label} parameter and
@@ -1182,6 +1269,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260808q"></script>
+    <script type="module" src="./app.js?v=20260808r"></script>
   </body>
 </html>

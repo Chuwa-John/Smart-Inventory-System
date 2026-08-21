@@ -159,6 +159,35 @@ service cloud.firestore {
     // Mirrors validProduct() where the fields genuinely correspond, so the two
     // stay legible side by side, and omits the four that only mean something
     // for stock: quantity, reorderLevel, expiryDate, sku.
+    // DESIGN-purchases.md 8.1. Deliberately flat and constant-cost: no
+    // iteration, no per-item unrolling. The file already records what happened
+    // when validSaleItem() was unrolled across 40 slots, and every validator
+    // added from here on has to stay cheap for the same reason.
+    function validExpense() {
+      let d = request.resource.data;
+      return d.storeId is string && d.storeId.size() > 0 && d.storeId.size() <= 120
+        // Closed set, not free text. A category nobody can report on is a note,
+        // and two of these carry a tax consequence later (rent withholding at
+        // 10%; entertainment input VAT is not deductible, which is why there is
+        // no entertainment category and such spending goes to 'other').
+        && d.category in ['rent', 'utilities', 'wages', 'transport',
+                          'supplies', 'repairs', 'licences', 'marketing', 'other']
+        // Strictly positive. A zero expense is a mis-key, and a negative one is
+        // income wearing the wrong hat.
+        && d.amount is number && d.amount > 0 && d.amount <= 1000000000
+        // Where the money physically came from. Captured from day one because
+        // retrofitting it means guessing at history -- but nothing reads it yet:
+        // wiring till-paid spending into shift reconciliation is its own phase,
+        // and reconcileShiftCash() is not touched here.
+        && d.paidFrom in ['till', 'other']
+        // When the money left, which is routinely not when it was typed. A
+        // period report keyed on createdAt would put last week's transport in
+        // this week's total.
+        && d.spentAt is timestamp
+        && d.recordedByUid == request.auth.uid
+        && (!('note' in d) || (d.note is string && d.note.size() <= 200));
+    }
+
     function validService() {
       let d = request.resource.data;
       return d.name is string && d.name.size() > 0 && d.name.size() <= 120
@@ -173,6 +202,15 @@ service cloud.firestore {
         // Same enum and the same default as a product: absent is standard-rated,
         // per DESIGN-vat.md. Defaulting the other way would under-collect.
         && (!('taxClass' in d) || d.taxClass in ['standard', 'zeroRated', 'exempt']);
+    }
+
+    // The branch an expense was recorded against does not move, and neither
+    // does who recorded it. Same reasoning as a product's storeId: allowing it
+    // would silently move spending between branches on an edit.
+    function expenseImmutableFieldsUnchanged() {
+      return request.resource.data.storeId == resource.data.storeId
+        && request.resource.data.recordedByUid == resource.data.recordedByUid
+        && (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt);
     }
 
     function serviceImmutableFieldsUnchanged() {
@@ -560,6 +598,27 @@ service cloud.firestore {
       // it -- there is no shelf to move -- so nothing on the sale path needs
       // this collection to be writable, and the narrower rule is the correct
       // one. Pricing the menu stays an owner decision.
+      // A record of money leaving the business. Managers may write one --
+      // DESIGN-purchases.md 10 -- because they are who spends on the shop's
+      // behalf, but corrections belong to the owner: an expense is a book
+      // entry, and letting the person who wrote it silently rewrite the amount
+      // is the control this collection exists to provide.
+      //
+      // Cashiers are excluded in both directions. Expenses feed net profit, and
+      // wages is a category.
+      match /expenses/{expenseId} {
+        allow read: if isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager"])
+              && (resource == null || memberCanAccessStore(userId, resource.data.storeId)));
+        allow create: if tenantNotFrozen(userId) && validExpense() && (
+             isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager"])
+              && memberCanAccessStore(userId, request.resource.data.storeId)));
+        allow update: if isOwner(userId) && tenantNotFrozen(userId)
+          && validExpense() && expenseImmutableFieldsUnchanged();
+        allow delete: if isOwner(userId) && tenantNotFrozen(userId);
+      }
+
       match /services/{serviceId} {
         allow read: if isOwner(userId)
           || (isOwnerOrRole(userId, ["manager", "cashier"])

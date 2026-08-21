@@ -65,8 +65,19 @@ npm --prefix tests ci
 npm --prefix tests test
 ```
 
-The emulator-backed suites need Java 17. Two further checks run a headless
-Chromium:
+The emulator-backed suites need Java 17, and they need the **pinned**
+`firebase-tools` (`^13.35.1` in `tests/package.json`). Run them through npm, not
+by calling `firebase` directly: npm puts `tests/node_modules/.bin` on PATH first,
+and a globally installed CLI will shadow the pin.
+
+This matters more than it sounds. firebase-tools 14+ dropped Java 17 and refuses
+to start the emulator — but `emulators:exec` still exits 0 on that path, so a
+run that never started **looks green**. If you pipe the output anywhere, the exit
+code you read is the pipe's, not Firebase's. Check for a `N/N passed` tally from
+every suite; a run with no tally did not run. `OPERATIONS.md` records an earlier
+incident of the same shape.
+
+Two further checks run a headless Chromium:
 
 ```bash
 node tests/contrast.headless.mjs
