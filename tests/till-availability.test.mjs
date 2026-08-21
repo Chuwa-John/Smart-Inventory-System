@@ -139,7 +139,7 @@ console.log("\n=== and the second click is actually refused, not just guarded on
   }
   const source = app.slice(start, i + 1);
 
-  function harness() {
+  function harness(withCost = false) {
     const calls = { transactions: 0, toasts: [], closed: 0 };
     const button = { disabled: false };
     const elements = {
@@ -266,12 +266,44 @@ console.log("\n=== Restock is held to the same rule ===");
   }
   const source = app.slice(fnStart, j + 1);
 
-  function harness() {
-    const calls = { transactions: 0, closed: 0, renders: 0, toasts: [] };
+  // confirmRestock now reaches for the purchase-capture helpers. These are
+  // injected as the REAL functions -- lifted out of app.js the same way the
+  // handler itself is -- because a stub would only prove the stub agrees with
+  // the assertion. nextUnitCost takes a destructured parameter, so the body has
+  // to be found past the parameter list rather than at the first brace.
+  function lift(name) {
+    const from = app.indexOf(`function ${name}(`);
+    let k = app.indexOf("(", from);
+    let parens = 0;
+    for (; k < app.length; k++) {
+      if (app[k] === "(") parens++;
+      else if (app[k] === ")") { parens--; if (parens === 0) break; }
+    }
+    k = app.indexOf("{", k);
+    let depth = 0;
+    for (; k < app.length; k++) {
+      if (app[k] === "{") depth++;
+      else if (app[k] === "}") { depth--; if (depth === 0) break; }
+    }
+    return app.slice(from, k + 1);
+  }
+  const { realNextUnitCost, realProductCostKnown } = new Function(
+    `${lift("safeNumber")}
+     ${lift("nextUnitCost")}
+     ${lift("productCostKnown")}
+     return { realNextUnitCost: nextUnitCost, realProductCostKnown: productCostKnown };`
+  )();
+
+  function harness(withCost = false) {
+    const calls = { transactions: 0, closed: 0, renders: 0, sets: 0, toasts: [] };
     const button = { disabled: false };
     const elements = {
       "#restockDialog": { close: () => { calls.closed += 1; } },
       "#restockQuantityInput": { value: "50" },
+      "#restockTotalPaidInput": { value: withCost ? "100000" : "" },
+      "#restockTotalPaidError": { textContent: "" },
+      "#restockReceiptInput": { value: withCost ? "RCT001" : "" },
+      "#restockSupplierInput": { value: withCost ? "Wholesale Ltd" : "" },
       "#confirmRestockButton": button
     };
     const state = {
@@ -280,6 +312,10 @@ console.log("\n=== Restock is held to the same rule ===");
       db: {}, businessOwnerUid: "owner", user: { uid: "u1" },
       firebaseApi: { firestore: {
         doc: () => ({}), collection: () => ({}), serverTimestamp: () => "ts",
+        // costKnownFrom is stamped with Timestamp.now() on a product whose cost
+        // has never been recorded -- which is every product in production, so
+        // this is the common path and not an edge case.
+        Timestamp: { now: () => "stamped", fromDate: (d) => d },
         runTransaction: async (db, fn) => {
           calls.transactions += 1;
           // The delay is the point: a real transaction is a round trip, and the
@@ -287,7 +323,7 @@ console.log("\n=== Restock is held to the same rule ===");
           await new Promise((r) => setTimeout(r, 10));
           await fn({
             get: async () => ({ exists: () => true, data: () => ({ quantity: 10 }) }),
-            update: () => {}, set: () => {}
+            update: () => {}, set: () => { calls.sets += 1; }
           });
         }
       } }
@@ -295,11 +331,16 @@ console.log("\n=== Restock is held to the same rule ===");
     const run = new Function(
       "state", "qs", "showToast", "t", "productStoreId", "recordStockMovement",
       "describeOperationError", "renderAll", "console",
+      "canRecordCost", "clampNonNegativeNumber", "MAX_MONEY", "safeNumber",
+      "nextUnitCost", "productCostKnown",
       `${source} return confirmRestock;`
     )(
       state, (selector) => elements[selector], (m) => calls.toasts.push(m), (key) => key,
       (product) => product.storeId, () => {}, (error, fallback) => fallback,
-      () => { calls.renders += 1; }, { warn: () => {} }
+      () => { calls.renders += 1; }, { warn: () => {} },
+      () => withCost, (v, max) => Math.min(Number(v) || 0, max), 1000000000,
+      (v) => (Number.isFinite(Number(v)) ? Number(v) : 0),
+      realNextUnitCost, realProductCostKnown
     );
     return { run, calls, button };
   }
@@ -314,6 +355,36 @@ console.log("\n=== Restock is held to the same rule ===");
       `${calls.transactions} transactions reached the database`);
     check("and the dialog still closes once", calls.closed === 1);
     check("the button is handed back afterwards", button.disabled === false);
+  }
+
+  {
+    // A restock that records cost writes a SECOND document -- the purchase --
+    // inside the same transaction. So a double-click here does not merely add
+    // the delivery twice: it writes the batch to the Purchase Book twice, and
+    // moves the weighted average twice off a delivery that arrived once. The
+    // guard is the same one, but the damage is larger, so it is asserted
+    // separately rather than assumed to carry over.
+    const { run, calls, button } = harness(true);
+    const first = run();
+    const second = run();
+    check("the button is disabled while a costed restock is in flight", button.disabled === true);
+    await Promise.all([first, second]);
+    check("a double-click records the delivery once", calls.transactions === 1,
+      `${calls.transactions} transactions reached the database`);
+    // Two writes per costed restock: the purchase and the audit entry.
+    check("...and writes the purchase once, not twice", calls.sets === 2,
+      `${calls.sets} documents were set — a doubled purchase doubles the average`);
+    check("the button is handed back afterwards", button.disabled === false);
+  }
+
+  {
+    // The no-cost path must still write only the audit entry. If a purchase
+    // document appears here, a cashier's quantity-only restock is inventing a
+    // cost record the rules would refuse.
+    const { run, calls } = harness(false);
+    await run();
+    check("a restock with no cost writes no purchase document", calls.sets === 1,
+      `${calls.sets} documents were set — expected the audit entry alone`);
   }
 
   {

@@ -256,6 +256,24 @@ td small,
   gap: 6px;
 }
 
+/* Groups the Accounts views in the sidebar. A label, not a control -- there is
+   nothing to open or close, so it is a <p> and never takes focus. Hidden with
+   its group when the role cannot open either view: a heading standing alone
+   over nothing reads as a broken menu. */
+.nav-group-label {
+  margin: var(--space-3) 0 2px;
+  padding: 0 var(--space-3);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  opacity: 0.75;
+}
+.nav-group-label[hidden] {
+  display: none;
+}
+
 .nav-item {
   position: relative;
   border: 0;

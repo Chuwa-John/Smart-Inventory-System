@@ -137,6 +137,12 @@ service cloud.firestore {
         && (!('shelf' in d) || (d.shelf is string && d.shelf.size() <= 60))
         && (!('sku' in d) || (d.sku is string && d.sku.size() <= 40))
         && (!('costPrice' in d) || moneyInRange(d.costPrice))
+        // Set by the FIRST purchase for this product and never cleared. Every
+        // profit surface reads it the way salesCoverageFromMs() is already read:
+        // a period beginning before it cannot report a complete margin, and must
+        // say so rather than averaging against stock whose cost nobody recorded.
+        // DESIGN-purchases.md 4.3.
+        && (!('costKnownFrom' in d) || d.costKnownFrom is timestamp)
         && (!('sellingPrice' in d) || moneyInRange(d.sellingPrice))
         && (!('reorderLevel' in d) || countInRange(d.reorderLevel))
         && (!('expiryDate' in d) || (d.expiryDate is string && d.expiryDate.size() <= 10))
@@ -163,6 +169,63 @@ service cloud.firestore {
     // iteration, no per-item unrolling. The file already records what happened
     // when validSaleItem() was unrolled across 40 slots, and every validator
     // added from here on has to stay cheap for the same reason.
+    // DESIGN-purchases.md 3. One document per batch bought. The BATCH is the
+    // record: quantity and what was actually paid for it. unitCost is derived
+    // and deliberately not rounded -- 100 items for 33,333 is 333.33 each, and
+    // storing 333 loses 33 shillings against the invoice on every delivery,
+    // forever. moneyInRange() has no integer requirement, so the fraction is
+    // already legal.
+    //
+    // Flat and constant-cost, like validExpense(): no iteration, no per-item
+    // unrolling. This is also why a purchase is one product per delivery rather
+    // than a multi-line supplier invoice -- see section 1.
+    function validPurchase() {
+      let d = request.resource.data;
+      return d.storeId is string && d.storeId.size() > 0 && d.storeId.size() <= 120
+        && d.productId is string && d.productId.size() > 0 && d.productId.size() <= 120
+        && d.productName is string && d.productName.size() > 0 && d.productName.size() <= 120
+        // Strictly positive on both. A delivery of nothing is not a purchase,
+        // and a free delivery is not a cost -- either is a mis-key, and either
+        // would divide by zero or drag the average to nothing.
+        && d.quantity is number && d.quantity > 0 && d.quantity <= 1000000
+        && d.totalPaid is number && d.totalPaid > 0 && d.totalPaid <= 1000000000
+        && moneyInRange(d.unitCost)
+        // The invariant the whole feature is judged on: what was paid must agree
+        // with what the batch says each unit cost.
+        //
+        // Within a shilling, NOT exactly. unitCost is totalPaid/quantity kept
+        // unrounded on purpose, so it is routinely a repeating fraction -- 33,333
+        // over 100 units is 333.33..., and 333.33 * 100 is 33332.999999999996 in
+        // float64. An equality test here would refuse a perfectly ordinary
+        // delivery and take the restock transaction down with it, which is the
+        // shape of outage this file exists to prevent. The tolerance is orders of
+        // magnitude above the representation error (~1e-7 at the top of
+        // moneyInRange) and far below any figure a human would mis-key.
+        && d.unitCost * d.quantity >= d.totalPaid - 1
+        && d.unitCost * d.quantity <= d.totalPaid + 1
+        && d.recordedByUid == request.auth.uid
+        && (!('supplierName' in d) || (d.supplierName is string && d.supplierName.size() <= 120))
+        && (!('supplierTin' in d) || (d.supplierTin is string && d.supplierTin.size() <= 20))
+        // The fields that decide whether input VAT is claimable at all. The
+        // six-month window runs from the FISCAL RECEIPT date, not the invoice
+        // date -- RESEARCH-accounts.md 5.3 -- so a purchase recorded without
+        // them loses a claim the shop was entitled to.
+        && (!('receiptNumber' in d) || (d.receiptNumber is string && d.receiptNumber.size() <= 60))
+        && (!('receiptDate' in d) || d.receiptDate is timestamp)
+        && (!('hasFiscalReceipt' in d) || d.hasFiscalReceipt is bool)
+        && (!('note' in d) || (d.note is string && d.note.size() <= 200));
+    }
+
+    // A purchase is what the shop actually paid on a day. Moving it between
+    // branches or reassigning who recorded it would rewrite the book, and the
+    // weighted average it already fed cannot be un-fed.
+    function purchaseImmutableFieldsUnchanged() {
+      return request.resource.data.storeId == resource.data.storeId
+        && request.resource.data.productId == resource.data.productId
+        && request.resource.data.recordedByUid == resource.data.recordedByUid
+        && (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt);
+    }
+
     function validExpense() {
       let d = request.resource.data;
       return d.storeId is string && d.storeId.size() > 0 && d.storeId.size() <= 120
@@ -272,12 +335,53 @@ service cloud.firestore {
         || after.movementReason in ['sale', 'restock', 'return', 'void'];
     }
 
-    function validStockMovementUpdate() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['quantity', 'sold30', 'sold90', 'updatedAt', 'movementReason'])
-        && stockCountInRange(request.resource.data.quantity)
-        && (!('sold30' in request.resource.data) || countInRange(request.resource.data.sold30))
-        && (!('sold90' in request.resource.data) || countInRange(request.resource.data.sold90))
+    // The cashier allowlist. Unchanged, and deliberately so: a cashier may count
+    // a delivery in when the manager is not there (DESIGN-purchases.md 10), but
+    // never sees or writes what it cost. Those units are absorbed at the
+    // prevailing average -- a small, bounded inaccuracy, chosen over showing the
+    // till the shop's margins.
+    function stockMovementKeys() {
+      return ['quantity', 'sold30', 'sold90', 'updatedAt', 'movementReason'];
+    }
+
+    // The manager allowlist. Two more keys, and only two: a manager records what
+    // a delivery cost, which moves the weighted average and stamps the moment
+    // cost became knowable for this product.
+    function stockMovementWithCostKeys() {
+      return ['quantity', 'sold30', 'sold90', 'updatedAt', 'movementReason',
+              'costPrice', 'costKnownFrom'];
+    }
+
+    function validStockMovementShape(allowedKeys) {
+      let after = request.resource.data;
+      return after.diff(resource.data).affectedKeys().hasOnly(allowedKeys)
+        && stockCountInRange(after.quantity)
+        && (!('sold30' in after) || countInRange(after.sold30))
+        && (!('sold90' in after) || countInRange(after.sold90))
+        && (!('costPrice' in after) || moneyInRange(after.costPrice))
+        && (!('costKnownFrom' in after) || after.costKnownFrom is timestamp)
         && validMovementReason();
+    }
+
+    function validStockMovementUpdate() {
+      return validStockMovementShape(stockMovementKeys());
+    }
+
+    // ONE member read for role AND store access AND which allowlist applies,
+    // the same collapsing memberSellsInStore() does and for the same reason: the
+    // expression budget is real and this file has already been bitten by it. A
+    // separate manager branch alongside the existing staff branch would have
+    // meant a second get() on every cashier restock to decide a question the
+    // first get() had already answered.
+    function memberMayUpdateProduct(ownerUid, storeId) {
+      let path = memberDocPath(ownerUid);
+      let m = exists(path) ? get(path).data : null;
+      return m != null
+        && m.status == "active"
+        && m.role in ["manager", "cashier"]
+        && (("all" in m.storeIds) || (storeId in m.storeIds))
+        && validStockMovementShape(
+             m.role == "manager" ? stockMovementWithCostKeys() : stockMovementKeys());
     }
 
     // Per-item content validation used to live here as validSaleItem() applied
@@ -580,7 +684,7 @@ service cloud.firestore {
         allow create: if isOwner(userId) && tenantNotFrozen(userId) && validProduct();
         allow update: if tenantNotFrozen(userId) && (
              (isOwner(userId) && validProduct() && productImmutableFieldsUnchanged())
-          || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId) && validStockMovementUpdate()));
+          || memberMayUpdateProduct(userId, resource.data.storeId));
         allow delete: if isOwner(userId) && tenantNotFrozen(userId);
       }
 
@@ -606,6 +710,25 @@ service cloud.firestore {
       //
       // Cashiers are excluded in both directions. Expenses feed net profit, and
       // wages is a category.
+      // The Purchase Book. Managers and owners write, because both restock;
+      // a cashier is refused in both directions, because a cashier who knows the
+      // buying price of every item knows the margin on every sale
+      // (DESIGN-purchases.md 10). Corrections are the owner's, exactly as for
+      // expenses -- and here it matters more, because a purchase has already
+      // moved the product's weighted average by the time anyone edits it.
+      match /purchases/{purchaseId} {
+        allow read: if isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager"])
+              && (resource == null || memberCanAccessStore(userId, resource.data.storeId)));
+        allow create: if tenantNotFrozen(userId) && validPurchase() && (
+             isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager"])
+              && memberCanAccessStore(userId, request.resource.data.storeId)));
+        allow update: if isOwner(userId) && tenantNotFrozen(userId)
+          && validPurchase() && purchaseImmutableFieldsUnchanged();
+        allow delete: if isOwner(userId) && tenantNotFrozen(userId);
+      }
+
       match /expenses/{expenseId} {
         allow read: if isOwner(userId)
           || (isOwnerOrRole(userId, ["manager"])

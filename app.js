@@ -115,6 +115,9 @@ const state = {
   unsubscribeMonthlyReports: null,
   expenses: [],
   unsubscribeExpenses: null,
+  purchases: [],
+  unsubscribePurchases: null,
+  purchaseMonthSelection: localMonthKey(new Date()),
   // localMonthKey(), not toISOString().slice(0, 7). Everything that reads
   // this bucket by local month, and a UTC slice disagrees with them between
   // midnight and 03:00 EAT on the 1st -- so a shop opening this screen early
@@ -350,6 +353,35 @@ const DICTIONARY = {
     "control.noSalesToday": "No sales recorded yet today.",
     "control.revenueToday": "Revenue today",
     "control.revenueMonth": "Revenue month to date",
+    "nav.accounts": "Accounts",
+    "nav.purchases": "Purchases",
+    "purchases.eyebrow": "Stock bought",
+    "purchases.title": "Purchases",
+    "purchases.intro": "Every delivery, and what you paid for it. Recorded when you restock or add a product \u2014 you enter the total for the batch, and the cost per unit is worked out from it.",
+    "purchases.listTitle": "Recorded",
+    "purchases.monthLabel": "Month",
+    "purchases.thDate": "Date",
+    "purchases.thProduct": "Product",
+    "purchases.thQty": "Units",
+    "purchases.thUnitCost": "Each",
+    "purchases.thTotal": "Total paid",
+    "purchases.thReceipt": "Fiscal receipt",
+    "purchases.monthTotal": "Spent on stock this month",
+    "purchases.monthCount": "{count} deliveries, {units} units",
+    "purchases.noReceipt": "Bought with no fiscal receipt",
+    "purchases.noReceiptNote": "You cannot claim the VAT back on this",
+    "purchases.allReceipted": "Every delivery has a receipt number",
+    "purchases.receiptYes": "Yes",
+    "purchases.receiptNo": "None",
+    "purchases.empty": "No deliveries recorded for this month yet.",
+    "purchases.emptyNoStore": "Pick a branch to see what it bought.",
+    "restock.totalPaidLabel": "Total paid for this delivery (optional)",
+    "restock.totalPaidPlaceholder": "e.g. 400000",
+    "restock.totalPaidInvalid": "Enter what you paid, or leave it blank.",
+    "restock.unitCostHint": "That works out to {value} each.",
+    "restock.supplierLabel": "Supplier (optional)",
+    "restock.receiptLabel": "Fiscal receipt number (optional)",
+    "restock.receiptHint": "Needed to claim the VAT back on this purchase.",
     "expenses.eyebrow": "Money out",
     "expenses.title": "Expenses",
     "expenses.addButton": "Record Expense",
@@ -1145,6 +1177,35 @@ const DICTIONARY = {
     "control.noSalesToday": "Hakuna mauzo yaliyorekodiwa leo.",
     "control.revenueToday": "Mapato leo",
     "control.revenueMonth": "Mapato mwezi hadi leo",
+    "nav.accounts": "Hesabu",
+    "nav.purchases": "Manunuzi",
+    "purchases.eyebrow": "Bidhaa zilizonunuliwa",
+    "purchases.title": "Manunuzi",
+    "purchases.intro": "Kila mzigo, na ulicholipa kwa ajili yake. Hurekodiwa unapoongeza bidhaa au kujaza stoo \u2014 unaweka jumla ya mzigo, na gharama ya kila kimoja inahesabiwa kutoka hapo.",
+    "purchases.listTitle": "Yaliyorekodiwa",
+    "purchases.monthLabel": "Mwezi",
+    "purchases.thDate": "Tarehe",
+    "purchases.thProduct": "Bidhaa",
+    "purchases.thQty": "Idadi",
+    "purchases.thUnitCost": "Kila moja",
+    "purchases.thTotal": "Jumla iliyolipwa",
+    "purchases.thReceipt": "Risiti ya kodi",
+    "purchases.monthTotal": "Zilizotumika kwa bidhaa mwezi huu",
+    "purchases.monthCount": "Mizigo {count}, vipande {units}",
+    "purchases.noReceipt": "Zilizonunuliwa bila risiti ya kodi",
+    "purchases.noReceiptNote": "Huwezi kudai VAT kwa hizi",
+    "purchases.allReceipted": "Kila mzigo una namba ya risiti",
+    "purchases.receiptYes": "Ndiyo",
+    "purchases.receiptNo": "Hakuna",
+    "purchases.empty": "Hakuna mzigo uliorekodiwa mwezi huu bado.",
+    "purchases.emptyNoStore": "Chagua tawi ili kuona kilichonunuliwa.",
+    "restock.totalPaidLabel": "Jumla uliyolipa kwa mzigo huu (si lazima)",
+    "restock.totalPaidPlaceholder": "mfano, 400000",
+    "restock.totalPaidInvalid": "Weka ulicholipa, au iache wazi.",
+    "restock.unitCostHint": "Hiyo inakuwa {value} kila kimoja.",
+    "restock.supplierLabel": "Msambazaji (si lazima)",
+    "restock.receiptLabel": "Namba ya risiti ya kodi (si lazima)",
+    "restock.receiptHint": "Inahitajika ili kudai VAT kwa manunuzi haya.",
     "expenses.eyebrow": "Fedha zinazotoka",
     "expenses.title": "Matumizi",
     "expenses.addButton": "Rekodi Matumizi",
@@ -5396,6 +5457,186 @@ function renderExpenses() {
   }).join("");
 }
 
+// ---------------------------------------------------------------------------
+// Purchases -- DESIGN-purchases.md phase B.
+//
+// A delivery is recorded as a BATCH: how many units, and what was actually paid
+// for them. The unit cost is derived and deliberately not rounded (section 3),
+// because 100 items for 33,333 is 333.33... and storing 333 loses money against
+// the invoice on every delivery, forever.
+
+// The weighted average, and the two ways it can go wrong.
+//
+// Returns the unit cost the product should carry AFTER this delivery.
+// `costKnown` is whether this product has ever had a purchase recorded --
+// section 4.3: the FIRST purchase sets the cost outright, later ones average.
+// Reading an absent cost as zero and averaging against it would understate cost
+// and overstate profit on a shop's very first delivery, because every product in
+// production today has no cost at all.
+function nextUnitCost({ oldQuantity, oldUnitCost, costKnown, deliveredQuantity, totalPaid }) {
+  const delivered = safeNumber(deliveredQuantity);
+  const paid = safeNumber(totalPaid);
+  // The caller refuses these before writing; the guard is here so the function
+  // is total, because it is the one thing standing between a restock and a
+  // division by zero.
+  if (delivered <= 0) return safeNumber(oldUnitCost);
+  const batchUnitCost = paid / delivered;
+
+  // Section 4.3. No history to weight against.
+  if (!costKnown) return batchUnitCost;
+
+  // Section 4.2, edge case one. Stock can be NEGATIVE -- stockCountInRange()
+  // permits it deliberately, because an offline oversell is taken and flagged
+  // rather than refused. With nothing on the shelf there is no old value to
+  // weight, and at exactly oldQuantity === -delivered the denominator is zero.
+  const oldQty = safeNumber(oldQuantity);
+  if (oldQty <= 0) return batchUnitCost;
+
+  const newQuantity = oldQty + delivered;
+  if (newQuantity <= 0) return batchUnitCost;
+  return (oldQty * safeNumber(oldUnitCost) + paid) / newQuantity;
+}
+
+// Whether this product has a cost that was actually recorded, as opposed to one
+// that is absent and reads as zero. The same distinction phase 0 fixed on the
+// control panel, and the reason costKnownFrom exists.
+function productCostKnown(product) {
+  return Boolean(product?.costKnownFrom) || safeNumber(product?.costPrice) > 0;
+}
+
+// Who may record what a delivery cost. A cashier may restock -- a trusted
+// cashier counts stock in when the manager is away -- but never sees the buying
+// price, and firestore.rules refuses cost on their write. Showing the field
+// would offer something the save is going to reject.
+function canRecordCost() {
+  return isManagerOrOwnerRole();
+}
+
+function storePurchases() {
+  if (!state.currentStoreId) return [];
+  if (state.currentStoreId === "all") return state.purchases;
+  return state.purchases.filter((purchase) => purchase.storeId === state.currentStoreId);
+}
+
+function purchasedAt(purchase) {
+  const at = purchase?.createdAt;
+  if (at?.toDate) return at.toDate();
+  if (at instanceof Date) return at;
+  const parsed = at ? new Date(at) : null;
+  return parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;
+}
+
+// Totals for one month, from a list already scoped to a branch. Pure, so
+// tests/purchases.test.mjs evaluates it rather than a copy of it.
+function summarisePurchases(purchases, monthKey) {
+  let total = 0;
+  let units = 0;
+  let count = 0;
+  let withReceipt = 0;
+  for (const purchase of purchases) {
+    const at = purchasedAt(purchase);
+    if (!at) continue;
+    if (localMonthKey(at) !== monthKey) continue;
+    total += safeNumber(purchase.totalPaid);
+    units += safeNumber(purchase.quantity);
+    count += 1;
+    if (purchase.hasFiscalReceipt) withReceipt += safeNumber(purchase.totalPaid);
+  }
+  return { total, units, count, withReceipt, withoutReceipt: total - withReceipt };
+}
+
+async function subscribeToPurchases() {
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
+  if (state.unsubscribePurchases) state.unsubscribePurchases();
+  // A cashier is refused this collection by firestore.rules. Subscribing anyway
+  // would put a permission-denied in every cashier's console on every sign-in.
+  if (!isManagerOrOwnerRole()) {
+    state.purchases = [];
+    return;
+  }
+  try {
+    const { collection, onSnapshot, query, where } = state.firebaseApi.firestore;
+    const purchasesRef = collection(state.db, "users", state.businessOwnerUid, "purchases");
+    const queryStoreIds = await resolveQueryStoreIds();
+    if (queryStoreIds !== null && queryStoreIds.length === 0) {
+      state.purchases = [];
+      scheduleRenderAll();
+      return;
+    }
+    const purchasesQuery = queryStoreIds === null
+      ? purchasesRef
+      : query(purchasesRef, where("storeId", "in", queryStoreIds));
+    state.unsubscribePurchases = onSnapshot(
+      purchasesQuery,
+      (snapshot) => {
+        state.purchases = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        scheduleRenderAll();
+      },
+      (error) => {
+        console.warn("[purchases listener]", error.code || error, "queryStoreIds=", queryStoreIds);
+      }
+    );
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
+function renderPurchases() {
+  const view = qs("#purchases");
+  const table = qs("#purchasesTable");
+  const totals = qs("#purchaseTotals");
+  if (!view || !table || !totals) return;
+  if (!isManagerOrOwnerRole()) return;
+
+  const monthInput = qs("#purchaseMonthInput");
+  if (monthInput && monthInput.value !== state.purchaseMonthSelection) {
+    monthInput.value = state.purchaseMonthSelection;
+  }
+
+  const scoped = storePurchases();
+  const monthKey = state.purchaseMonthSelection;
+  const summary = summarisePurchases(scoped, monthKey);
+
+  totals.innerHTML = [
+    controlTile(t("purchases.monthTotal"), money(summary.total), "",
+      t("purchases.monthCount", { count: String(summary.count), units: String(summary.units) })),
+    // Flagged, because this is the money whose VAT the shop cannot reclaim --
+    // the input tax window runs from the fiscal receipt date and without one
+    // there is no claim at all. RESEARCH-accounts.md 5.3.
+    controlTile(t("purchases.noReceipt"), money(summary.withoutReceipt),
+      summary.withoutReceipt > 0 ? "warn" : "",
+      summary.withoutReceipt > 0 ? t("purchases.noReceiptNote") : t("purchases.allReceipted"))
+  ].join("");
+
+  const rows = scoped
+    .filter((purchase) => {
+      const at = purchasedAt(purchase);
+      return at ? localMonthKey(at) === monthKey : false;
+    })
+    .sort((a, b) => (purchasedAt(b)?.getTime() || 0) - (purchasedAt(a)?.getTime() || 0));
+
+  if (!rows.length) {
+    const message = state.currentStoreId ? t("purchases.empty") : t("purchases.emptyNoStore");
+    table.innerHTML = `<tr><td colspan="6" class="empty-state">${esc(message)}</td></tr>`;
+    return;
+  }
+
+  table.innerHTML = rows.map((purchase) => {
+    const at = purchasedAt(purchase);
+    const receipted = Boolean(purchase.hasFiscalReceipt);
+    return `<tr>
+      <td>${esc(at ? at.toLocaleDateString() : "—")}</td>
+      <td>${esc(purchase.productName || "")}</td>
+      <td>${esc(String(safeNumber(purchase.quantity)))}</td>
+      <td>${money(Math.round(safeNumber(purchase.unitCost)))}</td>
+      <td><strong>${money(safeNumber(purchase.totalPaid))}</strong></td>
+      <td class="${receipted ? "" : "cell-warn"}">${esc(receipted
+        ? (purchase.receiptNumber || t("purchases.receiptYes"))
+        : t("purchases.receiptNo"))}</td>
+    </tr>`;
+  }).join("");
+}
+
 async function subscribeToServices() {
   if (!state.db || !state.user || !state.businessOwnerUid) return;
   if (state.unsubscribeServices) state.unsubscribeServices();
@@ -6397,8 +6638,40 @@ function openRestockDialog(productId) {
   if (!product) return;
   state.pendingRestockProductId = productId;
   qs("#restockProductLabel").textContent = t("restock.productLabel", { name: product.name, quantity: product.quantity });
+  renderRestockCostFields();
   qs("#restockQuantityInput").value = "";
   qs("#restockDialog").showModal();
+}
+
+// The cost block is hidden for a cashier, not disabled. firestore.rules refuses
+// costPrice on a cashier's product update, so offering the field would present
+// something the save is going to reject -- and "hide, don't disable" is the same
+// convention renderServices() uses for a tab a duka must never see.
+function renderRestockCostFields() {
+  const fields = qs("#restockCostFields");
+  if (fields) fields.hidden = !canRecordCost();
+  for (const id of ["#restockTotalPaidInput", "#restockSupplierInput", "#restockReceiptInput"]) {
+    const node = qs(id);
+    if (node) node.value = "";
+  }
+  const error = qs("#restockTotalPaidError");
+  if (error) error.textContent = "";
+  renderRestockUnitCostHint();
+}
+
+// Shows what the batch works out to per unit while it is being typed. This is
+// the number the shop actually reasons about, and showing it is how a mis-keyed
+// total gets caught before it moves the weighted average.
+function renderRestockUnitCostHint() {
+  const hint = qs("#restockUnitCostHint");
+  if (!hint) return;
+  const qty = Math.floor(safeNumber(qs("#restockQuantityInput")?.value));
+  const paid = safeNumber(qs("#restockTotalPaidInput")?.value);
+  if (!(qty > 0) || !(paid > 0)) {
+    hint.textContent = "";
+    return;
+  }
+  hint.textContent = t("restock.unitCostHint", { value: money(Math.round(paid / qty)) });
 }
 
 async function confirmRestock() {
@@ -6408,6 +6681,20 @@ async function confirmRestock() {
 
   const qty = Math.floor(Number(qs("#restockQuantityInput").value));
   if (!Number.isFinite(qty) || qty <= 0) return showToast(t("toast.restockInvalidQuantity"));
+
+  // Cost is optional on every restock. A cashier cannot record it at all, and a
+  // manager who does not know the invoice yet should still be able to count the
+  // delivery in -- those units are absorbed at the prevailing average, which is
+  // the bounded inaccuracy DESIGN-purchases.md 12 accepts.
+  const recordingCost = canRecordCost();
+  const totalPaidRaw = recordingCost ? String(qs("#restockTotalPaidInput")?.value || "").trim() : "";
+  const totalPaid = totalPaidRaw ? clampNonNegativeNumber(totalPaidRaw, MAX_MONEY) : null;
+  const errorSlot = qs("#restockTotalPaidError");
+  if (errorSlot) errorSlot.textContent = "";
+  if (totalPaidRaw && (totalPaid === null || totalPaid <= 0)) {
+    if (errorSlot) errorSlot.textContent = t("restock.totalPaidInvalid");
+    return;
+  }
 
   const newQuantityDisplay = Number(product.quantity || 0) + qty;
 
@@ -6425,13 +6712,64 @@ async function confirmRestock() {
 
   if (state.db && state.user && state.businessOwnerUid) {
     try {
-      const { doc, collection, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
+      const { doc, collection, runTransaction, serverTimestamp, Timestamp } = state.firebaseApi.firestore;
       const productRef = doc(state.db, "users", state.businessOwnerUid, "products", productId);
+      const purchaseRef = totalPaid
+        ? doc(collection(state.db, "users", state.businessOwnerUid, "purchases"))
+        : null;
       await runTransaction(state.db, async (transaction) => {
         const snap = await transaction.get(productRef);
         if (!snap.exists()) throw new Error(t("txerror.itemGone", { name: product.name }));
-        const currentQuantity = Number(snap.data().quantity || 0);
-        transaction.update(productRef, { quantity: currentQuantity + qty, updatedAt: serverTimestamp(), movementReason: "restock" });
+        const before = snap.data();
+        const currentQuantity = Number(before.quantity || 0);
+        const productUpdate = {
+          quantity: currentQuantity + qty,
+          updatedAt: serverTimestamp(),
+          movementReason: "restock"
+        };
+
+        // The weighted average, recomputed from what the shelf ACTUALLY holds
+        // inside the transaction -- not from the cached copy the dialog opened
+        // with, which another till may have moved. This is the read the whole
+        // costing method depends on, and it is free here because the restock
+        // transaction already had to make it.
+        if (totalPaid && purchaseRef) {
+          const unitCost = nextUnitCost({
+            oldQuantity: currentQuantity,
+            oldUnitCost: safeNumber(before.costPrice),
+            costKnown: productCostKnown(before),
+            deliveredQuantity: qty,
+            totalPaid
+          });
+          productUpdate.costPrice = unitCost;
+          // Stamped once, by the first purchase, and never moved after. Every
+          // profit surface reads it to decide whether a period can report a
+          // complete margin at all.
+          if (!before.costKnownFrom) productUpdate.costKnownFrom = Timestamp.now();
+
+          const receiptNumber = String(qs("#restockReceiptInput")?.value || "").trim().slice(0, 60);
+          const supplierName = String(qs("#restockSupplierInput")?.value || "").trim().slice(0, 120);
+          transaction.set(purchaseRef, {
+            storeId: productStoreId(product),
+            productId,
+            // Denormalised so the Purchase Book survives the product being
+            // deleted -- the book is a record of what was paid, and it must not
+            // become a list of blanks because a line was tidied off the shelf.
+            productName: product.name || "",
+            quantity: qty,
+            totalPaid,
+            // Unrounded, on purpose. Rounding here loses money against the
+            // invoice on every delivery. DESIGN-purchases.md 3.
+            unitCost: totalPaid / qty,
+            hasFiscalReceipt: Boolean(receiptNumber),
+            ...(receiptNumber ? { receiptNumber } : {}),
+            ...(supplierName ? { supplierName } : {}),
+            recordedByUid: state.user?.uid || null,
+            createdAt: serverTimestamp()
+          });
+        }
+
+        transaction.update(productRef, productUpdate);
         recordStockMovement(transaction, {
           productId, productName: product.name, storeId: productStoreId(product),
           reason: "restock", delta: qty, quantityBefore: currentQuantity
@@ -9114,6 +9452,7 @@ async function initFirebase() {
         subscribeToTransfers();
         subscribeToServices();
         subscribeToExpenses();
+        subscribeToPurchases();
         watchServerConnection();
       } else {
         stopIdleWatcher();
@@ -9144,6 +9483,9 @@ async function initFirebase() {
         if (state.unsubscribeExpenses) state.unsubscribeExpenses();
         state.unsubscribeExpenses = null;
         state.expenses = [];
+        if (state.unsubscribePurchases) state.unsubscribePurchases();
+        state.unsubscribePurchases = null;
+        state.purchases = [];
         if (state.unsubscribeConnection) state.unsubscribeConnection();
         state.unsubscribeConnection = null;
         // Money figures must not outlive the session that fetched them: the
@@ -10484,6 +10826,19 @@ function applyRoleViewVisibility() {
   qsa(".nav-item").forEach((item) => {
     item.hidden = !canOpenView(item.dataset.view);
   });
+  // The Accounts heading is a label, not a control, so the loop above does not
+  // reach it -- and a heading left standing over nothing reads as a menu that
+  // failed to load. It follows its group: visible only while at least one view
+  // under it can be opened.
+  qsa(".nav-group-label").forEach((label) => {
+    let node = label.nextElementSibling;
+    let anyVisible = false;
+    while (node && node.classList.contains("nav-item")) {
+      if (!node.hidden) anyVisible = true;
+      node = node.nextElementSibling;
+    }
+    label.hidden = !anyVisible;
+  });
   // Only redirect once the role has actually resolved. While it's still null
   // the nav stays hidden (fail closed, harmless), but redirecting here would
   // strand an owner on the POS tab after their real role arrives.
@@ -10620,6 +10975,7 @@ function renderAll() {
   renderPos();
   renderServices();
   renderExpenses();
+  renderPurchases();
   renderManagerControl();
   renderAdminControl();
   // Depends on the resolved account name, which arrives with the role after
@@ -10753,6 +11109,12 @@ function bindEvents() {
     event.preventDefault();
     saveExpense(Object.fromEntries(new FormData(event.currentTarget).entries()));
   });
+  qs("#purchaseMonthInput")?.addEventListener("change", (event) => {
+    state.purchaseMonthSelection = event.currentTarget.value || state.purchaseMonthSelection;
+    renderPurchases();
+  });
+  qs("#restockTotalPaidInput")?.addEventListener("input", renderRestockUnitCostHint);
+  qs("#restockQuantityInput")?.addEventListener("input", renderRestockUnitCostHint);
   qs("#expenseMonthInput")?.addEventListener("change", (event) => {
     state.expenseMonthSelection = event.currentTarget.value || state.expenseMonthSelection;
     renderExpenses();

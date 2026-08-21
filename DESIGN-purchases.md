@@ -1,8 +1,8 @@
 # Design — purchases, expenses and profit
 
-Status: **written 2026-08-21. Phase 0 and Phase A built and tested the same
-day; B–E not started.** Production is on `20260808o`; `main` is on
-`20260808r` and carries Services A–E, Phase 0 and Phase A, none deployed.
+Status: **written 2026-08-21. Phases 0, A and B built and tested the same
+day; C–E not started.** Production is on `20260808o`; `main` is on
+`20260808s` and carries Services A–E and Phases 0, A and B, none deployed.
 
 Requested by the shop owner: record what stock cost when it is bought — *"if
 they added 200 body lotions they record the total amount"* — so that profit can
@@ -760,6 +760,167 @@ expression budget, timezone handling, offline, multi-store `"all"`, escaping and
 lifecycle. Of those, everything except a fresh adversarial read is now covered
 by the suites and probes above, but the audit itself is still owed and should be
 run before Phase B builds on this.
+
+---
+
+## 13c. Phase B record — built 2026-08-21
+
+### The trap, defused first
+
+§9 named `validStockMovementUpdate()` as the change most likely to cause an
+outage nobody sees in testing: adding `costPrice` to the restock write without
+widening the affected-keys allowlist refuses **every non-owner restock**, while
+the owner's own testing passes, because `isOwner()` takes the other branch. Per
+§13 the rules went first and were proven from a cashier account before any
+client change.
+
+The split is asymmetric by design (§10), so a single widened allowlist was not
+an option — a cashier who can write `costPrice` can read it back, and a cashier
+who knows the buying price of every item knows the margin on every sale. What
+landed instead:
+
+```
+stockMovementKeys()          quantity, sold30, sold90, updatedAt, movementReason
+stockMovementWithCostKeys()  ...the same, plus costPrice and costKnownFrom
+memberMayUpdateProduct()     ONE member read; the allowlist branches on m.role
+```
+
+`memberMayUpdateProduct()` collapses role, store access and which allowlist
+applies into a single `get()`, the same collapsing `memberSellsInStore()` does
+and for the same reason. A separate manager branch beside the existing staff
+branch would have added a second document read on every cashier restock to
+answer a question the first read had already answered. **It is one read fewer
+than before**: the old branch called `isOwnerOrRole()` and `memberCanAccessStore()`
+separately, and each of those does its own `get()`.
+
+Re-measured after the change: `manager-paths-probe` 18/18 including *"manager CAN
+sell a 40-item basket"*, and `sale-budget-probe` still denying at 41. The sale
+path is untouched.
+
+### A rules clause that would have refused ordinary deliveries
+
+The batch invariant — what was paid must agree with what the batch says each
+unit cost — was first written as equality:
+
+```
+d.unitCost * d.quantity == d.totalPaid
+```
+
+That is wrong, and it would have taken the restock transaction down on
+perfectly ordinary input. `unitCost` is `totalPaid / quantity` kept unrounded on
+purpose (§3), so it is routinely a repeating fraction: 33,333 over 100 units is
+333.33…, and `333.33… * 100` is `33332.999999999996` in float64. Every such
+delivery would have been refused.
+
+It is now a **±1 shilling tolerance** — orders of magnitude above the
+representation error (~1e-7 at the top of `moneyInRange`) and far below anything
+a human would mis-key. Both directions are tested: three repeating fractions are
+accepted, and a unit cost out by ten shillings is still refused. Two negative
+controls guard it — tightening it back to equality goes red, and widening it
+enough to hide a mis-key goes red.
+
+### The arithmetic
+
+`nextUnitCost()` is a pure function so it could be tested before anything called
+it, per `DESIGN-vat.md`'s order of work. It carries both §4 rules and both edge
+cases:
+
+- **§4.3, first purchase sets.** Every product in production has no cost. Reading
+  absent as zero and averaging would report 1,667 for 40 uncosted units meeting
+  200 bought at 2,000 — understating cost and overstating profit on a shop's
+  very first delivery.
+- **§4.2, the shelf can be negative.** `stockCountInRange()` permits −1,000,000
+  deliberately, because an offline oversell is taken and flagged rather than
+  refused. At exactly `oldQuantity === −delivered` the denominator is zero.
+
+The average is computed **inside the restock transaction**, from the quantity and
+cost that transaction read — not from the cached product the dialog opened with,
+which another till may have moved. That read was already there; the costing
+method rides on it for free.
+
+### Not done, and why
+
+**Cost capture on the product form is deferred.** §13 lists it in Phase B. It is
+not built. `saveProduct()` is 129 lines with a documented history of misfiling
+products by `storeId` — the comment in it describes stock landing in the wrong
+branch and being invisible to the person who added it — and it writes with
+`setDoc`, not a transaction, so a purchase written alongside would not be
+atomic. Bolting that on at the end of an already-large phase is the wrong risk
+on a live system. Restock is the recurring path and the one the owner described;
+product-create is its own step, with its own transaction question to answer.
+
+Until it lands, a product created with opening stock has no cost until its first
+restock — and Phase 0's tile correctly reports those units as uncosted rather
+than free.
+
+### Four assertions of mine that proved nothing
+
+All four passed against deliberately broken code, and all four were found by
+running the negative controls rather than by reading:
+
+1. **The negative-shelf case chose numbers where both paths agree.**
+   `(-5 × 2000 + 400000) / 195` is exactly 2000, which is also the batch price —
+   so deleting the guard changed nothing. Re-cased with an old cost of 1000, where
+   the two answers differ by 25.64.
+2. **`productName` matched the wrong write.** `confirmRestock()` sets
+   `productName` twice — once on the purchase, once on the stock movement — and
+   an unscoped regex found the survivor. Fixed once by slicing from the purchase
+   write; that still ran on into the stock movement, so it is now bounded at
+   **both** ends. This is the third time in this repo an assertion has matched
+   one of two similar sites and passed against half-broken code.
+3. **`renderAll` matched past its own closing brace.** `[\s\S]*?` found the
+   `renderPurchases()` call in the month-input listener instead. Now scoped to
+   the function body.
+4. **The zero-denominator backstop cannot be singled out.** With `delivered > 0`,
+   a positive `oldQty` cannot produce a non-positive sum, so the guard above it
+   always fires first. It is kept deliberately — so that deleting that guard
+   degrades to the batch price instead of handing `Infinity` to a restock — and
+   the test says so rather than pretending to cover it.
+
+### Two test-harness limitations this phase exposed
+
+**`extract()` breaks on destructured parameters.** The helper every suite shares
+takes the first `{` after the function name as the body. `nextUnitCost({ … })`
+takes a destructured object, so it returned the destructuring pattern and handed
+`new Function` a fragment that would not parse. `purchases.test.mjs` walks the
+parameter list to its closing paren first.
+
+**`till-availability.test.mjs` evaluates the real `confirmRestock()`**, so it had
+to gain the costing helpers — injected as the *real* functions lifted out of
+`app.js`, not stubs, since a stub only proves it agrees with the assertion. It
+also needed `Timestamp` in its mock firestore, which its own new assertion
+caught: without it the costed path threw and wrote nothing.
+
+That suite now also proves the thing that matters most about a costed restock: a
+double-click writes the purchase **once**. A doubled purchase does not merely
+add the delivery twice — it moves the weighted average twice off a delivery that
+arrived once.
+
+### Proven, not asserted
+
+| Suite | Result |
+|---|---|
+| `rules-purchases.test.mjs` | **66/66** |
+| `purchases.test.mjs` | **73/73** |
+| `till-availability.test.mjs` | 40/40, including the costed double-click |
+| All 41 client suites | green, every one with a tally |
+| All 14 rules suites | green, every one with a tally |
+| `manager-paths-probe` | 18/18 — *"manager CAN sell a 40-item basket"* |
+| `sale-budget-probe` | 40 accepted, 41 denied |
+
+**31 negative controls.** 13 on the rules — allowlist never widened; split
+dropped so a cashier gets cost keys; cost unchecked; `costKnownFrom` untyped;
+manager restocking any branch; batch invariant dropped, widened, and tightened to
+equality; recorder unpinned; zero-cost batch; cashier admitted to the Purchase
+Book; manager allowed to edit; purchase repointed at another product. 18 on the
+client — first-purchase rule dropped; negative-shelf guard removed; delivered
+guard removed; average and batch cost rounded; average taken from the cached
+product; `costKnown` assumed; `costKnownFrom` restamped; cost shown to a cashier;
+`canRecordCost` opened; product name blanked; ISO-slice bucketing; receipted
+spending merged; cashier subscription allowed; `renderPurchases` dropped from
+`renderAll`; listener not detached; Accounts heading left standing.
+
+All red and restored, except the unreachable backstop above.
 
 ---
 

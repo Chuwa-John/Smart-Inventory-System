@@ -28,7 +28,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260808r" />
+    <link rel="stylesheet" href="./styles.css?v=20260808s" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#0b0d10" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -48,7 +48,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260808r"></script>
+    <script type="module" src="./boot.js?v=20260808s"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -89,11 +89,13 @@
                businessType is per store: one owner may run a salon and a duka
                and the tab has to follow which branch they are looking at. -->
           <button class="nav-item" data-view="services" id="servicesNavItem" hidden>Services</button>
-          <!-- Owner and manager only; canOpenView() is the real gate and
-               excludes it from CASHIER_ALLOWED_VIEWS. Sits at top level for now
-               because it is the only thing in Accounts; DESIGN-purchases.md
-               13b records that it folds under a dropdown once purchases join
-               it. -->
+          <!-- Accounts. Owner and manager only; canOpenView() is the real
+               gate and neither view is in CASHIER_ALLOWED_VIEWS. A labelled
+               group rather than a dropdown: two items do not earn the
+               open/close machinery, and the grouping is what the owner asked
+               for. DESIGN-purchases.md 13b. -->
+          <p class="nav-group-label" data-i18n="nav.accounts">Accounts</p>
+          <button class="nav-item" data-view="purchases" data-i18n="nav.purchases">Purchases</button>
           <button class="nav-item" data-view="expenses" data-i18n="nav.expenses">Expenses</button>
           <button class="nav-item" data-view="reports" data-i18n="nav.reports">Reports</button>
           <button class="nav-item" data-view="ai" data-i18n="nav.ai">AI Advisor</button>
@@ -390,6 +392,44 @@
               </thead>
               <tbody id="servicesTable"></tbody>
             </table>
+          </article>
+        </section>
+
+        <section class="view" id="purchases">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow" data-i18n="purchases.eyebrow">Stock bought</p>
+              <h1 data-i18n="purchases.title">Purchases</h1>
+            </div>
+          </div>
+
+          <p class="muted" data-i18n="purchases.intro">Every delivery, and what you paid for it. Recorded when you restock or add a product &mdash; you enter the total for the batch, and the cost per unit is worked out from it.</p>
+
+          <div class="kpi-grid" id="purchaseTotals"></div>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h2 data-i18n="purchases.listTitle">Recorded</h2>
+              <label style="flex-direction:row;align-items:center;gap:6px;color:inherit">
+                <span data-i18n="purchases.monthLabel">Month</span>
+                <input id="purchaseMonthInput" type="month" autocomplete="off" />
+              </label>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="purchases.thDate">Date</th>
+                    <th data-i18n="purchases.thProduct">Product</th>
+                    <th data-i18n="purchases.thQty">Units</th>
+                    <th data-i18n="purchases.thUnitCost">Each</th>
+                    <th data-i18n="purchases.thTotal">Total paid</th>
+                    <th data-i18n="purchases.thReceipt">Fiscal receipt</th>
+                  </tr>
+                </thead>
+                <tbody id="purchasesTable"></tbody>
+              </table>
+            </div>
           </article>
         </section>
 
@@ -996,6 +1036,28 @@
         <label><span data-i18n="restock.qtyLabel">Quantity received</span>
           <input id="restockQuantityInput" type="number" min="1" step="1" placeholder="e.g. 20" data-i18n-placeholder="restock.qtyPlaceholder" />
         </label>
+        <!-- Hidden for a cashier. firestore.rules refuses cost on a cashier's
+             product update (DESIGN-purchases.md 10), so showing the field would
+             offer something the save is going to reject -- and a cashier who
+             sees buying prices sees the margin on every sale. renderRestockCost()
+             sets this on every open. -->
+        <div id="restockCostFields" hidden>
+          <label><span data-i18n="restock.totalPaidLabel">Total paid for this delivery (optional)</span>
+            <input id="restockTotalPaidInput" type="number" min="0" step="1" placeholder="e.g. 400000" data-i18n-placeholder="restock.totalPaidPlaceholder" autocomplete="off" />
+            <span class="field-error" id="restockTotalPaidError"></span>
+          </label>
+          <p class="muted" id="restockUnitCostHint"></p>
+          <label><span data-i18n="restock.supplierLabel">Supplier (optional)</span>
+            <input id="restockSupplierInput" type="text" maxlength="120" autocomplete="off" />
+          </label>
+          <label><span data-i18n="restock.receiptLabel">Fiscal receipt number (optional)</span>
+            <input id="restockReceiptInput" type="text" maxlength="60" autocomplete="off" />
+            <!-- Not decoration: the input VAT window runs from the fiscal
+                 receipt date, so a purchase recorded without it loses a claim
+                 the shop was entitled to. RESEARCH-accounts.md 5.3. -->
+            <span class="muted" data-i18n="restock.receiptHint">Needed to claim the VAT back on this purchase.</span>
+          </label>
+        </div>
       </div>
       <div class="button-row end">
         <button class="ghost-button" type="button" id="cancelRestockDialog" data-i18n="product.cancel">Cancel</button>
@@ -1269,6 +1331,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260808r"></script>
+    <script type="module" src="./app.js?v=20260808s"></script>
   </body>
 </html>
