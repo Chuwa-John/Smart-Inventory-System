@@ -3,24 +3,24 @@
 // instantly on repeat visits. This does NOT cache Firestore/Firebase
 // traffic or any cross-origin requests \u2014 those always go to the network.
 // Bump this on every deploy so old clients pick up new files.
-const CACHE_NAME = "savia-shell-v107";
+const CACHE_NAME = "savia-shell-v113";
 
 const APP_SHELL = [
   "./",
   "./index.html",
   "./app.html",
-  "./styles.css?v=20260808i",
+  "./styles.css?v=20260808o",
   // Must carry the same ?v= as app.html requests: a cache key includes the
   // query string, so a bare "./app.js" here is a second, unread entry and the
   // 406 KB file gets fetched twice per install. tests/asset-versions.test.mjs
   // fails if this drifts from app.html again.
-  "./app.js?v=20260808i",
-  "./boot.js?v=20260808i",
+  "./app.js?v=20260808o",
+  "./boot.js?v=20260808o",
   // The landing page's language switch. Versioned and pre-cached for the
   // same reason the bundle is: without an entry here it is fetched from the
   // network on every visit and is simply absent offline, which would leave
   // the page stuck in English behind a dead button.
-  "./landing.js?v=20260808i",
+  "./landing.js?v=20260808o",
   // Unversioned by design -- these are pointers, like app.html and sw.js, not
   // versioned payload. Pre-cached so the app can still boot offline, and
   // served network-first below so a rotated Firebase project or proxy URL

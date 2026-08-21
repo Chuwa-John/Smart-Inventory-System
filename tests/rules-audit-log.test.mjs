@@ -96,6 +96,18 @@ const CASHIER_ACTIONS = [
   ["CREDIT_LIMIT_EXCEEDED", {
     customerId: "c1", customerName: "Asha", limit: 1000, previousBalance: 900,
     projectedTotal: 1500, authorised: true, saleTotal: 600, storeId: STORE_A
+  }],
+  // Was missing from this file entirely, which is how the live bug below
+  // reached eight shops: the action was permitted by the enum and never once
+  // written in a test.
+  ["CREDIT_LIMIT_UNCHECKED", {
+    customerId: "c1", customerName: "Asha", reason: "no-limit-set",
+    previousBalance: 900, saleTotal: 600, storeId: STORE_A
+  }],
+  // The shape a FIRST-TIME credit customer produces: nothing is known about
+  // them yet, so the client omits those keys rather than sending null.
+  ["CREDIT_LIMIT_UNCHECKED", {
+    reason: "customer-not-visible", saleTotal: 600, storeId: STORE_A
   }]
 ];
 
@@ -182,6 +194,67 @@ await check("owner CAN read the audit log", true,
     const { getDocs } = await import("firebase/firestore");
     return getDocs(collection(dbs.owner, "users", OWNER, "auditLogs"));
   });
+
+console.log("");
+console.log("=== null is not how this schema says nothing ===");
+// Found by selling on credit to a new customer against the live database, and
+// it had been live for weeks. A credit sale writes six documents in ONE
+// transaction. Five were valid; the sixth was this audit entry carrying
+// customerId: null. auditStringsBounded() reads
+//
+//     !('customerId' in d) || (d.customerId is string && ...)
+//
+// so an absent key is fine and a null one is refused -- the key IS present and
+// null is not a string. The refusal took the whole transaction with it: no
+// sale, no stock movement, no customer balance, and a cashier told "your
+// account is not allowed to do this" with a customer waiting.
+//
+// It fired on exactly the case the entry exists to record. reason
+// "customer-not-visible" is returned when the customer is not in local state --
+// a first-time credit customer, whose document is created moments later, and a
+// cashier serving another branch's customer (QA-110). The "no-limit-set" path
+// sends a real customerId, which is why one unchecked path always worked and
+// the other never did.
+//
+// The asymmetry worth remembering: validSale() DOES allow customerId: null.
+// The sale document and the audit document disagree about how to say "nobody",
+// and only one of them says so out loud.
+await check("a null customerId is refused, as the rule intends", false,
+  () => write("cashier", {
+    action: "CREDIT_LIMIT_UNCHECKED",
+    customerId: null,
+    customerName: "Asha",
+    reason: "customer-not-visible",
+    saleTotal: 600,
+    storeId: STORE_A
+  }));
+
+await check("a null customerName is refused too", false,
+  () => write("cashier", {
+    action: "CREDIT_LIMIT_UNCHECKED",
+    customerName: null,
+    reason: "customer-not-visible",
+    saleTotal: 600,
+    storeId: STORE_A
+  }));
+
+// And the fix: omitting them is accepted. This is the write a first-time
+// credit sale actually makes now, and it is the assertion that would have
+// caught the bug on the day it was written.
+await check("omitting them instead is accepted", true,
+  () => write("cashier", {
+    action: "CREDIT_LIMIT_UNCHECKED",
+    reason: "customer-not-visible",
+    saleTotal: 600,
+    storeId: STORE_A
+  }));
+
+// Every other id-shaped field in this schema has the same rule, so the same
+// mistake is available at each of them.
+await check("a null storeId is refused", false,
+  () => write("cashier", { action: "SALE_COMPLETED", total: 1000, storeId: null }));
+await check("a null saleId is refused", false,
+  () => write("manager", { action: "SALE_VOIDED", saleId: null, total: 1000 }));
 
 await testEnv.cleanup();
 

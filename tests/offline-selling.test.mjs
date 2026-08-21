@@ -676,7 +676,10 @@ console.log("\n=== an outage that starts mid-transaction no longer strands the t
   // What the cashier is told, and what is not queued.
   {
     const handlerStart = noComments.indexOf('qs("#completeSaleButton").addEventListener');
-    const handler = noComments.slice(handlerStart, handlerStart + 14000);
+    // Widened: the sale handler grows every time it gains a comment, and the
+    // "} catch" that bounds the region below fell outside the slice, which
+    // collapses it silently rather than failing loudly.
+    const handler = noComments.slice(handlerStart, handlerStart + 20000);
     const unconfirmedAt = handler.indexOf('outcome === "unconfirmed"');
     // Bounded at the catch, or the generic failure message the catch legitimately
     // uses would be read as belonging to the unconfirmed branch.
