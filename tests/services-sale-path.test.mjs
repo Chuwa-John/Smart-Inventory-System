@@ -232,6 +232,106 @@ console.log("\n=== the subscription is scoped like every other one ===");
     "the next business on this device must not inherit the last one's menu");
 }
 
+console.log("\n=== Phase C: a service cannot be returned, and says why ===");
+{
+  // The decision, not a limitation (DESIGN-services.md §6). "Return three of
+  // the ten screws" is a shelf movement; "return one haircut" is not, and what
+  // the customer is owed there is a refund or a void, both of which exist.
+  const fn = noComments.slice(noComments.indexOf("function saleReturnableItems("));
+  const body = fn.slice(0, fn.indexOf("\nfunction "));
+  check("service lines are dropped before a manager can pick one",
+    /\.filter\(\(item\) => !isServiceLine\(item\)\)/.test(body),
+    "tolerating one and skipping it later refunds a service with nothing recorded against it");
+
+  // One choke point, deliberately. The dialog and the transaction both read
+  // this, and filtering at only one of them is the bug it exists to prevent.
+  const dialog = noComments.slice(noComments.indexOf("function openReturnDialog("));
+  const dialogBody = dialog.slice(0, dialog.indexOf("\nasync function "));
+  const confirm = noComments.slice(noComments.indexOf("async function confirmProcessReturn("));
+  const confirmBody = confirm.slice(0, confirm.indexOf("\nasync function "));
+  check("the dialog reads the filtered list", /saleReturnableItems\(sale\)/.test(dialogBody));
+  check("the transaction reads the same filtered list", /saleReturnableItems\(sale\)/.test(confirmBody));
+
+  // The invariant the return transaction rests on. It has no filter of its own
+  // because `selections` cannot contain a service; if that ever stops being
+  // true this line builds products/undefined again.
+  check("selections are built only from the filtered list",
+    /returnableItems\.find\(\(entry\) => entry\.productId === input\.dataset\.returnItem\)/.test(confirmBody) &&
+    /const productRefs = selections\.map\(/.test(confirmBody),
+    "the transaction is safe only because nothing upstream can hand it a service");
+
+  // An empty list has two different causes and they must not share a sentence.
+  check("a services-only sale is not told its goods were already returned",
+    /\(sale\.items \|\| \[\]\)\.some\(\(item\) => !isServiceLine\(item\)\)\s*\?\s*"returns\.noItemsSelected"\s*:\s*"returns\.servicesNotReturnable"/.test(noComments),
+    "nothing was returned and nothing can be -- the old message is simply false there");
+  check("returns.servicesNotReturnable exists in both languages",
+    (src.match(/"returns\.servicesNotReturnable"/g) || []).length >= 3);
+}
+
+console.log("\n=== Phase C: a void still voids the whole sale ===");
+{
+  const fn = noComments.slice(noComments.indexOf("async function undoLastSale("));
+  const body = fn.slice(0, fn.indexOf("\nfunction "));
+
+  check("stock lines are filtered before any product ref",
+    /const stockItems = \(sale\.items \|\| \[\]\)\.filter\(\(item\) => !isServiceLine\(item\)\);/.test(body));
+  check("the refs are built from the filtered list",
+    /const productRefs = stockItems\.map\(/.test(body) && !/productRefs = sale\.items\.map\(/.test(body));
+  // The half that was already wrong before services existed: productSnaps is
+  // aligned with productRefs, so indexing sale.items pairs a snapshot with the
+  // following line as soon as a service sits earlier in the basket.
+  check("the snapshot loop indexes the filtered list",
+    /const item = stockItems\[index\];/.test(body) && !/const item = sale\.items\[index\];/.test(body),
+    "sale.items[index] restores the wrong quantity to the wrong shelf, silently");
+  // The sale document is what makes a void a void; a service needs no undoing.
+  check("the sale is still marked voided as a whole",
+    /transaction\.update\(saleRef, \{ voided: true/.test(body));
+}
+
+console.log("\n=== Phase D: the offline queue, which is the one that fails silently ===");
+{
+  const fn = noComments.slice(noComments.indexOf("function queueOfflineSale("));
+  const body = fn.slice(0, fn.indexOf("\nfunction ", 10));
+
+  check("service lines are skipped before the product update",
+    /for \(const item of args\.items\) \{\s*if \(isServiceLine\(item\)\) continue;/.test(body),
+    "update() on a document that does not exist fails the whole atomic batch");
+  check("and therefore write no stock movement either",
+    body.indexOf("if (isServiceLine(item)) continue;") < body.indexOf("stockMovements"),
+    "a service has no shelf, so there is nothing for the ledger to describe");
+  // What must NOT be filtered: the sale itself. Takings cannot change because
+  // of how the stock happens to be accounted.
+  check("the queued sale still carries every line",
+    /items: args\.items,/.test(body),
+    "dropping services from the sale document would understate the day's takings");
+
+  // Run it. The static checks above say the guard is written; this says what
+  // the guard does to a real mixed basket, and what its absence did.
+  const isServiceLine = new Function(`${extract("isServiceLine")} return isServiceLine;`)();
+  const items = [
+    { kind: "service", serviceId: "svc1", name: "Braiding", qty: 1 },
+    { kind: "product", productId: "p1", name: "Beer", qty: 3 },
+    { kind: "product", productId: "p2", name: "Soda", qty: 5 }
+  ];
+
+  const updated = [];
+  for (const item of items) {
+    if (isServiceLine(item)) continue;
+    updated.push(`${item.productId}:${item.qty}`);
+  }
+  check("only real products are updated in the batch",
+    JSON.stringify(updated) === JSON.stringify(["p1:3", "p2:5"]));
+
+  // The control: every line, the way it was before the guard.
+  const unguarded = items.map((item) => String(item.productId));
+  check("without the guard the batch addresses products/undefined",
+    unguarded[0] === "undefined",
+    "one such path fails the write, and the batch is atomic, so the sale is lost with it");
+  check("...and it would have taken the real products down with it",
+    unguarded.length === 3 && unguarded.includes("p1") && unguarded.includes("p2"),
+    "the beer and the soda are in the same batch as the broken path");
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) {

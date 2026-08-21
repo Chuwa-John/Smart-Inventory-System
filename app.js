@@ -835,6 +835,7 @@ const DICTIONARY = {
     "returns.maxReturnable": "{qty} returnable",
     "returns.confirmButton": "Process Refund",
     "returns.noItemsSelected": "All items on this order have already been returned.",
+    "returns.servicesNotReturnable": "This sale is services only. A service cannot be returned once given — void the whole sale instead.",
     "returns.refundedLabel": "Refunded",
     "toast.returnNoSelection": "Enter a quantity to return for at least one item.",
     "toast.returnProcessed": "Refund of {amount} processed and stock restored.",
@@ -1548,6 +1549,7 @@ const DICTIONARY = {
     "returns.maxReturnable": "{qty} zinaweza kurejeshwa",
     "returns.confirmButton": "Kamilisha Kurejesha Fedha",
     "returns.noItemsSelected": "Bidhaa zote za oda hii tayari zimerejeshwa.",
+    "returns.servicesNotReturnable": "Mauzo haya ni huduma pekee. Huduma haiwezi kurejeshwa ikishatolewa — futa mauzo yote badala yake.",
     "returns.refundedLabel": "Fedha Iliyorejeshwa",
     "toast.returnNoSelection": "Weka kiasi cha kurejesha kwa angalau bidhaa moja.",
     "toast.returnProcessed": "Kurejesha fedha kwa {amount} kumekamilika na hisa imerejeshwa.",
@@ -3504,13 +3506,32 @@ function saleReturnedQtyMap(sale) {
   return map;
 }
 
+// What a manager may give back, which is goods and only goods.
+//
+// Service lines are filtered out here rather than at either call site, because
+// both the dialog and confirmProcessReturn() read this and a filter applied to
+// only one of them would let a service be selected and then silently dropped,
+// or refunded with nothing recorded against it.
+//
+// Not a technical limit -- a decision, taken in DESIGN-services.md §6. "Return
+// three of the ten screws" is a real shelf movement. "Return one haircut" is
+// not: the service already happened, and what the customer is owed is a refund
+// or a goodwill discount, both of which already exist as their own paths. A
+// whole-sale void still covers the case where the wrong thing was rung up.
+//
+// Before this, a service line was tolerated by accident: the transaction's
+// productSnaps loop skips a document that does not exist, so the refund total
+// counted the service while nothing was restored. Accidental tolerance is not
+// the same as a decision, and it reads identically until the day it does not.
 function saleReturnableItems(sale) {
   const returnedMap = saleReturnedQtyMap(sale);
-  return (sale.items || []).map((item) => {
-    const alreadyReturned = returnedMap.get(item.productId) || 0;
-    const remaining = Math.max(0, Number(item.qty || 0) - alreadyReturned);
-    return { ...item, alreadyReturned, remaining };
-  });
+  return (sale.items || [])
+    .filter((item) => !isServiceLine(item))
+    .map((item) => {
+      const alreadyReturned = returnedMap.get(item.productId) || 0;
+      const remaining = Math.max(0, Number(item.qty || 0) - alreadyReturned);
+      return { ...item, alreadyReturned, remaining };
+    });
 }
 
 function buildStaffOrderCard(sale) {
@@ -3585,7 +3606,14 @@ function openReturnDialog(saleId) {
     </div>`
         )
         .join("")
-    : `<p class="muted">${t("returns.noItemsSelected")}</p>`;
+    // Two different reasons for an empty list, and they must not share a
+    // sentence. "Already returned" is true of a sale whose goods have all been
+    // given back; said of a services-only sale it is simply false -- nothing
+    // was returned, and nothing can be. The same distinction the inventory
+    // empty state draws between "no stock" and "a filter is hiding it".
+    : `<p class="muted">${t((sale.items || []).some((item) => !isServiceLine(item))
+        ? "returns.noItemsSelected"
+        : "returns.servicesNotReturnable")}</p>`;
   qs("#returnDialog").showModal();
 }
 
@@ -3647,6 +3675,12 @@ async function confirmProcessReturn() {
         // reads its own target id first so a retried submission cannot record
         // the sale twice.
         const saleSnap = await transaction.get(saleRef);
+        // No service filter here, and that is load-bearing rather than an
+        // omission: `selections` is built only from saleReturnableItems(), which
+        // drops service lines before a manager can select one. If that filter
+        // ever moves or narrows, this line starts building products/undefined
+        // again -- so the invariant is asserted in tests/services-sale-path,
+        // not merely relied upon.
         const productRefs = selections.map((item) => doc(state.db, "users", state.businessOwnerUid, "products", item.productId));
         const productSnaps = await Promise.all(productRefs.map((ref) => transaction.get(ref)));
 
@@ -6257,7 +6291,21 @@ async function undoLastSale() {
         const saleData = saleSnap.data();
         if (saleData.voided) throw new Error(t("txerror.saleAlreadyUndone"));
 
-        const productRefs = sale.items.map((item) => doc(state.db, "users", state.businessOwnerUid, "products", item.productId));
+        // Stock lines only (DESIGN-services.md §3). A void still voids the
+        // WHOLE sale, services included -- the sale document is marked voided
+        // and drops out of every takings figure by its own flag, so a service
+        // needs no undoing of its own. What it must not do is send
+        // products/undefined to the server.
+        //
+        // This path tolerated a service by accident before: the exists() check
+        // below skips a document that is not there. It was the right outcome
+        // reached by luck, and the index arithmetic underneath it was already
+        // wrong -- productSnaps is aligned with productRefs, so reading
+        // sale.items[index] pairs a snapshot with the following line the moment
+        // a service sits earlier in the basket, restoring the wrong quantity to
+        // the wrong shelf without raising anything.
+        const stockItems = (sale.items || []).filter((item) => !isServiceLine(item));
+        const productRefs = stockItems.map((item) => doc(state.db, "users", state.businessOwnerUid, "products", item.productId));
         const productSnaps = await Promise.all(productRefs.map((ref) => transaction.get(ref)));
 
         const creditCustomerRef = saleData.paymentMethod === "credit" && saleData.customerId
@@ -6279,7 +6327,7 @@ async function undoLastSale() {
 
         productSnaps.forEach((snap, index) => {
           if (!snap.exists()) return;
-          const item = sale.items[index];
+          const item = stockItems[index];
           const alreadyReturned = alreadyReturnedByProduct.get(item.productId) || 0;
           const netQty = Math.max(0, Number(item.qty || 0) - alreadyReturned);
           if (netQty === 0) return;
@@ -7024,7 +7072,19 @@ function queueOfflineSale(args) {
     createdAt: serverTimestamp()
   });
 
+  // Stock lines only (DESIGN-services.md §3, Phase D). This is the quietest of
+  // the four call sites and the reason the design named it the riskiest to
+  // skip: update() on a document that does not exist fails the write, the
+  // whole batch is atomic, and nothing here is awaited -- so a queued sale with
+  // one service line in it would take the sale, every stock decrement and every
+  // ledger entry down with it, hours later, with no toast and no cashier
+  // watching. The only trace would be the fault log, if it caught it.
+  //
+  // The sale document above deliberately still carries ALL the lines, services
+  // included: what was sold is what was sold, and the takings must not change
+  // because of how the stock is accounted.
   for (const item of args.items) {
+    if (isServiceLine(item)) continue;
     batch.update(doc(state.db, ...root, "products", item.productId), {
       quantity: increment(-item.qty),
       sold30: increment(item.qty),

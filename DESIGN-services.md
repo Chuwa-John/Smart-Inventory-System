@@ -1,6 +1,11 @@
 # Design — services for bar/restaurant and salon/beauty
 
-Status: **design only, not built.** Written 2026-08-11, ahead of any code.
+Status: **Phases A–D built and tested; nothing deployed.** Written 2026-08-11
+ahead of any code; A and B built the same day, C and D on 2026-08-12. Phase E
+(the nav tab and the screen for authoring a menu) is the remainder.
+
+Production is on `20260808i` and carries none of this. The working tree is
+ahead deliberately — see the deployment note at the end of §9.
 
 Requested by the shop owner: a `bar`/`restaurant` or `salon`/`beauty` store
 sells more than stocked goods — a haircut, a plate of food — and today has no
@@ -207,18 +212,48 @@ Tanzanian practice is outside what I know to decide here — default to
   on every sale item, `completeSale()`'s transaction filters to
   `kind === "product"` before touching stock. This is the phase that must not
   ship without the guard in §3 — it is the one call site that hard-fails today.
-- **Phase C (return/void guard, made deliberate).** Explicit `kind` filtering
-  in the return dialog and `undoLastSale()`, replacing the accidental
-  tolerance with a designed one; return dialog excludes service lines per §6.
-- **Phase D (offline).** `queueOfflineSale()` filtered the same way. The
-  highest-risk phase to skip, because its failure mode — a silently rejected
-  batch — is the hardest of the four to notice.
+- **Phase C (return/void guard, made deliberate).** *Built 2026-08-12.*
+  `saleReturnableItems()` drops service lines, which is the single choke point
+  both the dialog and `confirmProcessReturn()` read — filtering at only one of
+  them would let a manager select a service and then have it silently dropped.
+  `undoLastSale()` filters to stock lines before building product refs, and
+  indexes that filtered list rather than `sale.items`; the old indexing was
+  already wrong the moment a service sat earlier in the basket, restoring the
+  wrong quantity to the wrong shelf with nothing raised. A void still voids the
+  whole sale, services included, because the sale document's own `voided` flag
+  is what removes it from every takings figure.
+
+  One thing found while building it: an empty return list had a single message,
+  *"All items on this order have already been returned."* For a services-only
+  sale that is not a limitation, it is a false statement — nothing was returned
+  and nothing can be. It now has its own message, the same distinction the
+  inventory empty state draws between "no stock" and "a filter is hiding it".
+- **Phase D (offline).** *Built 2026-08-12.* `queueOfflineSale()` skips service
+  lines before the product update and therefore before the ledger entry. The
+  design called this the riskiest to skip and that was right: `update()` on a
+  document that does not exist fails the write, the batch is atomic, and
+  nothing in that function is awaited — so one service line would have taken
+  the sale, every stock decrement and every ledger entry down with it, hours
+  later, with no toast and nobody watching. The sale document still carries
+  every line, services included: what was sold is what was sold, and takings
+  must not change because of how stock happens to be accounted.
 - **Phase E (nav + UI).** The tab itself, gated per store, labelled per
   business type.
 
 Each phase is independently testable and independently shippable in that
 order; B cannot safely ship before A, and D is the one most worth its own
 emulator test given how quietly it fails.
+
+**Where A–D leaves it.** Every path that touches money or stock is now guarded,
+so this is safe to deploy from a data-integrity standpoint — which is a
+different question from whether it is finished. It is not: without Phase E
+there is no screen for authoring a menu, so a service can only be created by
+writing to Firestore directly. A `bar` or `salon` store would see an empty
+"Menu"/"Services" panel in the POS and no way to fill it. Everyone else sees
+nothing at all, since `storeSellsServices()` is false for every other type.
+
+Not deployed, at the owner's instruction, until the local build has been
+exercised by hand.
 
 ---
 
