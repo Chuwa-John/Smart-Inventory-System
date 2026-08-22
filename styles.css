@@ -1296,6 +1296,50 @@ button:disabled {
   background: color-mix(in srgb, var(--panel-soft) 70%, transparent);
 }
 
+/* Markdown inside an assistant reply. The model answers in Markdown and
+   renderChatMarkdown() turns a small subset of it into real elements, so these
+   need to sit sensibly inside a bubble rather than inherit page defaults --
+   a browser's own ul/ol margins are far too wide in a narrow chat column. */
+.chat-bubble p {
+  margin: 0 0 6px;
+}
+
+.chat-bubble p:last-child {
+  margin-bottom: 0;
+}
+
+.chat-bubble .chat-heading {
+  font-weight: 600;
+  margin: 10px 0 4px;
+}
+
+.chat-bubble .chat-heading:first-child {
+  margin-top: 0;
+}
+
+.chat-bubble ul,
+.chat-bubble ol {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+}
+
+.chat-bubble li {
+  margin: 2px 0;
+}
+
+.chat-bubble code {
+  background: color-mix(in srgb, var(--panel-soft) 60%, transparent);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.92em;
+}
+
+.chat-bubble hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 10px 0;
+}
+
 dialog {
   width: min(760px, calc(100vw - 28px));
   max-height: calc(100vh - 48px);

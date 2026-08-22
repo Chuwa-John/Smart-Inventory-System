@@ -4679,6 +4679,49 @@ function renderAiQuestionSuggestions() {
     .join("");
 }
 
+// The model replies in Markdown, and this used to go straight to innerHTML as
+// esc(content) with newlines swapped for <br>. That escaped it safely and broke
+// the lines, but rendered none of it -- so every answer arrived carrying a
+// literal "## ", "### ", "**bold**" and "---" on screen.
+//
+// The ordering below is the safety property and must not be rearranged: esc()
+// runs FIRST, so anything the model returns is inert text by the time this
+// function looks at it, and the only tags in the output are ones written here.
+// Converting first and escaping after would escape our own markup; skipping
+// esc() would put model output into innerHTML, which is the whole reason it was
+// on that line to begin with.
+//
+// Deliberately a small subset -- headings, bold, italic, inline code, bullet
+// and numbered lists, horizontal rules. No links and no images: a model-supplied
+// href is a phishing vector on a page that holds a shop's till.
+function renderChatMarkdown(text) {
+  const inline = (value) => value
+    .replace(/\`([^\`]+)\`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+
+  const out = [];
+  let list = null;
+  const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  const openList = (kind) => { if (list !== kind) { closeList(); out.push(`<${kind}>`); list = kind; } };
+
+  for (const rawLine of esc(String(text ?? "")).split("\n")) {
+    const line = rawLine.trim();
+    if (!line) { closeList(); continue; }
+    if (/^(-{3,}|\*{3,})$/.test(line)) { closeList(); out.push("<hr>"); continue; }
+    const heading = line.match(/^(#{1,6})\s+(.*)$/);
+    if (heading) { closeList(); out.push(`<div class="chat-heading">${inline(heading[2])}</div>`); continue; }
+    const bullet = line.match(/^[-*]\s+(.*)$/);
+    if (bullet) { openList("ul"); out.push(`<li>${inline(bullet[1])}</li>`); continue; }
+    const numbered = line.match(/^\d+\.\s+(.*)$/);
+    if (numbered) { openList("ol"); out.push(`<li>${inline(numbered[1])}</li>`); continue; }
+    closeList();
+    out.push(`<p>${inline(line)}</p>`);
+  }
+  closeList();
+  return out.join("");
+}
+
 function renderChatLog() {
   const container = qs("#aiAnswer");
   if (!state.chatHistory.length) {
@@ -4686,7 +4729,7 @@ function renderChatLog() {
     return;
   }
   container.innerHTML = state.chatHistory
-    .map((message) => `<div class="chat-bubble ${message.role}">${esc(message.content).replaceAll("\n", "<br>")}</div>`)
+    .map((message) => `<div class="chat-bubble ${message.role}">${renderChatMarkdown(message.content)}</div>`)
     .join("");
   container.scrollTop = container.scrollHeight;
 }
