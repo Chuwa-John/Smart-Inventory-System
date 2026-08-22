@@ -332,7 +332,7 @@ console.log("\n=== Restock is held to the same rule ===");
       "state", "qs", "showToast", "t", "productStoreId", "recordStockMovement",
       "describeOperationError", "renderAll", "console",
       "canRecordCost", "clampNonNegativeNumber", "MAX_MONEY", "safeNumber",
-      "nextUnitCost", "productCostKnown",
+      "nextUnitCost", "productCostKnown", "isOfflineNow", "awaitRestockTransaction",
       `${source} return confirmRestock;`
     )(
       state, (selector) => elements[selector], (m) => calls.toasts.push(m), (key) => key,
@@ -340,7 +340,14 @@ console.log("\n=== Restock is held to the same rule ===");
       () => { calls.renders += 1; }, { warn: () => {} },
       () => withCost, (v, max) => Math.min(Number(v) || 0, max), 1000000000,
       (v) => (Number.isFinite(Number(v)) ? Number(v) : 0),
-      realNextUnitCost, realProductCostKnown
+      realNextUnitCost, realProductCostKnown,
+      // The restock path now refuses offline outright and bounds the
+      // transaction, because it could otherwise hang forever with the button
+      // disabled behind it. Online here, and the race resolved by the attempt --
+      // the point of THIS suite is the double-click guard, and the timeout gets
+      // its own assertions in purchases.test.mjs.
+      () => false,
+      (attempt) => attempt.then(() => "committed")
     );
     return { run, calls, button };
   }

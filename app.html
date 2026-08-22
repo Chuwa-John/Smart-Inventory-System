@@ -28,7 +28,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260808v" />
+    <link rel="stylesheet" href="./styles.css?v=20260808w" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#0b0d10" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -48,7 +48,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260808v"></script>
+    <script type="module" src="./boot.js?v=20260808w"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -94,9 +94,11 @@
                group rather than a dropdown: two items do not earn the
                open/close machinery, and the grouping is what the owner asked
                for. DESIGN-purchases.md 13b. -->
-          <p class="nav-group-label" data-i18n="nav.accounts">Accounts</p>
-          <button class="nav-item" data-view="purchases" data-i18n="nav.purchases">Purchases</button>
-          <button class="nav-item" data-view="expenses" data-i18n="nav.expenses">Expenses</button>
+          <div class="nav-group">
+            <p class="nav-group-label" data-i18n="nav.accounts">Accounts</p>
+            <button class="nav-item" data-view="purchases" data-i18n="nav.purchases">Purchases</button>
+            <button class="nav-item" data-view="expenses" data-i18n="nav.expenses">Expenses</button>
+          </div>
           <button class="nav-item" data-view="reports" data-i18n="nav.reports">Reports</button>
           <button class="nav-item" data-view="ai" data-i18n="nav.ai">AI Advisor</button>
         </nav>
@@ -1051,13 +1053,31 @@
           <label><span data-i18n="restock.supplierLabel">Supplier (optional)</span>
             <input id="restockSupplierInput" type="text" maxlength="120" autocomplete="off" />
           </label>
-          <label><span data-i18n="restock.receiptLabel">Fiscal receipt number (optional)</span>
-            <input id="restockReceiptInput" type="text" maxlength="60" autocomplete="off" />
-            <!-- Not decoration: the input VAT window runs from the fiscal
-                 receipt date, so a purchase recorded without it loses a claim
-                 the shop was entitled to. RESEARCH-accounts.md 5.3. -->
-            <span class="muted" data-i18n="restock.receiptHint">Needed to claim the VAT back on this purchase.</span>
+          <label><span data-i18n="restock.supplierTinLabel">Supplier TIN (optional)</span>
+            <input id="restockSupplierTinInput" type="text" maxlength="20" autocomplete="off" />
           </label>
+          <!-- Only shown to a VAT-registered business. DESIGN-vat.md decision 4
+               is that VAT is per business, forward-only and off by default, and
+               telling an unregistered duka it is losing a claim it was never
+               entitled to make is worse than saying nothing. renderRestockCostFields()
+               sets this on every open. -->
+          <div id="restockReceiptFields" hidden>
+            <label class="checkbox-row">
+              <input id="restockHasReceiptInput" type="checkbox" />
+              <!-- Asserted, not inferred from whether the number box was typed
+                   in. RESEARCH-accounts.md 5.3: the six-month input-VAT window
+                   runs from the receipt DATE, so both fields below are the point
+                   of recording a purchase at all. -->
+              <span data-i18n="restock.hasReceiptLabel">I have a fiscal receipt for this delivery</span>
+            </label>
+            <label><span data-i18n="restock.receiptLabel">Fiscal receipt number (optional)</span>
+              <input id="restockReceiptInput" type="text" maxlength="60" autocomplete="off" />
+            </label>
+            <label><span data-i18n="restock.receiptDateLabel">Date on the receipt</span>
+              <input id="restockReceiptDateInput" type="date" />
+              <span class="muted" data-i18n="restock.receiptHint">The VAT claim window runs from this date, not the day you record it.</span>
+            </label>
+          </div>
         </div>
       </div>
       <div class="button-row end">
@@ -1332,6 +1352,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260808v"></script>
+    <script type="module" src="./app.js?v=20260808w"></script>
   </body>
 </html>

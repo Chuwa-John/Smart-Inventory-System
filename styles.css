@@ -256,6 +256,17 @@ td small,
   gap: 6px;
 }
 
+/* A real container, so the heading owns exactly its own items. As a bare <p> in
+   a flat <nav> it visually captured every following .nav-item -- Reports and the
+   AI Advisor were filed under Accounts, which nobody decided. */
+.nav-group {
+  display: grid;
+  gap: 6px;
+}
+.nav-group[hidden] {
+  display: none;
+}
+
 /* Groups the Accounts views in the sidebar. A label, not a control -- there is
    nothing to open or close, so it is a <p> and never takes focus. Hidden with
    its group when the role cannot open either view: a heading standing alone

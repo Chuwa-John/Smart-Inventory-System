@@ -335,7 +335,9 @@ console.log("\n=== roles and lifecycle ===");
     /if \(!isManagerOrOwnerRole\(\)\) \{\s*state\.purchases = \[\];\s*return;\s*\}/.test(
       body("async function subscribeToPurchases(")), true);
   check("renderPurchases refuses a non-manager",
-    /if \(!isManagerOrOwnerRole\(\)\) return;/.test(body("function renderPurchases(")), true);
+    /if \(!isManagerOrOwnerRole\(\)\) \{[\s\S]{0,200}return;\s*\}/.test(body("function renderPurchases(")), true);
+  check("...and empties the table rather than leaving stale rows",
+    /table\.innerHTML = "";/.test(body("function renderPurchases(")), true);
   check("purchases is not in the cashier allowlist",
     /CASHIER_ALLOWED_VIEWS = \["pos"\]/.test(noComments), true);
 
@@ -377,8 +379,13 @@ console.log("\n=== roles and lifecycle ===");
   check("productCostMap reads the cost collection",
     /state\.productCosts \|\| \[\]/.test(body("function productCostMap(")), true);
 
-  check("the Accounts heading follows its group rather than standing alone",
-    /nav-group-label[\s\S]{0,400}label\.hidden = !anyVisible/.test(noComments), true);
+  // A real container, so the heading owns exactly its own items. As a bare <p>
+  // in a flat <nav> it captured every following .nav-item -- Reports and the AI
+  // Advisor were filed under Accounts, which nobody decided.
+  check("the Accounts heading follows its own group",
+    /group\.hidden = !anyVisible/.test(noComments), true);
+  check("...and the group is scoped to its own children",
+    /group\.querySelectorAll\("\.nav-item"\)/.test(noComments), true);
 }
 
 console.log("\n=== both languages ===");
@@ -396,6 +403,101 @@ console.log("\n=== both languages ===");
     (src.match(/"restock\.unitCostHint": "[^"]*\{value\}[^"]*"/g) || []).length, 2);
 }
 
+console.log("\n=== a restock cannot hang the till ===");
+{
+  const restock = body("async function confirmRestock(");
+  // OFFLINE-CAPABILITIES.md line 52 promises restocking is refused until the
+  // connection returns. Nothing implemented it: runTransaction cannot complete
+  // without a server, so the promise never settled, the finally never ran, and
+  // the Confirm button stayed disabled until the page was reloaded.
+  check("offline is refused outright", /if \(isOfflineNow\(\)\) return showToast/.test(restock), true);
+  check("...before the button is ever disabled",
+    restock.indexOf("isOfflineNow()") < restock.indexOf("confirmButton.disabled = true"), true);
+
+  // The guard only catches a connection the device KNOWS is down. Shop wifi up
+  // and the uplink dead is the case that hangs: navigator.onLine stays true and
+  // serverReachable has not flipped.
+  check("the transaction is bounded by a timeout", /awaitRestockTransaction\(attempt\)/.test(restock), true);
+  check("...and the promise is not awaited before the race",
+    /const attempt = runTransaction\(/.test(restock), true);
+  // Unlike a sale there is no offline queue behind a restock, so an unconfirmed
+  // transaction may or may not have landed. The shop is told that rather than
+  // shown a success it cannot rely on when counting the shelf.
+  check("an unconfirmed restock is reported, not claimed as success",
+    /outcome === "unconfirmed"[\s\S]{0,160}toast\.restockUnconfirmed/.test(restock), true);
+
+  const helper = body("async function awaitRestockTransaction(");
+  check("the timeout helper clears its timer", /window\.clearTimeout\(timeoutId\)/.test(helper), true);
+  check("...in a finally, so a rejected attempt does not leak it",
+    /finally \{[\s\S]{0,120}clearTimeout/.test(helper), true);
+}
+
+console.log("\n=== the delivery paperwork is read once, outside the retry ===");
+{
+  const restock = body("async function confirmRestock(");
+  const txStart = restock.indexOf("runTransaction(");
+  // Firestore re-runs a transaction callback on contention, and the dialog stays
+  // open and interactive for all of it -- so a retry could pick up fields
+  // another dialog had already blanked and write the purchase with the supplier
+  // and receipt gone.
+  for (const field of ["restockReceiptInput", "restockSupplierInput",
+                       "restockSupplierTinInput", "restockHasReceiptInput"]) {
+    check(`${field} is read before the transaction, not inside it`,
+      restock.indexOf(field) > -1 && restock.indexOf(field) < txStart, true);
+  }
+  // Asserted, not inferred from whether the number box was typed in.
+  check("hasFiscalReceipt is asserted by a checkbox",
+    /const hasFiscalReceipt = recordingCost && Boolean\(qs\("#restockHasReceiptInput"\)\?\.checked\)/.test(restock), true);
+  check("...and is no longer inferred from the receipt number",
+    /hasFiscalReceipt: Boolean\(receiptNumber\)/.test(restock), false);
+  // The field the six-month input-VAT window actually runs from. It was in the
+  // schema, permitted by the rules, and written by nothing.
+  check("the receipt date is written to the purchase",
+    /receiptDate: Timestamp\.fromDate\(receiptDate\)/.test(restock), true);
+  check("the supplier TIN is written too", /supplierTin \}/.test(restock), true);
+  check("both are omitted when blank rather than written empty",
+    /\.\.\.\(receiptDate \? \{ receiptDate/.test(restock), true);
+
+  // Local-only mode: Firebase failed to load and the app runs against memory. A
+  // quantity-only restock is still meaningful there; a cost is not, because
+  // there is nowhere to put the purchase. Dropping the money the manager typed
+  // with a "Restocked" toast is worse than refusing it, and saveExpense()
+  // refuses in the same situation.
+  const fallback = restock.slice(restock.indexOf("} else {"));
+  check("the no-database branch was located", fallback.length > 40, true);
+  check("a cost entered with no database is refused, not discarded",
+    /if \(totalPaid\) \{[\s\S]{0,200}costNeedsConnection[\s\S]{0,60}return;/.test(fallback), true);
+  check("...and the quantity-only restock still works there",
+    /product\.quantity = newQuantityDisplay;/.test(fallback), true);
+}
+
+console.log("\n=== VAT copy is not shown to a shop that does not collect VAT ===");
+{
+  // DESIGN-vat.md decision 4: per business, forward-only, off by default. A duka
+  // that is not registered was being told it had lost a claim it was never
+  // entitled to make.
+  check("the receipt block is gated on registration",
+    /receiptFields\.hidden = !canRecordCost\(\) \|\| !vatSettings\(\)\.registered/.test(
+      body("function renderRestockCostFields(")), true);
+  check("the no-receipt tile is gated too",
+    /vatSettings\(\)\.registered \? \[[\s\S]{0,300}purchases\.noReceipt/.test(
+      body("function renderPurchases(")), true);
+}
+
+console.log("\n=== a role change re-runs the subscriptions gated on it ===");
+{
+  const resub = body("function resubscribeRoleGatedCollections(");
+  check("promotion re-subscribes expenses, purchases and costs",
+    /subscribeToExpenses\(\);\s*subscribeToPurchases\(\);\s*subscribeToProductCosts\(\);/.test(resub), true);
+  check("...and demotion empties what was already loaded",
+    /state\.expenses = \[\];\s*state\.purchases = \[\];\s*state\.productCosts = \[\];/.test(resub), true);
+  check("...and detaches the listeners first",
+    resub.indexOf("state[key]()") < resub.indexOf("state.expenses = []"), true);
+  check("the membership watcher calls it on a role change",
+    /state\.currentUserRole = nextRole;[\s\S]{0,120}resubscribeRoleGatedCollections\(\);/.test(noComments), true);
+  check("...and on the fail-closed demotion path too",
+    /state\.currentUserRole = "cashier";\s*resubscribeRoleGatedCollections\(\);/.test(noComments), true);
+}
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 process.exit(failed.length ? 1 : 0);

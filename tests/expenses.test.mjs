@@ -340,7 +340,11 @@ console.log("\n=== a cashier neither subscribes to nor renders expenses ===");
   // the totals tiles must not be built for a role that may not see them.
   const render = body("function renderExpenses(");
   check("renderExpenses refuses a non-manager",
-    /if \(!isManagerOrOwnerRole\(\)\) return;/.test(render), true);
+    /if \(!isManagerOrOwnerRole\(\)\) \{[\s\S]{0,200}return;\s*\}/.test(render), true);
+  // Emptied, not merely skipped. A demoted manager's rows would otherwise sit in
+  // a section hidden by CSS with every wages figure still in the DOM.
+  check("...and empties the table rather than leaving stale rows",
+    /table\.innerHTML = "";/.test(render), true);
   check("...before it writes any figure into the totals tiles",
     render.indexOf("isManagerOrOwnerRole()") < render.indexOf("totals.innerHTML"), true);
   check("...and before it writes any row into the table",

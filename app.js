@@ -120,12 +120,14 @@ const state = {
   productCosts: [],
   unsubscribeProductCosts: null,
   purchaseMonthSelection: localMonthKey(new Date()),
+  purchaseMonthTouched: false,
   // localMonthKey(), not toISOString().slice(0, 7). Everything that reads
   // this bucket by local month, and a UTC slice disagrees with them between
   // midnight and 03:00 EAT on the 1st -- so a shop opening this screen early
   // on the first of the month would be shown the previous month's total, and
   // an expense recorded that morning would not appear in the list.
   expenseMonthSelection: localMonthKey(new Date()),
+  expenseMonthTouched: false,
   reportMonthSelection: new Date().toISOString().slice(0, 7),
   openMonthlyReportId: null,
   barcodeScanTarget: null,
@@ -359,7 +361,7 @@ const DICTIONARY = {
     "nav.purchases": "Purchases",
     "purchases.eyebrow": "Stock bought",
     "purchases.title": "Purchases",
-    "purchases.intro": "Every delivery, and what you paid for it. Recorded when you restock or add a product \u2014 you enter the total for the batch, and the cost per unit is worked out from it.",
+    "purchases.intro": "Every delivery, and what you paid for it. Recorded when you restock \u2014 you enter the total for the batch, and the cost per unit is worked out from it.",
     "purchases.listTitle": "Recorded",
     "purchases.monthLabel": "Month",
     "purchases.thDate": "Date",
@@ -388,7 +390,14 @@ const DICTIONARY = {
     "restock.unitCostHint": "That works out to {value} each.",
     "restock.supplierLabel": "Supplier (optional)",
     "restock.receiptLabel": "Fiscal receipt number (optional)",
-    "restock.receiptHint": "Needed to claim the VAT back on this purchase.",
+    "restock.receiptHint": "The VAT claim window runs from this date, not the day you record it.",
+    "restock.supplierTinLabel": "Supplier TIN (optional)",
+    "restock.hasReceiptLabel": "I have a fiscal receipt for this delivery",
+    "restock.receiptDateLabel": "Date on the receipt",
+    "restock.costNeedsConnection": "Recording what you paid needs a connection. Add the delivery now and the cost later.",
+    "expenses.dateTooOld": "That date is more than two years ago. Check the year.",
+    "toast.restockOffline": "Restocking needs a connection. The delivery will have to wait.",
+    "toast.restockUnconfirmed": "That took too long to confirm. Check the stock count before restocking again.",
     "expenses.eyebrow": "Money out",
     "expenses.title": "Expenses",
     "expenses.addButton": "Record Expense",
@@ -1188,7 +1197,7 @@ const DICTIONARY = {
     "nav.purchases": "Manunuzi",
     "purchases.eyebrow": "Bidhaa zilizonunuliwa",
     "purchases.title": "Manunuzi",
-    "purchases.intro": "Kila mzigo, na ulicholipa kwa ajili yake. Hurekodiwa unapoongeza bidhaa au kujaza stoo \u2014 unaweka jumla ya mzigo, na gharama ya kila kimoja inahesabiwa kutoka hapo.",
+    "purchases.intro": "Kila mzigo, na ulicholipa kwa ajili yake. Hurekodiwa unapojaza stoo \u2014 unaweka jumla ya mzigo, na gharama ya kila kimoja inahesabiwa kutoka hapo.",
     "purchases.listTitle": "Yaliyorekodiwa",
     "purchases.monthLabel": "Mwezi",
     "purchases.thDate": "Tarehe",
@@ -1217,7 +1226,14 @@ const DICTIONARY = {
     "restock.unitCostHint": "Hiyo inakuwa {value} kila kimoja.",
     "restock.supplierLabel": "Msambazaji (si lazima)",
     "restock.receiptLabel": "Namba ya risiti ya kodi (si lazima)",
-    "restock.receiptHint": "Inahitajika ili kudai VAT kwa manunuzi haya.",
+    "restock.receiptHint": "Muda wa kudai VAT huanza tarehe hii, si siku unayorekodi.",
+    "restock.supplierTinLabel": "TIN ya msambazaji (si lazima)",
+    "restock.hasReceiptLabel": "Nina risiti ya kodi kwa mzigo huu",
+    "restock.receiptDateLabel": "Tarehe iliyo kwenye risiti",
+    "restock.costNeedsConnection": "Kurekodi ulicholipa kunahitaji mtandao. Ongeza mzigo sasa na gharama baadaye.",
+    "expenses.dateTooOld": "Tarehe hiyo ni zaidi ya miaka miwili iliyopita. Angalia mwaka.",
+    "toast.restockOffline": "Kujaza stoo kunahitaji mtandao. Mzigo utasubiri.",
+    "toast.restockUnconfirmed": "Imechukua muda mrefu kuthibitisha. Angalia idadi ya bidhaa kabla ya kujaza tena.",
     "expenses.eyebrow": "Fedha zinazotoka",
     "expenses.title": "Matumizi",
     "expenses.addButton": "Rekodi Matumizi",
@@ -5113,6 +5129,16 @@ function renderCustomerAccounts() {
 // feed net profit and wages is a category. Corrections are the owner's: an
 // expense is a book entry, and letting whoever wrote it silently rewrite the
 // amount removes the control the collection exists to provide.
+// Two years. Long enough for any real correction, short enough that a mis-keyed
+// year is caught at the point of entry rather than discovered as a hole in a
+// period report.
+const EXPENSE_BACKDATE_LIMIT_DAYS = 730;
+
+// Longer than the sale path's 10s: a restock is a bigger transaction (up to
+// four documents) and it is not on the critical path of a customer standing
+// at the till, so it can afford to wait a little longer before giving up.
+const RESTOCK_TRANSACTION_TIMEOUT_MS = 15000;
+
 const EXPENSE_CATEGORIES = ["rent", "utilities", "wages", "transport",
                             "supplies", "repairs", "licences", "marketing", "other"];
 
@@ -5232,6 +5258,12 @@ function openExpenseDialog(expenseId) {
   // Editing is owner-only in firestore.rules. Opening the dialog for a manager
   // would let them fill it in and then be refused on save.
   if (existing && !isOwnerRole()) return;
+  // Refused before the form rather than after it. A new expense has to name one
+  // branch, and discovering that after the amount, category, date and note are
+  // typed throws the work away -- every other check in saveExpense() is an
+  // inline field error.
+  if (!existing && state.currentStoreId === "all") return showToast(t("toast.selectStoreBeforeAdd"));
+  if (!existing && !state.currentStoreId) return showToast(t("toast.loadingStore"));
 
   const select = qs("#expenseCategorySelect");
   if (select) {
@@ -5335,10 +5367,19 @@ async function saveExpense(input) {
     setExpenseError("#expenseDateError", t("expenses.dateRequired"));
     return;
   }
-  // A future date is a typo, and it would drop the expense out of every period
-  // report until that date arrives.
-  if (spentAt.getTime() > Date.now() + 24 * 60 * 60 * 1000) {
+  // Compared date to date, not instant to instant. spentAt is anchored at local
+  // noon, so an instant comparison against now + 24h let tomorrow through after
+  // midday and refused it before -- the guard's answer depended on the time of
+  // day it was asked.
+  const todayKey = localDateInputValue(new Date());
+  if (localDateInputValue(spentAt) > todayKey) {
     setExpenseError("#expenseDateError", t("expenses.dateFuture"));
+    return;
+  }
+  // A lower bound as well. An expense mis-keyed to 2019 saved, toasted success,
+  // and then appeared in no month view at all.
+  if (spentAt.getTime() < Date.now() - EXPENSE_BACKDATE_LIMIT_DAYS * 24 * 60 * 60 * 1000) {
+    setExpenseError("#expenseDateError", t("expenses.dateTooOld"));
     return;
   }
 
@@ -5451,7 +5492,13 @@ function renderExpenses() {
   // CASHIER_ALLOWED_VIEWS -- and applyRoleViewVisibility() hides the nav item.
   // Nothing to render for a cashier, and state.expenses is empty for them
   // anyway because subscribeToExpenses() does not subscribe.
-  if (!isManagerOrOwnerRole()) return;
+  // Emptied, not merely skipped. A demoted manager's rows would otherwise sit
+  // in a section hidden by CSS with every wages figure still in the DOM.
+  if (!isManagerOrOwnerRole()) {
+    table.innerHTML = "";
+    totals.innerHTML = "";
+    return;
+  }
 
   const monthInput = qs("#expenseMonthInput");
   if (monthInput && monthInput.value !== state.expenseMonthSelection) {
@@ -5459,6 +5506,10 @@ function renderExpenses() {
   }
 
   const scoped = storeExpenses();
+  // Re-anchored while the screen has never been touched, so a till left open
+  // across midnight on the 1st does not keep showing last month -- and every
+  // expense recorded that morning invisible until someone notices the box.
+  if (!state.expenseMonthTouched) state.expenseMonthSelection = localMonthKey(new Date());
   const monthKey = state.expenseMonthSelection;
   const summary = summariseExpenses(scoped, monthKey);
 
@@ -5724,7 +5775,11 @@ function renderPurchases() {
   const table = qs("#purchasesTable");
   const totals = qs("#purchaseTotals");
   if (!view || !table || !totals) return;
-  if (!isManagerOrOwnerRole()) return;
+  if (!isManagerOrOwnerRole()) {
+    table.innerHTML = "";
+    totals.innerHTML = "";
+    return;
+  }
 
   const monthInput = qs("#purchaseMonthInput");
   if (monthInput && monthInput.value !== state.purchaseMonthSelection) {
@@ -5732,18 +5787,21 @@ function renderPurchases() {
   }
 
   const scoped = storePurchases();
+  if (!state.purchaseMonthTouched) state.purchaseMonthSelection = localMonthKey(new Date());
   const monthKey = state.purchaseMonthSelection;
   const summary = summarisePurchases(scoped, monthKey);
 
   totals.innerHTML = [
     controlTile(t("purchases.monthTotal"), money(summary.total), "",
       t("purchases.monthCount", { count: String(summary.count), units: String(summary.units) })),
-    // Flagged, because this is the money whose VAT the shop cannot reclaim --
-    // the input tax window runs from the fiscal receipt date and without one
-    // there is no claim at all. RESEARCH-accounts.md 5.3.
-    controlTile(t("purchases.noReceipt"), money(summary.withoutReceipt),
-      summary.withoutReceipt > 0 ? "warn" : "",
-      summary.withoutReceipt > 0 ? t("purchases.noReceiptNote") : t("purchases.allReceipted"))
+    // VAT-registered only. The money whose input tax cannot be reclaimed is a
+    // real and useful warning to a registered business, and meaningless to a
+    // duka that does not collect VAT -- DESIGN-vat.md decision 4.
+    ...(vatSettings().registered ? [
+      controlTile(t("purchases.noReceipt"), money(summary.withoutReceipt),
+        summary.withoutReceipt > 0 ? "warn" : "",
+        summary.withoutReceipt > 0 ? t("purchases.noReceiptNote") : t("purchases.allReceipted"))
+    ] : [])
   ].join("");
 
   const canDelete = isOwnerRole();
@@ -6790,6 +6848,13 @@ function openRestockDialog(productId) {
 function renderRestockCostFields() {
   const fields = qs("#restockCostFields");
   if (fields) fields.hidden = !canRecordCost();
+  // DESIGN-vat.md decision 4: VAT is per business, forward-only, off by default.
+  // A shop that does not collect it must not be told it is losing a claim it was
+  // never entitled to make.
+  const receiptFields = qs("#restockReceiptFields");
+  if (receiptFields) receiptFields.hidden = !canRecordCost() || !vatSettings().registered;
+  const hasReceipt = qs("#restockHasReceiptInput");
+  if (hasReceipt) hasReceipt.checked = false;
   for (const id of ["#restockTotalPaidInput", "#restockSupplierInput", "#restockReceiptInput"]) {
     const node = qs(id);
     if (node) node.value = "";
@@ -6814,6 +6879,23 @@ function renderRestockUnitCostHint() {
   hint.textContent = t("restock.unitCostHint", { value: money(Math.round(paid / qty)) });
 }
 
+// Same shape as awaitSaleTransaction(), and for the same reason: a transaction
+// over shop wifi can hang indefinitely, and a hung promise leaves the button
+// disabled behind it for the rest of the session.
+async function awaitRestockTransaction(attempt) {
+  let timeoutId = null;
+  try {
+    return await Promise.race([
+      attempt.then(() => "committed"),
+      new Promise((resolve) => {
+        timeoutId = window.setTimeout(() => resolve("unconfirmed"), RESTOCK_TRANSACTION_TIMEOUT_MS);
+      })
+    ]);
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
 async function confirmRestock() {
   const productId = state.pendingRestockProductId;
   const product = state.products.find((item) => item.id === productId);
@@ -6822,15 +6904,47 @@ async function confirmRestock() {
   const qty = Math.floor(Number(qs("#restockQuantityInput").value));
   if (!Number.isFinite(qty) || qty <= 0) return showToast(t("toast.restockInvalidQuantity"));
 
+  // OFFLINE-CAPABILITIES.md line 52 promises "Restocking -- refused until the
+  // connection returns", and until now nothing implemented it. A restock is a
+  // runTransaction, which cannot complete without a server: the promise never
+  // settled, the finally never ran, and the Confirm button stayed disabled
+  // until the page was reloaded. That is the same failure app.js:8015 records
+  // for the sale path, which is why the sale path has both a guard and a
+  // timeout. This is the guard.
+  if (isOfflineNow()) return showToast(t("toast.restockOffline"));
+
   // Cost is optional on every restock. A cashier cannot record it at all, and a
   // manager who does not know the invoice yet should still be able to count the
   // delivery in -- those units are absorbed at the prevailing average, which is
   // the bounded inaccuracy DESIGN-purchases.md 12 accepts.
   const recordingCost = canRecordCost();
   const totalPaidRaw = recordingCost ? String(qs("#restockTotalPaidInput")?.value || "").trim() : "";
+  // Read ONCE, here, outside the transaction. These used to be read inside
+  // runTransaction's callback, which Firestore re-runs on contention -- and the
+  // dialog stays open and interactive for all of it, so a retry could pick up
+  // fields another dialog had already blanked and write the purchase with the
+  // supplier and receipt gone.
+  const receiptNumber = recordingCost ? String(qs("#restockReceiptInput")?.value || "").trim().slice(0, 60) : "";
+  const supplierName = recordingCost ? String(qs("#restockSupplierInput")?.value || "").trim().slice(0, 120) : "";
+  const supplierTin = recordingCost ? String(qs("#restockSupplierTinInput")?.value || "").trim().slice(0, 20) : "";
+  const receiptDateRaw = recordingCost ? String(qs("#restockReceiptDateInput")?.value || "").trim() : "";
+  // Asserted, not inferred. hasFiscalReceipt used to be Boolean(receiptNumber),
+  // which was wrong both ways: a manager holding a receipt who did not type the
+  // number was counted as having lost a VAT claim they actually have, and
+  // anything typed in the box -- "n/a" included -- asserted one exists.
+  const hasFiscalReceipt = recordingCost && Boolean(qs("#restockHasReceiptInput")?.checked);
   const totalPaid = totalPaidRaw ? clampNonNegativeNumber(totalPaidRaw, MAX_MONEY) : null;
   const errorSlot = qs("#restockTotalPaidError");
   if (errorSlot) errorSlot.textContent = "";
+  // Local parts at midday, the same way an expense date is parsed -- new
+  // Date("2026-08-21") is UTC midnight, which is the previous day west of
+  // Greenwich.
+  let receiptDate = null;
+  if (receiptDateRaw) {
+    const [ry, rm, rd] = receiptDateRaw.split("-").map(Number);
+    const parsed = new Date(ry, (rm || 1) - 1, rd || 1, 12, 0, 0);
+    if (!Number.isNaN(parsed.getTime())) receiptDate = parsed;
+  }
   if (totalPaidRaw && (totalPaid === null || totalPaid <= 0)) {
     if (errorSlot) errorSlot.textContent = t("restock.totalPaidInvalid");
     return;
@@ -6859,7 +6973,12 @@ async function confirmRestock() {
       const purchaseRef = totalPaid
         ? doc(collection(state.db, "users", state.businessOwnerUid, "purchases"))
         : null;
-      await runTransaction(state.db, async (transaction) => {
+      // ...and this is the timeout. The guard above only catches a connection
+      // the device KNOWS is down. The case that hangs is shop wifi up and the
+      // uplink dead -- navigator.onLine stays true, serverReachable has not
+      // flipped yet, and runTransaction waits forever. Bounded, so the dialog
+      // and the button come back either way.
+      const attempt = runTransaction(state.db, async (transaction) => {
         const snap = await transaction.get(productRef);
         if (!snap.exists()) throw new Error(t("txerror.itemGone", { name: product.name }));
         // Both reads before any write: Firestore refuses a transaction that
@@ -6897,8 +7016,6 @@ async function confirmRestock() {
             updatedAt: serverTimestamp()
           });
 
-          const receiptNumber = String(qs("#restockReceiptInput")?.value || "").trim().slice(0, 60);
-          const supplierName = String(qs("#restockSupplierInput")?.value || "").trim().slice(0, 120);
           transaction.set(purchaseRef, {
             storeId: productStoreId(product),
             productId,
@@ -6911,9 +7028,17 @@ async function confirmRestock() {
             // Unrounded, on purpose. Rounding here loses money against the
             // invoice on every delivery. DESIGN-purchases.md 3.
             unitCost: totalPaid / qty,
-            hasFiscalReceipt: Boolean(receiptNumber),
+            hasFiscalReceipt,
+            // Omitted when blank, never written empty: firestore.rules bounds
+            // these as strings and the Purchase Book reads them.
             ...(receiptNumber ? { receiptNumber } : {}),
             ...(supplierName ? { supplierName } : {}),
+            ...(supplierTin ? { supplierTin } : {}),
+            // The field the six-month input-VAT window actually runs from.
+            // RESEARCH-accounts.md 5.3 -- a purchase recorded without it loses a
+            // claim the shop was entitled to, and until now it was in the schema,
+            // permitted by the rules, and written by nothing.
+            ...(receiptDate ? { receiptDate: Timestamp.fromDate(receiptDate) } : {}),
             recordedByUid: state.user?.uid || null,
             createdAt: serverTimestamp()
           });
@@ -6944,12 +7069,30 @@ async function confirmRestock() {
           createdAt: serverTimestamp()
         });
       });
+      // Unlike a sale, a restock that times out is NOT quietly accepted: there
+      // is no offline queue behind it, so an unconfirmed transaction may or may
+      // not have landed. The shop is told exactly that, rather than being shown
+      // a success it cannot rely on when counting the shelf.
+      const outcome = await awaitRestockTransaction(attempt);
+      if (outcome === "unconfirmed") {
+        showToast(t("toast.restockUnconfirmed"));
+        return;
+      }
     } catch (error) {
       console.warn(error);
       showToast(describeOperationError(error, "toast.restockFailed"));
       return;
     }
   } else {
+    // Local-only mode: Firebase failed to load and the app is running against
+    // memory. A quantity-only restock is still meaningful there, but a cost is
+    // not -- there is nowhere to put the purchase, and silently dropping the
+    // money the manager typed is worse than refusing it. saveExpense() refuses
+    // in the same situation.
+    if (totalPaid) {
+      if (errorSlot) errorSlot.textContent = t("restock.costNeedsConnection");
+      return;
+    }
     product.quantity = newQuantityDisplay;
   }
 
@@ -9428,6 +9571,35 @@ function stockLedgerDiscrepancies() {
     .filter((row) => row.result.status === "mismatch");
 }
 
+// Expenses, purchases and product costs are subscribed only for a manager or
+// owner -- a cashier is refused them by firestore.rules, so subscribing would
+// put a permission-denied in every cashier console on every sign-in. The catch
+// is that the role arrives AFTER sign-in and can change mid-session:
+//
+//   promoted   the early return already ran, no listener was ever created, and
+//              nothing re-runs it. The nav reveals the screens and they render
+//              empty forever. Recording an expense succeeds server-side and the
+//              row never appears. Only a reload fixes it.
+//   demoted    the listener keeps running and the arrays keep every wages
+//              figure, in a section hidden by CSS rather than emptied.
+//
+// So the membership watcher calls this on every role change, in both
+// directions. Money must not outlive the role that was allowed to see it.
+function resubscribeRoleGatedCollections() {
+  for (const key of ["unsubscribeExpenses", "unsubscribePurchases", "unsubscribeProductCosts"]) {
+    if (state[key]) state[key]();
+    state[key] = null;
+  }
+  state.expenses = [];
+  state.purchases = [];
+  state.productCosts = [];
+  // Cleared before the re-subscribe so a demotion empties the screens even
+  // though the calls below will return early for a cashier.
+  subscribeToExpenses();
+  subscribeToPurchases();
+  subscribeToProductCosts();
+}
+
 function subscribeToOwnMembership() {
   if (state.unsubscribeOwnMembership) state.unsubscribeOwnMembership();
   state.unsubscribeOwnMembership = null;
@@ -9452,6 +9624,7 @@ function subscribeToOwnMembership() {
         if (nextRole !== state.currentUserRole) {
           state.currentUserRole = nextRole;
           clearMemberDocCache();
+          resubscribeRoleGatedCollections();
           renderAll();
         }
       },
@@ -9461,6 +9634,7 @@ function subscribeToOwnMembership() {
         // one -- the same reasoning as resolveCurrentUserRole()'s default.
         console.warn("Could not watch membership; assuming least privilege.", error);
         state.currentUserRole = "cashier";
+        resubscribeRoleGatedCollections();
         renderAll();
       }
     );
@@ -10999,14 +11173,12 @@ function applyRoleViewVisibility() {
   // reach it -- and a heading left standing over nothing reads as a menu that
   // failed to load. It follows its group: visible only while at least one view
   // under it can be opened.
-  qsa(".nav-group-label").forEach((label) => {
-    let node = label.nextElementSibling;
-    let anyVisible = false;
-    while (node && node.classList.contains("nav-item")) {
-      if (!node.hidden) anyVisible = true;
-      node = node.nextElementSibling;
-    }
-    label.hidden = !anyVisible;
+  qsa(".nav-group").forEach((group) => {
+    // Scoped to the group's own children. Walking nextElementSibling from a
+    // bare label ran to the end of the nav and treated Reports and the AI
+    // Advisor as part of Accounts.
+    const anyVisible = Array.from(group.querySelectorAll(".nav-item")).some((item) => !item.hidden);
+    group.hidden = !anyVisible;
   });
   // Only redirect once the role has actually resolved. While it's still null
   // the nav stays hidden (fail closed, harmless), but redirecting here would
@@ -11284,12 +11456,14 @@ function bindEvents() {
   });
   qs("#purchaseMonthInput")?.addEventListener("change", (event) => {
     state.purchaseMonthSelection = event.currentTarget.value || state.purchaseMonthSelection;
+    state.purchaseMonthTouched = true;
     renderPurchases();
   });
   qs("#restockTotalPaidInput")?.addEventListener("input", renderRestockUnitCostHint);
   qs("#restockQuantityInput")?.addEventListener("input", renderRestockUnitCostHint);
   qs("#expenseMonthInput")?.addEventListener("change", (event) => {
     state.expenseMonthSelection = event.currentTarget.value || state.expenseMonthSelection;
+    state.expenseMonthTouched = true;
     renderExpenses();
   });
   // Delegated: the rows are re-rendered on every snapshot, so per-row listeners
