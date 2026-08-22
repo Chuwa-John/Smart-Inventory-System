@@ -270,8 +270,14 @@ await check("owner records a purchase", true, () =>
   setDoc(doc(ownerDb, "users", OWNER, "purchases", "new1"), pur(OWNER)));
 await check("owner reads it back", true, () =>
   getDoc(doc(ownerDb, "users", OWNER, "purchases", "new1")));
-await check("owner corrects it", true, () =>
-  setDoc(doc(ownerDb, "users", OWNER, "purchases", "new1"), pur(OWNER, { quantity: 100, totalPaid: 200000 })));
+// What a delivery cost is settled when it is recorded: the product's weighted
+// average is a cached derivation computed once inside the restock transaction
+// and never recomputed, so editing the money afterwards leaves the book and the
+// average permanently disagreeing. The paperwork that turns up later is exactly
+// what stays editable.
+await check("owner adds the supplier and receipt after the fact", true, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "purchases", "new1"),
+    pur(OWNER, { supplierName: "Wholesale Ltd", receiptNumber: "RCT9", hasFiscalReceipt: true })));
 await check("owner deletes it", true, () =>
   deleteDoc(doc(ownerDb, "users", OWNER, "purchases", "new1")));
 
@@ -393,8 +399,18 @@ await check("owner cannot reassign who recorded it", false, () =>
   setDoc(doc(ownerDb, "users", OWNER, "purchases", "purA"), pur(MANAGER)));
 await check("owner cannot rewrite createdAt", false, () =>
   setDoc(doc(ownerDb, "users", OWNER, "purchases", "purA"), pur(OWNER, { createdAt: new Date("2020-01-01T00:00:00Z") })));
-await check("owner can correct what was paid", true, () =>
+await check("owner CANNOT rewrite what was paid", false, () =>
   setDoc(doc(ownerDb, "users", OWNER, "purchases", "purA"), pur(OWNER, { totalPaid: 420000, unitCost: 2100 })));
+await check("owner cannot rewrite the units delivered", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "purchases", "purA"), pur(OWNER, { quantity: 1000, unitCost: 400 })));
+await check("owner cannot rewrite the unit cost", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "purchases", "purA"), pur(OWNER, { unitCost: 2000.5 })));
+await check("owner cannot rename the product on the book", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "purchases", "purA"), pur(OWNER, { productName: "Something else" })));
+// A wrong amount is corrected by deleting the delivery and recording it again,
+// which is audited (PURCHASE_DELETED). That is why deletion is allowed.
+await check("...and the paperwork is still editable", true, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "purchases", "purA"), pur(OWNER, { note: "invoice mislaid" })));
 
 console.log("\n=== nothing else moved ===");
 await check("a normal owner product write is unaffected", true, () =>
@@ -411,6 +427,52 @@ await check("an expense write is unaffected", true, () =>
     storeId: STORE_A, category: "transport", amount: 5000, paidFrom: "other",
     spentAt: SEEDED_AT, recordedByUid: OWNER, createdAt: SEEDED_AT
   }));
+
+console.log("\n=== an owner can correct a MANAGER's delivery ===");
+// The audit's most serious finding. validPurchase() asserted the recorder is
+// the caller and purchaseImmutableFieldsUnchanged() asserted the recorder never
+// changes; on an owner-only update of a manager-recorded document those two
+// cannot both hold, so every such correction was refused -- and because the
+// client does not await the write, the owner saw it succeed and then silently
+// revert. The recorder pin now lives in validPurchaseCreate(), on create only.
+await check("owner edits the paperwork on a manager's purchase", true, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "purchases", "mgr1"),
+    pur(MANAGER, { note: "receipt found later" })));
+await check("...and the recorder is still the manager afterwards", true, async () => {
+  const snap = await getDoc(doc(ownerDb, "users", OWNER, "purchases", "mgr1"));
+  if (snap.data().recordedByUid !== MANAGER) throw new Error("attribution was lost");
+  return snap;
+});
+await check("owner still cannot reassign who recorded it", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "purchases", "mgr1"), pur(OWNER)));
+await check("a manager still cannot record one as somebody else", false, () =>
+  setDoc(doc(managerDb, "users", OWNER, "purchases", "forged"), pur(OWNER, { productId: "prodA" })));
+
+console.log("\n=== the date the book buckets on ===");
+await check("a purchase with no createdAt is refused", false, () => {
+  const { createdAt, ...rest } = pur(OWNER);
+  return setDoc(doc(ownerDb, "users", OWNER, "purchases", "noDate"), rest);
+});
+await check("a string createdAt is refused", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "purchases", "strDate"), pur(OWNER, { createdAt: "yesterday" })));
+
+console.log("\n=== a delivery that cost nothing per unit ===");
+// The tolerance is absolute, so at totalPaid == 1 a unitCost of 0 satisfied it:
+// a million units at no cost each, straight past the totalPaid > 0 guard that
+// was written to refuse exactly that.
+await check("a million units at unit cost zero is refused", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "purchases", "freeMillion"),
+    pur(OWNER, { quantity: 1000000, totalPaid: 1, unitCost: 0 })));
+await check("...but a genuine one-shilling delivery still works", true, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "purchases", "tiny"),
+    pur(OWNER, { quantity: 1, totalPaid: 1, unitCost: 1 })));
+await check("a fractional unit count is refused", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "purchases", "frac"),
+    pur(OWNER, { quantity: 0.5, totalPaid: 1000, unitCost: 2000 })));
+
+console.log("\n=== the document cannot be padded ===");
+await check("an unexpected field is refused", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "purchases", "padded"), pur(OWNER, { junk: "x".repeat(2000) })));
 
 await testEnv.cleanup();
 

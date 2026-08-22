@@ -248,6 +248,49 @@ await check("a cashier can still restock -- expenses did not narrow the product 
     quantity: 15, updatedAt: new Date(), movementReason: "restock"
   }));
 
+console.log("\n=== an owner can correct a MANAGER's expense ===");
+// The audit's most serious finding, on the collection where it actually bites:
+// there IS an edit path in the UI for expenses. The owner opened the dialog,
+// changed the amount, saw "Expense updated" -- and the row silently reverted
+// when the refusal arrived, because saveExpense does not await. The recorder pin
+// moved to validExpenseCreate(), so it applies on create only.
+await check("owner corrects a manager's expense", true, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "expenses", "mgr1"),
+    exp(MANAGER, { amount: 4200 })));
+await check("...and the manager is still recorded as having spent it", true, async () => {
+  const snap = await getDoc(doc(ownerDb, "users", OWNER, "expenses", "mgr1"));
+  if (snap.data().recordedByUid !== MANAGER) throw new Error("attribution was lost");
+  return snap;
+});
+await check("owner still cannot reassign who spent it", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "expenses", "mgr1"), exp(OWNER, { amount: 4200 })));
+await check("a manager still cannot record one as somebody else", false, () =>
+  setDoc(doc(managerDb, "users", OWNER, "expenses", "forged2"), exp(OWNER)));
+await check("a manager still cannot edit, even now the pin has moved", false, () =>
+  setDoc(doc(managerDb, "users", OWNER, "expenses", "mgr1"), exp(MANAGER, { amount: 1 })));
+
+console.log("\n=== spending cannot be dated into the future ===");
+await check("an expense dated a year ahead is refused", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "expenses", "future"),
+    exp(OWNER, { spentAt: new Date(Date.now() + 365 * 24 * 3600 * 1000) })));
+// Two days of slack, because spentAt is anchored at LOCAL noon -- in Tanzania
+// that is 09:00 UTC, so an expense recorded at 08:00 local is stamped ahead of
+// request.time and is perfectly legitimate.
+await check("...but today, stamped at local noon, is fine", true, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "expenses", "todayNoon"),
+    exp(OWNER, { spentAt: new Date(Date.now() + 11 * 3600 * 1000) })));
+await check("an offline expense replaying from yesterday is fine", true, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "expenses", "yesterday"),
+    exp(OWNER, { spentAt: new Date(Date.now() - 24 * 3600 * 1000) })));
+
+console.log("\n=== the document cannot be padded ===");
+await check("an unexpected field is refused", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "expenses", "padded2"), exp(OWNER, { junk: "x".repeat(2000) })));
+await check("a missing createdAt is refused on an edit", false, () => {
+  const { createdAt, ...rest } = exp(MANAGER, { amount: 4300 });
+  return setDoc(doc(ownerDb, "users", OWNER, "expenses", "mgr1"), rest);
+});
+
 await testEnv.cleanup();
 
 const failed = results.filter((r) => !r.pass);

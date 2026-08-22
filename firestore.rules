@@ -207,17 +207,36 @@ service cloud.firestore {
         && request.resource.data.costKnownFrom == resource.data.costKnownFrom;
     }
 
+    // Shape only. The recorder pin lives in validPurchaseCreate() below, because
+    // asserting it on UPDATE made owner corrections impossible: the shape said
+    // recordedByUid must be the caller, the immutability guard said it must not
+    // change, and for any manager-recorded document those two cannot both hold.
+    // The owner could correct only their own entries, and a manager's were
+    // frozen -- the exact inverse of the control section 10 describes.
     function validPurchase() {
       let d = request.resource.data;
-      return d.storeId is string && d.storeId.size() > 0 && d.storeId.size() <= 120
+      return d.keys().hasOnly(['storeId', 'productId', 'productName', 'quantity',
+                               'totalPaid', 'unitCost', 'recordedByUid', 'createdAt',
+                               'supplierName', 'supplierTin', 'receiptNumber',
+                               'receiptDate', 'hasFiscalReceipt', 'note'])
+        && d.storeId is string && d.storeId.size() > 0 && d.storeId.size() <= 120
         && d.productId is string && d.productId.size() > 0 && d.productId.size() <= 120
         && d.productName is string && d.productName.size() > 0 && d.productName.size() <= 120
         // Strictly positive on both. A delivery of nothing is not a purchase,
         // and a free delivery is not a cost -- either is a mis-key, and either
         // would divide by zero or drag the average to nothing.
+        // Whole units. A fractional delivery count is nonsense against an
+        // integer shelf, and the client already floors it.
         && d.quantity is number && d.quantity > 0 && d.quantity <= 1000000
+        && math.floor(d.quantity) == d.quantity
         && d.totalPaid is number && d.totalPaid > 0 && d.totalPaid <= 1000000000
-        && moneyInRange(d.unitCost)
+        // Strictly positive, not merely in range. The tolerance below is
+        // absolute, so at totalPaid == 1 a unitCost of 0 satisfies it -- a
+        // million units at no cost each, which is exactly what the totalPaid > 0
+        // guard above was written to refuse. quantity <= 1,000,000 and
+        // totalPaid > 0 make a genuine unit cost at least 1e-6, so nothing real
+        // is excluded.
+        && d.unitCost is number && d.unitCost > 0 && d.unitCost <= 1000000000
         // The invariant the whole feature is judged on: what was paid must agree
         // with what the batch says each unit cost.
         //
@@ -231,7 +250,12 @@ service cloud.firestore {
         // moneyInRange) and far below any figure a human would mis-key.
         && d.unitCost * d.quantity >= d.totalPaid - 1
         && d.unitCost * d.quantity <= d.totalPaid + 1
-        && d.recordedByUid == request.auth.uid
+        && d.recordedByUid is string && d.recordedByUid.size() > 0
+        // The Purchase Book buckets on this. Left unvalidated a delivery could
+        // arrive with no date and appear in no month at all -- invisible in the
+        // book while its cost had already moved the product's average -- or with
+        // a string, or back-dated into a period already reported on.
+        && d.createdAt is timestamp
         && (!('supplierName' in d) || (d.supplierName is string && d.supplierName.size() <= 120))
         && (!('supplierTin' in d) || (d.supplierTin is string && d.supplierTin.size() <= 20))
         // The fields that decide whether input VAT is claimable at all. The
@@ -244,19 +268,43 @@ service cloud.firestore {
         && (!('note' in d) || (d.note is string && d.note.size() <= 200));
     }
 
+    function validPurchaseCreate() {
+      return validPurchase() && request.resource.data.recordedByUid == request.auth.uid;
+    }
+
     // A purchase is what the shop actually paid on a day. Moving it between
     // branches or reassigning who recorded it would rewrite the book, and the
     // weighted average it already fed cannot be un-fed.
+    // What a delivery cost is settled at the moment it is recorded, because the
+    // product's weighted average is a cached derivation computed once inside the
+    // restock transaction and never recomputed. Editing quantity or totalPaid
+    // afterwards leaves the book and the average permanently disagreeing, in the
+    // direction that understates cost and overstates profit.
+    //
+    // A wrong amount is corrected by deleting the delivery and recording it
+    // again -- which is why deletion is allowed, and why it is audited.
+    // What stays editable is the paperwork that turns up later: supplier, TIN,
+    // receipt number, receipt date, and the note.
     function purchaseImmutableFieldsUnchanged() {
-      return request.resource.data.storeId == resource.data.storeId
-        && request.resource.data.productId == resource.data.productId
-        && request.resource.data.recordedByUid == resource.data.recordedByUid
-        && (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt);
+      let after = request.resource.data;
+      let before = resource.data;
+      return after.storeId == before.storeId
+        && after.productId == before.productId
+        && after.productName == before.productName
+        && after.quantity == before.quantity
+        && after.totalPaid == before.totalPaid
+        && after.unitCost == before.unitCost
+        && after.recordedByUid == before.recordedByUid
+        && after.createdAt == before.createdAt;
     }
 
+    // Shape only -- see the note above validPurchase() for why the recorder pin
+    // is not in here.
     function validExpense() {
       let d = request.resource.data;
-      return d.storeId is string && d.storeId.size() > 0 && d.storeId.size() <= 120
+      return d.keys().hasOnly(['storeId', 'category', 'amount', 'paidFrom',
+                               'spentAt', 'recordedByUid', 'createdAt', 'note'])
+        && d.storeId is string && d.storeId.size() > 0 && d.storeId.size() <= 120
         // Closed set, not free text. A category nobody can report on is a note,
         // and two of these carry a tax consequence later (rent withholding at
         // 10%; entertainment input VAT is not deductible, which is why there is
@@ -275,8 +323,18 @@ service cloud.firestore {
         // period report keyed on createdAt would put last week's transport in
         // this week's total.
         && d.spentAt is timestamp
-        && d.recordedByUid == request.auth.uid
+        // Not in the future. Two days of slack because spentAt is anchored at
+        // LOCAL noon, which in Tanzania is 09:00 UTC -- an expense recorded at
+        // 08:00 local is stamped ahead of request.time and is perfectly
+        // legitimate. An offline expense replaying later is stamped in the past
+        // and is unaffected.
+        && d.spentAt < request.time + duration.value(2, 'd')
+        && d.recordedByUid is string && d.recordedByUid.size() > 0
         && (!('note' in d) || (d.note is string && d.note.size() <= 200));
+    }
+
+    function validExpenseCreate() {
+      return validExpense() && request.resource.data.recordedByUid == request.auth.uid;
     }
 
     function validService() {
@@ -301,7 +359,7 @@ service cloud.firestore {
     function expenseImmutableFieldsUnchanged() {
       return request.resource.data.storeId == resource.data.storeId
         && request.resource.data.recordedByUid == resource.data.recordedByUid
-        && (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt);
+        && request.resource.data.createdAt == resource.data.createdAt;
     }
 
     function serviceImmutableFieldsUnchanged() {
@@ -778,7 +836,7 @@ service cloud.firestore {
         allow read: if isOwner(userId)
           || (isOwnerOrRole(userId, ["manager"])
               && (resource == null || memberCanAccessStore(userId, resource.data.storeId)));
-        allow create: if tenantNotFrozen(userId) && validPurchase() && (
+        allow create: if tenantNotFrozen(userId) && validPurchaseCreate() && (
              isOwner(userId)
           || (isOwnerOrRole(userId, ["manager"])
               && memberCanAccessStore(userId, request.resource.data.storeId)));
@@ -791,7 +849,7 @@ service cloud.firestore {
         allow read: if isOwner(userId)
           || (isOwnerOrRole(userId, ["manager"])
               && (resource == null || memberCanAccessStore(userId, resource.data.storeId)));
-        allow create: if tenantNotFrozen(userId) && validExpense() && (
+        allow create: if tenantNotFrozen(userId) && validExpenseCreate() && (
              isOwner(userId)
           || (isOwnerOrRole(userId, ["manager"])
               && memberCanAccessStore(userId, request.resource.data.storeId)));
