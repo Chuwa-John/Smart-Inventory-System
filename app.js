@@ -259,14 +259,32 @@ function currentCurrencyCode() {
   return store?.currencyCode || "TZS";
 }
 
+// Two decimal places on every figure, always.
+//
+// toLocaleString() with no options defaults to maximumFractionDigits: 3, which
+// was invisible for as long as every amount was a whole shilling. Cost is a
+// weighted average and divides, so the moment Phase 0 made cost real the
+// Dashboard started reporting stock at cost as "TZS 1,546,666.667". Three
+// decimals is not a currency anyone uses.
+//
+// The stored value is deliberately NOT rounded -- rounding the average at each
+// restock would drift it -- so this is a display concern and belongs here,
+// where every figure in the app already passes through.
+function formatAmount(amount) {
+  return Number(amount || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+
 function money(amount) {
-  return `${currentCurrencyCode()} ${Number(amount || 0).toLocaleString()}`;
+  return `${currentCurrencyCode()} ${formatAmount(amount)}`;
 }
 
 function moneyForStore(amount, storeId) {
   const store = state.stores.find((item) => item.id === storeId);
   const code = store?.currencyCode || "TZS";
-  return `${code} ${Number(amount || 0).toLocaleString()}`;
+  return `${code} ${formatAmount(amount)}`;
 }
 
 function paymentMethodLabel(method) {
@@ -369,7 +387,9 @@ const DICTIONARY = {
     "profit.intro": "Revenue less what the stock cost, less what the shop spent. The first two are worked out from your records; the last one is only as complete as what you have entered.",
     "profit.revenue": "Revenue",
     "profit.revenueNote": "{count} sales, after refunds",
+    "profit.revenueNoteOne": "1 sale, after refunds",
     "profit.revenueNoteVat": "{count} sales, after refunds and VAT",
+    "profit.revenueNoteVatOne": "1 sale, after refunds and VAT",
     "profit.gross": "Gross profit",
     "profit.grossNote": "Revenue less what those goods cost you",
     "profit.grossPartial": "Incomplete \u2014 {missing} of {total} sold lines have no recorded cost",
@@ -396,7 +416,9 @@ const DICTIONARY = {
     "purchases.thTotal": "Total paid",
     "purchases.thReceipt": "Fiscal receipt",
     "purchases.monthTotal": "Spent on stock this month",
-    "purchases.monthCount": "{count} deliveries, {units} units",
+    "purchases.monthCount": "{count} {delivery}, {units} {unit}",
+    "purchases.deliverySingular": "delivery",
+    "purchases.deliveryPlural": "deliveries",
     "purchases.noReceipt": "Bought with no fiscal receipt",
     "purchases.noReceiptNote": "You cannot claim the VAT back on this",
     "purchases.allReceipted": "Every delivery has a receipt number",
@@ -476,6 +498,7 @@ const DICTIONARY = {
     "toast.expenseDeleted": "Expense deleted",
     "toast.expenseFailed": "Could not save that expense. Try again.",
     "control.salesCountNote": "{count} sales this month",
+    "control.salesCountNoteOne": "1 sale this month",
     "control.grossMargin": "Gross margin (est.)",
     "control.marginNote": "Revenue less cost of goods sold",
     "control.marginIncomplete": "Incomplete — {missing} of {total} sold lines have no cost price",
@@ -516,6 +539,7 @@ const DICTIONARY = {
     "reports.orderFoundLabel": "Order #{orderNumber} \u2014 {name}, {date}, {method}, {total}",
     "reports.staffOrderLookupTitle": "Order Lookup",
     "reports.staffOrderLookupDateLabel": "Date",
+    "reports.staffOrderLookupDateHint": "Leave both dates blank to see every order for this staff member.",
     "reports.staffOrderLookupOrderLabel": "Order number",
     "reports.staffOrderLookupButton": "Find Order",
     "reports.staffOrderLookupEmpty": "Select a staff member, date, and order number, then click Find Order.",
@@ -654,6 +678,7 @@ const DICTIONARY = {
     "monthlyReport.failedGeneric": "Could not save the monthly report.",
     "monthlyReport.couldNotLoad": "Could not load monthly reports.",
     "monthlyReport.revenueLine": "For {period}: {revenue} in revenue across {count} transactions.",
+    "monthlyReport.revenueLineOne": "For {period}: {revenue} in revenue across 1 transaction.",
     "monthlyReport.topProductsLine": "Top sellers: {list}.",
     "monthlyReport.noTopProducts": "No product sales recorded this period.",
     "monthlyReport.stockLine": "{low} products are low on stock and {out} are out of stock.",
@@ -698,7 +723,7 @@ const DICTIONARY = {
     "rec.reorderNow": "Reorder {qty} units now.", "rec.estimatedStockout": "Estimated stockout in {days} days.",
     "movement.fastMoving": "Fast-moving products", "movement.slowMoving": "Slow-moving products",
     "movement.noSales": "No sales recorded", "movement.healthyCoverage": "Healthy stock coverage",
-    "movement.ledgerGaps": "shelves disagree with the stock ledger (worst: {name}, {units} units)",
+    "movement.ledgerGaps": "shelves disagree with the stock ledger (worst: {name}, {units} {unit})",
     "pos.available": "{quantity} available", "pos.qtyAriaLabel": "Quantity for {name}",
     "pos.pricePerUnitPlaceholder": "Price/unit", "pos.addButton": "Add",
     "cart.editPrice": "Edit price", "cart.decreaseAriaLabel": "Decrease quantity",
@@ -874,6 +899,9 @@ const DICTIONARY = {
     "reports.colCustomerPhone": "Phone",
     "reports.colTotalSpent": "Total Spent",
     "reports.colLastVisit": "Last Visit",
+    "receipt.whatsappButton": "Share via WhatsApp",
+    "dialog.customerPhonePrompt": "Enter the customer's phone number to share this receipt:",
+    "toast.invalidPhoneNumber": "Enter a valid Tanzanian phone number (e.g. 07XXXXXXXX).",
     "dashboard.askAiButton": "Ask AI about this",
     "dashboard.askAiQuestionAlerts": "Which of my low-stock or out-of-stock products should I reorder first, and how much?",
     "dashboard.askAiQuestionRecommendations": "Explain my current purchase recommendations and what I should order this week.",
@@ -1227,7 +1255,9 @@ const DICTIONARY = {
     "profit.intro": "Mapato ukiondoa gharama ya bidhaa, ukiondoa matumizi ya duka. Mbili za kwanza zinahesabiwa kutoka kwenye rekodi zako; ya mwisho ni kamili kadri ulivyoingiza.",
     "profit.revenue": "Mapato",
     "profit.revenueNote": "Mauzo {count}, baada ya marejesho",
+    "profit.revenueNoteOne": "Mauzo 1, baada ya marejesho",
     "profit.revenueNoteVat": "Mauzo {count}, baada ya marejesho na VAT",
+    "profit.revenueNoteVatOne": "Mauzo 1, baada ya marejesho na VAT",
     "profit.gross": "Faida ghafi",
     "profit.grossNote": "Mapato ukiondoa gharama ya bidhaa hizo",
     "profit.grossPartial": "Haijakamilika \u2014 safu {missing} kati ya {total} zilizouzwa hazina gharama iliyorekodiwa",
@@ -1254,7 +1284,9 @@ const DICTIONARY = {
     "purchases.thTotal": "Jumla iliyolipwa",
     "purchases.thReceipt": "Risiti ya kodi",
     "purchases.monthTotal": "Zilizotumika kwa bidhaa mwezi huu",
-    "purchases.monthCount": "Mizigo {count}, vipande {units}",
+    "purchases.monthCount": "{delivery} {count}, {unit} {units}",
+    "purchases.deliverySingular": "Mzigo",
+    "purchases.deliveryPlural": "Mizigo",
     "purchases.noReceipt": "Zilizonunuliwa bila risiti ya kodi",
     "purchases.noReceiptNote": "Huwezi kudai VAT kwa hizi",
     "purchases.allReceipted": "Kila mzigo una namba ya risiti",
@@ -1334,6 +1366,7 @@ const DICTIONARY = {
     "toast.expenseDeleted": "Matumizi yamefutwa",
     "toast.expenseFailed": "Imeshindwa kuhifadhi matumizi hayo. Jaribu tena.",
     "control.salesCountNote": "Mauzo {count} mwezi huu",
+    "control.salesCountNoteOne": "Mauzo 1 mwezi huu",
     "control.grossMargin": "Faida ghafi (makadirio)",
     "control.marginNote": "Mapato ukiondoa gharama ya bidhaa",
     "control.marginIncomplete": "Haijakamilika — safu {missing} kati ya {total} zilizouzwa hazina bei ya gharama",
@@ -1513,6 +1546,7 @@ const DICTIONARY = {
     "monthlyReport.failedGeneric": "Imeshindwa kuhifadhi ripoti ya mwezi.",
     "monthlyReport.couldNotLoad": "Imeshindwa kupakia ripoti za mwezi.",
     "monthlyReport.revenueLine": "Kwa {period}: {revenue} mapato kutoka miamala {count}.",
+    "monthlyReport.revenueLineOne": "Kwa {period}: {revenue} mapato kutoka muamala 1.",
     "monthlyReport.topProductsLine": "Bidhaa bora zilizouzwa: {list}.",
     "monthlyReport.noTopProducts": "Hakuna mauzo ya bidhaa yaliyorekodiwa kipindi hiki.",
     "monthlyReport.stockLine": "Bidhaa {low} zina hisa chache na {out} hazipo kabisa.",
@@ -1557,7 +1591,7 @@ const DICTIONARY = {
     "rec.reorderNow": "Agiza vitengo {qty} sasa.", "rec.estimatedStockout": "Inakadiriwa kuisha kwa siku {days}.",
     "movement.fastMoving": "Bidhaa zinazouzwa haraka", "movement.slowMoving": "Bidhaa zinazouzwa polepole",
     "movement.noSales": "Hakuna mauzo yaliyorekodiwa", "movement.healthyCoverage": "Hisa iliyo katika hali nzuri",
-    "movement.ledgerGaps": "rafu hazilingani na leja ya hisa (mbaya zaidi: {name}, vipande {units})",
+    "movement.ledgerGaps": "rafu hazilingani na leja ya hisa (mbaya zaidi: {name}, {unit} {units})",
     "pos.available": "{quantity} zinapatikana", "pos.qtyAriaLabel": "Kiasi cha {name}",
     "pos.pricePerUnitPlaceholder": "Bei/kitengo", "pos.addButton": "Ongeza",
     "cart.editPrice": "Hariri bei", "cart.decreaseAriaLabel": "Punguza kiasi",
@@ -2536,7 +2570,8 @@ function stockLedgerSummaryHtml() {
   return `<div class="movement-row"><strong style="color:#ef6666">${gaps.length}</strong><span>${
     esc(t("movement.ledgerGaps", {
       name: worst.product.name || "",
-      units: Math.abs(Math.round(worst.result.gap))
+      units: Math.abs(Math.round(worst.result.gap)),
+      unit: t(Math.abs(Math.round(worst.result.gap)) === 1 ? "toast.unitSingular" : "toast.unitPlural")
     }))
   }</span></div>`;
 }
@@ -3311,7 +3346,8 @@ function localMonthlyReportNarrative(monthKey, metrics, storeId) {
     ? t("monthlyReport.topProductsLine", { list: metrics.topProducts.map((product) => `${product.name} (${product.qty})`).join(", ") })
     : t("monthlyReport.noTopProducts");
   const lines = [
-    t("monthlyReport.revenueLine", { period: monthKey, revenue: moneyForStore(Math.round(metrics.revenue), storeId), count: metrics.transactionCount }),
+    t(metrics.transactionCount === 1 ? "monthlyReport.revenueLineOne" : "monthlyReport.revenueLine",
+      { period: monthKey, revenue: moneyForStore(Math.round(metrics.revenue), storeId), count: metrics.transactionCount }),
     topLine,
     t("monthlyReport.stockLine", { low: metrics.lowStockCount, out: metrics.outOfStockCount }),
     t("monthlyReport.localFallbackNote")
@@ -6020,7 +6056,9 @@ function renderProfit() {
 
   grid.innerHTML = [
     controlTile(t("profit.revenue"), money(p.revenue), "",
-      t(vatSettings().registered ? "profit.revenueNoteVat" : "profit.revenueNote",
+      t(p.salesCount === 1
+        ? (vatSettings().registered ? "profit.revenueNoteVatOne" : "profit.revenueNoteOne")
+        : (vatSettings().registered ? "profit.revenueNoteVat" : "profit.revenueNote"),
         { count: String(p.salesCount) })),
     // Gross: computed, and honest about what it could not cost.
     controlTile(t("profit.gross"),
@@ -6075,7 +6113,12 @@ function renderPurchases() {
 
   totals.innerHTML = [
     controlTile(t("purchases.monthTotal"), money(summary.total), "",
-      t("purchases.monthCount", { count: String(summary.count), units: String(summary.units) })),
+      t("purchases.monthCount", {
+        count: String(summary.count),
+        delivery: t(summary.count === 1 ? "purchases.deliverySingular" : "purchases.deliveryPlural"),
+        units: String(summary.units),
+        unit: t(summary.units === 1 ? "toast.unitSingular" : "toast.unitPlural")
+      })),
     // VAT-registered only. The money whose input tax cannot be reclaimed is a
     // real and useful warning to a registered business, and meaningless to a
     // duka that does not collect VAT -- DESIGN-vat.md decision 4.
@@ -9783,7 +9826,8 @@ function renderAdminControl() {
   qs("#adminControlGrid").innerHTML = [
     controlTile(t("control.revenueToday"), money(today.net)),
     controlTile(t("control.revenueMonth"), money(month.net), "accent",
-      t("control.salesCountNote", { count: String(month.count) })),
+      t(month.count === 1 ? "control.salesCountNoteOne" : "control.salesCountNote",
+        { count: String(month.count) })),
     // No known cost at all means there is no margin to show -- not a margin of
     // 100%. The dash is the honest value; the note says why it is a dash.
     controlTile(t("control.grossMargin"),

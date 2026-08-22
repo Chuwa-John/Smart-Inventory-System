@@ -23,6 +23,7 @@
       "*.md",
       "*.txt",
       "gen-sri.mjs",
+      "dev-server.mjs",
       "price-config.js",
       "firestore.rules",
       "firestore.indexes.json"
