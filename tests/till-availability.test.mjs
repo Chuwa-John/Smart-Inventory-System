@@ -19,6 +19,35 @@ import { readFileSync } from "node:fs";
 
 const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 
+// confirmRestock AND confirmTransfer both reach for the purchase-capture
+// helpers now, so these live at module scope rather than inside one block. These are
+// injected as the REAL functions -- lifted out of app.js the same way the
+// handler itself is -- because a stub would only prove the stub agrees with
+// the assertion. nextUnitCost takes a destructured parameter, so the body has
+// to be found past the parameter list rather than at the first brace.
+function lift(name) {
+  const from = app.indexOf(`function ${name}(`);
+  let k = app.indexOf("(", from);
+  let parens = 0;
+  for (; k < app.length; k++) {
+    if (app[k] === "(") parens++;
+    else if (app[k] === ")") { parens--; if (parens === 0) break; }
+  }
+  k = app.indexOf("{", k);
+  let depth = 0;
+  for (; k < app.length; k++) {
+    if (app[k] === "{") depth++;
+    else if (app[k] === "}") { depth--; if (depth === 0) break; }
+  }
+  return app.slice(from, k + 1);
+}
+const { realNextUnitCost, realProductCostKnown } = new Function(
+  `${lift("safeNumber")}
+   ${lift("nextUnitCost")}
+   ${lift("productCostKnown")}
+   return { realNextUnitCost: nextUnitCost, realProductCostKnown: productCostKnown };`
+)();
+
 const results = [];
 function check(name, pass, detail = "") {
   results.push({ name, pass });
@@ -139,7 +168,7 @@ console.log("\n=== and the second click is actually refused, not just guarded on
   }
   const source = app.slice(start, i + 1);
 
-  function harness(withCost = false) {
+  function harness(asOwner = true) {
     const calls = { transactions: 0, toasts: [], closed: 0 };
     const button = { disabled: false };
     const elements = {
@@ -155,6 +184,9 @@ console.log("\n=== and the second click is actually refused, not just guarded on
       query: () => ({}),
       where: () => ({}),
       serverTimestamp: () => "ts",
+      // A transfer-in now moves the destination's weighted average, and stamps
+      // costKnownFrom for a branch receiving costed stock for the first time.
+      Timestamp: { now: () => "stamped", fromDate: (d) => d },
       // The lookup that opens the window: a real one is a network round trip,
       // and it happens before the transaction claims anything.
       getDocs: async () => { await new Promise((r) => setTimeout(r, 10)); return { empty: true, docs: [] }; },
@@ -177,6 +209,7 @@ console.log("\n=== and the second click is actually refused, not just guarded on
     const run = new Function(
       "state", "qs", "showToast", "t", "productStoreId", "recordStockMovement",
       "describeOperationError", "console",
+      "isOwnerRole", "safeNumber", "nextUnitCost", "productCostKnown",
       `${source} return confirmTransfer;`
     )(
       state,
@@ -186,7 +219,14 @@ console.log("\n=== and the second click is actually refused, not just guarded on
       (product) => product.storeId,
       () => {},
       (error, fallback) => fallback,
-      { warn: () => {} }
+      { warn: () => {} },
+      // getDocs returns empty here, so the destination does NOT exist -- which
+      // is the case a manager is refused, because /products create is
+      // owner-only. Owner by default so the existing double-click assertions
+      // still exercise a transfer that proceeds.
+      () => asOwner,
+      (v) => (Number.isFinite(Number(v)) ? Number(v) : 0),
+      realNextUnitCost, realProductCostKnown
     );
 
     return { run, calls, button };
@@ -266,33 +306,6 @@ console.log("\n=== Restock is held to the same rule ===");
   }
   const source = app.slice(fnStart, j + 1);
 
-  // confirmRestock now reaches for the purchase-capture helpers. These are
-  // injected as the REAL functions -- lifted out of app.js the same way the
-  // handler itself is -- because a stub would only prove the stub agrees with
-  // the assertion. nextUnitCost takes a destructured parameter, so the body has
-  // to be found past the parameter list rather than at the first brace.
-  function lift(name) {
-    const from = app.indexOf(`function ${name}(`);
-    let k = app.indexOf("(", from);
-    let parens = 0;
-    for (; k < app.length; k++) {
-      if (app[k] === "(") parens++;
-      else if (app[k] === ")") { parens--; if (parens === 0) break; }
-    }
-    k = app.indexOf("{", k);
-    let depth = 0;
-    for (; k < app.length; k++) {
-      if (app[k] === "{") depth++;
-      else if (app[k] === "}") { depth--; if (depth === 0) break; }
-    }
-    return app.slice(from, k + 1);
-  }
-  const { realNextUnitCost, realProductCostKnown } = new Function(
-    `${lift("safeNumber")}
-     ${lift("nextUnitCost")}
-     ${lift("productCostKnown")}
-     return { realNextUnitCost: nextUnitCost, realProductCostKnown: productCostKnown };`
-  )();
 
   function harness(withCost = false) {
     const calls = { transactions: 0, closed: 0, renders: 0, sets: 0, toasts: [] };

@@ -498,6 +498,75 @@ console.log("\n=== a role change re-runs the subscriptions gated on it ===");
   check("...and on the fail-closed demotion path too",
     /state\.currentUserRole = "cashier";\s*resubscribeRoleGatedCollections\(\);/.test(noComments), true);
 }
+console.log("\n=== Phase C: cost travels with the stock ===");
+{
+  const transfer = body("async function confirmTransfer(");
+  check("confirmTransfer was located", transfer.length > 500, true);
+
+  // Before this, transfer-in added units and touched no cost at all: 100 units
+  // costing 2,000 landing in a branch holding 100 at 500 left that branch
+  // reporting 200 x 500 = 100,000 of stock value against 300,000 actually paid.
+  // Structural, not presence. The bare regex matched even with `if (false)`
+  // wrapped round the write -- the third time in this file an assertion has
+  // tested that text EXISTS rather than that it RUNS. The set must follow the
+  // nextUnitCost() call with nothing but whitespace between them.
+  check("the destination's average is recomputed",
+    /\}\);\s*transaction\.set\(destinationCostRef/.test(transfer), true);
+  check("...and nothing conditions it away",
+    /if \([^)]*\)\s*transaction\.set\(destinationCostRef/.test(transfer), false);
+  check("...through the same weighted-average function a restock uses",
+    /nextUnitCost\(\{/.test(transfer), true);
+  check("...against what the destination actually holds",
+    /oldQuantity: destinationQty/.test(transfer), true);
+  // The source's average IS the batch price for this arrival.
+  check("the incoming batch is priced at the source's average",
+    /totalPaid: safeNumber\(sourceCost\.costPrice\) \* qty/.test(transfer), true);
+
+  // Removing units at the prevailing average does not change the average.
+  check("the source's own average is left alone",
+    /transaction\.set\(sourceCostRef/.test(transfer), false);
+  // A transfer moves cost between branches; it does not create any.
+  check("no purchase document is written for a transfer",
+    /purchases/.test(transfer), false);
+
+  // Firestore refuses a transaction that reads after writing, and this one now
+  // reads up to four documents.
+  const firstWrite = Math.min(
+    ...["transaction.update(sourceRef", "transaction.set(destinationCostRef", "recordStockMovement(transaction"]
+      .map((m) => transfer.indexOf(m)).filter((i) => i > -1));
+  for (const read of ["transaction.get(sourceRef", "transaction.get(destinationRef",
+                      "transaction.get(sourceCostRef", "transaction.get(destinationCostRef"]) {
+    check(`${read.replace("transaction.get(", "")} is read before any write`,
+      transfer.indexOf(read) > -1 && transfer.indexOf(read) < firstWrite, true);
+  }
+
+  // A source with no cost recorded carries nothing: the destination keeps
+  // whatever it had rather than being averaged against a zero.
+  check("a source with no cost leaves the destination alone",
+    /if \(sourceCost && safeNumber\(sourceCost\.costPrice\) > 0\)/.test(transfer), true);
+  check("costKnownFrom is carried forward, or stamped for a first arrival",
+    /costKnownFrom: existingDestCost\?\.costKnownFrom \|\| Timestamp\.now\(\)/.test(transfer), true);
+}
+
+console.log("\n=== Phase C: the transfer a manager could never complete ===");
+{
+  const transfer = body("async function confirmTransfer(");
+  // A first transfer into a branch CREATES a product there, and /products
+  // create has always been owner-only -- so this failed for a manager with a
+  // bare "not allowed", AFTER the dialog had taken the quantity. Pre-existing,
+  // and live on production. KNOWN-LIMITATIONS.md L-14.
+  check("a manager is refused before the transaction, not by it",
+    /if \(!destinationExisted && !isOwnerRole\(\)\)/.test(transfer), true);
+  check("...and told what to do about it",
+    /toast\.transferNeedsOwnerFirst/.test(transfer), true);
+  check("...before the button is claimed",
+    transfer.indexOf("transferNeedsOwnerFirst") < transfer.indexOf("runTransaction("), true);
+  check("the owner is unaffected",
+    /!isOwnerRole\(\)/.test(transfer), true);
+  check("the message names the branch", /store: destinationStore\.name/.test(transfer), true);
+  check("toast.transferNeedsOwnerFirst exists in both languages",
+    (src.match(/"toast\.transferNeedsOwnerFirst"/g) || []).length >= 3, true);
+}
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 process.exit(failed.length ? 1 : 0);

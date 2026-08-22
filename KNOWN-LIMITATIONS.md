@@ -678,6 +678,58 @@ the whole Accounts module; this belongs to the same gate.
 
 ---
 
+---
+
+## L-14 A manager cannot make the FIRST transfer into a branch — **OPEN, live on production**
+
+Found while building `DESIGN-purchases.md` Phase C on 2026-08-21, and verified
+against the emulator before being written down.
+
+**Limitation.** A transfer into a branch that does not yet stock the item
+**creates** the destination product — `confirmTransfer()` writes a new document
+when the SKU lookup comes back empty. `/products` carries
+`allow create: if isOwner(userId)`, and always has: the rule predates every
+feature in this file and has not changed since `908eb03`. So a manager who is
+assigned to both branches, and who passes every check the transfer rule itself
+imposes, is refused on the product write.
+
+**What the shop saw.** A bare *"Your account is not allowed to do this. Ask the
+business owner."* — after the dialog had already taken the quantity, and with no
+indication that the problem is the destination branch rather than the transfer.
+The same manager transferring the same item into a branch that already stocks it
+succeeds, which makes it read as intermittent.
+
+Verified: a manager updating an existing destination product is accepted; the
+same manager creating one is refused at the rule; the owner doing the same is
+accepted.
+
+**Partly closed 2026-08-21.** `confirmTransfer()` now detects the case before
+the transaction and says what to do — *"{branch} does not stock this yet, and
+only the owner can add it there. Ask them to add it once, then transfers will
+work."* The transfer is still refused; it just refuses honestly, early, and
+without claiming the account is at fault.
+
+**Why not fixed properly.** The fix is to let a manager create a product, and
+that is a genuine expansion of the role rather than a bug fix — a manager who
+can create products can create them anywhere they have access, for any reason,
+not only as a transfer destination. Narrowing it to "only when it is a transfer
+destination" is not expressible in rules, which authorise each write
+independently and cannot see that a `/transfers` document is being written in
+the same transaction. That is the same limitation L-2 describes for binding a
+stock decrement to a sale.
+
+**Risk: Low, and old.** Every shop has lived with it since the feature shipped.
+The workaround is one action by the owner, once per product per branch.
+
+**Workaround.** The owner adds the product to the destination branch once — with
+quantity zero if they like — after which every later transfer of that item into
+that branch works for anyone.
+
+**Decision owed from the owner:** whether a manager should be able to create
+products at all. It is a permissions question, not a technical one.
+
+---
+
 ## L-10 A cashier can write off a customer's debt — **OPEN, detective fix owed**
 
 Raised by an external QA pass (QA-111) on 2026-08-07 and confirmed against the

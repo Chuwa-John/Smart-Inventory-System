@@ -396,6 +396,7 @@ const DICTIONARY = {
     "restock.receiptDateLabel": "Date on the receipt",
     "restock.costNeedsConnection": "Recording what you paid needs a connection. Add the delivery now and the cost later.",
     "expenses.dateTooOld": "That date is more than two years ago. Check the year.",
+    "toast.transferNeedsOwnerFirst": "{store} does not stock this yet, and only the owner can add it there. Ask them to add it once, then transfers will work.",
     "toast.restockOffline": "Restocking needs a connection. The delivery will have to wait.",
     "toast.restockUnconfirmed": "That took too long to confirm. Check the stock count before restocking again.",
     "expenses.eyebrow": "Money out",
@@ -1232,6 +1233,7 @@ const DICTIONARY = {
     "restock.receiptDateLabel": "Tarehe iliyo kwenye risiti",
     "restock.costNeedsConnection": "Kurekodi ulicholipa kunahitaji mtandao. Ongeza mzigo sasa na gharama baadaye.",
     "expenses.dateTooOld": "Tarehe hiyo ni zaidi ya miaka miwili iliyopita. Angalia mwaka.",
+    "toast.transferNeedsOwnerFirst": "{store} halina bidhaa hii bado, na mmiliki pekee ndiye anayeweza kuiongeza. Muombe aiongeze mara moja, kisha uhamisho utafanya kazi.",
     "toast.restockOffline": "Kujaza stoo kunahitaji mtandao. Mzigo utasubiri.",
     "toast.restockUnconfirmed": "Imechukua muda mrefu kuthibitisha. Angalia idadi ya bidhaa kabla ya kujaza tena.",
     "expenses.eyebrow": "Fedha zinazotoka",
@@ -6753,7 +6755,7 @@ async function confirmTransfer() {
   confirmButton.disabled = true;
 
   try {
-    const { collection, doc, runTransaction, serverTimestamp, query, where, getDocs } = state.firebaseApi.firestore;
+    const { collection, doc, runTransaction, serverTimestamp, query, where, getDocs, Timestamp } = state.firebaseApi.firestore;
     const productsRef = collection(state.db, "users", state.businessOwnerUid, "products");
     const sourceRef = doc(productsRef, product.id);
 
@@ -6762,6 +6764,22 @@ async function confirmTransfer() {
     const destinationRef = matchSnapOutsideTx.empty ? doc(productsRef) : matchSnapOutsideTx.docs[0].ref;
     const destinationExisted = !matchSnapOutsideTx.empty;
     const transferRef = doc(collection(state.db, "users", state.businessOwnerUid, "transfers"));
+
+    // A first transfer into a branch CREATES a product there, and
+    // firestore.rules has always carried `allow create: if isOwner(userId)` on
+    // /products -- so this has never worked for a manager. It failed with a
+    // bare "your account is not allowed to do this" AFTER the dialog had taken
+    // the quantity, which reads as the app being broken rather than as a
+    // permission they do not have. Refused here, with a message that says what
+    // to do about it. KNOWN-LIMITATIONS.md L-14.
+    if (!destinationExisted && !isOwnerRole()) {
+      showToast(t("toast.transferNeedsOwnerFirst", { store: destinationStore.name || "" }));
+      return;
+    }
+
+    const costsRef = collection(state.db, "users", state.businessOwnerUid, "productCosts");
+    const sourceCostRef = doc(costsRef, product.id);
+    const destinationCostRef = doc(costsRef, destinationRef.id);
 
     await runTransaction(state.db, async (transaction) => {
       const sourceSnap = await transaction.get(sourceRef);
@@ -6774,6 +6792,13 @@ async function confirmTransfer() {
         const destinationSnap = await transaction.get(destinationRef);
         destinationQty = destinationSnap.exists() ? Number(destinationSnap.data().quantity || 0) : 0;
       }
+
+      // Every read before any write. Firestore refuses a transaction that
+      // reads after writing, and this one now reads up to four documents.
+      const sourceCostSnap = await transaction.get(sourceCostRef);
+      const destinationCostSnap = destinationExisted
+        ? await transaction.get(destinationCostRef)
+        : null;
 
       transaction.update(sourceRef, { quantity: sourceQty - qty, updatedAt: serverTimestamp() });
       recordStockMovement(transaction, {
@@ -6789,6 +6814,40 @@ async function confirmTransfer() {
         storeId: destinationStore.id, reason: "transfer-in",
         delta: qty, quantityBefore: destinationQty, transferId: transferRef.id
       });
+
+      // A transfer-in is stock ARRIVING at a known cost -- the same event as a
+      // restock, and the destination's weighted average has to move for it.
+      // Before this, transfer-in added units and touched no cost at all: 100
+      // units costing 2,000 landing in a branch holding 100 at 500 left that
+      // branch reporting 200 x 500 = 100,000 of stock value against 300,000
+      // actually paid. DESIGN-purchases.md section 7.
+      //
+      // It is NOT a purchase. Nothing is written to /purchases, or the Purchase
+      // Book would count the group's buying twice.
+      const sourceCost = sourceCostSnap.exists() ? sourceCostSnap.data() : null;
+      if (sourceCost && safeNumber(sourceCost.costPrice) > 0) {
+        const existingDestCost = destinationCostSnap?.exists() ? destinationCostSnap.data() : null;
+        const unitCost = nextUnitCost({
+          oldQuantity: destinationQty,
+          oldUnitCost: safeNumber(existingDestCost?.costPrice),
+          costKnown: productCostKnown(existingDestCost),
+          deliveredQuantity: qty,
+          // The source's average IS the batch price for this arrival.
+          totalPaid: safeNumber(sourceCost.costPrice) * qty
+        });
+        transaction.set(destinationCostRef, {
+          storeId: destinationStore.id,
+          costPrice: unitCost,
+          // Stamped NOW for a branch receiving costed stock for the first time:
+          // this is the moment cost became knowable HERE. An existing stamp is
+          // carried forward, because the rules pin it.
+          costKnownFrom: existingDestCost?.costKnownFrom || Timestamp.now(),
+          updatedAt: serverTimestamp()
+        });
+      }
+      // The SOURCE's average is deliberately untouched. Removing units at the
+      // prevailing average does not change the average; only its own purchases
+      // do.
 
       if (destinationExisted) {
         transaction.update(destinationRef, { quantity: destinationQty + qty, updatedAt: serverTimestamp() });

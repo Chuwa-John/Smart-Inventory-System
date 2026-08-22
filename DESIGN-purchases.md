@@ -1,9 +1,9 @@
 # Design — purchases, expenses and profit
 
-Status: **written 2026-08-21. Phases 0, A and B built, then audited and
-substantially reworked as B2-a to B2-e the same day; C–E not started.**
-Production is on `20260808o`; `main` is on `20260808w` and carries Services
-A–E and Phases 0, A, B and B2, none deployed.
+Status: **written 2026-08-21. Phases 0, A, B and C built; B was audited and
+substantially reworked as B2-a to B2-e; D and E not started.**
+Production is on `20260808o`; `main` is on `20260808x` and carries Services
+A–E and Phases 0, A, B, B2 and C, none deployed.
 
 Requested by the shop owner: record what stock cost when it is bought — *"if
 they added 200 body lotions they record the total amount"* — so that profit can
@@ -1034,6 +1034,79 @@ longer say purchases and expenses are unbuildable.
   considering" items — the ±1 tolerance being relative at small totals, and
   `productId` not being checked against a product in the same store — were
   judged and closed. The rest are in the list above.
+
+---
+
+## 13e. Phase C record — built 2026-08-21
+
+**Stamp.** `20260808x` / `savia-shell-v122`.
+
+§7 said a transfer-in is a cost event and the code did not treat it as one. Half
+of that was already fixed by B2-a without touching the transfer path: cost left
+the product document, so `confirmTransfer()`'s `{ id, ...rest }` spread can no
+longer carry `costKnownFrom` to a branch that has never bought anything. What
+remained was the half that actually corrupts figures — an existing destination
+gained units and no cost at all.
+
+**What landed.** The transfer transaction now reads both cost documents and
+recomputes the destination's weighted average through `nextUnitCost()`, the same
+function a restock uses, with the source's average as the batch price for the
+arrival. Four reads now precede the first write, which Firestore requires.
+
+Three things it deliberately does not do:
+
+- **The source's average is untouched.** Removing units at the prevailing
+  average does not change the average; only its own purchases do.
+- **No `purchases` document is written.** A transfer moves cost between
+  branches, it does not create any, and writing one would make the Purchase Book
+  count the group's buying twice.
+- **A source with no recorded cost carries nothing.** The destination keeps
+  whatever it had rather than being averaged against a zero — the §4.3 rule,
+  applied to the branch instead of the product.
+
+`costKnownFrom` is stamped for a branch receiving costed stock for the first
+time, because that is the moment cost became knowable *there*, and carried
+forward otherwise — the rules pin it either way.
+
+### The defect found on the way in
+
+Before writing anything, the question B2 taught me to ask first: **who can do
+this, and can they write what it needs?** Transfers are owner-or-manager and so
+is `/productCosts`, so the roles align and there is no repeat of the §9 trap.
+
+But `/products` create is owner-only, and a first transfer into a branch creates
+the destination product. Probed against the emulator: a manager updating an
+existing destination is accepted, a manager creating one is refused, the owner
+is accepted. **A manager's first transfer into any branch has never worked**, on
+a rule unchanged since `908eb03` — so it is live on all eight shops and predates
+every feature in this document.
+
+Recorded as **L-14**. Partly closed: the client now detects it before the
+transaction and says what to do, rather than reporting a bare "your account is
+not allowed to do this" after the dialog has taken the quantity. Properly fixing
+it means letting a manager create products, which is a role expansion rather
+than a bug fix, and rules cannot narrow it to "only as a transfer destination" —
+they authorise each write independently and cannot see the `/transfers` document
+in the same transaction. Same shape as L-2. **That is a permissions decision for
+the owner.**
+
+### Proven
+
+`purchases` 132/132, `till-availability` 40/40, all 41 client and 20 emulator
+suites green with a tally each. Seven negative controls, all red and restored.
+
+One came back green: `if (false) transaction.set(destinationCostRef, …)` still
+contains the text the assertion looked for. **Third time in this file** an
+assertion has tested that code *exists* rather than that it *runs* — it now
+requires the write to follow `nextUnitCost()` with only whitespace between, and
+separately asserts nothing conditions it away.
+
+The `till-availability` transfer harness needed the costing helpers too. They
+were lifted out of `app.js` inside the restock block; both harnesses use them
+now, so they moved to module scope. The transfer harness had also picked up a
+stray `withCost` parameter from an earlier edit that it never used — replaced
+with `asOwner`, which it now genuinely needs, since its `getDocs` returns empty
+and that is exactly the case a manager is refused.
 
 ---
 
