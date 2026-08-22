@@ -474,6 +474,67 @@ console.log("\n=== the document cannot be padded ===");
 await check("an unexpected field is refused", false, () =>
   setDoc(doc(ownerDb, "users", OWNER, "purchases", "padded"), pur(OWNER, { junk: "x".repeat(2000) })));
 
+console.log("\n=== Phase D: the cost history is append-only ===");
+// This is what replaces a unitCost on the sale line, which is not buildable
+// here: the till is a cashier's, a cashier cannot read /productCosts, and a
+// cashier CAN read sales -- so the line would be both unwritable and, if
+// written, readable by exactly the role cost was moved away from.
+//
+// Everything a period report says about cost of goods rests on these records,
+// so they are held to the /auditLogs rule rather than the deletable-by-decision
+// rule /purchases and /expenses carry.
+const hist = (over = {}) => ({
+  productId: "prodA", storeId: STORE_A, costPrice: 2000,
+  effectiveFrom: KNOWN_FROM, reason: "purchase", createdAt: SEEDED_AT, ...over
+});
+await check("owner appends a cost record", true, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "productCostHistory", "h1"), hist()));
+await check("manager appends one for their branch", true, () =>
+  setDoc(doc(managerDb, "users", OWNER, "productCostHistory", "h2"), hist({ reason: "transfer-in" })));
+await check("manager reads it back", true, () =>
+  getDoc(doc(managerDb, "users", OWNER, "productCostHistory", "h2")));
+
+// The point of the collection. A record of what cost applied in July must still
+// say so in December.
+await check("even the OWNER cannot edit a record", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "productCostHistory", "h1"), hist({ costPrice: 1 })));
+await check("even the OWNER cannot delete one", false, () =>
+  deleteDoc(doc(ownerDb, "users", OWNER, "productCostHistory", "h1")));
+await check("a manager cannot delete one either", false, () =>
+  deleteDoc(doc(managerDb, "users", OWNER, "productCostHistory", "h2")));
+
+await check("CASHIER cannot read a cost record", false, () =>
+  getDoc(doc(cashierDb, "users", OWNER, "productCostHistory", "h1")));
+await check("cashier cannot list the collection", false, () =>
+  getDocs(query(collection(cashierDb, "users", OWNER, "productCostHistory"), where("storeId", "==", STORE_A))));
+await check("cashier cannot append one", false, () =>
+  setDoc(doc(cashierDb, "users", OWNER, "productCostHistory", "csh"), hist()));
+await check("a manager cannot append against another branch", false, () =>
+  setDoc(doc(managerDb, "users", OWNER, "productCostHistory", "wrong"), hist({ storeId: STORE_B })));
+await check("an outsider cannot read", false, () =>
+  getDoc(doc(outsiderDb, "users", OWNER, "productCostHistory", "h1")));
+
+console.log("\n=== ...and its shape is pinned ===");
+await check("a missing effectiveFrom is refused -- it is the whole record", false, () => {
+  const { effectiveFrom, ...rest } = hist();
+  return setDoc(doc(ownerDb, "users", OWNER, "productCostHistory", "bad1"), rest);
+});
+await check("a string effectiveFrom is refused", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "productCostHistory", "bad2"), hist({ effectiveFrom: "2026-05-01" })));
+await check("an invented reason is refused", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "productCostHistory", "bad3"), hist({ reason: "adjustment" })));
+await check("a missing productId is refused", false, () => {
+  const { productId, ...rest } = hist();
+  return setDoc(doc(ownerDb, "users", OWNER, "productCostHistory", "bad4"), rest);
+});
+await check("a negative cost is refused", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "productCostHistory", "bad5"), hist({ costPrice: -1 })));
+await check("an unexpected field is refused", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "productCostHistory", "bad6"), hist({ note: "why" })));
+// A weighted average is routinely a repeating fraction and must not be rounded.
+await check("a fractional average is accepted", true, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "productCostHistory", "frac"), hist({ costPrice: 333.3333333333333 })));
+
 await testEnv.cleanup();
 
 const failed = results.filter((r) => !r.pass);

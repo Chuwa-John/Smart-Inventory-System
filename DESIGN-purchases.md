@@ -1,9 +1,10 @@
 # Design — purchases, expenses and profit
 
-Status: **written 2026-08-21. Phases 0, A, B and C built; B was audited and
-substantially reworked as B2-a to B2-e; D and E not started.**
-Production is on `20260808o`; `main` is on `20260808x` and carries Services
-A–E and Phases 0, A, B, B2 and C, none deployed.
+Status: **written 2026-08-21. Phases 0, A, B, C and D built; B was audited
+and substantially reworked as B2-a to B2-e; E not started. §5 is superseded
+— see §13f.**
+Production is on `20260808o`; `main` is on `20260808y` and carries Services
+A–E and Phases 0, A, B, B2, C and D, none deployed.
 
 Requested by the shop owner: record what stock cost when it is bought — *"if
 they added 200 body lotions they record the total amount"* — so that profit can
@@ -207,7 +208,25 @@ reason.
 
 ---
 
-## 5. Cost on the sale line — the one sale-path change
+## 5. Cost on the sale line — SUPERSEDED, see §13f
+
+> **This section is no longer the design.** It was written before B2-a moved
+> cost off the product document, and it assumed the till already knew what a
+> thing cost. After B2-a it does not and cannot: the till is operated by a
+> cashier, a cashier cannot read `/productCosts`, and `firestore.rules:978`
+> lets a cashier **read sales** — so a `unitCost` on the line would be both
+> unwritable by the till and, if written, readable by exactly the role cost was
+> moved away from.
+>
+> Phase D instead records a **cost history with effective dates**, and answers
+> profit from the cost in force on each sale's own date. That is historically
+> exact for the same reason this section wanted, needs no sale-path change at
+> all, and keeps cost out of a cashier's reach. §13f records the decision.
+>
+> Kept because its reasoning about why *current* cost is not good enough is
+> still the argument, and because §12 and §13 refer to it.
+
+## 5 (as originally written). Cost on the sale line — the one sale-path change
 
 Weighted average on the product alone does **not** fix profit history. If cost
 is read from the product at report time, a restock at a new price still rewrites
@@ -1107,6 +1126,97 @@ now, so they moved to module scope. The transfer harness had also picked up a
 stray `withCost` parameter from an earlier edit that it never used — replaced
 with `asOwner`, which it now genuinely needs, since its `getDocs` returns empty
 and that is exactly the case a manager is refused.
+
+---
+
+## 13f. Phase D record — built 2026-08-21, and not as designed
+
+**Stamp.** `20260808y` / `savia-shell-v123`.
+
+### Why §5 was abandoned
+
+§5 specified a `unitCost` on every sale line, written at the moment of sale. It
+argued the change was cheap: zero rules expressions, and a precedent in per-line
+`taxClass`. Both were true and neither was the problem.
+
+The problem is that §5 predates B2-a, and B2-a moved cost off the product
+*specifically* so a cashier could not read it. Checked before building anything:
+
+- **The till cannot write it.** A cashier cannot read `/productCosts`, so the
+  client has nothing to put on the line. Cashiers make most sales, so "only the
+  owner's sales carry cost" is not a feature.
+- **The till could read it back.** `firestore.rules:978` lets a cashier read
+  sales for their assigned store. A `unitCost` on the line would be visible to
+  exactly the role B2-a moved cost away from.
+
+So the design as written was unbuildable, and building it anyway would have
+undone the owner's decision by a side door.
+
+### What replaced it
+
+A `productCostHistory` collection: one append-only record per change to a
+product's weighted average, carrying the moment that average took effect. Profit
+for a sale is quantity × the cost in force on that sale's own date.
+
+Better on this system's own terms, not a compromise:
+
+- **No sale-path change at all.** §8 rates the sale path as the highest-risk
+  thing in this design to touch. This removes that risk rather than managing it.
+- **Cost never enters a document a cashier can read.**
+- **Historically exact**, which was §5's entire purpose. A delivery next week
+  appends a record and leaves the old ones alone, so last month's margin still
+  reads the same next month.
+- **Cheap to write.** A weighted average moves only on restock and transfer-in,
+  and both are already online-only transactions that read the cost document. One
+  more append, no new reads.
+
+Written in the *same transaction* as the average it records, so the current cost
+and its history cannot disagree. `effectiveFrom` is a `serverTimestamp()`, not
+the device clock: it decides which cost applied to a sale, and a sale's
+`createdAt` is a server timestamp too — comparing one authority against another
+is the only way the comparison means anything.
+
+Append-only in the rules: no update, no delete, for anyone including the owner.
+Everything a period report says about cost of goods rests on these records, so
+they are held to the `/auditLogs` rule rather than the deletable-by-decision rule
+`/purchases` and `/expenses` carry.
+
+### The payoff
+
+`summariseCostOfGoods()` no longer reads the current cost. Phase 0's tile was
+honest but approximate — its own comment said cost of goods was *estimated*
+because a price change rewrote history. It is now exact for any period after a
+product's first recorded cost, and still says *unknown* rather than *zero* for
+anything before it.
+
+Stock value still uses the **current** average, because that is what the shelf is
+worth now. Two different questions, two different sources, and the suites assert
+they do not get crossed.
+
+### What this cost in test hygiene
+
+Four negative controls came back green, and every one was a weak assertion of
+mine rather than missing code:
+
+1. A sweep run against the wrong suite entirely.
+2. The out-of-order fixture happened to give the right answer with the sort
+   removed. Re-cased so an unsorted array is provably wrong.
+3. `if (false) transaction.set(...)` still contains every word a presence regex
+   looks for. **Fourth** assertion in this file with that flaw; both history
+   writes now assert they are unconditioned as well.
+4. My control for an unresolved local echo mutated it to *epoch*, which is
+   harmless — the real hazard is treating it as **now**, where it would win
+   every lookup on a figure the server has not confirmed. The code comment
+   described the wrong hazard too, and was corrected.
+
+### Still owed
+
+`productCostHistory` is a fourth unbounded subscription and is now named in
+**L-13**. It grows only when a cost changes rather than per transaction, so it is
+the slowest-growing of the four — but a bounded window here is the most
+dangerous of them, and needs the L-11 coverage treatment more than the rest: a
+truncated history does not under-report a total, it silently answers with the
+**wrong cost** for any sale older than the window.
 
 ---
 

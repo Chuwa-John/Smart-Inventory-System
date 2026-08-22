@@ -59,14 +59,18 @@ function body(header, from = src) {
   return rest.slice(0, next === -1 ? rest.length : next);
 }
 
-const { nextUnitCost, productCostKnown, summarisePurchases, purchasedAt, localMonthKey } = new Function(
+const { nextUnitCost, productCostKnown, summarisePurchases, purchasedAt, localMonthKey,
+        costInForceAt, buildCostIndex } = new Function(
   `${extract("safeNumber")}
    ${extract("localMonthKey")}
    ${extract("nextUnitCost")}
    ${extract("productCostKnown")}
    ${extract("purchasedAt")}
    ${extract("summarisePurchases")}
-   return { nextUnitCost, productCostKnown, summarisePurchases, purchasedAt, localMonthKey };`
+   ${extract("costInForceAt")}
+   ${extract("buildCostIndex")}
+   return { nextUnitCost, productCostKnown, summarisePurchases, purchasedAt, localMonthKey,
+            costInForceAt, buildCostIndex };`
 )();
 
 const results = [];
@@ -566,6 +570,120 @@ console.log("\n=== Phase C: the transfer a manager could never complete ===");
   check("the message names the branch", /store: destinationStore\.name/.test(transfer), true);
   check("toast.transferNeedsOwnerFirst exists in both languages",
     (src.match(/"toast\.transferNeedsOwnerFirst"/g) || []).length >= 3, true);
+}
+console.log("\n=== Phase D: what a thing cost on the day it was sold ===");
+{
+  const at = (iso) => ({ toDate: () => new Date(iso) });
+  const rec = (productId, costPrice, iso) => ({
+    productId, storeId: "s1", costPrice, effectiveFrom: at(iso), reason: "purchase"
+  });
+  const JAN = new Date("2026-01-15T10:00:00Z");
+  const JUN = new Date("2026-06-15T10:00:00Z");
+  const DEC = new Date("2026-12-15T10:00:00Z");
+
+  const index = buildCostIndex([
+    rec("p1", 2000, "2026-01-01T00:00:00Z"),
+    rec("p1", 2500, "2026-05-01T00:00:00Z"),
+    rec("p1", 3000, "2026-10-01T00:00:00Z"),
+  ]);
+
+  // The whole point of the collection: a delivery in October cannot rewrite
+  // what January's sales cost. The old records still say what was true then.
+  check("a January sale costs what it cost in January", costInForceAt(index, "p1", JAN), 2000);
+  check("a June sale costs the May price", costInForceAt(index, "p1", JUN), 2500);
+  check("a December sale costs the October price", costInForceAt(index, "p1", DEC), 3000);
+
+  // Absent is UNKNOWN, never free. A sale made before a product had any cost
+  // recorded has no cost of goods, and must not be reported as 100% margin.
+  check("a sale before the first record has no known cost",
+    costInForceAt(index, "p1", new Date("2025-12-31T23:59:59Z")), null);
+  check("...and null is not zero", costInForceAt(index, "p1", new Date("2025-01-01")) === 0, false);
+  check("a product with no history at all is unknown", costInForceAt(index, "unknown", JUN), null);
+  check("an undated sale is unknown rather than assumed", costInForceAt(index, "p1", null), null);
+  check("an unparseable date is unknown", costInForceAt(index, "p1", new Date("nonsense")), null);
+
+  // Exactly on the boundary the new cost applies -- the record says it takes
+  // effect FROM that moment.
+  check("a sale at the exact instant a cost took effect uses the new one",
+    costInForceAt(index, "p1", new Date("2026-05-01T00:00:00Z")), 2500);
+  check("...and a millisecond earlier uses the old one",
+    costInForceAt(index, "p1", new Date("2026-04-30T23:59:59.999Z")), 2000);
+
+  // Records arrive from a snapshot in no particular order.
+  // The order here is chosen so that an UNSORTED array gives the wrong answer.
+  // costInForceAt scans from the end for the first record at-or-before the sale,
+  // so with [Jan, Oct, May] and a December sale it would stop at May and report
+  // 2500 when October's 3000 is what applied. An earlier version of this case
+  // used an order where both paths happened to agree, and proved nothing.
+  const shuffled = buildCostIndex([
+    rec("p2", 2000, "2026-01-01T00:00:00Z"),
+    rec("p2", 3000, "2026-10-01T00:00:00Z"),
+    rec("p2", 2500, "2026-05-01T00:00:00Z"),
+  ]);
+  check("out-of-order records are sorted before lookup", costInForceAt(shuffled, "p2", DEC), 3000);
+  check("...and the unsorted answer really would have been different",
+    costInForceAt(shuffled, "p2", DEC) !== 2500, true);
+
+  // A local echo of a write that has not landed has no resolved timestamp.
+  // Skipping it means the PREVIOUS cost applies for now, which is honest --
+  // treating it as effective-at-epoch would make it win every lookup.
+  const withEcho = buildCostIndex([
+    rec("p3", 2000, "2026-01-01T00:00:00Z"),
+    { productId: "p3", storeId: "s1", costPrice: 9999, effectiveFrom: null, reason: "purchase" },
+  ]);
+  check("an unresolved timestamp is skipped, not treated as effective now",
+    costInForceAt(withEcho, "p3", DEC), 2000);
+  check("an empty history yields nothing", costInForceAt(buildCostIndex([]), "p1", JUN), null);
+  check("buildCostIndex tolerates undefined", buildCostIndex(undefined).size, 0);
+}
+
+console.log("\n=== Phase D: the history is written where the average moves ===");
+{
+  const restock = body("async function confirmRestock(");
+  const transfer = body("async function confirmTransfer(");
+
+  // Appended in the SAME transaction as the average it records, so the current
+  // cost and its history cannot disagree.
+  // Structural. `if (false) transaction.set(...)` still contains every word a
+  // presence regex looks for -- this is the fourth assertion in this file to
+  // have that flaw, so it checks the statement is not conditioned as well.
+  check("a restock appends a cost record",
+    /productCostHistory"\)\), \{[\s\S]{0,400}reason: "purchase"/.test(restock), true);
+  check("...unconditionally",
+    /if \([^)]*\)\s*transaction\.set\(doc\(collection\([^)]*productCostHistory/.test(restock), false);
+  check("...in the same transaction as the average",
+    restock.indexOf("productCostHistory") < restock.indexOf("transaction.set(costRef"), true);
+  check("a transfer-in appends one too",
+    /productCostHistory"\)\), \{[\s\S]{0,400}reason: "transfer-in"/.test(transfer), true);
+  check("...unconditionally as well",
+    /if \([^)]*\)\s*transaction\.set\(doc\(collection\([^)]*productCostHistory/.test(transfer), false);
+  check("...in the same transaction as the destination average",
+    transfer.indexOf("productCostHistory") < transfer.indexOf("transaction.set(destinationCostRef"), true);
+
+  // serverTimestamp, not the device clock. This decides which cost applied to a
+  // sale, and a sale's createdAt is a serverTimestamp too -- comparing one
+  // authority against another is the only way the comparison means anything.
+  check("effectiveFrom comes from the server, not the device",
+    /effectiveFrom: serverTimestamp\(\)/.test(restock), true);
+  check("...on the transfer path as well",
+    /effectiveFrom: serverTimestamp\(\)/.test(transfer), true);
+  check("the device clock is not used for it",
+    /effectiveFrom: Timestamp\.now\(\)/.test(restock + transfer), false);
+}
+
+console.log("\n=== Phase D: roles and lifecycle ===");
+{
+  check("subscribeToProductCostHistory refuses a cashier",
+    /if \(!isManagerOrOwnerRole\(\)\) \{\s*state\.productCostHistory = \[\];\s*return;\s*\}/.test(
+      body("async function subscribeToProductCostHistory(")), true);
+  check("signing in subscribes to it",
+    /subscribeToProductCosts\(\);\s*subscribeToProductCostHistory\(\);/.test(noComments), true);
+  check("it is detached on sign-out",
+    /if \(state\.unsubscribeProductCostHistory\) state\.unsubscribeProductCostHistory\(\);/.test(noComments), true);
+  check("...and cleared",
+    /state\.unsubscribeProductCostHistory = null;\s*state\.productCostHistory = \[\];/.test(noComments), true);
+  check("a role change re-runs it too",
+    /unsubscribeProductCostHistory"\]/.test(noComments), true);
 }
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);

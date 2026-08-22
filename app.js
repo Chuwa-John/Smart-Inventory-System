@@ -119,6 +119,8 @@ const state = {
   unsubscribePurchases: null,
   productCosts: [],
   unsubscribeProductCosts: null,
+  productCostHistory: [],
+  unsubscribeProductCostHistory: null,
   purchaseMonthSelection: localMonthKey(new Date()),
   purchaseMonthTouched: false,
   // localMonthKey(), not toISOString().slice(0, 7). Everything that reads
@@ -5618,6 +5620,53 @@ function productCostKnown(costDoc) {
   return Boolean(costDoc && costDoc.costKnownFrom);
 }
 
+// productId -> the cost changes for that product, oldest first. Built once per
+// render rather than per sale line, because a month of sales asks this question
+// thousands of times.
+function buildCostIndex(history) {
+  const index = new Map();
+  for (const entry of history || []) {
+    const at = entry?.effectiveFrom?.toDate ? entry.effectiveFrom.toDate()
+      : (entry?.effectiveFrom instanceof Date ? entry.effectiveFrom : null);
+    // A record with no resolved timestamp is a local echo of a write that has
+    // not landed yet. Skipping it means the previous cost applies until it does,
+    // which is the honest answer.
+    //
+    // The hazard is treating it as effective NOW: it would then win every
+    // lookup for every recent sale, on a figure the server has not confirmed.
+    // (Treating it as epoch would be harmless but wrong in the other
+    // direction -- it would lose every lookup instead.)
+    if (!at) continue;
+    if (!index.has(entry.productId)) index.set(entry.productId, []);
+    index.get(entry.productId).push({ at: at.getTime(), costPrice: safeNumber(entry.costPrice) });
+  }
+  for (const list of index.values()) list.sort((a, b) => a.at - b.at);
+  return index;
+}
+
+// What one unit of this product cost at that moment, or null if nothing was
+// known yet. Null is not zero: a sale made before a product had any recorded
+// cost has an UNKNOWN cost of goods, and every surface must say so rather than
+// reporting a margin of 100%.
+//
+// This is what replaces a unitCost on the sale line. The line cannot carry it --
+// the till is a cashier's and a cashier cannot read cost -- but the sale carries
+// its own date, and the history says what was true on that date. A later
+// delivery appends a new record and leaves the old one alone, so last month's
+// profit cannot be rewritten by this month's prices.
+function costInForceAt(index, productId, at) {
+  const list = index?.get(productId);
+  if (!list || !list.length || !at) return null;
+  const t = at instanceof Date ? at.getTime() : Number(at);
+  if (!Number.isFinite(t)) return null;
+  // Latest record at or before the sale. Linear from the end: a product has a
+  // handful of cost changes, and the newest is almost always the answer.
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i].at <= t) return list[i].costPrice;
+  }
+  return null;
+}
+
 // productId -> unit cost, for the surfaces that report stock value and margin.
 // Quantity still comes from the product; only the money moved.
 function productCostMap() {
@@ -5696,6 +5745,38 @@ async function subscribeToProductCosts() {
       },
       (error) => {
         console.warn("[productCosts listener]", error.code || error, "queryStoreIds=", queryStoreIds);
+      }
+    );
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
+async function subscribeToProductCostHistory() {
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
+  if (state.unsubscribeProductCostHistory) state.unsubscribeProductCostHistory();
+  if (!isManagerOrOwnerRole()) {
+    state.productCostHistory = [];
+    return;
+  }
+  try {
+    const { collection, onSnapshot, query, where } = state.firebaseApi.firestore;
+    const ref = collection(state.db, "users", state.businessOwnerUid, "productCostHistory");
+    const queryStoreIds = await resolveQueryStoreIds();
+    if (queryStoreIds !== null && queryStoreIds.length === 0) {
+      state.productCostHistory = [];
+      scheduleRenderAll();
+      return;
+    }
+    const historyQuery = queryStoreIds === null ? ref : query(ref, where("storeId", "in", queryStoreIds));
+    state.unsubscribeProductCostHistory = onSnapshot(
+      historyQuery,
+      (snapshot) => {
+        state.productCostHistory = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        scheduleRenderAll();
+      },
+      (error) => {
+        console.warn("[productCostHistory listener]", error.code || error, "queryStoreIds=", queryStoreIds);
       }
     );
   } catch (error) {
@@ -6835,6 +6916,14 @@ async function confirmTransfer() {
           // The source's average IS the batch price for this arrival.
           totalPaid: safeNumber(sourceCost.costPrice) * qty
         });
+        transaction.set(doc(collection(state.db, "users", state.businessOwnerUid, "productCostHistory")), {
+          productId: destinationRef.id,
+          storeId: destinationStore.id,
+          costPrice: unitCost,
+          effectiveFrom: serverTimestamp(),
+          reason: "transfer-in",
+          createdAt: serverTimestamp()
+        });
         transaction.set(destinationCostRef, {
           storeId: destinationStore.id,
           costPrice: unitCost,
@@ -7064,6 +7153,21 @@ async function confirmRestock() {
             costKnown: productCostKnown(existingCost),
             deliveredQuantity: qty,
             totalPaid
+          });
+          // Appended in the same transaction as the average it records, so the
+          // current cost and its history cannot disagree. This is what replaces
+          // a unitCost on the sale line -- DESIGN-purchases.md 13f.
+          transaction.set(doc(collection(state.db, "users", state.businessOwnerUid, "productCostHistory")), {
+            productId,
+            storeId: productStoreId(product),
+            costPrice: unitCost,
+            // serverTimestamp, not the device clock: this decides which cost
+            // applied to a sale, and a sale's createdAt is a serverTimestamp
+            // too. Comparing one authority against another is the only way the
+            // comparison means anything.
+            effectiveFrom: serverTimestamp(),
+            reason: "purchase",
+            createdAt: serverTimestamp()
           });
           transaction.set(costRef, {
             storeId: productStoreId(product),
@@ -9395,18 +9499,22 @@ async function loadFaults() {
 // It reports coverage as well as a total, because the caller cannot tell a
 // genuine zero from an unknown otherwise, and that distinction is the whole
 // point of the guard: DESIGN-purchases.md 4.3.
-function summariseCostOfGoods(sales, costByProductId) {
+function summariseCostOfGoods(sales, costIndex) {
   let cogs = 0;
   let costedLines = 0;
   let uncostedLines = 0;
   for (const sale of sales) {
     if (sale.voided) continue;
+    // The sale's own date decides which cost applied. This is the whole point of
+    // the history: a delivery next week appends a record and leaves this one
+    // alone, so this month's margin still reads the same next month.
+    const soldAt = saleTimestamp(sale);
     for (const item of sale.items || []) {
       // A haircut has no cost of goods, so it is not a gap in the data.
       // Counting it as one would report every bar and salon month incomplete.
       if (isServiceLine(item)) continue;
-      const unitCost = safeNumber(costByProductId.get(item.productId));
-      if (unitCost > 0) {
+      const unitCost = costInForceAt(costIndex, item.productId, soldAt);
+      if (unitCost !== null && unitCost > 0) {
         cogs += unitCost * safeNumber(item.qty);
         costedLines += 1;
       } else {
@@ -9454,7 +9562,10 @@ function renderAdminControl() {
   // single field. A product with no cost document is simply absent from it,
   // which is the same 'unknown' this guard already handles.
   const costById = productCostMap();
-  const goods = summariseCostOfGoods(monthSales, costById);
+  // Stock value uses the CURRENT average, because that is what the shelf is
+  // worth now. Cost of goods uses the history, because that is what the
+  // things already sold actually cost.
+  const goods = summariseCostOfGoods(monthSales, buildCostIndex(state.productCostHistory));
   const cogs = goods.cogs;
   const margin = month.net - cogs;
   const marginPct = month.net > 0 ? Math.round((margin / month.net) * 100) : 0;
@@ -9645,18 +9756,21 @@ function stockLedgerDiscrepancies() {
 // So the membership watcher calls this on every role change, in both
 // directions. Money must not outlive the role that was allowed to see it.
 function resubscribeRoleGatedCollections() {
-  for (const key of ["unsubscribeExpenses", "unsubscribePurchases", "unsubscribeProductCosts"]) {
+  for (const key of ["unsubscribeExpenses", "unsubscribePurchases", "unsubscribeProductCosts",
+                     "unsubscribeProductCostHistory"]) {
     if (state[key]) state[key]();
     state[key] = null;
   }
   state.expenses = [];
   state.purchases = [];
   state.productCosts = [];
+  state.productCostHistory = [];
   // Cleared before the re-subscribe so a demotion empties the screens even
   // though the calls below will return early for a cashier.
   subscribeToExpenses();
   subscribeToPurchases();
   subscribeToProductCosts();
+  subscribeToProductCostHistory();
 }
 
 function subscribeToOwnMembership() {
@@ -9852,6 +9966,7 @@ async function initFirebase() {
         subscribeToExpenses();
         subscribeToPurchases();
         subscribeToProductCosts();
+        subscribeToProductCostHistory();
         watchServerConnection();
       } else {
         stopIdleWatcher();
@@ -9888,6 +10003,9 @@ async function initFirebase() {
         if (state.unsubscribeProductCosts) state.unsubscribeProductCosts();
         state.unsubscribeProductCosts = null;
         state.productCosts = [];
+        if (state.unsubscribeProductCostHistory) state.unsubscribeProductCostHistory();
+        state.unsubscribeProductCostHistory = null;
+        state.productCostHistory = [];
         if (state.unsubscribeConnection) state.unsubscribeConnection();
         state.unsubscribeConnection = null;
         // Money figures must not outlive the session that fetched them: the

@@ -637,9 +637,16 @@ after 2026-08-07.
 Found by an adversarial audit on 2026-08-21, the day the collections shipped,
 and recorded the same day per this file's convention.
 
-**Limitation.** `subscribeToExpenses()`, `subscribeToPurchases()` and
-`subscribeToProductCosts()` each carry `where("storeId","in",…)` for staff and
-nothing at all for an owner. No `orderBy`, no `limit()`. Every expense, every
+**Limitation.** `subscribeToExpenses()`, `subscribeToPurchases()`,
+`subscribeToProductCosts()` and `subscribeToProductCostHistory()` each carry
+`where("storeId","in",…)` for staff and nothing at all for an owner.
+
+*Widened 2026-08-21* to include the cost history added by Phase D. It grows
+only when a cost changes rather than per transaction, so it is the
+slowest-growing of the four — but a bounded window there is the most
+dangerous of them and needs the L-11 coverage treatment more than the rest: a
+truncated history does not under-report a total, it silently answers with the
+**wrong cost** for any sale older than the window. No `orderBy`, no `limit()`. Every expense, every
 delivery and every product cost the business has ever recorded is streamed to
 the client and held in memory.
 

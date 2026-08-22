@@ -391,10 +391,10 @@ console.log("\n=== Restock is held to the same rule ===");
     await Promise.all([first, second]);
     check("a double-click records the delivery once", calls.transactions === 1,
       `${calls.transactions} transactions reached the database`);
-    // Three writes per costed restock: the cost document, the purchase, and the
-    // audit entry. Cost moved out of the product into /productCosts so a cashier
-    // cannot read it, which added the third.
-    check("...and writes the purchase once, not twice", calls.sets === 3,
+    // Four writes per costed restock: the cost history record, the current-cost
+    // document, the purchase, and the audit entry. The history is what replaces
+    // a unitCost on the sale line -- DESIGN-purchases.md 13f.
+    check("...and writes the purchase once, not twice", calls.sets === 4,
       `${calls.sets} documents were set — a doubled purchase doubles the average`);
     check("the button is handed back afterwards", button.disabled === false);
   }

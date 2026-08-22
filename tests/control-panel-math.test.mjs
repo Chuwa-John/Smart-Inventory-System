@@ -291,18 +291,43 @@ console.log("\n=== the repayment figure is wired where it is claimed to be ===")
 // The case named "production today" below is the exact shape of that: real
 // sales, a real catalogue, and not one cost price anywhere. It must report
 // nothing rather than a perfect margin.
-const { summariseCostOfGoods } = new Function(
+// Phase D: cost of goods is answered from the cost HISTORY at the sale's own
+// date, not from whatever the product costs today. So the bundle needs the
+// lookup and the sale's timestamp helper as well.
+const { summariseCostOfGoods, buildCostIndex } = new Function(
   `${extract("safeNumber")}
    ${extract("isServiceLine")}
+   ${extract("saleTimestamp")}
+   ${extract("costInForceAt")}
+   ${extract("buildCostIndex")}
    ${extract("summariseCostOfGoods")}
-   return { summariseCostOfGoods };`
+   return { summariseCostOfGoods, buildCostIndex };`
 )();
+
+// The old fixtures handed in a Map of productId -> current cost. A cost is now a
+// dated record, so a fixture is a history: one entry per product, effective long
+// before any sale in these cases. Cost 0 means "never recorded", so those rows
+// produce no history entry at all -- which is exactly the distinction phase 0
+// fixed and this collection now carries.
+const HISTORY_FROM = new Date("2020-01-01T00:00:00Z");
+const asHistory = (pairs) => buildCostIndex(
+  pairs
+    .filter(([, costPrice]) => costPrice > 0)
+    .map(([productId, costPrice]) => ({
+      productId, storeId: "s1", costPrice,
+      effectiveFrom: { toDate: () => HISTORY_FROM }
+    }))
+);
 
 console.log("\n=== cost of goods: coverage is not presence ===");
 {
-  const costs = (pairs) => new Map(pairs);
+  const costs = asHistory;
   const line = (productId, qty, over = {}) => ({ productId, qty, ...over });
-  const withItems = (items, over = {}) => ({ voided: false, items, ...over });
+  // A sale now needs a date: cost of goods is answered from the history at the
+  // moment of sale, so a sale with no timestamp has an unknowable cost -- which
+  // is correct behaviour, and would silently zero every case here.
+  const SOLD_AT = new Date("2026-06-15T10:00:00Z");
+  const withItems = (items, over = {}) => ({ voided: false, items, createdAt: SOLD_AT, ...over });
 
   // Production today: a catalogue that exists, and no cost price in it.
   const productionToday = summariseCostOfGoods(
@@ -374,7 +399,15 @@ console.log("\n=== the tiles say what they know ===");
   const noComments = src.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
 
   check("the panel calls the extracted function rather than inlining the loop",
-    /const goods = summariseCostOfGoods\(monthSales, costById\);/.test(noComments), true);
+    /const goods = summariseCostOfGoods\(monthSales, buildCostIndex\(state\.productCostHistory\)\);/.test(noComments), true);
+  // Two different questions, two different sources. Stock value is what the
+  // shelf is worth NOW, so it uses the current average. Cost of goods is what
+  // the things already sold actually cost, so it uses the history at each sale's
+  // own date -- which is why a delivery next week cannot rewrite this month.
+  check("stock value still uses the current average",
+    /const costById = productCostMap\(\);/.test(noComments), true);
+  check("cost of goods does not",
+    /summariseCostOfGoods\(monthSales, costById\)/.test(noComments), false);
   check("the old presence test is gone",
     /costById\.has\(/.test(noComments), false);
 

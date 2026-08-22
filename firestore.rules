@@ -186,6 +186,34 @@ service cloud.firestore {
     // The weighted-average cost of one product, kept off the product document
     // so a cashier cannot read it. Document id is the productId, so the restock
     // transaction can read it directly without a query.
+    // One record per change to a product's weighted average, carrying the moment
+    // that average took effect. Profit for a sale is then quantity x the cost in
+    // force on the sale's own date, which is historically exact and cannot be
+    // rewritten by a later delivery.
+    //
+    // This exists INSTEAD of a unitCost on each sale line, which is what
+    // DESIGN-purchases.md section 5 originally specified. That is not buildable
+    // here: the till is operated by a cashier, a cashier cannot read
+    // /productCosts, and a cashier CAN read sales -- so the line would be both
+    // unwritable and, if written, readable by exactly the role cost was moved
+    // away from. Section 13f records the decision.
+    //
+    // Append-only. A history that can be edited is not a history, and the whole
+    // value of this collection is that a record of what cost applied in July
+    // still says so in December.
+    function validProductCostHistory() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['productId', 'storeId', 'costPrice', 'effectiveFrom', 'reason', 'createdAt'])
+        && d.productId is string && d.productId.size() > 0 && d.productId.size() <= 120
+        && d.storeId is string && d.storeId.size() > 0 && d.storeId.size() <= 120
+        && moneyInRange(d.costPrice)
+        && d.effectiveFrom is timestamp
+        && d.createdAt is timestamp
+        // A closed set, so the history says WHY the average moved. Both are
+        // stock arriving; nothing else changes a weighted average.
+        && d.reason in ['purchase', 'transfer-in'];
+    }
+
     function validProductCost() {
       let d = request.resource.data;
       return d.keys().hasOnly(['storeId', 'costPrice', 'costKnownFrom', 'updatedAt'])
@@ -816,6 +844,23 @@ service cloud.firestore {
       // Readable by owner and manager only. This match block is the whole
       // reason cost is not a field on the product: /products is readable by
       // every cashier, and Firestore cannot withhold one field of a document.
+      // Append-only, and readable by the same people as the current average.
+      // No update and no delete: an edited history is not a history, and a
+      // deleted one silently rewrites every period report that ever read it.
+      // This is the collection an audit pack would rest on, so it is held to the
+      // same rule as /auditLogs and /stockMovements rather than to the
+      // deletable-by-decision rule /purchases and /expenses carry.
+      match /productCostHistory/{recordId} {
+        allow read: if isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager"])
+              && (resource == null || memberCanAccessStore(userId, resource.data.storeId)));
+        allow create: if tenantNotFrozen(userId) && validProductCostHistory() && (
+             isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager"])
+              && memberCanAccessStore(userId, request.resource.data.storeId)));
+        allow update, delete: if false;
+      }
+
       match /productCosts/{productId} {
         allow read: if isOwner(userId)
           || (isOwnerOrRole(userId, ["manager"])
