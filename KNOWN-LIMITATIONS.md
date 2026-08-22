@@ -57,6 +57,22 @@ divergence (`reconcileShiftCash()`, `tests/shift-reconciliation.test.mjs`).
 A shift closed on understated figures reads *"50,000 unaccounted"* rather than
 *"Balanced"*.
 
+**Till-paid expenses, 2026-08-21.** An expense recorded with
+`paidFrom: "till"` is money that left the drawer, and `reconcileShiftCash()`
+does not read it. The mechanism above is unaffected — `unaccounted` compares
+stated cash sales against cash sales recomputed from the `sales` collection, and
+an expense touches neither term, so this control raises no new false positive.
+
+What changed is the wording a shop now sees on two screens. The Expenses screen
+says *"Counted separately — the drawer will be short by this much"*; a shift
+close says *"{amount} unaccounted"*. Same shillings, opposite framings, and
+neither screen points at the other. Before Phase A a drawer raid was simply
+undocumented; it is now documented in a collection the cash-control surface does
+not consult, and shops are being encouraged to record more of them. Wiring
+`paidFrom: "till"` into expected cash is its own phase — `DESIGN-purchases.md`
+§8.3 — precisely because this function is the cash-control surface and must not
+gain a term as a ride-along.
+
 Two things bound what this proves:
 
 - **It only reports what it can see.** The sales subscription holds the newest
@@ -243,6 +259,22 @@ shape (`tests/rules-audit-log.test.mjs`) — so no client can forge or flood
 entries. But the project owner has full Firebase console access and can delete
 entries out of band. Append-only is not the same as tamper-evident.
 
+**The money collections, 2026-08-21.** `purchases` and `expenses` are the only
+money-touching collections in the schema that can be **deleted** — `sales`,
+`stockMovements` and `auditLogs` all refuse it outright. That is a deliberate
+decision by the owner, because a mis-keyed delivery is a human error and a shop
+must be able to remove it, and it is why deletion is audited: `EXPENSE_RECORDED`,
+`EXPENSE_UPDATED`, `EXPENSE_DELETED` and `PURCHASE_DELETED` are written by
+`moneyAuditEntry()` in the same batch as the change itself, so the record and
+the evidence land together or not at all
+(`tests/rules-audit-log.test.mjs`, `tests/expenses.test.mjs`).
+
+For a period of about a day between Phase A and B2-b, neither collection wrote
+any audit entry at all, which an adversarial audit found. It is closed. What it
+does **not** close is this entry's own point: the trail records that a deletion
+happened, and the owner can still delete the trail from the console. Append-only
+is still not tamper-evident, and for an audit pack those are not the same claim.
+
 **Why not fixed now.** True tamper evidence needs hash-chaining or off-site log
 shipping. Both are real work, and the threat model is the owner attacking their
 own records, which is a different and much weaker motive than staff attacking
@@ -374,10 +406,15 @@ to reading the raw counter.
 
 ## L-8 The products subscription is unbounded — **OPEN**
 
-**Limitation.** Every other collection the client subscribes to carries a
-`limit()` — sales 1000, transfers 2000, shifts 20, the stock ledger 500, audit
-history 300. Products has none: `subscribeToProducts()` streams the whole
-catalogue and holds it in memory, and every render walks it.
+**Limitation.** `subscribeToProducts()` streams the whole catalogue and holds
+it in memory, and every render walks it. It carries no `limit()`, where sales
+takes 1000, transfers 2000, shifts 20 and the stock ledger 500.
+
+*Corrected 2026-08-21.* This entry used to open "every other collection the
+client subscribes to carries a `limit()`". That stopped being true when
+`expenses`, `purchases` and `productCosts` arrived — all three are unbounded
+too. They are **not** covered by this entry, because L-8's reason for leaving
+products unbounded does not transfer to them. See **L-13**.
 
 **Why not fixed now.** Unlike the others, the product list is not a feed that
 can be truncated — the POS searches it, the inventory table pages through it,
@@ -590,6 +627,54 @@ the payment report gives the refunded totals for the period.
 **Milestone:** once enough trading has happened under per-line `taxClass` that a
 consistent period can be computed from it — realistically the first full month
 after 2026-08-07.
+
+---
+
+---
+
+## L-13 The expenses, purchases and product-cost subscriptions are unbounded — **OPEN**
+
+Found by an adversarial audit on 2026-08-21, the day the collections shipped,
+and recorded the same day per this file's convention.
+
+**Limitation.** `subscribeToExpenses()`, `subscribeToPurchases()` and
+`subscribeToProductCosts()` each carry `where("storeId","in",…)` for staff and
+nothing at all for an owner. No `orderBy`, no `limit()`. Every expense, every
+delivery and every product cost the business has ever recorded is streamed to
+the client and held in memory.
+
+**Why this is not L-8 widened.** L-8's reason for leaving `products` unbounded
+is that the catalogue is not a feed that can be truncated — the POS searches it,
+the inventory table pages through it, stock alerts scan it. None of that is true
+here:
+
+- Both screens already filter to **one month**. They *are* feeds.
+- A catalogue grows with the range a shop stocks and then plateaus. Spending and
+  deliveries grow **monotonically with trading volume and never plateau** — the
+  same curve as `sales`, which is exactly why `sales` carries
+  `SALES_HISTORY_LIMIT`.
+- The worst case is the owner, who subscribes to every branch at once.
+
+So the fix is cheap where L-8's is not: `orderBy("createdAt","desc")` plus a
+limit, and the L-11 treatment on top of it.
+
+**The L-11 treatment is the part that matters.** A bounded window without a
+coverage boundary is worse than an unbounded one, because a month that has
+fallen outside the window would silently total to *less than was spent* — a
+confident, wrong figure on the number that feeds net profit. `salesCoverageFromMs()`
+already exists for exactly this shape of problem and the monthly report already
+uses it. Whatever bound is chosen, the surfaces must refuse a period they cannot
+see all of rather than under-reporting it.
+
+**Risk: Medium now, High within a year of trading.** A duka recording a handful
+of expenses a week will not notice for a long time. A busy shop recording
+deliveries daily across several branches will.
+
+**Workaround.** None in-product, and none needed yet.
+
+**Milestone.** With the L-8 and L-11 server-side aggregation work.
+`RESEARCH-accounts.md` §9 already names L-8 and L-11 together as the gate for
+the whole Accounts module; this belongs to the same gate.
 
 ---
 

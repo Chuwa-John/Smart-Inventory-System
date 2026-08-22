@@ -27,6 +27,14 @@ Do not enable Firebase Functions, Firebase Storage, or a Firebase billing upgrad
 2. For every hosted frontend release, increment all of these together:
    - `app.html`: the `app.js?v=...`, `boot.js?v=...` and `styles.css?v=...` values.
    - `accept-invite.html`, `privacy-policy.html`, `terms.html`: the `styles.css?v=...` value.
+
+  > **And its `accept-invite.js?v=` value.** That reference is not covered by
+  > `tests/deployment-validation.test.mjs`, which hashes only `app.js`,
+  > `styles.css` and `boot.js` and walks only `app.html`. `20260731b` has
+  > already meant **four different builds** — the last change shipped
+  > user-visible copy under an unmoved stamp, and `firebase.json` serves it
+  > `immutable` for a year. This is exactly the failure step 4 exists to
+  > prevent, sitting in the one file the guard does not look at.
    - `index.html`: the `landing.js?v=...` value.
    - `sw.js`: `CACHE_NAME`, and the `app.js`, `boot.js`, `styles.css` and
      `landing.js` entries in `APP_SHELL`.

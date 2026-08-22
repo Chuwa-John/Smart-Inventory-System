@@ -1,8 +1,9 @@
 # Design — purchases, expenses and profit
 
-Status: **written 2026-08-21. Phases 0, A and B built and tested the same
-day; C–E not started.** Production is on `20260808o`; `main` is on
-`20260808s` and carries Services A–E and Phases 0, A and B, none deployed.
+Status: **written 2026-08-21. Phases 0, A and B built, then audited and
+substantially reworked as B2-a to B2-e the same day; C–E not started.**
+Production is on `20260808o`; `main` is on `20260808w` and carries Services
+A–E and Phases 0, A, B and B2, none deployed.
 
 Requested by the shop owner: record what stock cost when it is bought — *"if
 they added 200 body lotions they record the total amount"* — so that profit can
@@ -51,11 +52,17 @@ dashboard today.
 
 ## 2. The number that is wrong today
 
+> **This section describes PRODUCTION (`20260808o`), where it is still true.**
+> It was fixed on `main` by Phase 0 — see §13a. Do not read it as a description
+> of the current code; read it as the justification for the phase, which is
+> still live for the eight shops until this ships.
+
 Worth stating first, because it changes this from an enhancement to a fix.
 
 `costPrice` is validated in `firestore.rules` (`validProduct()`), read in four
 places in `app.js`, and **written in none.** There is no input for it in the
-product form or the restock dialog. `app.js:11150` already says so:
+product form or the restock dialog. The comment in the product form's numeric
+validation said so in as many words:
 
 > costPrice has no input in this form today and arrives as 0
 
@@ -362,9 +369,9 @@ both screens — which is strictly better than today, where nothing does.
 ## 9. Rules: the closed lists this touches
 
 This project has been bitten by closed allowlists before —
-`DESIGN-vat.md` §139 records the audit action enum and the audit field
-allowlist not knowing about `VAT_REGISTRATION_ENABLED`, caught by tests rather
-than review. Enumerating them up front:
+`DESIGN-vat.md`'s closing section records the audit action enum and the audit
+field allowlist not knowing about `VAT_REGISTRATION_ENABLED`, caught by tests
+rather than review. Enumerating them up front:
 
 | Closed list | Change needed | Note |
 |---|---|---|
@@ -387,8 +394,8 @@ testing, total for staff.
 
 **The expression budget is a live constraint, not a theoretical one.** The cap is
 1,000 expressions per evaluation and the sale path has already had to give
-ground to stay under it; `tests/rules-budget-probe.mjs`,
-`rules-budget-probe2.mjs` and `sale-budget-probe.mjs` exist to measure it. Two
+ground to stay under it; `tests/rules-budget-probe.mjs`, `sale-budget-probe.mjs` and
+`manager-paths-probe.mjs` exist to measure it. Two
 consequences: `validPurchase()` and `validExpense()` must be flat, constant-cost
 validators with no iteration, and **this is the structural argument against
 multi-line purchase documents** (§1) — a line-item purchase would face exactly
@@ -614,6 +621,8 @@ still be defined, or the panel throws.
 
 ## 13b. Phase A record — built 2026-08-21
 
+**Stamp.** `20260808r` / `savia-shell-v116`.
+
 ### What landed
 
 `firestore.rules`: `validExpense()`, `expenseImmutableFieldsUnchanged()`, and a
@@ -764,6 +773,8 @@ run before Phase B builds on this.
 ---
 
 ## 13c. Phase B record — built 2026-08-21
+
+**Stamp.** `20260808s` / `savia-shell-v117`.
 
 ### The trap, defused first
 
@@ -924,6 +935,108 @@ All red and restored, except the unreachable backstop above.
 
 ---
 
+## 13d. The adversarial audit, and B2 — 2026-08-21
+
+Phase B was committed, and then audited before Phase C could build on it. Three
+read-only agents ran in parallel — one on the rules, one on the client, one on
+consistency with everything this project has written down. **Every headline
+finding was verified independently against the emulator or by direct reading
+before anything was changed**, because a fresh reviewer asserting a bug is not
+proof of one; the previous round had turned up four "findings" that were bad
+tests rather than bad code.
+
+This time they were real. Fourteen rules findings reproduced exactly as
+described. The conclusion was that Phase B as committed was not fit to build on
+— and Phase C touches `confirmTransfer()`, which one of the findings said was
+already corrupting the invariant.
+
+### What the audit found that the tests did not
+
+The suites were green throughout. Worth understanding why, because it is the
+same reason each time: **a test can only fail on a question it asks.**
+
+- The owner-corrects-a-manager's-entry contradiction was invisible because
+  `rules-expenses.test.mjs` only ever had the owner correct a document the owner
+  had created. `mgr1` existed in the fixture and was never updated by the owner.
+- Cost being readable by a cashier was invisible because every assertion was
+  about *writes*. Nothing read a product document back as a cashier and looked
+  at what came with it.
+- `receiptDate` and `supplierTin` being permitted-and-never-written was
+  invisible because no test asserted the client writes them. The rules allowed
+  them, the design listed them, and both were satisfied.
+- The offline restock hang was invisible because no test ran `confirmRestock()`
+  with no connection. `OFFLINE-CAPABILITIES.md` had promised the refusal since
+  before this feature existed and nothing had ever checked.
+
+None of these needed a cleverer assertion. They needed a question nobody had
+asked.
+
+### The five fixes
+
+**B2-a — cost left the product document.** `/products` is readable by every
+cashier, the POS needs it in full, and Firestore has no field-level read
+security, so the write-side role split was working only against an honest
+client. Cost lives in `/productCosts` now, owner and manager only. This
+*simplified* the rules: `stockMovementWithCostKeys()` and
+`validStockMovementUpdate()` are gone, the product allowlist is one list again,
+and the §9 trap is removed rather than guarded. Two findings closed by
+construction — `confirmTransfer()`'s `{...rest}` spread can no longer carry
+`costKnownFrom` to a branch that never bought anything, and `productCostKnown()`
+stopped asking a product for two fields that could disagree.
+
+**B2-b — deletion leaves a trace.** The owner decided both collections stay
+deletable, because a mis-keyed delivery is a human error. That decision is what
+makes the trail necessary: every other money-touching collection refuses
+deletion outright, and a document that can vanish silently is a note rather than
+a book. Four audit actions, split by who may do what, and the §9 table's last
+unbuilt row — the purchase fields on `PRODUCT_RESTOCKED` — finally built.
+
+**B2-c — the rules contradiction, and settled money.** The recorder pin moved to
+create-only. Purchase money is pinned across updates because the weighted
+average is a cached derivation nothing recomputes; a wrong amount is corrected
+by deleting and re-recording, which is now audited. Plus `unitCost > 0`,
+required `createdAt`, integer quantities, `keys().hasOnly()` on both validators,
+and an upper bound on `spentAt`.
+
+**B2-d — the client.** The offline guard and timeout the promise document had
+been claiming for months. Re-subscription on role change, in both directions.
+`receiptDate` and `supplierTin` captured at last, and `hasFiscalReceipt`
+asserted by a checkbox rather than inferred from whether a text box was typed
+in. Paperwork read once, outside the retryable transaction callback. VAT copy
+gated on registration. The Accounts heading given a real container instead of
+capturing Reports and the AI Advisor.
+
+**B2-e — this record, and the rest of the written trail.** §2 now says it
+describes production. `KNOWN-LIMITATIONS.md` gains **L-13**, and L-1, L-3 and
+L-8 are corrected. `OFFLINE-CAPABILITIES.md` knows these screens exist and
+resolves the conflict it had with §8.1. `RESEARCH-accounts.md` §6 and §7 no
+longer say purchases and expenses are unbuildable.
+
+### What is still owed
+
+- **L-13.** Three unbounded subscriptions, on collections that grow
+  monotonically forever. Cheap to bound, and the bound needs the L-11 coverage
+  treatment or it under-reports silently.
+- **Cost capture on the product form.** Deferred in §13c and still deferred.
+- **The access-call budget of the four-write restock.** Firestore caps document
+  reads at 20 per transaction and the emulator does not enforce it, so a green
+  `rules-purchases.test.mjs` proves nothing about it. Not a regression — the
+  manager sale has the same shape in production — but nothing measures it.
+- **`accept-invite.js?v=20260731b` has shipped four different builds.** Outside
+  both the release runbook and the deploy guard. Now recorded in `OPERATIONS.md`;
+  the guard should derive its file list from the stamped references it finds
+  rather than a hard-coded triple.
+- **`npm test` cannot complete on this machine.** `sync-integrity` passes 22/22
+  and then Node aborts in libuv teardown, so the chain stops at suite 18 of 21.
+  Pre-existing, confirmed against the Phase 0 rules. `observability`,
+  `invite-preview` and `api-contract` all pass when run directly.
+- **The adversarial audit's own findings on the audit.** Two of its "worth
+  considering" items — the ±1 tolerance being relative at small totals, and
+  `productId` not being checked against a product in the same store — were
+  judged and closed. The rest are in the list above.
+
+---
+
 ## 14. Test plan
 
 Every phase closes with negative controls: reintroduce the defect, confirm the
@@ -937,7 +1050,9 @@ suite goes red. A suite that cannot fail has not been shown to pass.
   widened — the §9 trap, tested from the role that would hit it.
 - A cashier is refused a `purchases` read and an `expenses` write.
 - `tenantNotFrozen()` applies to both new collections.
-- **Budget probes re-run** (`rules-budget-probe*.mjs`, `sale-budget-probe.mjs`)
+- **Budget probes re-run** (`rules-budget-probe.mjs`, `sale-budget-probe.mjs`,
+  `manager-paths-probe.mjs` — *not* `rules-budget-probe2.mjs`, which is
+  superseded and no longer compiles; its header says why)
   after every rules change, with the measured headroom recorded in the phase
   note. Measured, not assumed.
 

@@ -31,9 +31,11 @@ activity still needs a connection.**
 |---|---|
 | **Taking a cash sale** | Queued on the device with relative stock updates and replayed on reconnect. Stock may go negative if another till sold the same item meanwhile — that is the agreed policy, and the owner is shown it. |
 | The app opens and runs with no connection | The service worker caches the app shell (`sw.js`, `CACHE_NAME`), so the interface loads from the device. |
-| Yesterday's and today's data is still there | Firestore `persistentLocalCache` with multi-tab support is enabled, so products, sales, customers, stores and shifts are served from the device. |
+| Yesterday's and today's data is still there | Firestore `persistentLocalCache` with multi-tab support is enabled, so products, sales, customers, stores, shifts, services, expenses, purchases and product costs are served from the device. |
 | Browsing stock, prices and stock levels | Reads come from that local cache. |
 | Searching and filtering the catalogue | Runs entirely in the browser against loaded data. |
+| **Recording an expense** | A create with no read, batched with its audit entry and queued on the device. The row appears immediately, because `spentAt` is a real timestamp in the local echo. Owner and manager only. |
+| Reading the Expenses and Purchases screens | Both render from the local cache for whoever is allowed to see them. |
 | Looking up a customer and their balance | Cached like everything else. |
 | Reading reports and dashboards already loaded | Computed in the browser from cached sales. |
 | Staying signed in through an outage | The session persists locally; a drop does not sign anyone out. |
@@ -49,7 +51,8 @@ activity still needs a connection.**
 | Capability | What actually happens |
 |---|---|
 | **Completing a CREDIT sale** | **Refused**, with its own message: credit needs the customer's real balance, and exceeding a limit needs an authorisation the proxy has to give. |
-| Restocking | Refused until the connection returns. |
+| Restocking | Refused until the connection returns — **and as of 2026-08-21 that refusal is implemented**. It was a promise this file made and the code did not keep: `confirmRestock()` had no offline guard and no timeout, so a restock attempted on a dead uplink hung forever with the Confirm button disabled behind it until the page was reloaded. There is now a guard, and a 15-second bound for the case where the device believes it is online and is not. |
+| Recording what a delivery cost | Refused with the restock, since the purchase is written inside the same transaction. A cost typed with no database at all is refused rather than silently dropped. |
 | Processing a return or refund | Refused. |
 | Voiding a sale | Refused. |
 | Transferring stock between branches | Refused. |
@@ -96,6 +99,29 @@ every sale made in between.
 
 The honest framing for a customer: *"Some admin changes will catch up when you
 reconnect. Do not rely on it."*
+
+**Why recording an expense is listed above this and not here.** An adversarial
+audit on 2026-08-21 found this document forbidding what `DESIGN-purchases.md`
+§8.1 calls the point — *"a shop pays for transport with no signal"* — and the
+two cannot both stand. Resolved in favour of the design, on the merits:
+
+The hazard this section warns about is a queued write whose meaning depends on
+state that moves while it waits. A product edit is exactly that: it carries a
+stock figure, and the shelf changes under it. An expense carries none — it is a
+create, it reads nothing, it references nothing that can move, and it names its
+own date rather than inheriting the moment it lands. There is no ordering in
+which it does damage.
+
+It is therefore listed as safe to promise. What is **not** promised is that a
+refusal will be visible promptly: an expense the rules later refuse fails on
+reconnect, possibly hours after the dialog closed with a success toast, and
+there is no queue-count surface for expenses the way there is for sales. Say
+*"expenses can be recorded offline"*; do not say *"you will know straight away
+if one is rejected"*.
+
+If the owner would rather not make even that promise, move the row down here —
+it is a commercial call, and this note exists so it is made once rather than
+argued twice.
 
 ---
 

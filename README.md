@@ -91,7 +91,10 @@ node tests/compatibility.headless.mjs
 | `OPERATIONS.md` | Release procedure, the caching contract, rollback — rehearsed, with timings. |
 | `KNOWN-LIMITATIONS.md` | What this system does **not** do, recorded on the day it was found. |
 | `DESIGN-vat.md` | The four commercial decisions behind VAT, and why fiscal numbers are not ours. |
+| `RESEARCH-accounts.md` | What a TRA audit asks for, what the law requires, and how much of it this system could answer. The authority `DESIGN-purchases.md` cites throughout. |
 | `DESIGN-purchases.md` | Purchases, expenses and profit — the costing method, and the one sale-path change it needs. |
+| `DESIGN-services.md` | Priced work with no shelf, for bars and salons. |
+| `OFFLINE-CAPABILITIES.md` | What may and may not be promised about working without a connection. |
 | `DESIGN-offline-selling.md` | The offline queue, and §15 — the handset trial that no suite substitutes for. |
 | `SECURITY-AUDIT.md` | Findings and their resolutions. |
 | `RECOVERY.md` | What to do when something has already gone wrong. |

@@ -1,3 +1,19 @@
+// SUPERSEDED -- DO NOT RUN. Kept as a record, not as an instrument.
+//
+// This probe tested whether collapsing the duplicate member get()s into a single
+// helper would buy back expression budget on the sale path. It did, the change
+// shipped, and firestore.rules now defines memberSellsInStore() for real. So the
+// probe injects a SECOND definition of a function that already exists and fails
+// at rules-compile time with "Function memberSellsInStore is already defined" --
+// and its .replace() no longer matches the two-call `allow create` it was
+// written against either.
+//
+// It is registered nowhere (not tests/package.json, not ci.yml) and cannot break
+// a run. It is documented here because DESIGN-purchases.md once said to re-run
+// "rules-budget-probe*.mjs" after every rules change, and following that
+// literally sends someone chasing a compile error for an hour. The live probes
+// are rules-budget-probe.mjs, sale-budget-probe.mjs and manager-paths-probe.mjs.
+
 // Second probe: does collapsing the repeated member get() calls buy enough
 // expression budget to keep full per-item validation for a realistic cart?
 import { initializeTestEnvironment } from "@firebase/rules-unit-testing";

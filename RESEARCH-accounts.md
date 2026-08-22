@@ -485,17 +485,17 @@ is unchanged — it is a fact about our data, not about the customer.
 | Book | Duka (< 11m) | Growing (11–200m) | Company (> 200m) | Producible today? |
 | --- | --- | --- | --- | --- |
 | Sales Book | **Core** | **Core** | **Core** | Mostly — §7 |
-| Purchase Book | Useful | **Core** | **Core** | **No** — no purchase records at all |
+| Purchase Book | Useful | **Core** | **Core** | **Partly** — one purchase per product per delivery, from the restock path only, forward-only |
 | Cash Book | **Core** | **Core** | **Core** | Partly — shifts give till cash, nothing else |
 | Bank / mobile-money book | Mobile money | **Both** | **Both** | **No** |
 | General Ledger | No | **Yes above 100m** | **Compulsory** | **No** |
 | Trial balance, P&L, balance sheet | No | **Yes above 100m** | **Compulsory, audited** | **No** |
 | Accounts Receivable | Useful | **Core** | **Core** | **Yes**, essentially |
 | Accounts Payable | Marginal | **Core** | **Core** | **No** |
-| Inventory / Stock Ledger | **Core** | **Core** | **Core** | Partly — quantities yes, valuation no |
+| Inventory / Stock Ledger | **Core** | **Core** | **Core** | Partly — quantities yes; valuation forward-only from the first purchase, weighted average |
 | VAT records | N/A | Above 200m | **Core, monthly** | Partly — output only, and overstated |
 | Fixed Asset Register | Marginal | **Yes** | **Compulsory, by class** | **No** |
-| Expense records | **Core** | **Core** | **Core** | **No** |
+| Expense records | **Core** | **Core** | **Core** | **Yes** for a closed nine-category set; no bank or mobile-money side |
 | Payroll (PAYE, SDL, WCF, social security) | If staffed | **Yes** | **Compulsory** | **No** |
 | Withholding tax records | Rent only | **Yes** | **Both directions** | **No** |
 | EFD/VFD records | Above 11m | **Yes** | **Yes** | **No** — §5 |
@@ -523,9 +523,16 @@ price.
 
 ## 7. What SaviaSmart already holds
 
-From `firestore.rules` and `app.js` as at `20260808p`. Collections: `products`,
+From `firestore.rules` and `app.js` as at `20260808w`. Collections: `products`,
 `sales`, `services`, `customers`, `payments`, `shifts`, `stockMovements`,
-`transfers`, `auditLogs`, `monthlyReports`, `staff`, `members`, `errorLog`.
+`transfers`, `auditLogs`, `monthlyReports`, `staff`, `members`, `errorLog`,
+`expenses`, `purchases`, `productCosts`.
+
+> **Updated 2026-08-21.** The three lists below described the codebase before
+> `DESIGN-purchases.md` Phases 0, A and B shipped. The rows that changed are
+> marked; everything unmarked still holds. Production is on `20260808o` and
+> carries none of it, so as a description of *the live system* the original
+> text was accurate and is preserved in git.
 
 **Genuinely strong, and closer to audit-ready than I expected:**
 
@@ -556,18 +563,21 @@ From `firestore.rules` and `app.js` as at `20260808p`. Collections: `products`,
 
 **Missing, one line each:**
 
-- **Purchases.** Nothing. `supplier` is a free-text string on a product — not an
-  entity, not a transaction, not an invoice.
-- **Expenses.** Zero occurrences of the term in `app.js`. Rent, power, wages,
-  transport, licences — none of it exists.
-- **Cost history.** `costPrice` is one mutable number per product. The code
-  already says so: *"Cost of goods is estimated from each product's CURRENT
-  costPrice"* (`app.js:8220`), and stock valuation is quantity × current cost
-  (`app.js:8237`). There is **no valuation method** — not FIFO, not weighted
-  average — and no way to recover what stock was worth on a past date, because
-  the historical cost was overwritten. On the inventory side this is the gap
-  that matters most, and for a company it is the closing-stock figure in an
-  audited balance sheet.
+- ~~**Purchases.** Nothing.~~ **Built.** A `purchases` collection, one document
+  per batch, carrying quantity and what was actually paid, plus the supplier,
+  TIN, fiscal receipt number and receipt date. `supplier` on the product remains
+  a free-text string and is now redundant.
+- ~~**Expenses.** Zero occurrences of the term in `app.js`.~~ **Built.** A closed
+  nine-category set with `spentAt` separate from the recording date, and
+  `paidFrom` distinguishing till from elsewhere.
+- ~~**Cost history.** There is no valuation method.~~ **Partly built.** A
+  weighted average is maintained per product in a `productCosts` collection —
+  kept off the product document because `/products` is readable by every cashier
+  and Firestore has no field-level read security. `costKnownFrom` marks where the
+  figure becomes meaningful, and it is forward-only: stock held before the first
+  purchase has an unknown cost, not a zero one. What is still missing is what
+  stock was worth on a *past* date, which needs the cost on the sale line —
+  `DESIGN-purchases.md` Phase D.
 - **Money movement.** No bank, no mobile-money statement, no reconciliation.
 - **A ledger.** No accounts, no double entry, no trial balance — so no P&L and
   no balance sheet, and therefore nothing an auditor can certify.
