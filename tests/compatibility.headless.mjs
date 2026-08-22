@@ -147,7 +147,14 @@ console.log("\n=== the flag is cleared the only way the CSP permits ===");
   check("the service worker pre-caches the same url the page requests",
     (await readFile(new URL("../sw.js", import.meta.url), "utf8")).includes(
       (html.match(/\.\/boot\.js\?v=[^"]+/) || [""])[0]));
-  check("the document starts flagged", /<html lang="en" class="js-pending">/.test(html));
+  // Matched on the class alone rather than the exact tag text. This read
+  // /<html lang="en" class="js-pending">/, which required the tag to close
+  // immediately after the class -- so adding translate="no" in 38c8a78 broke it
+  // while the mechanism it guards was working perfectly, and CI stayed red on
+  // this for two weeks. A red check nobody believes is worse than no check.
+  // What matters here is that the document starts flagged, not what else the
+  // tag carries or in what order.
+  check("the document starts flagged", /<html[^>]*class="[^"]*js-pending/.test(html));
   check("the production CSP is actually being served by this test",
     /script-src/.test(hostingHeaders["Content-Security-Policy"] || ""),
     "without it, an inline-script regression passes here and breaks production");
