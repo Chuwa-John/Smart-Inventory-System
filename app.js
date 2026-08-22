@@ -117,6 +117,8 @@ const state = {
   unsubscribeExpenses: null,
   purchases: [],
   unsubscribePurchases: null,
+  productCosts: [],
+  unsubscribeProductCosts: null,
   purchaseMonthSelection: localMonthKey(new Date()),
   // localMonthKey(), not toISOString().slice(0, 7). Everything that reads
   // this bucket by local month, and a UTC slice disagrees with them between
@@ -5497,11 +5499,26 @@ function nextUnitCost({ oldQuantity, oldUnitCost, costKnown, deliveredQuantity, 
   return (oldQty * safeNumber(oldUnitCost) + paid) / newQuantity;
 }
 
-// Whether this product has a cost that was actually recorded, as opposed to one
-// that is absent and reads as zero. The same distinction phase 0 fixed on the
-// control panel, and the reason costKnownFrom exists.
-function productCostKnown(product) {
-  return Boolean(product?.costKnownFrom) || safeNumber(product?.costPrice) > 0;
+// The existence of a cost document IS the answer. It is created by the first
+// purchase and by nothing else, so there is no state where cost is half-known.
+//
+// Phase B asked the PRODUCT for `costKnownFrom || costPrice > 0`, which could
+// disagree with itself -- one field present without the other averaged a full
+// shelf against a zero cost and produced a plausible wrong number rather than an
+// error. A document cannot half-exist.
+function productCostKnown(costDoc) {
+  // The stamp, not merely the object. Boolean(costDoc) alone reads `{}` as
+  // costed, and a bare truthiness test on a document is exactly the kind of
+  // presence-not-value check phase 0 had to remove from the control panel.
+  // firestore.rules requires costKnownFrom on every cost document, so a doc
+  // without one cannot exist -- but the guard should not depend on that.
+  return Boolean(costDoc && costDoc.costKnownFrom);
+}
+
+// productId -> unit cost, for the surfaces that report stock value and margin.
+// Quantity still comes from the product; only the money moved.
+function productCostMap() {
+  return new Map((state.productCosts || []).map((entry) => [entry.id, safeNumber(entry.costPrice)]));
 }
 
 // Who may record what a delivery cost. A cashier may restock -- a trusted
@@ -5543,6 +5560,44 @@ function summarisePurchases(purchases, monthKey) {
     if (purchase.hasFiscalReceipt) withReceipt += safeNumber(purchase.totalPaid);
   }
   return { total, units, count, withReceipt, withoutReceipt: total - withReceipt };
+}
+
+// Cost is kept in its own collection precisely so this subscription can be
+// refused to a cashier. /products cannot be -- the POS needs it -- and Firestore
+// cannot withhold a single field, so a costPrice stored there is readable by
+// every till. DESIGN-purchases.md 10.
+async function subscribeToProductCosts() {
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
+  if (state.unsubscribeProductCosts) state.unsubscribeProductCosts();
+  if (!isManagerOrOwnerRole()) {
+    state.productCosts = [];
+    return;
+  }
+  try {
+    const { collection, onSnapshot, query, where } = state.firebaseApi.firestore;
+    const costsRef = collection(state.db, "users", state.businessOwnerUid, "productCosts");
+    const queryStoreIds = await resolveQueryStoreIds();
+    if (queryStoreIds !== null && queryStoreIds.length === 0) {
+      state.productCosts = [];
+      scheduleRenderAll();
+      return;
+    }
+    const costsQuery = queryStoreIds === null
+      ? costsRef
+      : query(costsRef, where("storeId", "in", queryStoreIds));
+    state.unsubscribeProductCosts = onSnapshot(
+      costsQuery,
+      (snapshot) => {
+        state.productCosts = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        scheduleRenderAll();
+      },
+      (error) => {
+        console.warn("[productCosts listener]", error.code || error, "queryStoreIds=", queryStoreIds);
+      }
+    );
+  } catch (error) {
+    console.warn(error);
+  }
 }
 
 async function subscribeToPurchases() {
@@ -6714,12 +6769,17 @@ async function confirmRestock() {
     try {
       const { doc, collection, runTransaction, serverTimestamp, Timestamp } = state.firebaseApi.firestore;
       const productRef = doc(state.db, "users", state.businessOwnerUid, "products", productId);
+      // Keyed by productId, so this is a direct read rather than a query.
+      const costRef = doc(state.db, "users", state.businessOwnerUid, "productCosts", productId);
       const purchaseRef = totalPaid
         ? doc(collection(state.db, "users", state.businessOwnerUid, "purchases"))
         : null;
       await runTransaction(state.db, async (transaction) => {
         const snap = await transaction.get(productRef);
         if (!snap.exists()) throw new Error(t("txerror.itemGone", { name: product.name }));
+        // Both reads before any write: Firestore refuses a transaction that
+        // reads after writing, and this one now reads two documents.
+        const costSnap = totalPaid ? await transaction.get(costRef) : null;
         const before = snap.data();
         const currentQuantity = Number(before.quantity || 0);
         const productUpdate = {
@@ -6734,18 +6794,23 @@ async function confirmRestock() {
         // costing method depends on, and it is free here because the restock
         // transaction already had to make it.
         if (totalPaid && purchaseRef) {
+          const existingCost = costSnap?.exists() ? costSnap.data() : null;
           const unitCost = nextUnitCost({
             oldQuantity: currentQuantity,
-            oldUnitCost: safeNumber(before.costPrice),
-            costKnown: productCostKnown(before),
+            oldUnitCost: safeNumber(existingCost?.costPrice),
+            costKnown: productCostKnown(existingCost),
             deliveredQuantity: qty,
             totalPaid
           });
-          productUpdate.costPrice = unitCost;
-          // Stamped once, by the first purchase, and never moved after. Every
-          // profit surface reads it to decide whether a period can report a
-          // complete margin at all.
-          if (!before.costKnownFrom) productUpdate.costKnownFrom = Timestamp.now();
+          transaction.set(costRef, {
+            storeId: productStoreId(product),
+            costPrice: unitCost,
+            // Carried forward, never restamped. firestore.rules pins it across
+            // updates, so sending anything else here would be refused rather
+            // than silently moving the moment cost became knowable.
+            costKnownFrom: existingCost?.costKnownFrom || Timestamp.now(),
+            updatedAt: serverTimestamp()
+          });
 
           const receiptNumber = String(qs("#restockReceiptInput")?.value || "").trim().slice(0, 60);
           const supplierName = String(qs("#restockSupplierInput")?.value || "").trim().slice(0, 120);
@@ -9082,13 +9147,17 @@ function renderAdminControl() {
   //
   // The coverage guard asks whether a cost is KNOWN, not whether the product is
   // still in the catalogue. It used to ask costById.has(productId), which is
-  // presence -- and costPrice has no input anywhere in this app (see the note in
-  // the numeric-field validation), so every product carried an absent cost that
-  // safeNumber() reads as 0, every lookup passed, and this panel reported cost
-  // of goods as zero, gross margin as 100% of revenue, and captioned it
-  // "Revenue less cost of goods sold" rather than incomplete. An absent cost
-  // means unknown, never free.
-  const costById = new Map(state.products.map((p) => [p.id, safeNumber(p.costPrice)]));
+  // presence -- and at the time costPrice had no input anywhere in the app, so
+  // every product carried an absent cost that safeNumber() reads as 0, every
+  // lookup passed, and this panel reported cost of goods as zero, gross margin
+  // as 100% of revenue, and captioned it "Revenue less cost of goods sold"
+  // rather than incomplete. An absent cost means unknown, never free.
+  //
+  // The map now comes from /productCosts rather than from the product, because
+  // a cashier can read every product document and Firestore cannot withhold a
+  // single field. A product with no cost document is simply absent from it,
+  // which is the same 'unknown' this guard already handles.
+  const costById = productCostMap();
   const goods = summariseCostOfGoods(monthSales, costById);
   const cogs = goods.cogs;
   const margin = month.net - cogs;
@@ -9096,8 +9165,9 @@ function renderAdminControl() {
 
   // The same rule for the stock tiles. With no cost prices recorded anywhere,
   // "TZS 0" is a claim that the shelves are worthless, not an absence of data.
-  const anyProductCosted = state.products.some((p) => safeNumber(p.costPrice) > 0);
-  const stockAtCost = state.products.reduce((sum, p) => sum + safeNumber(p.quantity) * safeNumber(p.costPrice), 0);
+  const anyProductCosted = state.products.some((p) => safeNumber(costById.get(p.id)) > 0);
+  const stockAtCost = state.products.reduce(
+    (sum, p) => sum + safeNumber(p.quantity) * safeNumber(costById.get(p.id)), 0);
   const stockAtRetail = state.products.reduce((sum, p) => sum + safeNumber(p.quantity) * safeNumber(p.sellingPrice), 0);
   const creditOwed = state.customers.reduce((sum, c) => sum + safeNumber(c.balanceOwed), 0);
 
@@ -9157,8 +9227,9 @@ function renderAdminControl() {
           const qty = safeNumber(p.quantity);
           return qty > 0 && qty <= safeNumber(p.reorderLevel);
         }).length;
-        const cost = storeProducts.reduce((sum, p) => sum + safeNumber(p.quantity) * safeNumber(p.costPrice), 0);
-        const storeCosted = storeProducts.some((p) => safeNumber(p.costPrice) > 0);
+        const cost = storeProducts.reduce(
+          (sum, p) => sum + safeNumber(p.quantity) * safeNumber(costById.get(p.id)), 0);
+        const storeCosted = storeProducts.some((p) => safeNumber(costById.get(p.id)) > 0);
         return `<tr>
           <td>${esc(store.name || t("storeSwitcher.fallbackName"))}</td>
           <td>${money(storeToday.net)}</td>
@@ -9453,6 +9524,7 @@ async function initFirebase() {
         subscribeToServices();
         subscribeToExpenses();
         subscribeToPurchases();
+        subscribeToProductCosts();
         watchServerConnection();
       } else {
         stopIdleWatcher();
@@ -9486,6 +9558,9 @@ async function initFirebase() {
         if (state.unsubscribePurchases) state.unsubscribePurchases();
         state.unsubscribePurchases = null;
         state.purchases = [];
+        if (state.unsubscribeProductCosts) state.unsubscribeProductCosts();
+        state.unsubscribeProductCosts = null;
+        state.productCosts = [];
         if (state.unsubscribeConnection) state.unsubscribeConnection();
         state.unsubscribeConnection = null;
         // Money figures must not outlive the session that fetched them: the
@@ -12074,12 +12149,13 @@ function bindEvents() {
     // told the user neither which box was wrong nor what would be accepted.
     // Counts and money have different ceilings, so each is checked against its
     // own and named in the message. "Quantity or price is invalid" told the
-    // user neither which box was wrong nor what would be accepted. costPrice
-    // has no input in this form today and arrives as 0; it is checked anyway so
-    // adding the field later cannot quietly skip the bound.
+    // user neither which box was wrong nor what would be accepted.
+    //
+    // costPrice is deliberately NOT here any more. It never had an input in
+    // this form, and firestore.rules now refuses it on a product document
+    // outright -- cost lives in /productCosts, out of a cashier's reach.
     const numericFields = [
       ["quantity", product.quantity, MAX_COUNT, "product.quantityLabel"],
-      ["costPrice", product.costPrice || 0, MAX_MONEY, "product.priceTypeLabel"],
       ["sellingPrice", product.sellingPrice || 0, MAX_MONEY, "product.priceLabel"],
       ["reorderLevel", product.reorderLevel || 0, MAX_COUNT, "product.reorderLabel"]
     ];

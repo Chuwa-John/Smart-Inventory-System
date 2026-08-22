@@ -11,18 +11,22 @@
 // shape of the outage the long comment above validSaleItems() describes:
 // invisible to whoever is testing, total for staff.
 //
-// So the split is asymmetric on purpose (§10):
+// HOW THAT TRAP WAS CLOSED, in the end: not by widening the allowlist at all.
+// An adversarial audit found that a cashier could simply READ costPrice off the
+// product -- /products is readable by every till, the POS needs it in full, and
+// Firestore has no field-level read security. The write-side split was doing
+// real work only against an honest client.
 //
-//   CASHIER  restocks quantity only. A trusted cashier counts a delivery in when
-//            the manager is not there, and must not see what it cost -- knowing
-//            the buying price of every item is knowing the margin on every sale.
-//            Those units are absorbed at the prevailing average.
-//   MANAGER  restocks WITH cost, which moves the weighted average.
+// So cost left the product document. It lives in /productCosts, keyed by
+// productId, readable by owner and manager only. The product allowlist is one
+// list again and there is no cost key a restock could add to it, which removes
+// the trap rather than guarding it. This file now pins BOTH halves: cost is
+// refused on a product for everyone including the owner, and /productCosts is
+// refused to a cashier in both directions.
+//
+//   CASHIER  restocks quantity only; cannot read or write cost anywhere.
+//   MANAGER  restocks, and maintains /productCosts for their branches.
 //   OWNER    everything.
-//
-// Both roles come through ONE member read (memberMayUpdateProduct), because the
-// expression budget is real and a second get() to answer a question the first
-// already answered is how this file got into trouble before.
 //
 // Nothing here is deployed.
 import { initializeTestEnvironment, assertFails, assertSucceeds } from "@firebase/rules-unit-testing";
@@ -146,32 +150,10 @@ await check("cashier CANNOT write costKnownFrom", false, () =>
 await check("cashier cannot write cost even on its own", false, () =>
   updateDoc(doc(cashierDb, "users", OWNER, "products", "prodA"), { costPrice: 1 }));
 
-console.log("\n=== a manager restocks with cost ===");
+console.log("\n=== a manager restocks; cost is not part of that write ===");
 await check("manager restocks with quantity only", true, () =>
   updateDoc(doc(managerDb, "users", OWNER, "products", "prodA"), {
     quantity: 70, updatedAt: new Date(), movementReason: "restock"
-  }));
-await check("manager restocks WITH cost", true, () =>
-  updateDoc(doc(managerDb, "users", OWNER, "products", "prodA"), {
-    quantity: 80, updatedAt: new Date(), movementReason: "restock",
-    costPrice: 2050, costKnownFrom: KNOWN_FROM
-  }));
-await check("manager writes a fractional unit cost -- the average is not rounded", true, () =>
-  updateDoc(doc(managerDb, "users", OWNER, "products", "prodA"), {
-    quantity: 81, updatedAt: new Date(), movementReason: "restock",
-    costPrice: 333.3333333333333, costKnownFrom: KNOWN_FROM
-  }));
-await check("manager cannot write a negative cost", false, () =>
-  updateDoc(doc(managerDb, "users", OWNER, "products", "prodA"), {
-    quantity: 82, updatedAt: new Date(), movementReason: "restock", costPrice: -1
-  }));
-await check("manager cannot write a cost above the money ceiling", false, () =>
-  updateDoc(doc(managerDb, "users", OWNER, "products", "prodA"), {
-    quantity: 83, updatedAt: new Date(), movementReason: "restock", costPrice: 1000000001
-  }));
-await check("costKnownFrom must be a timestamp", false, () =>
-  updateDoc(doc(managerDb, "users", OWNER, "products", "prodA"), {
-    quantity: 84, updatedAt: new Date(), movementReason: "restock", costKnownFrom: "2026-08-20"
   }));
 await check("a manager still cannot rename a product", false, () =>
   updateDoc(doc(managerDb, "users", OWNER, "products", "prodA"), { name: "Something else" }));
@@ -179,26 +161,108 @@ await check("a manager still cannot change the selling price", false, () =>
   updateDoc(doc(managerDb, "users", OWNER, "products", "prodA"), { sellingPrice: 1 }));
 await check("a manager cannot restock a branch they are not assigned", false, () =>
   updateDoc(doc(managerDb, "users", OWNER, "products", "prodB"), {
-    quantity: 50, updatedAt: new Date(), movementReason: "restock", costPrice: 2000
+    quantity: 50, updatedAt: new Date(), movementReason: "restock"
   }));
 await check("the other branch's manager can", true, () =>
   updateDoc(doc(managerBDb, "users", OWNER, "products", "prodB"), {
-    quantity: 50, updatedAt: new Date(), movementReason: "restock", costPrice: 2200
+    quantity: 50, updatedAt: new Date(), movementReason: "restock"
   }));
 
-console.log("\n=== the owner writes cost through the full product validator ===");
-await check("owner sets cost on a product", true, () =>
+console.log("\n=== cost is refused on a product document, for everyone ===");
+// The audit finding this closes: a cashier reads every product document, so a
+// costPrice stored there is a costPrice they can read. Refusing it here rather
+// than merely not writing it stops it drifting back.
+await check("manager cannot write costPrice onto a product", false, () =>
+  updateDoc(doc(managerDb, "users", OWNER, "products", "prodA"), {
+    quantity: 80, updatedAt: new Date(), movementReason: "restock", costPrice: 2050
+  }));
+await check("manager cannot write costKnownFrom onto a product", false, () =>
+  updateDoc(doc(managerDb, "users", OWNER, "products", "prodA"), {
+    quantity: 81, updatedAt: new Date(), movementReason: "restock", costKnownFrom: KNOWN_FROM
+  }));
+await check("cashier cannot either", false, () =>
+  updateDoc(doc(cashierDb, "users", OWNER, "products", "prodA"), {
+    quantity: 82, updatedAt: new Date(), movementReason: "restock", costPrice: 2050
+  }));
+// The owner goes through the full product validator, which no longer permits
+// the field at all -- so even the owner cannot put cost back on a product.
+await check("the OWNER cannot write cost onto a product either", false, () =>
   setDoc(doc(ownerDb, "users", OWNER, "products", "prodA"), {
     id: "prodA", name: "Body Lotion", category: "Cosmetics", brand: "X", supplier: "Y",
     quantity: 90, storeId: STORE_A, sellingPrice: 3000, createdAt: SEEDED_AT,
-    costPrice: 2000, costKnownFrom: KNOWN_FROM
+    costPrice: 2000
   }));
-await check("owner cannot write a costKnownFrom that is not a timestamp", false, () =>
+await check("...nor costKnownFrom", false, () =>
   setDoc(doc(ownerDb, "users", OWNER, "products", "prodA"), {
     id: "prodA", name: "Body Lotion", category: "Cosmetics", brand: "X", supplier: "Y",
     quantity: 90, storeId: STORE_A, sellingPrice: 3000, createdAt: SEEDED_AT,
-    costPrice: 2000, costKnownFrom: 20260820
+    costKnownFrom: KNOWN_FROM
   }));
+await check("a product with no cost is written normally", true, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "products", "prodA"), {
+    id: "prodA", name: "Body Lotion", category: "Cosmetics", brand: "X", supplier: "Y",
+    quantity: 90, storeId: STORE_A, sellingPrice: 3000, createdAt: SEEDED_AT
+  }));
+
+console.log("\n=== /productCosts: a cashier cannot reach it at all ===");
+const cost = (over = {}) => ({
+  storeId: STORE_A, costPrice: 2000, costKnownFrom: KNOWN_FROM, updatedAt: new Date(), ...over
+});
+await check("owner creates a cost document", true, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "productCosts", "prodA"), cost()));
+await check("manager updates the average for their branch", true, () =>
+  setDoc(doc(managerDb, "users", OWNER, "productCosts", "prodA"), cost({ costPrice: 2050 })));
+await check("manager reads it", true, () =>
+  getDoc(doc(managerDb, "users", OWNER, "productCosts", "prodA")));
+await check("a fractional average is accepted -- it is not rounded", true, () =>
+  setDoc(doc(managerDb, "users", OWNER, "productCosts", "prodA"), cost({ costPrice: 333.3333333333333 })));
+
+// The whole point of the collection.
+await check("CASHIER cannot read a cost document", false, () =>
+  getDoc(doc(cashierDb, "users", OWNER, "productCosts", "prodA")));
+await check("cashier cannot list the collection", false, () =>
+  getDocs(query(collection(cashierDb, "users", OWNER, "productCosts"), where("storeId", "==", STORE_A))));
+await check("cashier cannot write one", false, () =>
+  setDoc(doc(cashierDb, "users", OWNER, "productCosts", "prodC"), cost()));
+await check("cashier cannot delete one", false, () =>
+  deleteDoc(doc(cashierDb, "users", OWNER, "productCosts", "prodA")));
+await check("an outsider cannot read one", false, () =>
+  getDoc(doc(outsiderDb, "users", OWNER, "productCosts", "prodA")));
+
+console.log("\n=== the moment cost became knowable does not move ===");
+// Left mutable, a manager could back-date this and every profit surface would
+// believe cost had been known since before the shop recorded any -- reporting a
+// confident margin against stock nobody costed.
+await check("costKnownFrom cannot be back-dated", false, () =>
+  setDoc(doc(managerDb, "users", OWNER, "productCosts", "prodA"),
+    cost({ costKnownFrom: new Date("2020-01-01") })));
+await check("costKnownFrom cannot be moved forward either", false, () =>
+  setDoc(doc(managerDb, "users", OWNER, "productCosts", "prodA"),
+    cost({ costKnownFrom: new Date("2027-01-01") })));
+await check("the branch cannot move", false, () =>
+  setDoc(doc(managerDb, "users", OWNER, "productCosts", "prodA"), cost({ storeId: STORE_B })));
+await check("a manager cannot touch another branch's cost", false, () =>
+  setDoc(doc(managerBDb, "users", OWNER, "productCosts", "prodA"), cost({ costPrice: 1 })));
+
+console.log("\n=== the cost document's shape is pinned ===");
+await check("a negative average is refused", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "productCosts", "prodNeg"), cost({ costPrice: -1 })));
+await check("an average above the money ceiling is refused", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "productCosts", "prodBig"), cost({ costPrice: 1000000001 })));
+await check("a missing costKnownFrom is refused", false, () => {
+  const { costKnownFrom, ...rest } = cost();
+  return setDoc(doc(ownerDb, "users", OWNER, "productCosts", "prodNoStamp"), rest);
+});
+await check("a costKnownFrom that is not a timestamp is refused", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "productCosts", "prodBadStamp"), cost({ costKnownFrom: 20260820 })));
+await check("a missing storeId is refused", false, () => {
+  const { storeId, ...rest } = cost();
+  return setDoc(doc(ownerDb, "users", OWNER, "productCosts", "prodNoStore"), rest);
+});
+// hasOnly, unlike the purchase and expense validators -- worth having where the
+// document is this small and this well defined.
+await check("an unexpected field is refused", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "productCosts", "prodExtra"), cost({ note: "why" })));
 
 // ===========================================================================
 console.log("\n=== the Purchase Book: who may keep it ===");

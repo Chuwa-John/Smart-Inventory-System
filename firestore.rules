@@ -136,13 +136,17 @@ service cloud.firestore {
         && (!('warehouse' in d) || (d.warehouse is string && d.warehouse.size() <= 60))
         && (!('shelf' in d) || (d.shelf is string && d.shelf.size() <= 60))
         && (!('sku' in d) || (d.sku is string && d.sku.size() <= 40))
-        && (!('costPrice' in d) || moneyInRange(d.costPrice))
-        // Set by the FIRST purchase for this product and never cleared. Every
-        // profit surface reads it the way salesCoverageFromMs() is already read:
-        // a period beginning before it cannot report a complete margin, and must
-        // say so rather than averaging against stock whose cost nobody recorded.
-        // DESIGN-purchases.md 4.3.
-        && (!('costKnownFrom' in d) || d.costKnownFrom is timestamp)
+        // Cost is REFUSED on a product, not merely unvalidated. validProduct()
+        // has no keys().hasOnly(), so dropping the clause would have left the
+        // field silently permitted -- which is how it would drift back.
+        // Firestore has no field-level read security, and a cashier's POS must
+        // read /products in full -- so any cost stored on this document is
+        // readable by every cashier, which is exactly what the role split in
+        // DESIGN-purchases.md 10 exists to prevent. Cost lives in
+        // /productCosts, which a cashier cannot read at all. Refusing rather
+        // than merely omitting stops it drifting back.
+        && !('costPrice' in d)
+        && !('costKnownFrom' in d)
         && (!('sellingPrice' in d) || moneyInRange(d.sellingPrice))
         && (!('reorderLevel' in d) || countInRange(d.reorderLevel))
         && (!('expiryDate' in d) || (d.expiryDate is string && d.expiryDate.size() <= 10))
@@ -179,6 +183,30 @@ service cloud.firestore {
     // Flat and constant-cost, like validExpense(): no iteration, no per-item
     // unrolling. This is also why a purchase is one product per delivery rather
     // than a multi-line supplier invoice -- see section 1.
+    // The weighted-average cost of one product, kept off the product document
+    // so a cashier cannot read it. Document id is the productId, so the restock
+    // transaction can read it directly without a query.
+    function validProductCost() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['storeId', 'costPrice', 'costKnownFrom', 'updatedAt'])
+        && d.storeId is string && d.storeId.size() > 0 && d.storeId.size() <= 120
+        && moneyInRange(d.costPrice)
+        // Required, not optional. A cost document that exists at all is a
+        // statement that cost became knowable at some moment, and every profit
+        // surface reads that moment to decide whether a period can report a
+        // complete margin. DESIGN-purchases.md 4.3.
+        && d.costKnownFrom is timestamp;
+    }
+
+    // costKnownFrom is stamped once by the first purchase and never moves after.
+    // Left mutable, a manager could back-date it and every profit surface would
+    // then believe cost had been known since before the shop recorded any --
+    // reporting a confident margin against stock nobody costed.
+    function productCostImmutableFieldsUnchanged() {
+      return request.resource.data.storeId == resource.data.storeId
+        && request.resource.data.costKnownFrom == resource.data.costKnownFrom;
+    }
+
     function validPurchase() {
       let d = request.resource.data;
       return d.storeId is string && d.storeId.size() > 0 && d.storeId.size() <= 120
@@ -344,27 +372,13 @@ service cloud.firestore {
       return ['quantity', 'sold30', 'sold90', 'updatedAt', 'movementReason'];
     }
 
-    // The manager allowlist. Two more keys, and only two: a manager records what
-    // a delivery cost, which moves the weighted average and stamps the moment
-    // cost became knowable for this product.
-    function stockMovementWithCostKeys() {
-      return ['quantity', 'sold30', 'sold90', 'updatedAt', 'movementReason',
-              'costPrice', 'costKnownFrom'];
-    }
-
     function validStockMovementShape(allowedKeys) {
       let after = request.resource.data;
       return after.diff(resource.data).affectedKeys().hasOnly(allowedKeys)
         && stockCountInRange(after.quantity)
         && (!('sold30' in after) || countInRange(after.sold30))
         && (!('sold90' in after) || countInRange(after.sold90))
-        && (!('costPrice' in after) || moneyInRange(after.costPrice))
-        && (!('costKnownFrom' in after) || after.costKnownFrom is timestamp)
         && validMovementReason();
-    }
-
-    function validStockMovementUpdate() {
-      return validStockMovementShape(stockMovementKeys());
     }
 
     // ONE member read for role AND store access AND which allowlist applies,
@@ -380,8 +394,11 @@ service cloud.firestore {
         && m.status == "active"
         && m.role in ["manager", "cashier"]
         && (("all" in m.storeIds) || (storeId in m.storeIds))
-        && validStockMovementShape(
-             m.role == "manager" ? stockMovementWithCostKeys() : stockMovementKeys());
+        // One list again. Phase B briefly branched this on role so a manager
+        // could write cost here; moving cost to /productCosts removed the
+        // reason, and with it the trap DESIGN-purchases.md 9 describes -- there
+        // is no longer a cost key that a restock could add to this write.
+        && validStockMovementShape(stockMovementKeys());
     }
 
     // Per-item content validation used to live here as validSaleItem() applied
@@ -716,6 +733,25 @@ service cloud.firestore {
       // (DESIGN-purchases.md 10). Corrections are the owner's, exactly as for
       // expenses -- and here it matters more, because a purchase has already
       // moved the product's weighted average by the time anyone edits it.
+      // Readable by owner and manager only. This match block is the whole
+      // reason cost is not a field on the product: /products is readable by
+      // every cashier, and Firestore cannot withhold one field of a document.
+      match /productCosts/{productId} {
+        allow read: if isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager"])
+              && (resource == null || memberCanAccessStore(userId, resource.data.storeId)));
+        allow create: if tenantNotFrozen(userId) && validProductCost() && (
+             isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager"])
+              && memberCanAccessStore(userId, request.resource.data.storeId)));
+        allow update: if tenantNotFrozen(userId) && validProductCost()
+          && productCostImmutableFieldsUnchanged() && (
+             isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager"])
+              && memberCanAccessStore(userId, resource.data.storeId)));
+        allow delete: if isOwner(userId) && tenantNotFrozen(userId);
+      }
+
       match /purchases/{purchaseId} {
         allow read: if isOwner(userId)
           || (isOwnerOrRole(userId, ["manager"])

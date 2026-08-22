@@ -558,11 +558,22 @@ console.log("\n=== 'offline' means the database is unreachable, not what the OS 
       h.isOfflineNow() === true);
   }
 
-  // subscribeToServices() now sits between these two. The property is that the
-  // watch starts in the same block as the subscriptions, not that it is
-  // adjacent to any particular one.
+  // Asserted as MEMBERSHIP of the sign-in block, not proximity within N
+  // characters of a neighbour. This has now broken three times on unrelated
+  // insertions -- subscribeToServices(), then subscribeToExpenses() and
+  // subscribeToPurchases(), then subscribeToProductCosts() -- each time
+  // widening a window that was never the property. What matters is that the
+  // connection watch is started where the subscriptions are started, so it
+  // cannot be forgotten on a path that subscribes; which call precedes it is
+  // nobody's business.
+  const signInBlock = (() => {
+    const anchor = noComments.indexOf("subscribeToProducts();");
+    if (anchor === -1) return "";
+    return noComments.slice(anchor, noComments.indexOf("} else {", anchor));
+  })();
+  check("the sign-in subscription block was located", signInBlock.length > 100);
   check("the watch starts with the other subscriptions",
-    /subscribeToTransfers\(\);[\s\S]{0,120}watchServerConnection\(\);/.test(noComments));
+    /watchServerConnection\(\);/.test(signInBlock));
   check("and is torn down on sign-out",
     /state\.unsubscribeConnection = null;/.test(noComments) &&
     /state\.serverReachable = null;/.test(noComments),

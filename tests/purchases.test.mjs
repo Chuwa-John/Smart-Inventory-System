@@ -189,13 +189,23 @@ console.log("\n=== the fraction is kept, because the invoice is the truth ===");
 
 console.log("\n=== absent cost is unknown, never free ===");
 {
-  check("a product with no cost at all is not costed", productCostKnown({}), false);
-  check("a product with costPrice 0 and no stamp is not costed",
-    productCostKnown({ costPrice: 0 }), false);
-  check("a costKnownFrom stamp means costed, even at zero",
-    productCostKnown({ costPrice: 0, costKnownFrom: new Date() }), true);
-  check("a positive costPrice means costed", productCostKnown({ costPrice: 1500 }), true);
+  // productCostKnown now takes the COST DOCUMENT, not the product. Cost moved
+  // to /productCosts so a cashier cannot read it -- /products is readable by
+  // every till and Firestore cannot withhold one field of a document.
+  //
+  // The old form asked the product for `costKnownFrom || costPrice > 0`, which
+  // could disagree with itself: one field present without the other averaged a
+  // full shelf against a zero cost and produced a plausible wrong number. A
+  // document cannot half-exist, so the question is simply whether one is there.
+  check("no cost document means not costed", productCostKnown(null), false);
   check("undefined does not throw", productCostKnown(undefined), false);
+  // Guards the footgun in the obvious implementation: Boolean(costDoc) alone
+  // reads an empty object as costed, which is presence-not-value again.
+  check("an empty object is not a cost document", productCostKnown({}), false);
+  check("a cost document with the stamp is costed",
+    productCostKnown({ costPrice: 1500, costKnownFrom: new Date() }), true);
+  check("...even where the average has fallen to zero",
+    productCostKnown({ costPrice: 0, costKnownFrom: new Date() }), true);
 }
 
 // ===========================================================================
@@ -252,13 +262,27 @@ console.log("\n=== the restock path writes what the rules expect ===");
   // opened with -- another till may have moved the shelf since.
   check("...from the quantity the transaction read, not the cached copy",
     /oldQuantity: currentQuantity/.test(restock), true);
-  check("...and from the cost the transaction read",
-    /oldUnitCost: safeNumber\(before\.costPrice\)/.test(restock), true);
+  check("...and from the cost document the transaction read",
+    /oldUnitCost: safeNumber\(existingCost\?\.costPrice\)/.test(restock), true);
   check("the first-purchase rule is asked, not assumed",
-    /costKnown: productCostKnown\(before\)/.test(restock), true);
+    /costKnown: productCostKnown\(existingCost\)/.test(restock), true);
+  // Both reads must precede any write: Firestore refuses a transaction that
+  // reads after writing, and this one now reads the product and the cost doc.
+  check("the cost document is read before anything is written",
+    restock.indexOf("transaction.get(costRef)") < restock.indexOf("transaction.set(costRef"), true);
+  check("...and the product read comes first of all",
+    restock.indexOf("transaction.get(productRef)") < restock.indexOf("transaction.get(costRef)"), true);
 
-  check("costKnownFrom is stamped only when it is absent",
-    /if \(!before\.costKnownFrom\) productUpdate\.costKnownFrom/.test(restock), true);
+  // Carried forward from the existing document, never restamped. The rules pin
+  // it across updates, so restamping would be refused rather than silently
+  // moving the moment cost became knowable -- which every profit surface reads
+  // to decide whether a period can report a complete margin.
+  check("costKnownFrom is carried forward, not restamped",
+    /costKnownFrom: existingCost\?\.costKnownFrom \|\| Timestamp\.now\(\)/.test(restock), true);
+  check("cost is written to the cost document, not to the product",
+    /transaction\.set\(costRef, \{/.test(restock), true);
+  check("...and the product update carries no cost at all",
+    /productUpdate\.costPrice/.test(restock), false);
   check("the unit cost written to the purchase is not rounded",
     /unitCost: totalPaid \/ qty/.test(restock), true);
   // Scoped to the purchase write. recordStockMovement() in the same function
@@ -328,6 +352,30 @@ console.log("\n=== roles and lifecycle ===");
     /if \(state\.unsubscribePurchases\) state\.unsubscribePurchases\(\);/.test(noComments), true);
   check("...and the purchases themselves are cleared",
     /state\.unsubscribePurchases = null;\s*state\.purchases = \[\];/.test(noComments), true);
+
+  // Cost lives in /productCosts precisely so this subscription can be refused
+  // to a cashier. If it ever subscribes for them, the collection's whole reason
+  // for existing is gone -- the rules would refuse it, but the attempt puts a
+  // permission-denied in every cashier console on every sign-in.
+  check("subscribeToProductCosts refuses a cashier",
+    /if \(!isManagerOrOwnerRole\(\)\) \{\s*state\.productCosts = \[\];\s*return;\s*\}/.test(
+      body("async function subscribeToProductCosts(")), true);
+  check("signing in subscribes to product costs",
+    /subscribeToPurchases\(\);\s*subscribeToProductCosts\(\);/.test(noComments), true);
+  check("the cost listener is detached on sign-out",
+    /if \(state\.unsubscribeProductCosts\) state\.unsubscribeProductCosts\(\);/.test(noComments), true);
+  check("...and the costs themselves are cleared",
+    /state\.unsubscribeProductCosts = null;\s*state\.productCosts = \[\];/.test(noComments), true);
+
+  // The control panel must read cost from the cost collection, not from the
+  // product. Reading it off the product is exactly what made it visible to
+  // every cashier, and it would silently work -- the numbers would be zero.
+  check("the control panel builds its cost map from /productCosts",
+    /const costById = productCostMap\(\);/.test(body("function renderAdminControl(")), true);
+  check("...and not from the product documents",
+    /new Map\(state\.products\.map\(\(p\) => \[p\.id, safeNumber\(p\.costPrice\)\]\)\)/.test(noComments), false);
+  check("productCostMap reads the cost collection",
+    /state\.productCosts \|\| \[\]/.test(body("function productCostMap(")), true);
 
   check("the Accounts heading follows its group rather than standing alone",
     /nav-group-label[\s\S]{0,400}label\.hidden = !anyVisible/.test(noComments), true);
