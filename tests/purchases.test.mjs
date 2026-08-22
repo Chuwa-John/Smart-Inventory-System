@@ -60,7 +60,7 @@ function body(header, from = src) {
 }
 
 const { nextUnitCost, productCostKnown, summarisePurchases, purchasedAt, localMonthKey,
-        costInForceAt, buildCostIndex } = new Function(
+        costInForceAt, buildCostIndex, summariseProfit } = new Function(
   `${extract("safeNumber")}
    ${extract("localMonthKey")}
    ${extract("nextUnitCost")}
@@ -69,8 +69,15 @@ const { nextUnitCost, productCostKnown, summarisePurchases, purchasedAt, localMo
    ${extract("summarisePurchases")}
    ${extract("costInForceAt")}
    ${extract("buildCostIndex")}
+   ${extract("isServiceLine")}
+   ${extract("saleTimestamp")}
+   ${extract("summariseSales")}
+   ${extract("summariseCostOfGoods")}
+   ${extract("expenseSpentAt")}
+   ${extract("summariseExpenses")}
+   ${extract("summariseProfit")}
    return { nextUnitCost, productCostKnown, summarisePurchases, purchasedAt, localMonthKey,
-            costInForceAt, buildCostIndex };`
+            costInForceAt, buildCostIndex, summariseProfit };`
 )();
 
 const results = [];
@@ -684,6 +691,162 @@ console.log("\n=== Phase D: roles and lifecycle ===");
     /state\.unsubscribeProductCostHistory = null;\s*state\.productCostHistory = \[\];/.test(noComments), true);
   check("a role change re-runs it too",
     /unsubscribeProductCostHistory"\]/.test(noComments), true);
+}
+console.log("\n=== Phase E: three figures, not equally trustworthy ===");
+{
+  const SOLD = new Date("2026-06-15T10:00:00Z");
+  const costIndex = buildCostIndex([
+    { productId: "p1", storeId: "s1", costPrice: 600,
+      effectiveFrom: { toDate: () => new Date("2026-01-01T00:00:00Z") } }
+  ]);
+  const sale = (over = {}) => ({
+    total: 1000, voided: false, refundedAmount: 0, discountAmount: 0,
+    paymentMethod: "cash", createdAt: SOLD, items: [{ productId: "p1", qty: 1 }], ...over
+  });
+  const expense = (amount) => ({
+    amount, category: "transport", paidFrom: "other", spentAt: { toDate: () => SOLD }
+  });
+  const run = (over = {}) => summariseProfit({
+    sales: [sale()], costIndex, expenses: [], monthKey: "2026-06",
+    coverageFromMs: null, vatRegistered: false, ...over
+  });
+
+  check("revenue is the takings", run().revenue, 1000);
+  check("cost of goods comes from the history", run().cogs, 600);
+  check("gross profit is revenue less cost", run().grossProfit, 400);
+  check("...and the margin is a percentage of revenue", run().grossMarginPct, 40);
+  check("net profit is gross less expenses", run({ expenses: [expense(150)] }).netProfit, 250);
+  check("...and gross is untouched by expenses", run({ expenses: [expense(150)] }).grossProfit, 400);
+
+  check("a refund reduces revenue", run({ sales: [sale({ refundedAmount: 400 })] }).revenue, 600);
+  check("a voided sale is not revenue at all", run({ sales: [sale({ voided: true })] }).revenue, 0);
+  check("...and contributes no cost of goods either", run({ sales: [sale({ voided: true })] }).cogs, 0);
+
+  // VAT is the Authority's money passing through, never the shop's margin.
+  const vatSale = sale({ total: 1180, netTotal: 1000, taxTotal: 180 });
+  const vatSale2 = sale({ total: 1180, netTotal: 1000, taxTotal: 180, refundedAmount: 200 });
+  check("a registered business reports revenue net of VAT",
+    run({ sales: [vatSale], vatRegistered: true }).revenue, 1000);
+  check("an unregistered one reports the whole takings",
+    run({ sales: [sale({ total: 1180 })] }).revenue, 1180);
+  // A sale from before the business registered carries no netTotal. It is
+  // outside the scheme, not taxed at zero, so its total IS its net.
+  check("a pre-registration sale counts its total as its net",
+    run({ sales: [sale({ total: 1180 })], vatRegistered: true }).revenue, 1180);
+  // The VAT branch subtracts refunds itself rather than going through
+  // summariseSales, so it needs its own case -- the non-VAT one above does
+  // not exercise this line at all.
+  check("a refund reduces revenue on the VAT path too",
+    run({ sales: [vatSale2], vatRegistered: true }).revenue, 800);
+}
+
+console.log("\n=== Phase E: it says what it could not see ===");
+{
+  const SOLD = new Date("2026-06-15T10:00:00Z");
+  const sale = (over = {}) => ({
+    total: 1000, voided: false, refundedAmount: 0, discountAmount: 0,
+    paymentMethod: "cash", createdAt: SOLD, items: [{ productId: "p1", qty: 1 }], ...over
+  });
+  const noCost = summariseProfit({
+    sales: [sale()], costIndex: buildCostIndex([]), expenses: [], monthKey: "2026-06",
+    coverageFromMs: null, vatRegistered: false
+  });
+  // Section 11 rule 2. With no recorded cost, gross profit would otherwise read
+  // as the whole of revenue -- the fabricated-100%-margin defect phase 0
+  // removed, wearing a different hat.
+  check("with no recorded cost, nothing is claimed to be known", noCost.anyCostKnown, false);
+  check("...and the uncosted lines are counted", noCost.uncostedLines, 1);
+
+  const costIndex = buildCostIndex([
+    { productId: "p1", storeId: "s1", costPrice: 600,
+      effectiveFrom: { toDate: () => new Date("2026-01-01T00:00:00Z") } }
+  ]);
+  const partial = summariseProfit({
+    sales: [sale(), sale({ items: [{ productId: "p2", qty: 1 }] })],
+    costIndex, expenses: [], monthKey: "2026-06", coverageFromMs: null, vatRegistered: false
+  });
+  check("a partly costed month reports a figure", partial.anyCostKnown, true);
+  check("...but does not claim to be complete", partial.allCostKnown, false);
+  check("...and names how many lines it could not cost", partial.uncostedLines, 1);
+
+  // "Nothing recorded" is not "nothing spent", and the surface must not imply
+  // the second. A forgotten expense makes profit look BETTER, which is the
+  // direction someone prices and restocks against.
+  check("no expenses recorded is reported as such", partial.anyExpensesRecorded, false);
+  const withExp = summariseProfit({
+    sales: [sale()], costIndex,
+    expenses: [{ amount: 100, category: "rent", paidFrom: "other",
+                 spentAt: { toDate: () => SOLD } }],
+    monthKey: "2026-06", coverageFromMs: null, vatRegistered: false
+  });
+  check("...and recording one flips it", withExp.anyExpensesRecorded, true);
+}
+
+console.log("\n=== Phase E: a month it cannot total, it refuses ===");
+{
+  const SOLD = new Date("2026-06-15T10:00:00Z");
+  const sale = { total: 1000, voided: false, refundedAmount: 0, discountAmount: 0,
+                 paymentMethod: "cash", createdAt: SOLD, items: [] };
+  // L-11: subscribeToSales holds the newest 1,000 sales. A month that has fallen
+  // out of that window totals to LESS than was taken, and a profit statement is
+  // exactly the document nobody should be handed a quiet under-count on.
+  const outside = summariseProfit({
+    sales: [sale], costIndex: buildCostIndex([]), expenses: [], monthKey: "2026-06",
+    coverageFromMs: new Date("2026-07-01T00:00:00Z").getTime(), vatRegistered: false
+  });
+  check("a month starting before the loaded window is refused", outside.outsideWindow, true);
+  const inside = summariseProfit({
+    sales: [sale], costIndex: buildCostIndex([]), expenses: [], monthKey: "2026-06",
+    coverageFromMs: new Date("2026-05-01T00:00:00Z").getTime(), vatRegistered: false
+  });
+  check("a month inside it is not", inside.outsideWindow, false);
+  const unbounded = summariseProfit({
+    sales: [sale], costIndex: buildCostIndex([]), expenses: [], monthKey: "2026-06",
+    coverageFromMs: null, vatRegistered: false
+  });
+  check("a full history refuses nothing", unbounded.outsideWindow, false);
+}
+
+console.log("\n=== Phase E: the surface, and who may see it ===");
+{
+  // Owner-strict, decided 2026-08-21: profit exposes buying prices by
+  // inference. This is the only view with its own gate in canOpenView().
+  check("profit is owner-only in canOpenView",
+    /if \(viewId === "profit"\) return isOwnerRole\(\);/.test(noComments), true);
+  const render = body("function renderProfit(");
+  check("renderProfit refuses a non-owner",
+    /if \(!isOwnerRole\(\)\) \{[\s\S]{0,160}return;\s*\}/.test(render), true);
+  check("...and empties rather than leaving stale figures",
+    /grid\.innerHTML = "";/.test(render), true);
+  // The refusal must EXIST and come before any tile is built.
+  //
+  // Presence is asserted separately because indexOf returns -1 when the text
+  // is absent, and -1 is less than every real index -- so an ordering check
+  // alone passes precisely when the thing it guards has been deleted. The
+  // negative control that removed the whole refusal block came back green on
+  // exactly that.
+  check("the refusal exists at all", render.indexOf("p.outsideWindow") > -1, true);
+  check("the refusal is reached before any figure is rendered",
+    render.indexOf("p.outsideWindow") > -1
+    && render.indexOf("p.outsideWindow") < render.indexOf("grid.innerHTML = ["), true);
+  check("...and it returns rather than falling through",
+    /if \(p\.outsideWindow\) \{[\s\S]{0,300}return;\s*\}/.test(render), true);
+  // Section 11 rule 1: gross and net are never summed into one headline.
+  check("gross and net are separate tiles",
+    /profit\.gross"\)[\s\S]*profit\.net"\)/.test(render), true);
+  // Asserted as the CONDITION, not the fallback character. app.js is mixed
+  // between the em-dash and its \u2014 escape and both render the same thing;
+  // what matters is that net profit is not shown at all until there is a cost
+  // to work from, because gross would otherwise read as the whole of revenue.
+  check("net shows nothing until a cost is known",
+    /p\.anyCostKnown \? money\(p\.netProfit\) :/.test(render), true);
+  check("renderAll repaints it", /renderProfit\(\);/.test(body("function renderAll(")), true);
+
+  for (const key of ["nav.profit", "profit.gross", "profit.net", "profit.grossNoCost",
+                     "profit.expensesNone", "profit.outsideWindow", "profit.netNote"]) {
+    check(`${key} exists in both languages`,
+      (src.match(new RegExp(`"${key.replace(/\./g, "\\.")}"`, "g")) || []).length >= 2, true);
+  }
 }
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);

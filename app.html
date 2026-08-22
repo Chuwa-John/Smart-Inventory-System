@@ -28,7 +28,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260808y" />
+    <link rel="stylesheet" href="./styles.css?v=20260808z" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#0b0d10" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -48,7 +48,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260808y"></script>
+    <script type="module" src="./boot.js?v=20260808z"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -98,6 +98,11 @@
             <p class="nav-group-label" data-i18n="nav.accounts">Accounts</p>
             <button class="nav-item" data-view="purchases" data-i18n="nav.purchases">Purchases</button>
             <button class="nav-item" data-view="expenses" data-i18n="nav.expenses">Expenses</button>
+            <!-- Owner-strict. canOpenView() returns isOwnerRole() for this one
+                 alone: profit exposes buying prices by inference, and a manager
+                 already sees revenue, shift variance and staff performance
+                 without it. Decided by the owner 2026-08-21. -->
+            <button class="nav-item" data-view="profit" data-i18n="nav.profit">Profit</button>
           </div>
           <button class="nav-item" data-view="reports" data-i18n="nav.reports">Reports</button>
           <button class="nav-item" data-view="ai" data-i18n="nav.ai">AI Advisor</button>
@@ -395,6 +400,24 @@
               <tbody id="servicesTable"></tbody>
             </table>
           </article>
+        </section>
+
+        <section class="view" id="profit">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow" data-i18n="profit.eyebrow">What the shop kept</p>
+              <h1 data-i18n="profit.title">Profit</h1>
+            </div>
+            <label style="flex-direction:row;align-items:center;gap:6px;color:inherit">
+              <span data-i18n="profit.monthLabel">Month</span>
+              <input id="profitMonthInput" type="month" autocomplete="off" />
+            </label>
+          </div>
+
+          <p class="muted" data-i18n="profit.intro">Revenue less what the stock cost, less what the shop spent. The first two are worked out from your records; the last one is only as complete as what you have entered.</p>
+
+          <div class="kpi-grid" id="profitGrid"></div>
+          <p class="muted" id="profitNote"></p>
         </section>
 
         <section class="view" id="purchases">
@@ -1352,6 +1375,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260808y"></script>
+    <script type="module" src="./app.js?v=20260808z"></script>
   </body>
 </html>

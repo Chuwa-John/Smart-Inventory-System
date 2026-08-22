@@ -1,10 +1,10 @@
 # Design — purchases, expenses and profit
 
-Status: **written 2026-08-21. Phases 0, A, B, C and D built; B was audited
-and substantially reworked as B2-a to B2-e; E not started. §5 is superseded
+Status: **COMPLETE as scoped. Phases 0, A, B, C, D and E built 2026-08-21;
+B was audited and substantially reworked as B2-a to B2-e. §5 is superseded
 — see §13f.**
-Production is on `20260808o`; `main` is on `20260808y` and carries Services
-A–E and Phases 0, A, B, B2, C and D, none deployed.
+Production is on `20260808o`; `main` is on `20260808z` and carries Services
+A–E and the whole of this design, none deployed.
 
 Requested by the shop owner: record what stock cost when it is bought — *"if
 they added 200 body lotions they record the total amount"* — so that profit can
@@ -1217,6 +1217,90 @@ the slowest-growing of the four — but a bounded window here is the most
 dangerous of them, and needs the L-11 coverage treatment more than the rest: a
 truncated history does not under-report a total, it silently answers with the
 **wrong cost** for any sale older than the window.
+
+---
+
+## 13g. Phase E record — built 2026-08-21
+
+**Stamp.** `20260808z` / `savia-shell-v124`. This completes the design as scoped
+in §1.
+
+### The surface
+
+A **Profit** screen in the Accounts group, owner-strict. Four tiles for a chosen
+month: revenue, gross profit, expenses, and what the shop kept.
+
+§11 is the whole of it — the three figures are not equally trustworthy and the
+screen is built so nobody has to remember that:
+
+- **Revenue** is computed from sales the system wrote. Net of refunds, and net
+  of VAT where the business collects it, because VAT is the Authority's money
+  passing through and was never the shop's margin. A sale from before the
+  business registered carries no `netTotal`, so its total *is* its net — outside
+  the scheme rather than taxed at zero, exactly as `DESIGN-vat.md` has it.
+- **Gross profit** is revenue less what those goods actually cost, from Phase
+  D's history at each sale's own date. Where cost is partial it names the count
+  of lines it could not cost; where nothing is costed it shows a dash rather
+  than a figure.
+- **Expenses** distinguishes *nothing recorded* from *nothing spent*, which are
+  not the same claim.
+- **What you kept** is gross less expenses, and it is the dangerous one. A
+  forgotten expense makes it look **better**. L-12 overstates VAT owed, which is
+  safe; this overstates what the shop kept, which is what someone prices and
+  restocks against. It shows nothing at all until there is a recorded cost to
+  work from, and its caption says plainly that it is only as complete as what
+  was entered.
+
+Gross and net are separate tiles and are never summed into one headline.
+
+### It refuses rather than estimating
+
+§11 rule 3, and the L-11 precedent applied before anything is computed rather
+than after. `subscribeToSales()` holds the newest 1,000 sales; a month that has
+fallen out of that window would total to **less than was taken**, and a profit
+statement is exactly the document nobody should be handed a quiet under-count
+on. The screen names the date it can see back to and suggests narrowing to one
+branch.
+
+### Owner-strict
+
+The only view with its own clause in `canOpenView()`. Profit exposes buying
+prices by inference, and a manager already sees revenue, shift variance and
+staff performance without it. Decided by the owner on 2026-08-21, enforced in
+three places: the nav gate, `canOpenView()`, and `renderProfit()` itself, which
+empties rather than returning past a stale figure.
+
+### Two negative controls came back green, and one was subtle
+
+1. **A no-op mutation.** My control for "a refund stops reducing revenue" wrapped
+   a `.map((x) => x)` around the reduce, which changes nothing. The real gap was
+   that the VAT branch subtracts refunds *itself* rather than going through
+   `summariseSales()`, and only the non-VAT path had a case. Both do now.
+
+2. **An ordering assertion that passed because the code was deleted.**
+   `indexOf` returns `-1` when the text is absent, and `-1` is less than every
+   real index — so `indexOf(refusal) < indexOf(firstTile)` was *true* precisely
+   when the refusal had been removed. The control that deleted the whole block
+   came back green on exactly that. Presence is now asserted separately, along
+   with the fact that the branch `return`s rather than falling through.
+
+   Worth recording as a shape, not an incident: **every ordering assertion in
+   this repo written with two `indexOf` calls has the same hole.**
+
+### Where this leaves the module
+
+The design is complete as scoped, and none of it is deployed. What it does
+**not** do is unchanged from §1: no general ledger, no trial balance, no P&L or
+balance sheet, no payroll, no fixed assets, no supplier balances, and no input
+VAT computed or filed. `RESEARCH-accounts.md` §8 has those as separate work, and
+§1 of this document lists them as deliberately out.
+
+The gate in front of all of it is still **L-8, L-11 and L-13** — server-side
+aggregation. Every figure this module produces is computed from a client-side
+window, and the Profit screen refuses honestly when it cannot see a whole month
+rather than pretending otherwise. That refusal is correct behaviour and it is
+also the reason the module cannot yet serve a busy shop: for a business doing
+2,000 sales a day, the window is half a day.
 
 ---
 

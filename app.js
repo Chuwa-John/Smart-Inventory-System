@@ -121,6 +121,8 @@ const state = {
   unsubscribeProductCosts: null,
   productCostHistory: [],
   unsubscribeProductCostHistory: null,
+  profitMonthSelection: localMonthKey(new Date()),
+  profitMonthTouched: false,
   purchaseMonthSelection: localMonthKey(new Date()),
   purchaseMonthTouched: false,
   // localMonthKey(), not toISOString().slice(0, 7). Everything that reads
@@ -360,6 +362,27 @@ const DICTIONARY = {
     "control.revenueToday": "Revenue today",
     "control.revenueMonth": "Revenue month to date",
     "nav.accounts": "Accounts",
+    "nav.profit": "Profit",
+    "profit.eyebrow": "What the shop kept",
+    "profit.title": "Profit",
+    "profit.monthLabel": "Month",
+    "profit.intro": "Revenue less what the stock cost, less what the shop spent. The first two are worked out from your records; the last one is only as complete as what you have entered.",
+    "profit.revenue": "Revenue",
+    "profit.revenueNote": "{count} sales, after refunds",
+    "profit.revenueNoteVat": "{count} sales, after refunds and VAT",
+    "profit.gross": "Gross profit",
+    "profit.grossNote": "Revenue less what those goods cost you",
+    "profit.grossPartial": "Incomplete \u2014 {missing} of {total} sold lines have no recorded cost",
+    "profit.grossNoCost": "No cost recorded for anything sold this month",
+    "profit.expenses": "Expenses",
+    "profit.expensesNote": "{count} recorded this month",
+    "profit.expensesNone": "Nothing recorded \u2014 this is not the same as nothing spent",
+    "profit.net": "What you kept",
+    "profit.netNote": "Gross profit less recorded expenses. Only as complete as what you entered.",
+    "profit.netNoCost": "Needs a recorded cost before this means anything",
+    "profit.complete": "Every sold line has a recorded cost and expenses have been entered for this month.",
+    "profit.incomplete": "Treat this as a guide, not a filed figure: it is only as good as the costs and expenses recorded for the month.",
+    "profit.outsideWindow": "This month is older than the sales this device has loaded (back to {date}), so it cannot be totalled. Open a more recent month, or narrow to one branch.",
     "nav.purchases": "Purchases",
     "purchases.eyebrow": "Stock bought",
     "purchases.title": "Purchases",
@@ -1197,6 +1220,27 @@ const DICTIONARY = {
     "control.revenueToday": "Mapato leo",
     "control.revenueMonth": "Mapato mwezi hadi leo",
     "nav.accounts": "Hesabu",
+    "nav.profit": "Faida",
+    "profit.eyebrow": "Kilichobaki",
+    "profit.title": "Faida",
+    "profit.monthLabel": "Mwezi",
+    "profit.intro": "Mapato ukiondoa gharama ya bidhaa, ukiondoa matumizi ya duka. Mbili za kwanza zinahesabiwa kutoka kwenye rekodi zako; ya mwisho ni kamili kadri ulivyoingiza.",
+    "profit.revenue": "Mapato",
+    "profit.revenueNote": "Mauzo {count}, baada ya marejesho",
+    "profit.revenueNoteVat": "Mauzo {count}, baada ya marejesho na VAT",
+    "profit.gross": "Faida ghafi",
+    "profit.grossNote": "Mapato ukiondoa gharama ya bidhaa hizo",
+    "profit.grossPartial": "Haijakamilika \u2014 safu {missing} kati ya {total} zilizouzwa hazina gharama iliyorekodiwa",
+    "profit.grossNoCost": "Hakuna gharama iliyorekodiwa kwa kilichouzwa mwezi huu",
+    "profit.expenses": "Matumizi",
+    "profit.expensesNote": "{count} yamerekodiwa mwezi huu",
+    "profit.expensesNone": "Hakuna kilichorekodiwa \u2014 si sawa na kutokutumia chochote",
+    "profit.net": "Ulichobakiza",
+    "profit.netNote": "Faida ghafi ukiondoa matumizi yaliyorekodiwa. Ni kamili kadri ulivyoingiza.",
+    "profit.netNoCost": "Inahitaji gharama iliyorekodiwa kabla haijamaanisha kitu",
+    "profit.complete": "Kila safu iliyouzwa ina gharama iliyorekodiwa na matumizi yameingizwa kwa mwezi huu.",
+    "profit.incomplete": "Ichukulie kama mwongozo, si takwimu ya kuwasilisha: ni nzuri kadri ya gharama na matumizi yaliyorekodiwa mwezi huo.",
+    "profit.outsideWindow": "Mwezi huu ni wa zamani kuliko mauzo yaliyopakiwa kwenye kifaa hiki (hadi {date}), hivyo hauwezi kujumlishwa. Fungua mwezi wa karibuni, au chagua tawi moja.",
     "nav.purchases": "Manunuzi",
     "purchases.eyebrow": "Bidhaa zilizonunuliwa",
     "purchases.title": "Manunuzi",
@@ -5851,6 +5895,161 @@ async function deletePurchase(purchaseId) {
     console.warn(error);
     showToast(t("toast.purchaseFailed"));
   }
+}
+
+// ---------------------------------------------------------------------------
+// Profit -- DESIGN-purchases.md phase E.
+//
+// Three figures, and section 11's whole point is that they are not equally
+// trustworthy:
+//
+//   Revenue        computed from sales the system wrote. Trustworthy.
+//   Gross profit   revenue less cost of goods. Trustworthy WHERE cost is known,
+//                  and the coverage says where that is.
+//   Net profit     gross less expenses. Only as complete as what the owner
+//                  typed, and it fails in the DANGEROUS direction -- a forgotten
+//                  expense makes profit look BETTER. L-12 overstates VAT owed,
+//                  which is safe; this overstates what the shop kept, which is
+//                  what someone prices and restocks against.
+//
+// So gross and net are never summed into one headline, and this function reports
+// what it could not see rather than quietly leaving it out.
+function summariseProfit({ sales, costIndex, expenses, monthKey, coverageFromMs, vatRegistered }) {
+  const monthSales = (sales || []).filter((sale) => {
+    const at = saleTimestamp(sale);
+    return at ? localMonthKey(at) === monthKey : false;
+  });
+
+  // L-11, applied before anything is computed rather than after. A period that
+  // begins before the loaded sales window cannot be totalled at all, and a
+  // confident partial figure on a profit statement is worse than a refusal --
+  // the monthly report already refuses for exactly this reason.
+  const [year, month] = String(monthKey || "").split("-").map(Number);
+  const periodStart = (year && month) ? new Date(year, month - 1, 1, 0, 0, 0) : null;
+  const outsideWindow = Boolean(
+    periodStart && coverageFromMs !== null && coverageFromMs !== undefined
+    && periodStart.getTime() < coverageFromMs
+  );
+
+  const takings = summariseSales(monthSales);
+  // Net of refunds, and net of VAT where the business collects it -- VAT is the
+  // Authority's money passing through, never the shop's margin.
+  const revenue = vatRegistered
+    ? monthSales.reduce((sum, sale) => {
+        if (sale.voided) return sum;
+        const net = safeNumber(sale.netTotal);
+        const total = safeNumber(sale.total) - safeNumber(sale.refundedAmount);
+        // A sale from before the business registered carries no netTotal. It is
+        // outside the scheme, not taxed at zero, so its total IS its net.
+        return sum + (sale.netTotal === undefined ? total : net - safeNumber(sale.refundedAmount));
+      }, 0)
+    : takings.net;
+
+  const goods = summariseCostOfGoods(monthSales, costIndex);
+  const spending = summariseExpenses(expenses || [], monthKey);
+
+  const grossProfit = revenue - goods.cogs;
+  const netProfit = grossProfit - spending.total;
+
+  return {
+    outsideWindow,
+    monthKey,
+    revenue,
+    salesCount: takings.count,
+    cogs: goods.cogs,
+    costedLines: goods.costedLines,
+    uncostedLines: goods.uncostedLines,
+    anyCostKnown: goods.anyCostKnown,
+    allCostKnown: goods.allCostKnown,
+    grossProfit,
+    grossMarginPct: revenue > 0 ? Math.round((grossProfit / revenue) * 100) : 0,
+    expenses: spending.total,
+    expenseCount: spending.count,
+    netProfit,
+    // Deliberately separate from anyCostKnown. A month with no expenses recorded
+    // is not the same as a month with none spent, and the surface must not imply
+    // the second.
+    anyExpensesRecorded: spending.count > 0
+  };
+}
+
+function renderProfit() {
+  const view = qs("#profit");
+  const grid = qs("#profitGrid");
+  const note = qs("#profitNote");
+  if (!view || !grid || !note) return;
+  // Owner-strict, decided 2026-08-21: profit exposes buying prices by
+  // inference. canOpenView() is the real gate; this keeps the screen honest if
+  // it is ever reached another way.
+  if (!isOwnerRole()) {
+    grid.innerHTML = "";
+    note.textContent = "";
+    return;
+  }
+
+  const monthInput = qs("#profitMonthInput");
+  if (!state.profitMonthTouched) state.profitMonthSelection = localMonthKey(new Date());
+  if (monthInput && monthInput.value !== state.profitMonthSelection) {
+    monthInput.value = state.profitMonthSelection;
+  }
+
+  const scopedSales = state.currentStoreId === "all"
+    ? state.sales
+    : (state.sales || []).filter((sale) => saleStoreId(sale) === state.currentStoreId);
+
+  const p = summariseProfit({
+    sales: scopedSales,
+    costIndex: buildCostIndex(state.productCostHistory),
+    expenses: storeExpenses(),
+    monthKey: state.profitMonthSelection,
+    coverageFromMs: salesCoverageFromMs(),
+    vatRegistered: vatSettings().registered
+  });
+
+  // Refuses rather than estimating. Section 11 rule 3, and the L-11 precedent:
+  // a month that has fallen out of the loaded window would total to LESS than
+  // was taken, and a profit statement is exactly the document nobody should be
+  // handed a quiet under-count on.
+  if (p.outsideWindow) {
+    grid.innerHTML = "";
+    note.textContent = t("profit.outsideWindow", {
+      date: new Date(salesCoverageFromMs()).toLocaleDateString()
+    });
+    return;
+  }
+
+  grid.innerHTML = [
+    controlTile(t("profit.revenue"), money(p.revenue), "",
+      t(vatSettings().registered ? "profit.revenueNoteVat" : "profit.revenueNote",
+        { count: String(p.salesCount) })),
+    // Gross: computed, and honest about what it could not cost.
+    controlTile(t("profit.gross"),
+      p.anyCostKnown ? `${money(p.grossProfit)} \u00b7 ${p.grossMarginPct}%` : "\u2014",
+      p.anyCostKnown && p.grossProfit <= 0 && p.revenue > 0 ? "danger" : "",
+      !p.anyCostKnown
+        ? t("profit.grossNoCost")
+        : p.allCostKnown
+          ? t("profit.grossNote")
+          : t("profit.grossPartial", {
+              missing: String(p.uncostedLines),
+              total: String(p.costedLines + p.uncostedLines)
+            })),
+    controlTile(t("profit.expenses"), money(p.expenses), "",
+      p.anyExpensesRecorded
+        ? t("profit.expensesNote", { count: String(p.expenseCount) })
+        : t("profit.expensesNone")),
+    // Net: never shown as a confident figure when the two things underneath it
+    // are not both known. A forgotten expense makes this look BETTER, which is
+    // the direction that gets acted on.
+    controlTile(t("profit.net"),
+      p.anyCostKnown ? money(p.netProfit) : "\u2014",
+      p.anyCostKnown && p.netProfit <= 0 ? "warn" : "",
+      p.anyCostKnown ? t("profit.netNote") : t("profit.netNoCost"))
+  ].join("");
+
+  note.textContent = p.anyCostKnown && p.allCostKnown && p.anyExpensesRecorded
+    ? t("profit.complete")
+    : t("profit.incomplete");
 }
 
 function renderPurchases() {
@@ -11339,6 +11538,10 @@ function canOpenView(viewId) {
   // palette and from a stale click handler, and this is the choke point that
   // makes hiding it mean something.
   if (viewId === "services" && !storeSellsServices()) return false;
+  // Profit is owner-strict, decided 2026-08-21: it exposes buying prices by
+  // inference, and a manager already sees revenue, shift variance and staff
+  // performance without it.
+  if (viewId === "profit") return isOwnerRole();
   return isManagerOrOwnerRole() || CASHIER_ALLOWED_VIEWS.includes(viewId);
 }
 
@@ -11494,6 +11697,7 @@ function renderAll() {
   renderServices();
   renderExpenses();
   renderPurchases();
+  renderProfit();
   renderManagerControl();
   renderAdminControl();
   // Depends on the resolved account name, which arrives with the role after
@@ -11630,6 +11834,11 @@ function bindEvents() {
   qs("#purchasesTable")?.addEventListener("click", (event) => {
     const remove = event.target.closest("[data-delete-purchase]");
     if (remove) deletePurchase(remove.dataset.deletePurchase);
+  });
+  qs("#profitMonthInput")?.addEventListener("change", (event) => {
+    state.profitMonthSelection = event.currentTarget.value || state.profitMonthSelection;
+    state.profitMonthTouched = true;
+    renderProfit();
   });
   qs("#purchaseMonthInput")?.addEventListener("change", (event) => {
     state.purchaseMonthSelection = event.currentTarget.value || state.purchaseMonthSelection;
