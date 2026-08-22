@@ -25,13 +25,14 @@ function extract(name) {
   return src.slice(start, i + 1);
 }
 
-const { summariseExpenses, expenseSpentAt, localDateInputValue, localMonthKey } = new Function(
+const { summariseExpenses, expenseSpentAt, localDateInputValue, localMonthKey, moneyAuditEntry } = new Function(
   `${extract("safeNumber")}
    ${extract("expenseSpentAt")}
    ${extract("localMonthKey")}
    ${extract("summariseExpenses")}
+   ${extract("moneyAuditEntry")}
    ${extract("localDateInputValue")}
-   return { summariseExpenses, expenseSpentAt, localDateInputValue, localMonthKey };`
+   return { summariseExpenses, expenseSpentAt, localDateInputValue, localMonthKey, moneyAuditEntry };`
 )();
 
 const results = [];
@@ -362,8 +363,15 @@ console.log("\n=== corrections are the owner's ===");
   // stop a manager filling in a dialog and then being refused on save.
   const del = body("async function deleteExpense(");
   check("deleteExpense is owner-only", /if \(!isOwnerRole\(\)\) return;/.test(del), true);
-  check("...and refuses before it reaches deleteDoc",
-    del.indexOf("isOwnerRole()") < del.indexOf("deleteDoc("), true);
+  // The delete is batched with its audit entry now, so the write it must not
+  // reach is batch.delete rather than a bare deleteDoc.
+  check("...and refuses before it prepares any write",
+    del.indexOf("isOwnerRole()") < del.indexOf("batch.delete("), true);
+  // Immediately follows, with only whitespace between. The looser form matched
+  // the text even with `if (false)` wrapped round the audit write, which is a
+  // presence test dressed as a behaviour test.
+  check("the deletion is batched with an audit entry",
+    /batch\.delete\([^;]+\);\s*batch\.set\([\s\S]{0,200}moneyAuditEntry\("EXPENSE_DELETED"/.test(del), true);
 
   const open = body("function openExpenseDialog(");
   check("editing an existing expense is owner-only",
@@ -393,7 +401,7 @@ console.log("\n=== saving an expense works offline ===");
   check("...with a toast that says to pick one",
     /showToast\(t\("toast\.selectStoreBeforeAdd"\)\);/.test(save), true);
   check("...and the refusal comes before any write is prepared",
-    save.indexOf('state.currentStoreId === "all"') < save.indexOf("setDoc("), true);
+    save.indexOf('state.currentStoreId === "all"') < save.indexOf("batch.set("), true);
 
   // The offline claim in 8.1, made real. An expense is a create with no read,
   // so it queues and replays like any other offline write -- but only if nobody
@@ -401,8 +409,13 @@ console.log("\n=== saving an expense works offline ===");
   // acknowledges, so awaiting this would hang the dialog open with no spinner
   // and no error, in exactly the no-signal case this collection is for.
   check("the write is not awaited", /await setDoc\(/.test(save), false);
+  // Batched with the audit entry, so the record and the evidence land together
+  // or not at all -- and still not awaited, because offline the promise does not
+  // settle until reconnect.
   check("the write is fire and forget with a catch",
-    /setDoc\(doc\(state\.db[\s\S]{0,200}?\)\s*\.catch\(/.test(save), true);
+    /batch\.commit\(\)\s*\.catch\(/.test(save), true);
+  check("the expense is batched with its audit entry",
+    /batch\.set\([\s\S]{0,400}moneyAuditEntry\(existing \? "EXPENSE_UPDATED" : "EXPENSE_RECORDED"/.test(save), true);
   check("...and the catch reports rather than swallowing",
     /\.catch\(\(error\) => \{\s*console\.warn\(error\);\s*showToast\(t\("toast\.expenseFailed"\)\);\s*\}\);/.test(save), true);
   check("the dialog closes after the write is issued, not inside the catch",
@@ -628,9 +641,9 @@ console.log("\n=== one collection, one offline behaviour ===");
   // behaved two different ways depending on which button was pressed: the row
   // vanished from the local cache and neither toast ever fired.
   check("the delete is not awaited either",
-    /await deleteDoc\(/.test(delBody), false);
+    /await batch\.commit\(\)/.test(delBody), false);
   check("...and reports its own failure",
-    /deleteDoc\([\s\S]{0,200}\.catch\(/.test(delBody), true);
+    /batch\.commit\(\)[\s\S]{0,120}\.catch\(/.test(delBody), true);
 }
 
 console.log("\n=== the recorder is shown, because the rules pin it ===");
@@ -651,6 +664,29 @@ console.log("\n=== the recorder is shown, because the rules pin it ===");
     /esc\(expense\.note \|\| ""\)/.test(noComments), true);
 }
 
+console.log("\n=== the audit entry omits, it never nulls ===");
+{
+  // The rule this encodes is the one that took every credit sale to a new
+  // customer down: auditStringsBounded() reads `!('x' in d) || d.x is string`,
+  // so an ABSENT key passes and a PRESENT-BUT-NULL key refuses the whole write.
+  // These entries are batched with the expense or the deletion, so a null in one
+  // optional field would take the record with it.
+  globalThis.state = { user: { uid: "u1" }, firebaseApi: { firestore: { serverTimestamp: () => "ts" } } };
+
+  const entry = moneyAuditEntry("EXPENSE_DELETED", {
+    expenseId: "e1", storeId: null, amount: 4000, category: undefined
+  });
+  check("a null field is omitted, not written", "storeId" in entry, false);
+  check("an undefined field is omitted", "category" in entry, false);
+  check("an empty string is omitted too", "note" in moneyAuditEntry("X", { note: "" }), false);
+  check("real values survive", entry.expenseId, "e1");
+  check("...including numbers", entry.amount, 4000);
+  check("zero is a real value and is kept", moneyAuditEntry("X", { amount: 0 }).amount, 0);
+  check("the action is set", entry.action, "EXPENSE_DELETED");
+  check("the caller is stamped", entry.uid, "u1");
+  check("createdAt comes from the server, not the device", entry.createdAt, "ts");
+  delete globalThis.state;
+}
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 process.exit(failed.length ? 1 : 0);

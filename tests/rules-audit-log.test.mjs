@@ -256,6 +256,67 @@ await check("a null storeId is refused", false,
 await check("a null saleId is refused", false,
   () => write("manager", { action: "SALE_VOIDED", saleId: null, total: 1000 }));
 
+console.log("\n=== the money trail: expenses and purchases (DESIGN-purchases.md 13d) ===");
+// These two collections stay DELETABLE by decision -- a mis-keyed delivery is a
+// human error and the shop must be able to remove it. Every other money-touching
+// collection in the rules refuses deletion outright, so the audit entry is the
+// only thing that makes a removal visible. If these go red, a month of spending
+// can be deleted before a period report with nothing anywhere recording it.
+await check("a manager records an expense", true,
+  () => write("manager", { action: "EXPENSE_RECORDED", expenseId: "e1", storeId: STORE_A, amount: 5000, category: "transport" }));
+await check("an owner corrects one", true,
+  () => write("owner", { action: "EXPENSE_UPDATED", expenseId: "e1", storeId: STORE_A, amount: 4000, category: "transport" }));
+await check("an owner deletes one", true,
+  () => write("owner", { action: "EXPENSE_DELETED", expenseId: "e1", storeId: STORE_A, amount: 4000, category: "transport" }));
+await check("an owner deletes a delivery", true,
+  () => write("owner", { action: "PURCHASE_DELETED", purchaseId: "p1", productId: "prod1", name: "Lotion", storeId: STORE_A, amount: 400000, qtyAdded: 200 }));
+
+// Correcting and removing belong to the owner; a manager may only record.
+await check("a manager cannot record an expense correction", false,
+  () => write("manager", { action: "EXPENSE_UPDATED", expenseId: "e1", storeId: STORE_A, amount: 1 }));
+await check("a manager cannot record an expense deletion", false,
+  () => write("manager", { action: "EXPENSE_DELETED", expenseId: "e1", storeId: STORE_A, amount: 1 }));
+await check("a manager cannot record a delivery deletion", false,
+  () => write("manager", { action: "PURCHASE_DELETED", purchaseId: "p1", storeId: STORE_A, amount: 1 }));
+
+// A cashier is outside both collections, so outside their trail too.
+await check("a cashier cannot record an expense", false,
+  () => write("cashier", { action: "EXPENSE_RECORDED", expenseId: "e2", storeId: STORE_A, amount: 100, category: "rent" }));
+await check("a cashier cannot record a deletion", false,
+  () => write("cashier", { action: "EXPENSE_DELETED", expenseId: "e2", storeId: STORE_A, amount: 100 }));
+
+// The restock entry carries the purchase it created, rather than a second entry
+// -- every write in that transaction pays its own rules evaluation.
+await check("a restock entry carries its purchase and what was paid", true,
+  () => write("manager", { action: "PRODUCT_RESTOCKED", productId: "prod1", name: "Lotion", qtyAdded: 200, purchaseId: "p1", amount: 400000 }));
+await check("a cashier's restock entry still works without them", true,
+  () => write("cashier", { action: "PRODUCT_RESTOCKED", productId: "prod1", name: "Lotion", qtyAdded: 20 }));
+
+console.log("\n=== null in the new fields, the way it took credit sales down ===");
+// auditStringsBounded() reads `!('x' in d) || d.x is string`: absent passes,
+// null does not, because the key IS present and null is not a string. A null in
+// one optional field refuses the whole write -- and these writes are batched
+// with the expense or the deletion, so a null here would take the record with
+// it. The client omits rather than nulls; these pin that it must.
+await check("a null expenseId is refused", false,
+  () => write("owner", { action: "EXPENSE_DELETED", expenseId: null, storeId: STORE_A, amount: 100 }));
+await check("a null purchaseId is refused", false,
+  () => write("owner", { action: "PURCHASE_DELETED", purchaseId: null, storeId: STORE_A, amount: 100 }));
+await check("a null category is refused", false,
+  () => write("manager", { action: "EXPENSE_RECORDED", expenseId: "e3", storeId: STORE_A, amount: 100, category: null }));
+await check("a null purchaseId on a restock entry is refused", false,
+  () => write("manager", { action: "PRODUCT_RESTOCKED", productId: "prod1", qtyAdded: 5, purchaseId: null }));
+// Absent is the shape the client actually writes, and it must pass.
+await check("omitting them entirely is fine", true,
+  () => write("manager", { action: "EXPENSE_RECORDED", expenseId: "e4", storeId: STORE_A, amount: 100 }));
+
+await check("an oversized category is refused", false,
+  () => write("manager", { action: "EXPENSE_RECORDED", expenseId: "e5", storeId: STORE_A, amount: 100, category: "x".repeat(41) }));
+await check("an oversized expenseId is refused", false,
+  () => write("manager", { action: "EXPENSE_RECORDED", expenseId: "x".repeat(121), storeId: STORE_A, amount: 100 }));
+await check("an invented action is still refused", false,
+  () => write("owner", { action: "EXPENSE_ARCHIVED", expenseId: "e6", storeId: STORE_A }));
+
 await testEnv.cleanup();
 
 const failed = results.filter((r) => !r.pass);

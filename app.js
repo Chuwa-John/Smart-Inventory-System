@@ -375,6 +375,11 @@ const DICTIONARY = {
     "purchases.allReceipted": "Every delivery has a receipt number",
     "purchases.receiptYes": "Yes",
     "purchases.receiptNo": "None",
+    "purchases.thActions": "Actions",
+    "purchases.delete": "Delete",
+    "purchases.confirmDelete": "Delete this delivery of {name} for {value}? The Purchase Book will no longer show it, and the product's average cost is not recalculated.",
+    "toast.purchaseDeleted": "Delivery deleted",
+    "toast.purchaseFailed": "Could not delete that delivery. Try again.",
     "purchases.empty": "No deliveries recorded for this month yet.",
     "purchases.emptyNoStore": "Pick a branch to see what it bought.",
     "restock.totalPaidLabel": "Total paid for this delivery (optional)",
@@ -1199,6 +1204,11 @@ const DICTIONARY = {
     "purchases.allReceipted": "Kila mzigo una namba ya risiti",
     "purchases.receiptYes": "Ndiyo",
     "purchases.receiptNo": "Hakuna",
+    "purchases.thActions": "Vitendo",
+    "purchases.delete": "Futa",
+    "purchases.confirmDelete": "Futa mzigo huu wa {name} wa {value}? Hautaonekana tena kwenye rekodi ya manunuzi, na gharama ya wastani ya bidhaa haitahesabiwa upya.",
+    "toast.purchaseDeleted": "Mzigo umefutwa",
+    "toast.purchaseFailed": "Imeshindwa kufuta mzigo huo. Jaribu tena.",
     "purchases.empty": "Hakuna mzigo uliorekodiwa mwezi huu bado.",
     "purchases.emptyNoStore": "Chagua tawi ili kuona kilichonunuliwa.",
     "restock.totalPaidLabel": "Jumla uliyolipa kwa mzigo huu (si lazima)",
@@ -5262,6 +5272,27 @@ function localDateInputValue(date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+// Every expense and purchase lifecycle event, recorded the same way.
+//
+// Fields are OMITTED when absent, never set to null. auditStringsBounded() in
+// firestore.rules reads `!('x' in d) || d.x is string` -- absent passes, null
+// does not, because the key is present and null is not a string. A null in one
+// optional field refuses the whole write, and when that write is part of a
+// batch it takes the expense or the deletion down with it. That is precisely
+// how a null customerId took every credit sale to a new customer down.
+function moneyAuditEntry(action, fields) {
+  const entry = {
+    action,
+    uid: state.user?.uid || null,
+    createdAt: state.firebaseApi.firestore.serverTimestamp()
+  };
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === undefined || value === null || value === "") continue;
+    entry[key] = value;
+  }
+  return entry;
+}
+
 async function saveExpense(input) {
   const existing = input.id ? state.expenses.find((item) => item.id === input.id) : null;
 
@@ -5320,7 +5351,7 @@ async function saveExpense(input) {
   if (saveButton) saveButton.disabled = true;
 
   try {
-    const { collection, doc, serverTimestamp, setDoc, Timestamp } = state.firebaseApi.firestore;
+    const { collection, doc, serverTimestamp, setDoc, Timestamp, writeBatch } = state.firebaseApi.firestore;
     const id = existing?.id || doc(collection(state.db, "users", state.businessOwnerUid, "expenses")).id;
     const payload = {
       // An existing expense keeps the branch and the recorder it was created
@@ -5335,15 +5366,23 @@ async function saveExpense(input) {
       ...(note ? { note } : {}),
       ...(existing ? {} : { createdAt: serverTimestamp() })
     };
-    // No await on the write completing before the dialog closes: this is a
-    // plain create, so offline it queues and resolves on reconnect. Awaiting it
-    // would hang the dialog open with no signal, which is the state this
+    // Batched with its audit entry, so the record and the evidence that it was
+    // written land together or not at all. A batch queues offline exactly as a
+    // single write does.
+    //
+    // Still not awaited: offline the promise does not settle until reconnect,
+    // and awaiting would hang the dialog with no signal -- the state this
     // collection is specifically meant to work in.
-    setDoc(doc(state.db, "users", state.businessOwnerUid, "expenses", id), payload, { merge: true })
-      .catch((error) => {
-        console.warn(error);
-        showToast(t("toast.expenseFailed"));
-      });
+    const batch = writeBatch(state.db);
+    batch.set(doc(state.db, "users", state.businessOwnerUid, "expenses", id), payload, { merge: true });
+    batch.set(doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs")),
+      moneyAuditEntry(existing ? "EXPENSE_UPDATED" : "EXPENSE_RECORDED", {
+        expenseId: id, storeId: payload.storeId, amount, category
+      }));
+    batch.commit().catch((error) => {
+      console.warn(error);
+      showToast(t("toast.expenseFailed"));
+    });
     qs("#expenseDialog").close();
     showToast(t(existing ? "toast.expenseUpdated" : "toast.expenseSaved"));
   } catch (error) {
@@ -5362,17 +5401,28 @@ async function deleteExpense(expenseId) {
   if (!expense) return;
   if (!window.confirm(t("expenses.confirmDelete"))) return;
   try {
-    const { doc, deleteDoc } = state.firebaseApi.firestore;
+    const { collection, doc, writeBatch } = state.firebaseApi.firestore;
+    // Deletable by design -- a mis-keyed expense is a human error and the shop
+    // must be able to remove it. Which is exactly why the removal is batched
+    // with an audit entry: every other money-touching collection refuses
+    // deletion outright, and a document that can vanish with no trace is a note
+    // rather than a book.
+    //
     // Not awaited, for the same reason saveExpense() does not await: offline the
     // promise does not settle until reconnect, so awaiting would swallow the
-    // toast entirely -- the row would vanish from the local cache with no
-    // confirmation and no error. One collection must not have two offline
-    // behaviours depending on which button was pressed.
-    deleteDoc(doc(state.db, "users", state.businessOwnerUid, "expenses", expenseId))
-      .catch((error) => {
-        console.warn(error);
-        showToast(t("toast.expenseFailed"));
-      });
+    // toast entirely. One collection must not have two offline behaviours
+    // depending on which button was pressed.
+    const batch = writeBatch(state.db);
+    batch.delete(doc(state.db, "users", state.businessOwnerUid, "expenses", expenseId));
+    batch.set(doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs")),
+      moneyAuditEntry("EXPENSE_DELETED", {
+        expenseId, storeId: expense.storeId,
+        amount: safeNumber(expense.amount), category: expense.category
+      }));
+    batch.commit().catch((error) => {
+      console.warn(error);
+      showToast(t("toast.expenseFailed"));
+    });
     showToast(t("toast.expenseDeleted"));
   } catch (error) {
     console.warn(error);
@@ -5636,6 +5686,39 @@ async function subscribeToPurchases() {
   }
 }
 
+// Owner-only, matching firestore.rules. A purchase has already moved the
+// product's weighted average by the time anyone deletes it -- the average is a
+// cached derivation and nothing recomputes it here -- so the audit entry is the
+// only record that the delivery was ever recorded at all.
+async function deletePurchase(purchaseId) {
+  if (!isOwnerRole()) return;
+  const purchase = state.purchases.find((item) => item.id === purchaseId);
+  if (!purchase) return;
+  if (!window.confirm(t("purchases.confirmDelete", {
+    name: purchase.productName || "",
+    value: money(safeNumber(purchase.totalPaid))
+  }))) return;
+  try {
+    const { collection, doc, writeBatch } = state.firebaseApi.firestore;
+    const batch = writeBatch(state.db);
+    batch.delete(doc(state.db, "users", state.businessOwnerUid, "purchases", purchaseId));
+    batch.set(doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs")),
+      moneyAuditEntry("PURCHASE_DELETED", {
+        purchaseId, storeId: purchase.storeId, productId: purchase.productId,
+        name: purchase.productName, amount: safeNumber(purchase.totalPaid),
+        qtyAdded: safeNumber(purchase.quantity)
+      }));
+    batch.commit().catch((error) => {
+      console.warn(error);
+      showToast(t("toast.purchaseFailed"));
+    });
+    showToast(t("toast.purchaseDeleted"));
+  } catch (error) {
+    console.warn(error);
+    showToast(t("toast.purchaseFailed"));
+  }
+}
+
 function renderPurchases() {
   const view = qs("#purchases");
   const table = qs("#purchasesTable");
@@ -5663,6 +5746,7 @@ function renderPurchases() {
       summary.withoutReceipt > 0 ? t("purchases.noReceiptNote") : t("purchases.allReceipted"))
   ].join("");
 
+  const canDelete = isOwnerRole();
   const rows = scoped
     .filter((purchase) => {
       const at = purchasedAt(purchase);
@@ -5672,7 +5756,7 @@ function renderPurchases() {
 
   if (!rows.length) {
     const message = state.currentStoreId ? t("purchases.empty") : t("purchases.emptyNoStore");
-    table.innerHTML = `<tr><td colspan="6" class="empty-state">${esc(message)}</td></tr>`;
+    table.innerHTML = `<tr><td colspan="7" class="empty-state">${esc(message)}</td></tr>`;
     return;
   }
 
@@ -5688,6 +5772,7 @@ function renderPurchases() {
       <td class="${receipted ? "" : "cell-warn"}">${esc(receipted
         ? (purchase.receiptNumber || t("purchases.receiptYes"))
         : t("purchases.receiptNo"))}</td>
+      <td>${canDelete ? `<button class="ghost-button compact" type="button" data-delete-purchase="${esc(purchase.id)}">${esc(t("purchases.delete"))}</button>` : ""}</td>
     </tr>`;
   }).join("");
 }
@@ -6841,11 +6926,20 @@ async function confirmRestock() {
         });
 
         const auditRef = doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs"));
+        // The purchase and its money ride on the entry the restock already
+        // writes, rather than a second entry. Every write in a transaction pays
+        // its own rules evaluation, and this transaction is already four
+        // documents deep for a manager -- who pays a member read on each.
+        //
+        // Both fields are OMITTED when no cost was recorded, never nulled:
+        // auditStringsBounded() refuses a present-but-null purchaseId, and that
+        // would take the whole restock down with it.
         transaction.set(auditRef, {
           action: "PRODUCT_RESTOCKED",
           productId,
           name: product.name || "",
           qtyAdded: qty,
+          ...(purchaseRef && totalPaid ? { purchaseId: purchaseRef.id, amount: totalPaid } : {}),
           uid: state.user?.uid || null,
           createdAt: serverTimestamp()
         });
@@ -11183,6 +11277,10 @@ function bindEvents() {
   qs("#expenseForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
     saveExpense(Object.fromEntries(new FormData(event.currentTarget).entries()));
+  });
+  qs("#purchasesTable")?.addEventListener("click", (event) => {
+    const remove = event.target.closest("[data-delete-purchase]");
+    if (remove) deletePurchase(remove.dataset.deletePurchase);
   });
   qs("#purchaseMonthInput")?.addEventListener("change", (event) => {
     state.purchaseMonthSelection = event.currentTarget.value || state.purchaseMonthSelection;

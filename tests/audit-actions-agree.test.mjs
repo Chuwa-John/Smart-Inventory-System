@@ -58,6 +58,20 @@ const allowed = new Set([...(cashier || []), ...(manager || []), ...(owner || []
 // The second is the one a naive grep drops.
 const emitted = new Set();
 for (const m of app.matchAll(/\baction:\s*"([A-Z][A-Z_]+)"/g)) emitted.add(m[1]);
+// Third shape, added with the expense and purchase trail: the action is the
+// first ARGUMENT to a helper that builds the entry, not a property in a literal.
+//
+//   moneyAuditEntry("EXPENSE_DELETED", { ... })
+//   moneyAuditEntry(cond ? "EXPENSE_UPDATED" : "EXPENSE_RECORDED", { ... })
+//
+// Without this the suite reports four perfectly well-written actions as
+// orphans, which is a false alarm that trains people to widen
+// NOT_WRITTEN_BY_APP_JS instead of looking.
+for (const m of app.matchAll(/moneyAuditEntry\(\s*"([A-Z][A-Z_]+)"/g)) emitted.add(m[1]);
+for (const m of app.matchAll(/moneyAuditEntry\(\s*[^,\n]*\?\s*"([A-Z][A-Z_]+)"\s*:\s*"([A-Z][A-Z_]+)"/g)) {
+  emitted.add(m[1]);
+  emitted.add(m[2]);
+}
 for (const m of app.matchAll(/\baction:\s*[^,\n]*\?\s*"([A-Z][A-Z_]+)"\s*:\s*"([A-Z][A-Z_]+)"/g)) {
   emitted.add(m[1]);
   emitted.add(m[2]);

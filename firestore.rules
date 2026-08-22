@@ -591,7 +591,11 @@ service cloud.firestore {
               'CREDIT_LIMIT_UNCHECKED'];
     }
     function managerAuditActions() {
-      return cashierAuditActions().concat(['SALE_VOIDED', 'RETURN_PROCESSED', 'CREDIT_LIMIT_CHANGED']);
+      return cashierAuditActions().concat(['SALE_VOIDED', 'RETURN_PROCESSED', 'CREDIT_LIMIT_CHANGED',
+              // A manager is who spends on the shop's behalf, so a manager is
+              // who records the spending -- and therefore who records that they
+              // recorded it. Correcting and removing stay with the owner below.
+              'EXPENSE_RECORDED']);
     }
     // The ACCOUNT_* entries are the deletion-lifecycle evidence trail. Two of
     // them are written by the proxy's Admin SDK, which bypasses these rules
@@ -601,7 +605,13 @@ service cloud.firestore {
     // by tests/rules-deletion.test.mjs, which is the point of that test).
     function ownerAuditActions() {
       return managerAuditActions().concat(
-        ['PRODUCT_CREATED', 'PRODUCT_EDITED', 'PRODUCT_DELETED', 'STORE_CURRENCY_CHANGED', 'STORE_ARCHIVED',
+        [// Expenses and purchases stay deletable -- a mis-keyed delivery is a
+         // human error and the shop must be able to remove it. That is exactly
+         // why the removal has to leave a trace: every other money-touching
+         // collection in this file refuses deletion outright, and a document
+         // that can vanish silently is a note rather than a book.
+         'EXPENSE_UPDATED', 'EXPENSE_DELETED', 'PURCHASE_DELETED',
+         'PRODUCT_CREATED', 'PRODUCT_EDITED', 'PRODUCT_DELETED', 'STORE_CURRENCY_CHANGED', 'STORE_ARCHIVED',
          'ACCOUNT_DELETION_REQUESTED', 'ACCOUNT_DELETION_CANCELLED', 'ACCOUNT_ACCESS_DURING_GRACE',
          'VAT_REGISTRATION_ENABLED', 'VAT_REGISTRATION_DISABLED']);
     }
@@ -618,7 +628,11 @@ service cloud.firestore {
               'productId', 'name', 'sellingPrice', 'qtyAdded',
               'previousCode', 'newCode',
               'vrn', 'previouslyRegistered', 'storeCount', 'reason',
-              'paymentMethod', 'discountType', 'discountAmount'];
+              'paymentMethod', 'discountType', 'discountAmount',
+              // Expenses and purchases. `amount` above is reused for both an
+              // expense amount and a purchase total; `qtyAdded` and `name` are
+              // reused for the units and the product on a purchase.
+              'category', 'expenseId', 'purchaseId'];
     }
 
     function auditStringsBounded() {
@@ -635,7 +649,15 @@ service cloud.firestore {
         && (!('saleId' in d) || (d.saleId is string && d.saleId.size() <= 120))
         && (!('customerId' in d) || (d.customerId is string && d.customerId.size() <= 120))
         && (!('productId' in d) || (d.productId is string && d.productId.size() <= 120))
-        && (!('storeId' in d) || (d.storeId is string && d.storeId.size() <= 120));
+        && (!('storeId' in d) || (d.storeId is string && d.storeId.size() <= 120))
+        // Absent is fine; null is not. These read the same way customerId does
+        // above, and for the same reason: a null here is a present key whose
+        // value is not a string, so the whole write is refused -- which is how
+        // a null customerId took every credit sale to a new customer down with
+        // it. The client omits these fields rather than nulling them.
+        && (!('category' in d) || (d.category is string && d.category.size() <= 40))
+        && (!('expenseId' in d) || (d.expenseId is string && d.expenseId.size() <= 120))
+        && (!('purchaseId' in d) || (d.purchaseId is string && d.purchaseId.size() <= 120));
     }
 
     function validAuditLog(allowedActions) {
