@@ -33,8 +33,9 @@
 // Dry run unless --apply is passed. Idempotent: it only ever removes two
 // fields, so a repeated or interrupted run is safe. It touches nothing else --
 // no other field is read, written, or deleted.
-import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { applicationDefault, cert, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue, FieldPath } from "firebase-admin/firestore";
+import { readFileSync } from "node:fs";
 
 const LEGACY_FIELDS = ["costPrice", "costKnownFrom"];
 const EXPECTED_PROJECT = "sanitaryflow-erp";
@@ -47,20 +48,38 @@ const VERIFY_ONLY = args.includes("--verify");
 const tenantArg = args.find((a) => a.startsWith("--tenant="));
 const ONLY_TENANT = tenantArg ? tenantArg.split("=")[1] : null;
 
-// Same convention as server.js: base64, because Render's env UI mangles the
-// private key's embedded newlines.
+// Two ways in, and neither requires pasting a key anywhere it would be logged:
+//
+//   FIREBASE_SERVICE_ACCOUNT_KEY_BASE64 -- the convention server.js already
+//   uses. Base64 because Render's env UI mangles the private key's newlines.
+//
+//   GOOGLE_APPLICATION_CREDENTIALS -- the standard Google mechanism, pointing
+//   at the service-account JSON file on disk. Preferred when running this by
+//   hand: the key stays a file, and the path is not a secret.
 const keyB64 = process.env.FIREBASE_SERVICE_ACCOUNT_KEY_BASE64 || "";
+const adcPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || "";
 const usingEmulator = Boolean(process.env.FIRESTORE_EMULATOR_HOST);
 
-if (!keyB64 && !usingEmulator) {
-  console.error("FIREBASE_SERVICE_ACCOUNT_KEY_BASE64 is not set, and no FIRESTORE_EMULATOR_HOST either.");
-  console.error("Refusing to guess at credentials for a migration that rewrites production documents.");
+if (!keyB64 && !adcPath && !usingEmulator) {
+  console.error("No credentials. Set one of:");
+  console.error("  GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json   (simplest by hand)");
+  console.error("  FIREBASE_SERVICE_ACCOUNT_KEY_BASE64=<base64 of that file>      (as server.js uses)");
+  console.error("Refusing to guess at credentials for a script that can rewrite production documents.");
   process.exit(2);
 }
 
 if (!getApps().length) {
   if (usingEmulator) {
     initializeApp({ projectId: process.env.GCLOUD_PROJECT || EXPECTED_PROJECT });
+  } else if (!keyB64 && adcPath) {
+    // The project check below cannot read a file we were only handed a path
+    // to, so verify it explicitly rather than skipping the guard.
+    const sa = JSON.parse(readFileSync(adcPath, "utf8"));
+    if (sa.project_id !== EXPECTED_PROJECT && !args.includes("--force-project")) {
+      console.error(`Credentials are for "${sa.project_id}", expected "${EXPECTED_PROJECT}".`);
+      process.exit(2);
+    }
+    initializeApp({ credential: applicationDefault() });
   } else {
     const serviceAccount = JSON.parse(Buffer.from(keyB64, "base64").toString("utf8"));
     if (serviceAccount.project_id !== EXPECTED_PROJECT && !args.includes("--force-project")) {

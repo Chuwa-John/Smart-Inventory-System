@@ -857,9 +857,13 @@ lands — a deleted test would not have told anyone the behaviour had changed.
     node migrate-strip-product-cost.mjs --apply
     node migrate-strip-product-cost.mjs --verify           # exit 0 only when clean
 
-It needs `FIREBASE_SERVICE_ACCOUNT_KEY_BASE64`, the same variable and encoding
-`proxy/server.js` already uses, and refuses to run without it rather than
-guessing at credentials. It also refuses a service account whose `project_id`
+It takes credentials either way: `GOOGLE_APPLICATION_CREDENTIALS` pointing at
+the service-account JSON on disk (simplest when running it by hand — the key
+stays a file and the path is not a secret), or
+`FIREBASE_SERVICE_ACCOUNT_KEY_BASE64`, the variable and encoding
+`proxy/server.js` already uses. It refuses to run with neither rather than
+guessing at credentials, and checks the credential's `project_id` against
+`sanitaryflow-erp` in both cases. It also refuses a service account whose `project_id`
 is not `sanitaryflow-erp` unless `--force-project` is passed.
 
 Verified against the emulator by `proxy/migrate-check.mjs` (10 checks): a dry
