@@ -28,7 +28,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260823c" />
+    <link rel="stylesheet" href="./styles.css?v=20260823d" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#0b0d10" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -48,7 +48,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260823c"></script>
+    <script type="module" src="./boot.js?v=20260823d"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -909,6 +909,38 @@
           <label><span data-i18n="product.reorderLabel">Low stock threshold</span><input name="reorderLevel" type="number" min="0" placeholder="e.g. 10" data-i18n-placeholder="product.reorderPlaceholder" max="1000000" /></label>
           <label><span data-i18n="product.expiryLabel">Expiry date (optional)</span><input name="expiryDate" type="date" /></label>
         </div>
+        <!-- Opening stock cost. Shown only when ADDING a product, never when
+             editing: cost is forward-only, and a box on the edit form would
+             either do nothing or silently rewrite history every time someone
+             corrected a spelling. A shop does not start empty -- someone
+             onboarding types in stock they already own and already have
+             receipts for, and until now the only way to record what they paid
+             was to invent a restock. renderProductCostFields() sets this on
+             every open. -->
+        <div id="productCostFields" hidden>
+          <h3 class="dialog-subhead" data-i18n="product.costHeading">What you paid for this stock</h3>
+          <p class="muted" data-i18n="product.costHint">Optional. If you know what this stock cost you, record it here and profit tracking works from day one. Leave it blank and you can add it on the first restock instead.</p>
+          <label><span data-i18n="product.totalPaidLabel">Total paid for this stock (optional)</span>
+            <input id="productTotalPaidInput" type="number" min="0" step="1" placeholder="e.g. 400000" data-i18n-placeholder="product.totalPaidPlaceholder" autocomplete="off" />
+            <span class="field-error" id="productTotalPaidError"></span>
+          </label>
+          <p class="muted" id="productUnitCostHint"></p>
+          <!-- VAT-registered only, same reasoning as the restock dialog:
+               DESIGN-vat.md decision 4. -->
+          <div id="productReceiptFields" hidden>
+            <label class="checkbox-row">
+              <input id="productHasReceiptInput" type="checkbox" />
+              <span data-i18n="product.hasReceiptLabel">I have a fiscal receipt for this stock</span>
+            </label>
+            <label><span data-i18n="product.receiptLabel">Fiscal receipt number (optional)</span>
+              <input id="productReceiptInput" type="text" maxlength="60" autocomplete="off" />
+            </label>
+            <label><span data-i18n="product.receiptDateLabel">Date on the receipt</span>
+              <input id="productReceiptDateInput" type="date" />
+              <span class="muted" data-i18n="product.receiptDateHint">The VAT claim window runs from this date, not the day you record it.</span>
+            </label>
+          </div>
+        </div>
         <div class="button-row end">
           <button class="ghost-button" type="button" id="cancelProductDialog" data-i18n="product.cancel">Cancel</button>
           <button class="primary-button" value="default" data-i18n="product.save">Save Product</button>
@@ -1375,6 +1407,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260823c"></script>
+    <script type="module" src="./app.js?v=20260823d"></script>
   </body>
 </html>

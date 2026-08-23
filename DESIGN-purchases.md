@@ -1337,6 +1337,49 @@ now the first thing in OPERATIONS.md's release procedure.
 
 ---
 
+## 13i. Cost capture on the product form — 2026-08-23
+
+§13c deferred this and restock was the only way to record what stock cost.
+That was wrong for the case that matters most at onboarding: **a shop does not
+start empty.** Someone typing in the stock they already own, with the supplier's
+receipt in front of them, had to invent a restock to record what they paid — or
+give up on profit tracking until their first delivery.
+
+Raised by the owner on 2026-08-23: *"even when someone adds their inventory they
+might have had the receipts and would want to track their profits."*
+
+**Create only.** The section appears when adding a product and never when
+editing. Cost is forward-only; there is no concept of correcting a cost in
+place. A box on the edit form would either do nothing or append a cost record
+every time somebody fixed a typo in a product name. To change a cost that is
+already recorded, restock — that is where the weighted average lives.
+
+**The same documents, not a second dialect.** It writes `/productCostHistory`
+(reason `purchase`), `/productCosts` and `/purchases`, in shapes identical to
+the restock transaction's. A parallel notion of "purchase" would be a second
+thing for the Purchase Book and `costInForceAt()` to understand, and the first
+one to drift would be the one nobody was testing.
+
+**Not a transaction, deliberately.** Unlike a restock there is no
+read-modify-write of a shelf count, so there is nothing to race. The product
+did not exist a moment ago, so there is no prior cost to average against
+either: the batch price IS the cost, which is `nextUnitCost()`'s empty-shelf
+case. One `writeBatch` after the product write, and a toast if it fails — a
+shop that believes it recorded what it paid and did not will price against a
+margin that is not there.
+
+**An amount with no quantity is refused.** A total cannot become a per-unit
+cost without a count, and a guess would sit under every future margin on that
+product.
+
+Cost still never touches the product document — B2-a is unchanged, and
+`tests/purchases.test.mjs` asserts it against the payload literal. The first
+version of that assertion checked for `payload.costPrice` and was blind to
+`costPrice:` inside the object literal; a negative control that reintroduced the
+defect passed against it, which is the only reason it was caught.
+
+---
+
 ## 14. Test plan
 
 Every phase closes with negative controls: reintroduce the defect, confirm the

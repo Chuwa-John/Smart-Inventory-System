@@ -885,6 +885,76 @@ console.log("\n=== Phase E: the surface, and who may see it ===");
     !body("async function subscribeToProductCosts(").includes("limit("), true);
 }
 
+// Opening-stock cost on the ADD PRODUCT form. A shop does not start empty:
+// someone onboarding types in stock they already own and already have receipts
+// for, and before 2026-08-23 the only way to record what they paid was to
+// invent a restock. DESIGN-purchases.md 13c deferred this; 13i is where it
+// landed.
+{
+  const html = readFileSync(new URL("../app.html", import.meta.url), "utf8");
+  const save = body("async function saveProduct(");
+  const gate = body("function renderProductCostFields(");
+
+  check("the add-product form carries a cost section",
+    html.includes('id="productCostFields"') && html.includes('id="productTotalPaidInput"'), true);
+
+  // Create-only. On an edit this must stay hidden: cost is forward-only, so a
+  // box there would either do nothing or append a cost record every time
+  // somebody fixed a typo in the product name.
+  check("the cost section is hidden when EDITING",
+    gate.includes("isEdit || !canRecordCost()"), true);
+  check("...and hidden from anyone who may not record cost",
+    gate.includes("canRecordCost()"), true);
+  check("the receipt block additionally needs VAT registration",
+    gate.includes("vatSettings().registered"), true);
+
+  // The three documents, in the same shapes the restock transaction writes.
+  for (const target of ["productCostHistory", "productCosts", "purchases"]) {
+    check(`saving opening stock writes /${target}`,
+      save.includes('"' + target + '"'), true);
+  }
+  check("the history record is reasoned as a purchase",
+    save.includes('reason: "purchase"'), true);
+
+  // The invariant firestore.rules enforces on a purchase: unitCost * quantity
+  // must equal totalPaid within a shilling. Deriving the unit cost by division
+  // is what keeps that true.
+  check("unit cost is derived from the total, not entered separately",
+    save.includes("costCapture.totalPaid / costCapture.quantity"), true);
+
+  // Cost must never land on the product document itself -- a cashier reads
+  // /products in full. This is B2-a, and the new path must not reopen it.
+  // Asserted against the payload LITERAL, not against "payload.costPrice".
+  // The first version of this check looked for a property assignment and was
+  // therefore blind to `costPrice: 1` sitting inside the object literal -- the
+  // exact shape the defect would take. The negative control that reintroduced
+  // B2-a passed against it, which is the only reason that was caught.
+  const payloadStart = save.indexOf("const payload = {");
+  const payloadLiteral = payloadStart > -1
+    ? save.slice(payloadStart, save.indexOf("};", payloadStart))
+    : "";
+  check("the product payload literal was found at all", payloadStart > -1, true);
+  check("cost is NOT written onto the product document",
+    payloadLiteral.length > 0 && !payloadLiteral.includes("costPrice")
+      && !payloadLiteral.includes("costKnownFrom"), true);
+
+  // An amount with no quantity cannot become a per-unit cost, and a guess here
+  // would sit under every future margin on that product.
+  check("an amount with no quantity is refused",
+    src.includes("product.totalPaidNeedsQuantity"), true);
+
+  // The product saved but the cost did not is a real outcome, and silence
+  // there means pricing against a margin that was never recorded.
+  check("a failed cost write is reported, not swallowed",
+    save.includes("toast.productSavedWithoutCost"), true);
+
+  for (const key of ["product.costHeading", "product.totalPaidLabel", "product.unitCostHint",
+                     "product.totalPaidNeedsQuantity", "toast.productSavedWithoutCost"]) {
+    check(`${key} exists in both languages`,
+      (src.match(new RegExp(`"${key.replace(/\./g, "\.")}"`, "g")) || []).length >= 2, true);
+  }
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 process.exit(failed.length ? 1 : 0);

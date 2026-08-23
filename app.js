@@ -569,6 +569,17 @@ const DICTIONARY = {
     "ai.eyebrow": "Smart insights", "ai.title": "Ask About Your Business",
     "ai.questionPlaceholder": "Ask about your inventory, stock levels, sales, or forecasts...",
     "ai.askButton": "Ask AI Advisor", "ai.conversation": "Conversation", "ai.clear": "Clear",
+    "product.costHeading": "What you paid for this stock",
+    "product.costHint": "Optional. If you know what this stock cost you, record it here and profit tracking works from day one. Leave it blank and you can add it on the first restock instead.",
+    "product.totalPaidLabel": "Total paid for this stock (optional)",
+    "product.totalPaidPlaceholder": "e.g. 400000",
+    "product.totalPaidInvalid": "Enter what you paid in total, or leave it blank.",
+    "product.totalPaidNeedsQuantity": "Enter the quantity you are adding before recording what you paid for it.",
+    "product.unitCostHint": "That works out to {each} each.",
+    "product.hasReceiptLabel": "I have a fiscal receipt for this stock",
+    "product.receiptLabel": "Fiscal receipt number (optional)",
+    "product.receiptDateLabel": "Date on the receipt",
+    "product.receiptDateHint": "The VAT claim window runs from this date, not the day you record it.",
     "product.nameLabel": "Product name", "product.categoryLabel": "Category", "product.brandLabel": "Brand",
     "product.supplierLabel": "Suppliers", "product.quantityLabel": "Quantity",
     "product.priceLabel": "Selling price", "product.priceTypeLabel": "Price type",
@@ -765,6 +776,7 @@ const DICTIONARY = {
     "toast.excelLibraryFailed": "Excel library did not load. Check your connection and try again.",
     "toast.aiProxyUnavailable": "AI proxy unavailable ({message}). Showing local recommendation.",
     "toast.aiQuestionEmpty": "Type a question first.",
+    "toast.productSavedWithoutCost": "Product saved, but what you paid could not be recorded. Add it on the first restock.",
     "toast.aiQuestionTooLong": "That question is too long. Please shorten it to {max} characters or fewer.",
     "a11y.skipToContent": "Skip to main content",
     "a11y.globalSearch": "Search products",
@@ -1439,6 +1451,17 @@ const DICTIONARY = {
     "ai.eyebrow": "Ufahamu Mahiri", "ai.title": "Uliza Kuhusu Biashara Yako",
     "ai.questionPlaceholder": "Uliza kuhusu hisa, kiwango cha bidhaa, mauzo, au utabiri...",
     "ai.askButton": "Uliza Mshauri wa AI", "ai.conversation": "Mazungumzo", "ai.clear": "Futa",
+    "product.costHeading": "Ulicholipa kwa hisa hii",
+    "product.costHint": "Si lazima. Ukijua hisa hii ilikugharimu kiasi gani, iandike hapa na ufuatiliaji wa faida utaanza tangu siku ya kwanza. Ukiacha wazi, unaweza kuiongeza wakati wa kujaza hisa mara ya kwanza.",
+    "product.totalPaidLabel": "Jumla uliyolipa kwa hisa hii (si lazima)",
+    "product.totalPaidPlaceholder": "mfano 400000",
+    "product.totalPaidInvalid": "Weka jumla uliyolipa, au acha wazi.",
+    "product.totalPaidNeedsQuantity": "Weka idadi unayoongeza kabla ya kuandika ulicholipa.",
+    "product.unitCostHint": "Hiyo ni {each} kwa kila kimoja.",
+    "product.hasReceiptLabel": "Nina risiti ya kodi kwa hisa hii",
+    "product.receiptLabel": "Namba ya risiti ya kodi (si lazima)",
+    "product.receiptDateLabel": "Tarehe iliyo kwenye risiti",
+    "product.receiptDateHint": "Muda wa kudai VAT huanza tarehe hii, si siku unayoiandika.",
     "product.nameLabel": "Jina la bidhaa", "product.categoryLabel": "Aina", "product.brandLabel": "Chapa",
     "product.supplierLabel": "Wasambazaji", "product.quantityLabel": "Kiasi",
     "product.priceLabel": "Bei ya kuuza", "product.priceTypeLabel": "Aina ya bei",
@@ -1635,6 +1658,7 @@ const DICTIONARY = {
     "toast.excelLibraryFailed": "Maktaba ya Excel haikupakia. Angalia muunganisho wako na ujaribu tena.",
     "toast.aiProxyUnavailable": "Proksi ya AI haipatikani ({message}). Inaonyesha pendekezo la ndani.",
     "toast.aiQuestionEmpty": "Andika swali kwanza.",
+    "toast.productSavedWithoutCost": "Bidhaa imehifadhiwa, lakini ulicholipa hakikuweza kuandikwa. Kiongeze wakati wa kujaza hisa mara ya kwanza.",
     "toast.aiQuestionTooLong": "Swali hilo ni refu mno. Tafadhali lifupishe hadi herufi {max} au chini.",
     "a11y.skipToContent": "Rukia maudhui makuu",
     "a11y.globalSearch": "Tafuta bidhaa",
@@ -6912,7 +6936,47 @@ function openProductDialog(product = null) {
   // saveProduct: without this, editing a price wrote back a stale count and
   // put sold goods back on the shelf.
   state.productFormOpeningQuantity = product ? safeNumber(product.quantity) : null;
+  renderProductCostFields(Boolean(product));
   qs("#productDialog").showModal();
+}
+
+// Opening-stock cost, and ONLY when adding. On an edit this stays hidden: cost
+// is forward-only, so a box here would either do nothing or append a cost
+// record every time someone corrected a spelling. Correcting a cost that is
+// already recorded is a restock, which is where the weighted average lives.
+//
+// Hidden from a cashier for the same reason the restock block is -- though a
+// cashier cannot reach this form at all, since /products create is owner or
+// manager. Belt and braces, because the day that changes this should not
+// quietly start offering cost to a till.
+function renderProductCostFields(isEdit) {
+  const fields = qs("#productCostFields");
+  if (fields) fields.hidden = isEdit || !canRecordCost();
+  const receiptFields = qs("#productReceiptFields");
+  if (receiptFields) receiptFields.hidden = isEdit || !canRecordCost() || !vatSettings().registered;
+  const hasReceipt = qs("#productHasReceiptInput");
+  if (hasReceipt) hasReceipt.checked = false;
+  for (const id of ["#productTotalPaidInput", "#productReceiptInput", "#productReceiptDateInput"]) {
+    const node = qs(id);
+    if (node) node.value = "";
+  }
+  const error = qs("#productTotalPaidError");
+  if (error) error.textContent = "";
+  renderProductUnitCostHint();
+}
+
+// The same live per-unit readout the restock dialog shows, and for the same
+// reason: the per-unit figure is what a shopkeeper actually reasons about, so
+// showing it is how a mis-keyed total gets caught before it becomes the cost
+// basis for every sale of that product.
+function renderProductUnitCostHint() {
+  const hint = qs("#productUnitCostHint");
+  if (!hint) return;
+  const total = safeNumber(qs("#productTotalPaidInput")?.value);
+  const qty = safeNumber(qs("#productForm")?.elements?.quantity?.value);
+  hint.textContent = (total > 0 && qty > 0)
+    ? t("product.unitCostHint", { each: money(total / qty) })
+    : "";
 }
 
 const PRODUCT_FIELD_LIMITS = {
@@ -6958,7 +7022,7 @@ function clampNonNegativeNumber(value, max = MAX_COUNT) {
   return number;
 }
 
-async function saveProduct(product) {
+async function saveProduct(product, costCapture = null) {
   const existing = product.id ? state.products.find((item) => item.id === product.id) : null;
   if (!existing && state.db && state.currentStoreId === "all") {
     showToast(t("toast.selectStoreBeforeAdd"));
@@ -7045,6 +7109,68 @@ async function saveProduct(product) {
         payload,
         { merge: true }
       );
+
+      // Opening stock that the shop already owns and already has a receipt for.
+      // Written AFTER the product exists, in one batch, and only on a create --
+      // see renderProductCostFields() for why this is never offered on an edit.
+      //
+      // The document shapes are deliberately identical to the ones the restock
+      // transaction writes. A second dialect of "purchase" would be a second
+      // thing for the Purchase Book and costInForceAt() to understand, and the
+      // first one to drift would be the one nobody was testing.
+      //
+      // Not a transaction: unlike a restock there is no read-modify-write of a
+      // shelf count, so there is nothing to race against. This product did not
+      // exist a moment ago, so it has no prior cost to average against either --
+      // the batch price IS the cost, which is nextUnitCost()'s empty-shelf case.
+      if (costCapture) {
+        try {
+          const { Timestamp, serverTimestamp: stamp, writeBatch } = state.firebaseApi.firestore;
+          const unitCost = costCapture.totalPaid / costCapture.quantity;
+          const storeId = productStoreId(product);
+          const batch = writeBatch(state.db);
+
+          batch.set(doc(collection(state.db, "users", state.businessOwnerUid, "productCostHistory")), {
+            productId: product.id,
+            storeId,
+            costPrice: unitCost,
+            effectiveFrom: stamp(),
+            reason: "purchase",
+            createdAt: stamp()
+          });
+          batch.set(doc(state.db, "users", state.businessOwnerUid, "productCosts", product.id), {
+            storeId,
+            costPrice: unitCost,
+            costKnownFrom: Timestamp.now(),
+            updatedAt: stamp()
+          });
+          batch.set(doc(collection(state.db, "users", state.businessOwnerUid, "purchases")), {
+            storeId,
+            productId: product.id,
+            // Denormalised, like the restock path: the Purchase Book is a record
+            // of what was paid and must survive the product being deleted.
+            productName: product.name || "",
+            quantity: costCapture.quantity,
+            totalPaid: costCapture.totalPaid,
+            // Unrounded on purpose -- rounding loses money against the invoice.
+            unitCost,
+            hasFiscalReceipt: costCapture.hasFiscalReceipt,
+            ...(costCapture.receiptNumber ? { receiptNumber: costCapture.receiptNumber } : {}),
+            ...(costCapture.supplierName ? { supplierName: costCapture.supplierName } : {}),
+            ...(costCapture.receiptDate ? { receiptDate: Timestamp.fromDate(costCapture.receiptDate) } : {}),
+            recordedByUid: state.user.uid,
+            createdAt: stamp()
+          });
+
+          await batch.commit();
+        } catch (costError) {
+          // The product saved; only the cost did not. Say so rather than
+          // failing silently -- a shop that believes it recorded what it paid
+          // and did not will price against a margin that is not there.
+          console.warn(costError);
+          showToast(t("toast.productSavedWithoutCost"));
+        }
+      }
       // An owner correcting a counted shelf is a real stock movement, and one
       // the ledger has to carry: without it a legitimate correction reads as
       // stock that moved with nothing to explain it, which is precisely the
@@ -11973,6 +12099,11 @@ function bindEvents() {
   });
   qs("#newProductButton").addEventListener("click", () => openProductDialog());
   qs("#inventoryAddButton").addEventListener("click", () => openProductDialog());
+  // The per-unit readout depends on BOTH boxes, so both have to feed it --
+  // wiring only the amount would leave a stale figure on screen the moment
+  // someone corrected the quantity, which is worse than showing none.
+  qs("#productTotalPaidInput")?.addEventListener("input", renderProductUnitCostHint);
+  qs("#productForm")?.elements?.quantity?.addEventListener("input", renderProductUnitCostHint);
   qs("#closeProductDialog").addEventListener("click", () => qs("#productDialog").close());
   qs("#cancelProductDialog").addEventListener("click", () => qs("#productDialog").close());
   qs("#closeTransferDialog")?.addEventListener("click", () => qs("#transferDialog").close());
@@ -12996,7 +13127,48 @@ function bindEvents() {
     product.warehouse = product.warehouse || "";
     product.shelf = product.shelf || "";
     product.expiryDate = product.expiryDate || "";
-    saveProduct(product);
+    // Opening-stock cost. Only on a create, only for someone allowed to record
+    // cost, and only when they actually typed an amount -- everything below is
+    // skipped entirely otherwise, so the ordinary path is unchanged.
+    let costCapture = null;
+    const isNewProduct = !product.id;
+    if (isNewProduct && canRecordCost()) {
+      const totalPaidRaw = String(qs("#productTotalPaidInput")?.value || "").trim();
+      const errorSlot = qs("#productTotalPaidError");
+      if (errorSlot) errorSlot.textContent = "";
+      if (totalPaidRaw) {
+        const totalPaid = clampNonNegativeNumber(totalPaidRaw, MAX_MONEY);
+        if (totalPaid === null || totalPaid <= 0) {
+          if (errorSlot) errorSlot.textContent = t("product.totalPaidInvalid");
+          return;
+        }
+        // A total with no quantity cannot become a per-unit cost, and guessing
+        // one would put a fabricated figure under every future margin.
+        const openingQty = safeNumber(product.quantity);
+        if (openingQty <= 0) {
+          if (errorSlot) errorSlot.textContent = t("product.totalPaidNeedsQuantity");
+          return;
+        }
+        const receiptDateRaw = String(qs("#productReceiptDateInput")?.value || "").trim();
+        let receiptDate = null;
+        if (receiptDateRaw) {
+          // Local parts at midday -- new Date("2026-08-21") is UTC midnight,
+          // which is the previous day west of Greenwich.
+          const [ry, rm, rd] = receiptDateRaw.split("-").map(Number);
+          const parsed = new Date(ry, (rm || 1) - 1, rd || 1, 12, 0, 0);
+          if (!Number.isNaN(parsed.getTime())) receiptDate = parsed;
+        }
+        costCapture = {
+          totalPaid,
+          quantity: openingQty,
+          hasFiscalReceipt: Boolean(qs("#productHasReceiptInput")?.checked),
+          receiptNumber: String(qs("#productReceiptInput")?.value || "").trim().slice(0, 60),
+          supplierName: String(product.supplier || "").trim().slice(0, 120),
+          receiptDate
+        };
+      }
+    }
+    saveProduct(product, costCapture);
     event.currentTarget.reset();
     qs("#productDialog").close();
   });
