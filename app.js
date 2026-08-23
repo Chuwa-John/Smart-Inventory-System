@@ -6486,18 +6486,29 @@ async function setCustomerCreditLimit(customerId) {
   if (state.db && state.user && state.businessOwnerUid) {
     try {
       const { doc, setDoc, collection, serverTimestamp } = state.firebaseApi.firestore;
-      const previousLimit = customer.creditLimit ?? null;
+      const previousLimit = customer.creditLimit;
       await setDoc(doc(state.db, "users", state.businessOwnerUid, "customers", customerId), { creditLimit: nextLimit }, { merge: true });
       try {
         const auditRef = doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs"));
-        await setDoc(auditRef, {
+        // Omitted, never nulled -- the same rule moneyAuditEntry() follows, and
+        // for the same reason. A null is a PRESENT key whose value is not a
+        // number, so the moment anyone gives previousLimit a type check the way
+        // customerId, category and expenseId already have one, every first-time
+        // credit limit would be refused. That is not hypothetical here: a null
+        // customerId in an audit entry is what took every credit sale to a new
+        // customer down, and this is the same shape one tightening away.
+        //
+        // previousLimit is absent when the customer never had a limit, and
+        // newLimit is absent when the owner is clearing one.
+        const entry = {
           action: "CREDIT_LIMIT_CHANGED",
           customerId,
-          previousLimit,
-          newLimit: nextLimit,
-          uid: state.user?.uid || null,
           createdAt: serverTimestamp()
-        });
+        };
+        if (Number.isFinite(previousLimit)) entry.previousLimit = previousLimit;
+        if (Number.isFinite(nextLimit)) entry.newLimit = nextLimit;
+        if (state.user?.uid) entry.uid = state.user.uid;
+        await setDoc(auditRef, entry);
       } catch (auditError) {
         console.warn(auditError);
       }
