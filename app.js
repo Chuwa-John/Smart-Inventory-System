@@ -764,6 +764,7 @@ const DICTIONARY = {
     "toast.pdfLibraryFailed": "PDF library did not load. Check your connection and try again.",
     "toast.excelLibraryFailed": "Excel library did not load. Check your connection and try again.",
     "toast.aiProxyUnavailable": "AI proxy unavailable ({message}). Showing local recommendation.",
+    "toast.aiQuestionEmpty": "Type a question first.",
     "toast.aiQuestionTooLong": "That question is too long. Please shorten it to {max} characters or fewer.",
     "a11y.skipToContent": "Skip to main content",
     "a11y.globalSearch": "Search products",
@@ -871,6 +872,7 @@ const DICTIONARY = {
     "toast.saleFailedGeneric": "Sale failed. Please recheck stock and try again.",
     "toast.saleCompletedChange": "Sale completed. Give {change} change.",
     "toast.saleCompleted": "Sale completed and inventory updated.",
+    "toast.saleCompletedServices": "Sale completed.",
     "toast.quantityPriceInvalid": "Quantity and price fields must be zero or positive numbers.",
     "toast.numberOutOfRange": "{field} must be a number between 0 and {max}.",
     "toast.fieldTooLong": "{field} must be {max} characters or fewer.",
@@ -1632,6 +1634,7 @@ const DICTIONARY = {
     "toast.pdfLibraryFailed": "Maktaba ya PDF haikupakia. Angalia muunganisho wako na ujaribu tena.",
     "toast.excelLibraryFailed": "Maktaba ya Excel haikupakia. Angalia muunganisho wako na ujaribu tena.",
     "toast.aiProxyUnavailable": "Proksi ya AI haipatikani ({message}). Inaonyesha pendekezo la ndani.",
+    "toast.aiQuestionEmpty": "Andika swali kwanza.",
     "toast.aiQuestionTooLong": "Swali hilo ni refu mno. Tafadhali lifupishe hadi herufi {max} au chini.",
     "a11y.skipToContent": "Rukia maudhui makuu",
     "a11y.globalSearch": "Tafuta bidhaa",
@@ -1739,6 +1742,7 @@ const DICTIONARY = {
     "toast.saleFailedGeneric": "Mauzo yameshindwa. Angalia hisa tena na ujaribu tena.",
     "toast.saleCompletedChange": "Mauzo yamekamilika. Toa chenji ya {change}.",
     "toast.saleCompleted": "Mauzo yamekamilika na hisa imesasishwa.",
+    "toast.saleCompletedServices": "Mauzo yamekamilika.",
     "toast.quantityPriceInvalid": "Sehemu za kiasi na bei lazima ziwe sifuri au chanya.",
     "toast.numberOutOfRange": "{field} lazima iwe namba kati ya 0 na {max}.",
     "toast.fieldTooLong": "{field} lazima iwe na herufi {max} au chache.",
@@ -4862,7 +4866,13 @@ async function callAiProxy(historyForRequest) {
 
 async function askAi() {
   const question = qs("#aiQuestion").value.trim();
-  if (!question) return;
+  // Say so rather than doing nothing. A button that silently ignores you reads
+  // as broken, and the next thing someone does is press it again.
+  if (!question) {
+    showToast(t("toast.aiQuestionEmpty"));
+    qs("#aiQuestion").focus();
+    return;
+  }
   // maxlength stops this being reachable by typing or pasting, but the check
   // stays: silently truncating someone's question and answering the wrong one is
   // worse than telling them to shorten it. Caught here rather than after a
@@ -12902,7 +12912,14 @@ function bindEvents() {
     if (qs("#creditAmountPaidInput")) qs("#creditAmountPaidInput").value = "";
     if (qs("#creditAmountPaidMethod")) qs("#creditAmountPaidMethod").value = "cash";
       renderAll();
-      showToast(changeDue > 0 ? t("toast.saleCompletedChange", { change: money(changeDue) }) : t("toast.saleCompleted"));
+      // A services-only sale moves no stock, so saying "inventory updated"
+      // describes something that did not happen. Small, but the till is where
+      // staff learn what the system does, and a message that is wrong in the
+      // easy case is not trusted in the hard one.
+      const movedStock = (saleItems || []).some((line) => line.kind !== "service");
+      showToast(changeDue > 0
+        ? t("toast.saleCompletedChange", { change: money(changeDue) })
+        : t(movedStock ? "toast.saleCompleted" : "toast.saleCompletedServices"));
     } finally {
       // The till must never be left dead. The re-enable used to sit on two
       // specific paths -- the transaction catch, and the last line of the happy
