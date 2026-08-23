@@ -737,6 +737,68 @@ products at all. It is a permissions question, not a technical one.
 
 ---
 
+## L-15 Legacy `costPrice` on product documents — **OPEN, blocks the cost refusal**
+
+Found on 2026-08-23 while checking whether `firestore.rules` could be deployed
+ahead of the client, and verified against the emulator with the deployed
+client's exact payload before being written down.
+
+**Limitation.** B2-a made `validProduct()` refuse `costPrice` outright, because
+Firestore has no field-level read security and a cashier's POS reads
+`/products` in full — so a cost stored there is a cost every cashier can read.
+That refusal cannot be deployed yet, for two independent reasons:
+
+- The deployed client (`20260808o`) assigns `costPrice = 0` inside the
+  `numericFields` loop of its product form whether or not the form has the box.
+  Its own comment says so: *"costPrice has no input in this form today and
+  arrives as 0; it is checked anyway so adding the field later cannot quietly
+  skip the bound."* Every product it saves therefore carries the field.
+- Every product document already in production carries it, for the same reason.
+  Firestore validates an update against the **resulting** document, so
+  `!('costPrice' in d)` refuses any owner write to such a document — including
+  the stock decrement a sale performs.
+
+**What it would have looked like.** Deploying the rules alone would have broken
+Add Product, Edit Product, and owner-driven selling, on all eight tenants, the
+moment it landed. A cashier or manager selling would have been unaffected,
+because their path goes through `validStockMovementShape()` and never reaches
+`validProduct()` — so in a shop with staff it would have looked like "the owner
+cannot sell but the till can", which is not a hypothesis anyone reaches quickly.
+
+Verified: the deployed client's product payload is refused under the tightened
+rule and accepted with `costPrice` removed; an owner's stock decrement on a
+document carrying `costPrice: 0` is refused, and accepted on one without it.
+
+**Staged 2026-08-23.** Stage 1 is deployed in `firestore.rules`: the field is
+*tolerated* on a product — bounded by `moneyInRange` and type-checked — rather
+than refused. What stage 1 does **not** relax is the part that matters: a
+cashier or manager still cannot write cost onto a product, because that refusal
+comes from `stockMovementKeys()` via `validStockMovementShape()` and is
+untouched. Only the owner's own writes tolerate the legacy field.
+
+**Residual risk while stage 1 stands.** An owner's client could put a real cost
+on a product document, where a cashier could read it. Neither the deployed
+client nor the current one ever writes a non-zero value there — the current one
+has no code path that writes the field at all — so in practice the value stays
+at the legacy `0`. It is a hole in the guarantee, not in the behaviour.
+
+**Stage 2, still owed.** Once every client is on the new build and `costPrice`
+and `costKnownFrom` have been migrated off existing product documents, restore
+in `validProduct()`:
+
+```
+&& !('costPrice' in d)
+&& !('costKnownFrom' in d)
+```
+
+`tests/rules-purchases.test.mjs` asserts the stage-1 behaviour explicitly rather
+than leaving it untested, so those assertions flip back to `false` when stage 2
+lands — a deleted test would not have told anyone the behaviour had changed.
+
+The migration itself is not written. It must clear both fields from every
+product document in every tenant, and it must complete before the rules are
+tightened, not after.
+
 ## L-10 A cashier can write off a customer's debt — **OPEN, detective fix owed**
 
 Raised by an external QA pass (QA-111) on 2026-08-07 and confirmed against the

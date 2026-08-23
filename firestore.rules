@@ -136,17 +136,37 @@ service cloud.firestore {
         && (!('warehouse' in d) || (d.warehouse is string && d.warehouse.size() <= 60))
         && (!('shelf' in d) || (d.shelf is string && d.shelf.size() <= 60))
         && (!('sku' in d) || (d.sku is string && d.sku.size() <= 40))
-        // Cost is REFUSED on a product, not merely unvalidated. validProduct()
-        // has no keys().hasOnly(), so dropping the clause would have left the
-        // field silently permitted -- which is how it would drift back.
-        // Firestore has no field-level read security, and a cashier's POS must
-        // read /products in full -- so any cost stored on this document is
-        // readable by every cashier, which is exactly what the role split in
-        // DESIGN-purchases.md 10 exists to prevent. Cost lives in
-        // /productCosts, which a cashier cannot read at all. Refusing rather
-        // than merely omitting stops it drifting back.
-        && !('costPrice' in d)
-        && !('costKnownFrom' in d)
+        // STAGE 1 OF 2 -- tolerated here, and only here.
+        //
+        // Cost belongs in /productCosts, which a cashier cannot read at all:
+        // Firestore has no field-level read security and a cashier's POS reads
+        // /products in full, so any cost on THIS document is a cost every
+        // cashier can read. That is what DESIGN-purchases.md 10 exists to
+        // prevent, and the destination is still an outright refusal.
+        //
+        // It cannot be refused yet. The deployed client (20260808o) assigns
+        // costPrice = 0 in the numericFields loop of its product form whether
+        // or not the form has the box, so every product it saves carries the
+        // field -- and every product document already in production carries it
+        // too. Refusing it here breaks Add Product, Edit Product, and, because
+        // an update is validated against the RESULTING document, every
+        // owner-driven stock decrement: i.e. selling. Verified against the
+        // emulator with the deployed client's exact payload.
+        //
+        // What this does NOT relax: a cashier or manager still cannot put cost
+        // on a product. That refusal comes from stockMovementKeys() via
+        // validStockMovementShape(), which allows only quantity, sold30,
+        // sold90, updatedAt and movementReason -- so it is untouched by this
+        // clause and stays enforced. Only the owner's own writes tolerate the
+        // legacy field, and only within moneyInRange.
+        //
+        // STAGE 2, once every client is on the new build and costPrice has been
+        // migrated off existing product documents, is to restore:
+        //     && !('costPrice' in d)
+        //     && !('costKnownFrom' in d)
+        // See KNOWN-LIMITATIONS.md L-15.
+        && (!('costPrice' in d) || moneyInRange(d.costPrice))
+        && (!('costKnownFrom' in d) || d.costKnownFrom is timestamp)
         && (!('sellingPrice' in d) || moneyInRange(d.sellingPrice))
         && (!('reorderLevel' in d) || countInRange(d.reorderLevel))
         && (!('expiryDate' in d) || (d.expiryDate is string && d.expiryDate.size() <= 10))

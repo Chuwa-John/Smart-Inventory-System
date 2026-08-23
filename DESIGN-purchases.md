@@ -1304,6 +1304,39 @@ also the reason the module cannot yet serve a busy shop: for a business doing
 
 ---
 
+## 13h. The cost refusal is staged — 2026-08-23
+
+§10's rule is that cost never touches a product document, because a cashier
+reads `/products` in full and Firestore has no field-level read security. B2-a
+implemented that as an outright refusal in `validProduct()`.
+
+**It could not be deployed.** The deployed client assigns `costPrice = 0` on
+every product save, and every product document in production already carries
+the field. Firestore validates an update against the resulting document, so the
+refusal rejects not just Add Product but every owner-driven stock decrement —
+selling. Established by replaying the deployed client's exact payload against
+the candidate ruleset on the emulator, not by reading either.
+
+**Stage 1**, now in `firestore.rules`: the field is tolerated on a product,
+bounded by `moneyInRange` and type-checked, instead of refused. The guarantee
+that actually protects margins is untouched — a cashier or manager still cannot
+write cost onto a product, because that comes from `stockMovementKeys()` via
+`validStockMovementShape()`, a different clause entirely. Only the owner's own
+writes tolerate the legacy field, and neither client ever writes a non-zero
+value into it.
+
+**Stage 2** restores the refusal, after every client is on the new build and a
+migration has cleared the field from existing documents. The migration is not
+written. `tests/rules-purchases.test.mjs` asserts the stage-1 behaviour rather
+than dropping the cases, so stage 2 flips those assertions back rather than
+silently changing what the file claims.
+
+Recorded in full as KNOWN-LIMITATIONS.md L-15, and the deploy ordering it
+implies — rules before client, and never a tightening ahead of the client — is
+now the first thing in OPERATIONS.md's release procedure.
+
+---
+
 ## 14. Test plan
 
 Every phase closes with negative controls: reintroduce the defect, confirm the

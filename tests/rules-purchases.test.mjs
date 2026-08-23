@@ -184,19 +184,55 @@ await check("cashier cannot either", false, () =>
   updateDoc(doc(cashierDb, "users", OWNER, "products", "prodA"), {
     quantity: 82, updatedAt: new Date(), movementReason: "restock", costPrice: 2050
   }));
-// The owner goes through the full product validator, which no longer permits
-// the field at all -- so even the owner cannot put cost back on a product.
-await check("the OWNER cannot write cost onto a product either", false, () =>
+// STAGE 1 OF 2. The owner goes through validProduct(), which TOLERATES the
+// legacy field rather than refusing it -- and must, until the deployed client
+// stops sending it and existing documents have been migrated. See the comment
+// on the clause in firestore.rules and KNOWN-LIMITATIONS.md L-15.
+//
+// This is asserted rather than left untested precisely because it is temporary:
+// when stage 2 lands these two flip back to false, and a test that had simply
+// been deleted would not have told anyone the behaviour changed.
+await check("STAGE 1: the owner's write TOLERATES a legacy costPrice", true, () =>
   setDoc(doc(ownerDb, "users", OWNER, "products", "prodA"), {
     id: "prodA", name: "Body Lotion", category: "Cosmetics", brand: "X", supplier: "Y",
     quantity: 90, storeId: STORE_A, sellingPrice: 3000, createdAt: SEEDED_AT,
     costPrice: 2000
   }));
-await check("...nor costKnownFrom", false, () =>
+await check("STAGE 1: ...and a legacy costKnownFrom", true, () =>
   setDoc(doc(ownerDb, "users", OWNER, "products", "prodA"), {
     id: "prodA", name: "Body Lotion", category: "Cosmetics", brand: "X", supplier: "Y",
     quantity: 90, storeId: STORE_A, sellingPrice: 3000, createdAt: SEEDED_AT,
     costKnownFrom: KNOWN_FROM
+  }));
+// Tolerated is not unvalidated. A tolerated field that accepted anything would
+// be a hole, not a concession.
+await check("but the tolerated costPrice is still bounded", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "products", "prodA"), {
+    id: "prodA", name: "Body Lotion", category: "Cosmetics", brand: "X", supplier: "Y",
+    quantity: 90, storeId: STORE_A, sellingPrice: 3000, createdAt: SEEDED_AT,
+    costPrice: 999999999999
+  }));
+await check("...and must still be a number, not a string", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "products", "prodA"), {
+    id: "prodA", name: "Body Lotion", category: "Cosmetics", brand: "X", supplier: "Y",
+    quantity: 90, storeId: STORE_A, sellingPrice: 3000, createdAt: SEEDED_AT,
+    costPrice: "2000"
+  }));
+await check("...and costKnownFrom must still be a timestamp", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "products", "prodA"), {
+    id: "prodA", name: "Body Lotion", category: "Cosmetics", brand: "X", supplier: "Y",
+    quantity: 90, storeId: STORE_A, sellingPrice: 3000, createdAt: SEEDED_AT,
+    costKnownFrom: "yesterday"
+  }));
+// The thing stage 1 must NOT relax, restated as its own case: the concession is
+// the owner's alone. A till still cannot put a cost where a till can read it.
+await check("STAGE 1 does not let a cashier write cost", false, () =>
+  updateDoc(doc(cashierDb, "users", OWNER, "products", "prodA"), {
+    quantity: 83, updatedAt: new Date(), movementReason: "sale", costPrice: 2050
+  }));
+await check("STAGE 1 does not let a manager write cost", false, () =>
+  updateDoc(doc(managerDb, "users", OWNER, "products", "prodA"), {
+    quantity: 84, updatedAt: new Date(), movementReason: "restock", costPrice: 2050
   }));
 await check("a product with no cost is written normally", true, () =>
   setDoc(doc(ownerDb, "users", OWNER, "products", "prodA"), {

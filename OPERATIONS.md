@@ -23,6 +23,27 @@ Do not enable Firebase Functions, Firebase Storage, or a Firebase billing upgrad
 
 ## Release procedure
 
+> **Rules go out BEFORE the client, and never the other way round.**
+>
+> A hosted release and a `firestore.rules` release are two deploys, and the
+> order is not a preference. The client in a shop's browser is whatever the
+> service worker last cached; the rules are global the instant they land. So:
+>
+> 1. `firebase deploy --only firestore:rules`
+> 2. `firebase deploy --only hosting`
+>
+> Rules first means the old client meets rules that still accept everything it
+> sends. Client first means new clients write to collections the old rules
+> reject — Purchases, Expenses and Profit would fail for whoever reloaded
+> first, while the shop next door is fine.
+>
+> This cuts both ways: **a rules deploy must never tighten anything the
+> deployed client still does.** Checked on 2026-08-23 by replaying the deployed
+> client's exact write payloads against the candidate ruleset on the emulator,
+> which is the only way to know rather than believe. It caught a refusal that
+> would have broken Add Product and owner-driven selling on all eight tenants —
+> see KNOWN-LIMITATIONS.md L-15.
+
 1. Keep the working tree clean and review `git diff --check`.
 2. For every hosted frontend release, increment all of these together:
    - `app.html`: the `app.js?v=...`, `boot.js?v=...` and `styles.css?v=...` values.
