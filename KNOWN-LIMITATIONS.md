@@ -632,7 +632,7 @@ after 2026-08-07.
 
 ---
 
-## L-13 The expenses, purchases and product-cost subscriptions are unbounded — **OPEN**
+## L-13 The expenses, purchases and product-cost subscriptions are unbounded — **BOUNDED 2026-08-23**
 
 Found by an adversarial audit on 2026-08-21, the day the collections shipped,
 and recorded the same day per this file's convention.
@@ -686,6 +686,44 @@ the whole Accounts module; this belongs to the same gate.
 ---
 
 ---
+
+**Bounded 2026-08-23.** The three feeds now carry `orderBy` + `limit`
+(`ACCOUNTS_HISTORY_LIMIT`, 1000), mirroring `SALES_HISTORY_LIMIT`:
+
+- `expenses` and `purchases` order by `createdAt` desc.
+- `productCostHistory` orders by **`effectiveFrom`** desc, not `createdAt` —
+  `effectiveFrom` is the field `costInForceAt()` searches, so the newest N by
+  that field is the window that actually answers the question. Ordering by
+  `createdAt` would let a backdated record fall outside the window while a
+  newer-but-later-dated one stayed in it.
+
+`productCosts` is deliberately left unbounded and there is now a test asserting
+so: it holds one document per product per store, which is catalogue-shaped and
+plateaus, so the L-8 argument for `/products` applies to it unchanged. Bounding
+it would silently drop the cost of whichever products fell outside the window.
+
+**The wrong-cost fear above turns out not to apply, and the reason is worth
+keeping.** `costInForceAt()` returns the latest record *at or before* the sale,
+so when truncation removes a product's older records the lookup finds nothing
+at-or-before and returns `null` — "cost unknown", which the Profit screen
+already reports as an uncosted line. Truncation therefore degrades to *less
+costed*, never *wrongly costed*. That property depends entirely on the
+at-or-before search and on ordering by `effectiveFrom`; change either and the
+original fear becomes real.
+
+**Composite indexes.** The staff branch adds `where("storeId","in",…)` to that
+`orderBy`, which needs a composite index per collection; all three are declared
+in `firestore.indexes.json`. This is the sharp edge: the owner's branch carries
+no `where()` and needs no composite index, so a missing index fails **only for
+staff**, with `failed-precondition`, after passing every test the owner ran.
+`tests/purchases.test.mjs` now asserts that every bounded query has its index
+declared — verified by negative control (removing the expenses index fails
+exactly that assertion and nothing else).
+
+**Still open.** This is a bound, not server-side aggregation. A shop doing 2,000
+transactions a day still outruns a 1,000-record window; the difference is that
+it now truncates predictably and says so rather than streaming everything into
+memory. L-8 and L-11 are unchanged.
 
 ## L-14 A manager cannot make the FIRST transfer into a branch — **OPEN, live on production**
 

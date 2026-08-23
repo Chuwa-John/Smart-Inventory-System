@@ -848,6 +848,43 @@ console.log("\n=== Phase E: the surface, and who may see it ===");
       (src.match(new RegExp(`"${key.replace(/\./g, "\\.")}"`, "g")) || []).length >= 2, true);
   }
 }
+// L-13. Expenses, purchases and cost history are feeds -- they grow with
+// trading volume and never plateau -- so each must be bounded, and each bounded
+// query must have the composite index it needs DECLARED. A bounded query
+// missing its index does not degrade: it fails with failed-precondition, and
+// only for staff accounts, because the owner's branch carries no where() and
+// needs no composite index. That is a bug that reaches production having passed
+// every test the owner ever ran.
+{
+  const indexes = JSON.parse(readFileSync(new URL("../firestore.indexes.json", import.meta.url), "utf8"));
+  const declared = new Set(indexes.indexes.map((i) =>
+    i.collectionGroup + ":" + i.fields.map((f) => f.fieldPath + "@" + f.order).join(",")));
+
+  const feeds = [
+    ["subscribeToExpenses", "expenses", "createdAt"],
+    ["subscribeToPurchases", "purchases", "createdAt"],
+    ["subscribeToProductCostHistory", "productCostHistory", "effectiveFrom"]
+  ];
+
+  for (const [fn, collectionName, field] of feeds) {
+    const source = body("async function " + fn + "(");
+    check(fn + " bounds the feed with a limit",
+      source.includes("limit(ACCOUNTS_HISTORY_LIMIT)"), true);
+    check(fn + " orders by " + field,
+      source.includes('orderBy("' + field + '"'), true);
+    check(collectionName + " declares the (storeId, " + field + ") composite index",
+      declared.has(collectionName + ":storeId@ASCENDING," + field + "@DESCENDING"), true,
+      "the staff branch adds where(storeId in ...) to that orderBy and cannot run without it");
+  }
+
+  // The counterpart, asserted so nobody "fixes" it later: /productCosts holds
+  // one document per product per store, so it is catalogue-shaped and plateaus.
+  // Bounding it would silently drop the cost of whichever products fell outside
+  // the window, which is worse than holding them all.
+  check("productCosts is deliberately NOT bounded",
+    !body("async function subscribeToProductCosts(").includes("limit("), true);
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 process.exit(failed.length ? 1 : 0);

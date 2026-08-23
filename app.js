@@ -5331,7 +5331,7 @@ async function subscribeToExpenses() {
     return;
   }
   try {
-    const { collection, onSnapshot, query, where } = state.firebaseApi.firestore;
+    const { collection, limit, onSnapshot, orderBy, query, where } = state.firebaseApi.firestore;
     const expensesRef = collection(state.db, "users", state.businessOwnerUid, "expenses");
     const queryStoreIds = await resolveQueryStoreIds();
     // Same reasoning as products and services: Firestore rejects an empty `in`
@@ -5341,9 +5341,14 @@ async function subscribeToExpenses() {
       scheduleRenderAll();
       return;
     }
+    // orderBy + where("in") needs a composite index on (storeId asc,
+    // createdAt desc); it is declared in firestore.indexes.json and must be
+    // deployed BEFORE this build reaches a staff account, or their Accounts
+    // screens fail with failed-precondition rather than merely showing less.
     const expensesQuery = queryStoreIds === null
-      ? expensesRef
-      : query(expensesRef, where("storeId", "in", queryStoreIds));
+      ? query(expensesRef, orderBy("createdAt", "desc"), limit(ACCOUNTS_HISTORY_LIMIT))
+      : query(expensesRef, where("storeId", "in", queryStoreIds),
+              orderBy("createdAt", "desc"), limit(ACCOUNTS_HISTORY_LIMIT));
     state.unsubscribeExpenses = onSnapshot(
       expensesQuery,
       (snapshot) => {
@@ -5883,7 +5888,7 @@ async function subscribeToProductCostHistory() {
     return;
   }
   try {
-    const { collection, onSnapshot, query, where } = state.firebaseApi.firestore;
+    const { collection, limit, onSnapshot, orderBy, query, where } = state.firebaseApi.firestore;
     const ref = collection(state.db, "users", state.businessOwnerUid, "productCostHistory");
     const queryStoreIds = await resolveQueryStoreIds();
     if (queryStoreIds !== null && queryStoreIds.length === 0) {
@@ -5891,7 +5896,16 @@ async function subscribeToProductCostHistory() {
       scheduleRenderAll();
       return;
     }
-    const historyQuery = queryStoreIds === null ? ref : query(ref, where("storeId", "in", queryStoreIds));
+    // Ordered by effectiveFrom, not createdAt: effectiveFrom is what
+    // costInForceAt() searches, so the newest N by that field is the window
+    // that actually answers the question. Truncation here is the dangerous
+    // one -- a missing record does not under-report a total, it answers with
+    // the WRONG cost -- so costHistoryCoverageFromMs() below turns a sale
+    // older than the window into "cost unknown" rather than a wrong figure.
+    const historyQuery = queryStoreIds === null
+      ? query(ref, orderBy("effectiveFrom", "desc"), limit(ACCOUNTS_HISTORY_LIMIT))
+      : query(ref, where("storeId", "in", queryStoreIds),
+              orderBy("effectiveFrom", "desc"), limit(ACCOUNTS_HISTORY_LIMIT));
     state.unsubscribeProductCostHistory = onSnapshot(
       historyQuery,
       (snapshot) => {
@@ -5917,7 +5931,7 @@ async function subscribeToPurchases() {
     return;
   }
   try {
-    const { collection, onSnapshot, query, where } = state.firebaseApi.firestore;
+    const { collection, limit, onSnapshot, orderBy, query, where } = state.firebaseApi.firestore;
     const purchasesRef = collection(state.db, "users", state.businessOwnerUid, "purchases");
     const queryStoreIds = await resolveQueryStoreIds();
     if (queryStoreIds !== null && queryStoreIds.length === 0) {
@@ -5926,8 +5940,9 @@ async function subscribeToPurchases() {
       return;
     }
     const purchasesQuery = queryStoreIds === null
-      ? purchasesRef
-      : query(purchasesRef, where("storeId", "in", queryStoreIds));
+      ? query(purchasesRef, orderBy("createdAt", "desc"), limit(ACCOUNTS_HISTORY_LIMIT))
+      : query(purchasesRef, where("storeId", "in", queryStoreIds),
+              orderBy("createdAt", "desc"), limit(ACCOUNTS_HISTORY_LIMIT));
     state.unsubscribePurchases = onSnapshot(
       purchasesQuery,
       (snapshot) => {
@@ -8688,6 +8703,16 @@ const SHIFT_HISTORY_LIMIT = 20;
 // number, and a literal in one place and a comparison in another would drift
 // into accusing cashiers of theft the day someone changed it.
 const SALES_HISTORY_LIMIT = 1000;
+
+// L-13. Expenses, purchases and cost history are FEEDS, not catalogues: they
+// grow monotonically with trading volume and never plateau, which is the same
+// curve as sales and the reason sales has a limit at all. Both screens already
+// filter to one month, so nothing on screen needs the whole history.
+//
+// /productCosts is deliberately NOT bounded by this: it holds one document per
+// product per store, so it is catalogue-shaped and plateaus with the range a
+// shop stocks -- the L-8 argument for /products applies to it unchanged.
+const ACCOUNTS_HISTORY_LIMIT = 1000;
 
 // Units of one product actually sold in a time window, from the sales record.
 //
