@@ -847,9 +847,36 @@ in `validProduct()`:
 than leaving it untested, so those assertions flip back to `false` when stage 2
 lands — a deleted test would not have told anyone the behaviour had changed.
 
-The migration itself is not written. It must clear both fields from every
-product document in every tenant, and it must complete before the rules are
-tightened, not after.
+**The migration is written: `proxy/migrate-strip-product-cost.mjs`** (written
+2026-08-23, not yet run against production). It sweeps
+`collectionGroup("products")` across every tenant, removes only `costPrice` and
+`costKnownFrom`, and touches nothing else.
+
+    node migrate-strip-product-cost.mjs                    # dry run, the default
+    node migrate-strip-product-cost.mjs --tenant=<uid>     # one tenant first
+    node migrate-strip-product-cost.mjs --apply
+    node migrate-strip-product-cost.mjs --verify           # exit 0 only when clean
+
+It needs `FIREBASE_SERVICE_ACCOUNT_KEY_BASE64`, the same variable and encoding
+`proxy/server.js` already uses, and refuses to run without it rather than
+guessing at credentials. It also refuses a service account whose `project_id`
+is not `sanitaryflow-erp` unless `--force-project` is passed.
+
+Verified against the emulator by `proxy/migrate-check.mjs` (10 checks): a dry
+run writes nothing; both fields go; every other field on the document survives;
+an already-clean product is untouched; a second tenant is migrated too; a
+**non-product** document carrying `costPrice` is left alone; `--verify` gates on
+clean; and a second `--apply` is a no-op. That harness refuses to run unless
+`FIRESTORE_EMULATOR_HOST` is set, because it seeds documents.
+
+**The ordering is the whole point, and it is not "run it and tighten".** Old
+clients put the field back. A shop that has not opened the app since the deploy
+is still on the pre-`20260822c` build behind its service worker, and the next
+product edit there re-adds `costPrice: 0`. So: wait until every client has
+updated, run `--apply`, run `--verify`, and only tighten `validProduct()` when
+verify reports clean. If verify is dirty, something is still writing it — find
+that before tightening, because tightening against a live writer is what breaks
+selling.
 
 ## L-10 A cashier can write off a customer's debt — **OPEN, detective fix owed**
 
