@@ -66,6 +66,36 @@ console.log("=== the runbook names the files that actually carry a version ===")
 
   check("app.html is named", bullets.includes("app.html"),
     "it is the file that says which bundle to load");
+
+  // A SHARED asset must carry the SAME stamp on every page that references it.
+  //
+  // This is the hole that let privacy-policy.html and terms.html ship pointing
+  // at styles.css?v=20260808z on 2026-08-23 while app.html had already moved to
+  // 20260822c. Everything above passed: both pages are stamped, both are named
+  // in the runbook, and the working-tree hash check below only ever looks at
+  // app.html. Nothing compared the two values.
+  //
+  // It matters because firebase.json serves **/*.@(js|css) as immutable for a
+  // year. One stamp pointing at two different stylesheets means whoever holds
+  // the old one keeps it until 2027, and the pages that render for a customer
+  // -- the privacy policy and the terms -- are exactly the wrong ones to have
+  // silently drift.
+  for (const asset of ["styles.css", "boot.js", "landing.js"]) {
+    const pattern = new RegExp(asset.replace(".", "\\.") + "\\?v=([0-9a-z]+)", "g");
+    const seen = new Map();
+    for (const page of pages) {
+      const html = readFileSync(new URL(page, ROOT), "utf8");
+      for (const m of html.matchAll(pattern)) {
+        if (!seen.has(m[1])) seen.set(m[1], []);
+        seen.get(m[1]).push(page);
+      }
+    }
+    if (seen.size === 0) continue;
+    check(`${asset} carries one stamp across every page that references it`,
+      seen.size === 1,
+      [...seen.entries()].map(([v, ps]) => `${v}: ${ps.join(", ")}`).join(" | ")
+        + " -- one asset served immutable under two stamps");
+  }
   check("sw.js CACHE_NAME is named", /CACHE_NAME/.test(bullets));
   check("the pages were actually scanned", pages.length >= 4 && stamped.length >= 3,
     `${pages.length} pages, ${stamped.length} stamped`);
