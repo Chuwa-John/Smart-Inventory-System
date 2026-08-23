@@ -151,9 +151,23 @@ await check("cashier CANNOT create a product", false,
   () => setDoc(doc(cashier, "users", OWNER, "products", "p_new"), {
     name: "New", category: "C", brand: "B", supplier: "S", quantity: 1, storeId: STORE_A, createdAt: new Date()
   }));
-await check("manager CANNOT create a product", false,
+// Changed 2026-08-23 by owner decision, closing L-14: a manager's FIRST
+// transfer into a branch that did not yet stock the item was refused, because
+// confirmTransfer() creates the destination product and /products create was
+// owner-only. A manager may now create products in stores they are assigned
+// to. The cashier case directly above is unchanged and is the one that keeps
+// this from being a general widening.
+await check("manager CAN create a product in a store they are assigned to", true,
   () => setDoc(doc(manager, "users", OWNER, "products", "p_new2"), {
     name: "New", category: "C", brand: "B", supplier: "S", quantity: 1, storeId: STORE_A, createdAt: new Date()
+  }));
+await check("...but NOT in a store they are not assigned to", false,
+  () => setDoc(doc(manager, "users", OWNER, "products", "p_new3"), {
+    name: "New", category: "C", brand: "B", supplier: "S", quantity: 1, storeId: "storeC_notAssigned", createdAt: new Date()
+  }));
+await check("...and the product validator still applies to them", false,
+  () => setDoc(doc(manager, "users", OWNER, "products", "p_new4"), {
+    name: "", category: "C", brand: "B", supplier: "S", quantity: 1, storeId: STORE_A, createdAt: new Date()
   }));
 await check("cashier CANNOT write a member doc (privilege escalation)", false,
   () => setDoc(doc(cashier, "users", OWNER, "members", CASHIER), { role: "owner", status: "active", storeIds: ["all"] }));

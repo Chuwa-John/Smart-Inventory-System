@@ -493,6 +493,23 @@ service cloud.firestore {
     // separate manager branch alongside the existing staff branch would have
     // meant a second get() on every cashier restock to decide a question the
     // first get() had already answered.
+    // L-14. /products create was owner-only since 908eb03, which meant a
+    // manager's FIRST transfer into a branch that did not yet stock the item
+    // was refused -- confirmTransfer() creates the destination document, and
+    // the manager could not. Decided by the owner on 2026-08-23: a manager may
+    // create products in stores they are assigned to. Cashiers may not.
+    //
+    // ONE member read, for the same expression-budget reason as
+    // memberMayUpdateProduct() below.
+    function memberMayCreateProduct(ownerUid, storeId) {
+      let path = memberDocPath(ownerUid);
+      let m = exists(path) ? get(path).data : null;
+      return m != null
+        && m.status == "active"
+        && m.role == "manager"
+        && (("all" in m.storeIds) || (storeId in m.storeIds));
+    }
+
     function memberMayUpdateProduct(ownerUid, storeId) {
       let path = memberDocPath(ownerUid);
       let m = exists(path) ? get(path).data : null;
@@ -690,7 +707,12 @@ service cloud.firestore {
     // this costs is already paid by the create rule below, so scoping is
     // effectively free.
     function cashierAuditActions() {
+      // SHIFT_CLOSED sits in the CASHIER list because a cashier closes the
+      // till they opened -- /shifts create is already open to them. A cash
+      // variance is precisely the event an audit trail exists for, and until
+      // 2026-08-23 it was recorded only on the shift document itself.
       return ['SALE_COMPLETED', 'PRODUCT_RESTOCKED', 'PAYMENT_RECORDED', 'CREDIT_LIMIT_EXCEEDED',
+              'SHIFT_CLOSED',
               // Credit extended with no ceiling check at all -- the customer was not
               // visible to this account, or had no limit set (QA-110/QA-120).
               // Cashier-writable because a cashier is who makes that sale.
@@ -738,7 +760,11 @@ service cloud.firestore {
               // Expenses and purchases. `amount` above is reused for both an
               // expense amount and a purchase total; `qtyAdded` and `name` are
               // reused for the units and the product on a purchase.
-              'category', 'expenseId', 'purchaseId'];
+              'category', 'expenseId', 'purchaseId',
+              // Shift close. `variance` is the only signed figure in this list:
+              // a short drawer is negative and moneyInRange() would refuse it,
+              // which is why it is bounded separately below.
+              'shiftId', 'expectedCash', 'countedCash', 'variance'];
     }
 
     function auditStringsBounded() {
@@ -763,7 +789,14 @@ service cloud.firestore {
         // it. The client omits these fields rather than nulling them.
         && (!('category' in d) || (d.category is string && d.category.size() <= 40))
         && (!('expenseId' in d) || (d.expenseId is string && d.expenseId.size() <= 120))
-        && (!('purchaseId' in d) || (d.purchaseId is string && d.purchaseId.size() <= 120));
+        && (!('purchaseId' in d) || (d.purchaseId is string && d.purchaseId.size() <= 120))
+        && (!('shiftId' in d) || (d.shiftId is string && d.shiftId.size() <= 120))
+        && (!('expectedCash' in d) || moneyInRange(d.expectedCash))
+        && (!('countedCash' in d) || moneyInRange(d.countedCash))
+        // Signed on purpose: negative is a short drawer, positive is over, and
+        // refusing either would refuse the entry that matters most.
+        && (!('variance' in d) || (d.variance is number
+            && d.variance >= -1000000000 && d.variance <= 1000000000));
     }
 
     function validAuditLog(allowedActions) {
@@ -826,7 +859,9 @@ service cloud.firestore {
         allow read: if isOwner(userId)
           || (isOwnerOrRole(userId, ["manager", "cashier"])
               && (resource == null || memberCanAccessStore(userId, resource.data.storeId)));
-        allow create: if isOwner(userId) && tenantNotFrozen(userId) && validProduct();
+        allow create: if tenantNotFrozen(userId) && validProduct() && (
+             isOwner(userId)
+          || memberMayCreateProduct(userId, request.resource.data.storeId));
         allow update: if tenantNotFrozen(userId) && (
              (isOwner(userId) && validProduct() && productImmutableFieldsUnchanged())
           || memberMayUpdateProduct(userId, resource.data.storeId));

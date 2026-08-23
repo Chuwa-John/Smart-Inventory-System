@@ -725,7 +725,7 @@ transactions a day still outruns a 1,000-record window; the difference is that
 it now truncates predictably and says so rather than streaming everything into
 memory. L-8 and L-11 are unchanged.
 
-## L-14 A manager cannot make the FIRST transfer into a branch — **OPEN, live on production**
+## L-14 A manager cannot make the FIRST transfer into a branch — **CLOSED 2026-08-23**
 
 Found while building `DESIGN-purchases.md` Phase C on 2026-08-21, and verified
 against the emulator before being written down.
@@ -774,6 +774,20 @@ that branch works for anyone.
 products at all. It is a permissions question, not a technical one.
 
 ---
+
+**Closed 2026-08-23 by owner decision.** `/products` create is no longer
+owner-only: a manager may create a product in a store they are assigned to,
+through `memberMayCreateProduct()` — one member read, the same
+expression-budget shape as `memberMayUpdateProduct()`. A cashier still cannot,
+and that unchanged case is what keeps this from being a general widening.
+
+The product validator applies to a manager exactly as it does to the owner, so
+this grants a role, not an exemption. Verified against the emulator: a manager
+creates in an assigned store, is refused in a store they are not assigned to,
+and is refused an invalid product. `tests/rules-workflow.test.mjs` carried
+`"manager CANNOT create a product"` and now carries the three cases above —
+flipped and annotated rather than deleted, so the change is visible to whoever
+reads it next.
 
 ## L-15 Legacy `costPrice` on product documents — **OPEN, blocks the cost refusal**
 

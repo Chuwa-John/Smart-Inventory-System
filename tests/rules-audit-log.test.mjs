@@ -92,6 +92,14 @@ console.log("\n=== every action app.js writes is accepted from the role that wri
 const CASHIER_ACTIONS = [
   ["SALE_COMPLETED", { total: 1000, paymentMethod: "cash", itemCount: 2, discountType: "none", discountAmount: 0 }],
   ["PRODUCT_RESTOCKED", { productId: "p1", name: "Sugar", qtyAdded: 5 }],
+  // Added 2026-08-23. A cashier closes the till they opened, so this belongs
+  // in the cashier list. The variance here is NEGATIVE on purpose: a short
+  // drawer is the entry that matters most, and moneyInRange() -- which every
+  // other money field in this file uses -- would have refused it.
+  ["SHIFT_CLOSED", {
+    shiftId: "shift1", storeId: STORE_A,
+    expectedCash: 24000, countedCash: 20000, variance: -4000
+  }],
   ["PAYMENT_RECORDED", { customerId: "c1", amount: 500, method: "cash", storeId: STORE_A }],
   ["CREDIT_LIMIT_EXCEEDED", {
     customerId: "c1", customerName: "Asha", limit: 1000, previousBalance: 900,

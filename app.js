@@ -9399,6 +9399,27 @@ async function closeShift(countedCash, note) {
       });
       transaction.update(storeRef, { currentShiftId: null });
     });
+    // The variance is a cash discrepancy, and until 2026-08-23 it existed only
+    // on the shift document. Written after the transaction commits, and in its
+    // own try: a failed audit write must not undo a close that already
+    // succeeded, which is the same shape every other audit site here uses.
+    try {
+      const { collection, doc: auditDoc, setDoc, serverTimestamp: stamp } = state.firebaseApi.firestore;
+      const entry = {
+        action: "SHIFT_CLOSED",
+        shiftId: shift.id,
+        storeId: shift.storeId,
+        expectedCash: totals.expected,
+        countedCash: counted,
+        variance,
+        createdAt: stamp()
+      };
+      if (state.user?.uid) entry.uid = state.user.uid;
+      await setDoc(auditDoc(collection(state.db, "users", state.businessOwnerUid, "auditLogs")), entry);
+    } catch (auditError) {
+      console.warn(auditError);
+    }
+
     showToast(variance === 0
       ? t("toast.shiftBalanced")
       : t("toast.shiftVariance", {
