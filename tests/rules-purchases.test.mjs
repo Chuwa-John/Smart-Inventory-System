@@ -426,6 +426,31 @@ await check("an oversized supplier TIN is refused", false, () =>
 await check("an oversized note is refused", false, () =>
   setDoc(doc(ownerDb, "users", OWNER, "purchases", "vat5"), pur(OWNER, { note: "x".repeat(201) })));
 
+// The VAT printed on the supplier's receipt. DESIGN-vat.md: captured rather
+// than derived as 18/118, because deriving assumes the whole basket was
+// standard-rated and much Tanzanian food is exempt -- so deriving would
+// overstate a CLAIM, and an overclaim is an underpayment.
+await check("a purchase may carry the VAT shown on its receipt", true, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "purchases", "vat6"),
+    pur(OWNER, { totalPaid: 118000, unitCost: 11800, quantity: 10, vatAmount: 18000 })));
+// The one that matters, and the reason it is bounded in the rules and not only
+// in the client: a figure above the total is a typo, and filing it is an
+// overclaim.
+await check("VAT above the total paid is refused", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "purchases", "vat7"),
+    pur(OWNER, { totalPaid: 118000, unitCost: 11800, quantity: 10, vatAmount: 200000 })));
+await check("a negative VAT amount is refused", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "purchases", "vat8"),
+    pur(OWNER, { totalPaid: 118000, unitCost: 11800, quantity: 10, vatAmount: -1 })));
+await check("a VAT amount that is not a number is refused", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "purchases", "vat9"),
+    pur(OWNER, { totalPaid: 118000, unitCost: 11800, quantity: 10, vatAmount: "18000" })));
+// Absent is the normal case: most purchases have no fiscal receipt, and an
+// unregistered shop never sees the field at all.
+await check("a purchase with no VAT amount is still valid", true, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "purchases", "vat10"),
+    pur(OWNER, { totalPaid: 118000, unitCost: 11800, quantity: 10 })));
+
 console.log("\n=== the batch does not move ===");
 await check("owner cannot move a purchase to another branch", false, () =>
   setDoc(doc(ownerDb, "users", OWNER, "purchases", "purA"), pur(OWNER, { storeId: STORE_B })));

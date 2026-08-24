@@ -28,7 +28,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260823d" />
+    <link rel="stylesheet" href="./styles.css?v=20260824a" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#0b0d10" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -48,7 +48,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260823d"></script>
+    <script type="module" src="./boot.js?v=20260824a"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -103,6 +103,12 @@
                  already sees revenue, shift variance and staff performance
                  without it. Decided by the owner 2026-08-21. -->
             <button class="nav-item" data-view="profit" data-i18n="nav.profit">Profit</button>
+            <!-- Manager and owner, unlike Profit. A VAT record states what was
+                 charged and what may be reclaimed; it does not expose a buying
+                 price against a selling price, so it does not carry the
+                 inference Profit does. Hidden entirely for a business that is
+                 not VAT registered -- renderVatNav(). -->
+            <button class="nav-item" data-view="vat" data-i18n="nav.vat" hidden>VAT</button>
           </div>
           <button class="nav-item" data-view="reports" data-i18n="nav.reports">Reports</button>
           <button class="nav-item" data-view="ai" data-i18n="nav.ai">AI Advisor</button>
@@ -420,6 +426,51 @@
           <p class="muted" id="profitNote"></p>
         </section>
 
+        <section class="view" id="vat">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow" data-i18n="vatRecord.eyebrow">What you owe, and what you can claim back</p>
+              <h1 data-i18n="vatRecord.title">VAT record</h1>
+            </div>
+            <label style="flex-direction:row;align-items:center;gap:6px;color:inherit">
+              <span data-i18n="vatRecord.monthLabel">Month</span>
+              <input id="vatMonthInput" type="month" autocomplete="off" />
+            </label>
+          </div>
+
+          <p class="muted" data-i18n="vatRecord.intro">Output VAT is what you charged customers. Input VAT is what you paid suppliers and can reclaim, where you hold a fiscal receipt for it. This is a record to check before you file, not a return.</p>
+
+          <div class="kpi-grid" id="vatGrid"></div>
+          <p class="muted" id="vatNote"></p>
+
+          <!-- The money-losing case, and the reason this screen earns its
+               place: receipts the shop HOLDS, still inside the six-month
+               window, with no VAT recorded against them. Nothing else in the
+               app would ever mention these, and they stop being claimable on a
+               date nobody is watching. -->
+          <div class="card" id="vatExpiringCard" hidden>
+            <h2 data-i18n="vatRecord.expiringTitle">Claims you are about to lose</h2>
+            <p class="muted" data-i18n="vatRecord.expiringHint">You have the receipt, but no VAT recorded against it. Add it before the six-month window closes.</p>
+            <div class="table-wrap"><table><thead><tr>
+              <th data-i18n="vatRecord.colDate">Receipt date</th>
+              <th data-i18n="vatRecord.colProduct">Product</th>
+              <th data-i18n="vatRecord.colPaid">Total paid</th>
+              <th data-i18n="vatRecord.colExpires">Claim closes</th>
+            </tr></thead><tbody id="vatExpiringBody"></tbody></table></div>
+          </div>
+
+          <div class="card" id="vatBlockedCard" hidden>
+            <h2 data-i18n="vatRecord.blockedTitle">Spending you cannot reclaim this month</h2>
+            <p class="muted" data-i18n="vatRecord.blockedHint">Shown so you can see why the claim is smaller than the spending, and what to ask for next time.</p>
+            <div class="table-wrap"><table><thead><tr>
+              <th data-i18n="vatRecord.colDate">Receipt date</th>
+              <th data-i18n="vatRecord.colProduct">Product</th>
+              <th data-i18n="vatRecord.colPaid">Total paid</th>
+              <th data-i18n="vatRecord.colReason">Why not</th>
+            </tr></thead><tbody id="vatBlockedBody"></tbody></table></div>
+          </div>
+        </section>
+
         <section class="view" id="purchases">
           <div class="page-title">
             <div>
@@ -692,6 +743,11 @@
               <div>
                 <p class="eyebrow" data-i18n="report.vatTitle">VAT summary</p>
                 <h2 data-i18n="report.vatDue">VAT</h2>
+            <!-- Reports keeps the operational view; the formal monthly
+                 record lives in Accounts. One computation, one place --
+                 two screens computing the same statutory figure is how
+                 they come to disagree. Decided 2026-08-24. -->
+            <p class="muted"><button class="link-button" type="button" id="openVatRecordLink" data-i18n="report.vatRecordLink">Open the full VAT record in Accounts</button></p>
               </div>
               <strong id="vatReportDue"></strong>
             </div>
@@ -935,6 +991,11 @@
             <label><span data-i18n="product.receiptLabel">Fiscal receipt number (optional)</span>
               <input id="productReceiptInput" type="text" maxlength="60" autocomplete="off" />
             </label>
+            <label><span data-i18n="product.vatAmountLabel">VAT shown on the receipt</span>
+              <input id="productVatAmountInput" type="number" min="0" step="1" autocomplete="off" />
+              <span class="field-error" id="productVatAmountError"></span>
+              <span class="muted" data-i18n="product.vatAmountHint">Copy this from the receipt. It is what you can reclaim.</span>
+            </label>
             <label><span data-i18n="product.receiptDateLabel">Date on the receipt</span>
               <input id="productReceiptDateInput" type="date" />
               <span class="muted" data-i18n="product.receiptDateHint">The VAT claim window runs from this date, not the day you record it.</span>
@@ -1127,6 +1188,14 @@
             </label>
             <label><span data-i18n="restock.receiptLabel">Fiscal receipt number (optional)</span>
               <input id="restockReceiptInput" type="text" maxlength="60" autocomplete="off" />
+            </label>
+            <!-- Copied off the receipt, not derived. See DESIGN-vat.md: the
+                 supplier already apportioned a mixed basket, and 18/118 would
+                 overstate a claim on anything exempt or zero-rated. -->
+            <label><span data-i18n="restock.vatAmountLabel">VAT shown on the receipt</span>
+              <input id="restockVatAmountInput" type="number" min="0" step="1" autocomplete="off" />
+              <span class="field-error" id="restockVatAmountError"></span>
+              <span class="muted" data-i18n="restock.vatAmountHint">Copy this from the receipt. It is what you can reclaim.</span>
             </label>
             <label><span data-i18n="restock.receiptDateLabel">Date on the receipt</span>
               <input id="restockReceiptDateInput" type="date" />
@@ -1407,6 +1476,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260823d"></script>
+    <script type="module" src="./app.js?v=20260824a"></script>
   </body>
 </html>

@@ -266,7 +266,15 @@ service cloud.firestore {
       return d.keys().hasOnly(['storeId', 'productId', 'productName', 'quantity',
                                'totalPaid', 'unitCost', 'recordedByUid', 'createdAt',
                                'supplierName', 'supplierTin', 'receiptNumber',
-                               'receiptDate', 'hasFiscalReceipt', 'note'])
+                               'receiptDate', 'hasFiscalReceipt', 'note',
+                               // The VAT printed on the supplier's fiscal
+                               // receipt. DESIGN-vat.md: captured, not derived
+                               // -- 18/118 assumes the whole basket was
+                               // standard-rated, and a great deal of Tanzanian
+                               // food is exempt, so deriving it would overstate
+                               // a CLAIM. That is the direction that earns a
+                               // penalty rather than a refund.
+                               'vatAmount'])
         && d.storeId is string && d.storeId.size() > 0 && d.storeId.size() <= 120
         && d.productId is string && d.productId.size() > 0 && d.productId.size() <= 120
         && d.productName is string && d.productName.size() > 0 && d.productName.size() <= 120
@@ -313,7 +321,11 @@ service cloud.firestore {
         && (!('receiptNumber' in d) || (d.receiptNumber is string && d.receiptNumber.size() <= 60))
         && (!('receiptDate' in d) || d.receiptDate is timestamp)
         && (!('hasFiscalReceipt' in d) || d.hasFiscalReceipt is bool)
-        && (!('note' in d) || (d.note is string && d.note.size() <= 200));
+        && (!('note' in d) || (d.note is string && d.note.size() <= 200))
+        // A claim can never exceed what was paid. Enforced here as well as in
+        // the client because this figure is filed with a tax authority: an
+        // amount above the total is a typo, and an overclaim is an underpayment.
+        && (!('vatAmount' in d) || (moneyInRange(d.vatAmount) && d.vatAmount <= d.totalPaid));
     }
 
     function validPurchaseCreate() {

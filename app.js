@@ -380,6 +380,35 @@ const DICTIONARY = {
     "control.revenueToday": "Revenue today",
     "control.revenueMonth": "Revenue month to date",
     "nav.accounts": "Accounts",
+    "nav.vat": "VAT",
+    "report.vatRecordLink": "Open the full VAT record in Accounts",
+    "vatRecord.eyebrow": "What you owe, and what you can claim back",
+    "vatRecord.title": "VAT record",
+    "vatRecord.monthLabel": "Month",
+    "vatRecord.intro": "Output VAT is what you charged customers. Input VAT is what you paid suppliers and can reclaim, where you hold a fiscal receipt for it. This is a record to check before you file, not a return.",
+    "vatRecord.output": "Output VAT",
+    "vatRecord.outputNote": "Charged on {count} sales this month",
+    "vatRecord.input": "Input VAT you can reclaim",
+    "vatRecord.inputNote": "From {count} purchases with a fiscal receipt",
+    "vatRecord.net": "Net payable",
+    "vatRecord.netNote": "Output VAT less what you can reclaim",
+    "vatRecord.netCreditNote": "You reclaimed more than you charged this month",
+    "vatRecord.refundsNotNetted": "Output VAT does not yet reduce for refunds, so it is higher than the true figure. {amount} was refunded this month — see KNOWN-LIMITATIONS L-12.",
+    "vatRecord.outsideWindow": "This device can only see records back to {date}, so this month cannot be totalled in full. A VAT figure that is too low is the dangerous one, so it is not shown. Choose a more recent month, or narrow to one branch.",
+    "vatRecord.expiringTitle": "Claims you are about to lose",
+    "vatRecord.expiringHint": "You have the receipt, but no VAT recorded against it. Add it before the six-month window closes.",
+    "vatRecord.blockedTitle": "Spending you cannot reclaim this month",
+    "vatRecord.blockedHint": "Shown so you can see why the claim is smaller than the spending, and what to ask for next time.",
+    "vatRecord.colDate": "Receipt date",
+    "vatRecord.colProduct": "Product",
+    "vatRecord.colPaid": "Total paid",
+    "vatRecord.colExpires": "Claim closes",
+    "vatRecord.colReason": "Why not",
+    "vatRecord.reason.noReceipt": "No fiscal receipt — ask the supplier for one",
+    "vatRecord.reason.noReceiptDate": "No date recorded from the receipt",
+    "vatRecord.reason.noVatAmount": "VAT not recorded from the receipt",
+    "vatRecord.reason.expired": "The six-month claim window has closed",
+    "vatRecord.reason.exceedsTotal": "Recorded VAT is more than the amount paid",
     "nav.profit": "Profit",
     "profit.eyebrow": "What the shop kept",
     "profit.title": "Profit",
@@ -436,6 +465,9 @@ const DICTIONARY = {
     "restock.totalPaidInvalid": "Enter what you paid, or leave it blank.",
     "restock.unitCostHint": "That works out to {value} each.",
     "restock.supplierLabel": "Supplier (optional)",
+    "restock.vatAmountLabel": "VAT shown on the receipt",
+    "restock.vatAmountHint": "Copy this from the receipt. It is what you can reclaim.",
+    "restock.vatAmountInvalid": "The VAT cannot be more than the total you paid.",
     "restock.receiptLabel": "Fiscal receipt number (optional)",
     "restock.receiptHint": "The VAT claim window runs from this date, not the day you record it.",
     "restock.supplierTinLabel": "Supplier TIN (optional)",
@@ -569,6 +601,9 @@ const DICTIONARY = {
     "ai.eyebrow": "Smart insights", "ai.title": "Ask About Your Business",
     "ai.questionPlaceholder": "Ask about your inventory, stock levels, sales, or forecasts...",
     "ai.askButton": "Ask AI Advisor", "ai.conversation": "Conversation", "ai.clear": "Clear",
+    "product.vatAmountLabel": "VAT shown on the receipt",
+    "product.vatAmountHint": "Copy this from the receipt. It is what you can reclaim.",
+    "product.vatAmountInvalid": "The VAT cannot be more than the total you paid.",
     "product.costHeading": "What you paid for this stock",
     "product.costHint": "Optional. If you know what this stock cost you, record it here and profit tracking works from day one. Leave it blank and you can add it on the first restock instead.",
     "product.totalPaidLabel": "Total paid for this stock (optional)",
@@ -1262,6 +1297,35 @@ const DICTIONARY = {
     "control.revenueToday": "Mapato leo",
     "control.revenueMonth": "Mapato mwezi hadi leo",
     "nav.accounts": "Hesabu",
+    "nav.vat": "VAT",
+    "report.vatRecordLink": "Fungua kumbukumbu kamili ya VAT katika Accounts",
+    "vatRecord.eyebrow": "Unachodaiwa, na unachoweza kudai kurudishiwa",
+    "vatRecord.title": "Kumbukumbu ya VAT",
+    "vatRecord.monthLabel": "Mwezi",
+    "vatRecord.intro": "VAT ya mauzo ni uliyowatoza wateja. VAT ya manunuzi ni uliyolipa wasambazaji na unaweza kudai kurudishiwa, pale ulipo na risiti ya kodi. Hii ni kumbukumbu ya kukagua kabla ya kuwasilisha, si fomu ya kuwasilisha.",
+    "vatRecord.output": "VAT ya mauzo",
+    "vatRecord.outputNote": "Ilitozwa kwenye mauzo {count} mwezi huu",
+    "vatRecord.input": "VAT ya manunuzi unayoweza kudai",
+    "vatRecord.inputNote": "Kutoka manunuzi {count} yenye risiti ya kodi",
+    "vatRecord.net": "Kiasi cha kulipa",
+    "vatRecord.netNote": "VAT ya mauzo ukiondoa unayoweza kudai",
+    "vatRecord.netCreditNote": "Ulidai zaidi ya ulivyotoza mwezi huu",
+    "vatRecord.refundsNotNetted": "VAT ya mauzo bado haipunguzwi kwa marejesho, hivyo ni kubwa kuliko takwimu halisi. {amount} yalirejeshwa mwezi huu — angalia KNOWN-LIMITATIONS L-12.",
+    "vatRecord.outsideWindow": "Kifaa hiki kinaona kumbukumbu hadi {date} pekee, hivyo mwezi huu hauwezi kujumlishwa kikamilifu. Takwimu ndogo kuliko halisi ndiyo hatari, hivyo haionyeshwi. Chagua mwezi wa karibuni, au chagua tawi moja.",
+    "vatRecord.expiringTitle": "Madai unayokaribia kupoteza",
+    "vatRecord.expiringHint": "Una risiti, lakini hujaandika VAT yake. Iandike kabla ya miezi sita kuisha.",
+    "vatRecord.blockedTitle": "Matumizi usiyoweza kudai mwezi huu",
+    "vatRecord.blockedHint": "Yanaonyeshwa ili uone kwa nini dai ni dogo kuliko matumizi, na uombe nini mara ijayo.",
+    "vatRecord.colDate": "Tarehe ya risiti",
+    "vatRecord.colProduct": "Bidhaa",
+    "vatRecord.colPaid": "Jumla iliyolipwa",
+    "vatRecord.colExpires": "Dai linafungwa",
+    "vatRecord.colReason": "Kwa nini hapana",
+    "vatRecord.reason.noReceipt": "Hakuna risiti ya kodi — mwombe msambazaji",
+    "vatRecord.reason.noReceiptDate": "Hakuna tarehe iliyoandikwa kutoka kwenye risiti",
+    "vatRecord.reason.noVatAmount": "VAT haijaandikwa kutoka kwenye risiti",
+    "vatRecord.reason.expired": "Muda wa miezi sita wa kudai umeisha",
+    "vatRecord.reason.exceedsTotal": "VAT iliyoandikwa ni kubwa kuliko kiasi kilicholipwa",
     "nav.profit": "Faida",
     "profit.eyebrow": "Kilichobaki",
     "profit.title": "Faida",
@@ -1318,6 +1382,9 @@ const DICTIONARY = {
     "restock.totalPaidInvalid": "Weka ulicholipa, au iache wazi.",
     "restock.unitCostHint": "Hiyo inakuwa {value} kila kimoja.",
     "restock.supplierLabel": "Msambazaji (si lazima)",
+    "restock.vatAmountLabel": "VAT iliyoonyeshwa kwenye risiti",
+    "restock.vatAmountHint": "Nakili kutoka kwenye risiti. Hiyo ndiyo unayoweza kudai.",
+    "restock.vatAmountInvalid": "VAT haiwezi kuzidi jumla uliyolipa.",
     "restock.receiptLabel": "Namba ya risiti ya kodi (si lazima)",
     "restock.receiptHint": "Muda wa kudai VAT huanza tarehe hii, si siku unayorekodi.",
     "restock.supplierTinLabel": "TIN ya msambazaji (si lazima)",
@@ -1451,6 +1518,9 @@ const DICTIONARY = {
     "ai.eyebrow": "Ufahamu Mahiri", "ai.title": "Uliza Kuhusu Biashara Yako",
     "ai.questionPlaceholder": "Uliza kuhusu hisa, kiwango cha bidhaa, mauzo, au utabiri...",
     "ai.askButton": "Uliza Mshauri wa AI", "ai.conversation": "Mazungumzo", "ai.clear": "Futa",
+    "product.vatAmountLabel": "VAT iliyoonyeshwa kwenye risiti",
+    "product.vatAmountHint": "Nakili kutoka kwenye risiti. Hiyo ndiyo unayoweza kudai.",
+    "product.vatAmountInvalid": "VAT haiwezi kuzidi jumla uliyolipa.",
     "product.costHeading": "Ulicholipa kwa hisa hii",
     "product.costHint": "Si lazima. Ukijua hisa hii ilikugharimu kiasi gani, iandike hapa na ufuatiliaji wa faida utaanza tangu siku ya kwanza. Ukiacha wazi, unaweza kuiongeza wakati wa kujaza hisa mara ya kwanza.",
     "product.totalPaidLabel": "Jumla uliyolipa kwa hisa hii (si lazima)",
@@ -6042,6 +6112,224 @@ async function deletePurchase(purchaseId) {
 //
 // So gross and net are never summed into one headline, and this function reports
 // what it could not see rather than quietly leaving it out.
+// Input VAT is a CLAIM, and a claim has conditions. This returns why a purchase
+// cannot be claimed as well as whether it can, because an owner who sees a
+// claim smaller than their spending needs to know which receipts cost them it.
+//
+// The four conditions are in DESIGN-vat.md. Three are checked here; the fourth
+// -- that the purchase is on or after registration -- enforces itself, because
+// the VAT amount field is only ever shown to a registered business, so a
+// purchase from before registration simply carries no vatAmount.
+const INPUT_VAT_WINDOW_MONTHS = 6;
+
+function inputVatClaimExpiresAt(receiptDate) {
+  if (!(receiptDate instanceof Date) || Number.isNaN(receiptDate.getTime())) return null;
+  const expiry = new Date(receiptDate.getTime());
+  expiry.setMonth(expiry.getMonth() + INPUT_VAT_WINDOW_MONTHS);
+  return expiry;
+}
+
+function purchaseReceiptDate(purchase) {
+  const raw = purchase?.receiptDate;
+  if (!raw) return null;
+  if (raw.toDate) return raw.toDate();
+  if (raw instanceof Date) return raw;
+  return null;
+}
+
+// Ordered deliberately: the reason returned is the FIRST thing the shop would
+// have to fix, so "ask the supplier for a fiscal receipt" outranks "type in the
+// VAT" -- there is no point typing a figure off a receipt that does not exist.
+function inputVatClaimStatus(purchase, nowMs) {
+  const amount = safeNumber(purchase?.vatAmount);
+  if (!purchase?.hasFiscalReceipt) return { claimable: false, reason: "noReceipt", amount: 0 };
+  const receiptDate = purchaseReceiptDate(purchase);
+  if (!receiptDate) return { claimable: false, reason: "noReceiptDate", amount: 0 };
+  const expiresAt = inputVatClaimExpiresAt(receiptDate);
+  if (expiresAt && Number.isFinite(nowMs) && expiresAt.getTime() < nowMs) {
+    return { claimable: false, reason: "expired", amount: 0, expiresAt };
+  }
+  if (!(amount > 0)) return { claimable: false, reason: "noVatAmount", amount: 0, expiresAt };
+  // A claim can never exceed what was paid. A figure above it is a typo, and
+  // claiming it would be an overclaim on a filed return.
+  if (amount > safeNumber(purchase.totalPaid)) {
+    return { claimable: false, reason: "exceedsTotal", amount: 0, expiresAt };
+  }
+  return { claimable: true, reason: null, amount, expiresAt };
+}
+
+// The period record. Output is what was charged, input is what may be reclaimed,
+// and the difference is what the business owes.
+function summariseVatPeriod({
+  sales, purchases, monthKey, vatRegistered,
+  salesCoverageFromMs, purchasesCoverageFromMs, nowMs, expirySoonDays = 60
+}) {
+  const [year, month] = String(monthKey || "").split("-").map(Number);
+  const periodStart = (year && month) ? new Date(year, month - 1, 1, 0, 0, 0) : null;
+
+  // L-11 on both sides. A period that begins before either loaded window would
+  // total to LESS than was traded -- and a VAT return that is too low is the
+  // dangerous direction, because it is filed.
+  const outsideWindow = Boolean(periodStart && (
+    (salesCoverageFromMs !== null && salesCoverageFromMs !== undefined
+      && periodStart.getTime() < salesCoverageFromMs)
+    || (purchasesCoverageFromMs !== null && purchasesCoverageFromMs !== undefined
+      && periodStart.getTime() < purchasesCoverageFromMs)
+  ));
+
+  const monthSales = (sales || []).filter((sale) => {
+    const at = saleTimestamp(sale);
+    return at && !sale.voided ? localMonthKey(at) === monthKey : false;
+  });
+
+  const outputVat = monthSales.reduce((sum, sale) => sum + safeNumber(sale.taxTotal), 0);
+  // L-12: refunds do not reduce the VAT owed on them, so output is
+  // conservatively HIGH. Surfaced rather than buried -- the screen names this
+  // so whoever files can see the size of the discrepancy.
+  const refundsNotNetted = monthSales.reduce((sum, sale) => sum + safeNumber(sale.refundedAmount), 0);
+
+  // A purchase belongs to the period its RECEIPT is dated in, not the day it
+  // was typed in. RESEARCH-accounts.md 5.3 -- the window runs from the receipt.
+  const all = purchases || [];
+  const inPeriod = all.filter((p) => {
+    const d = purchaseReceiptDate(p);
+    return d ? localMonthKey(d) === monthKey : false;
+  });
+
+  let inputVat = 0;
+  const blocked = [];
+  for (const p of inPeriod) {
+    const status = inputVatClaimStatus(p, nowMs);
+    if (status.claimable) inputVat += status.amount;
+    else blocked.push({ purchase: p, reason: status.reason });
+  }
+
+  // The money-losing case, and the reason this screen is worth building: a
+  // receipt the shop HAS, inside a window that is still open, with no VAT
+  // recorded against it. Nothing else in the app would ever mention it, and it
+  // silently stops being claimable on a date nobody is watching.
+  const soonMs = Number.isFinite(nowMs) ? nowMs + expirySoonDays * 86400000 : null;
+  const expiringClaims = all
+    .map((p) => ({ purchase: p, status: inputVatClaimStatus(p, nowMs) }))
+    .filter(({ status }) => status.reason === "noVatAmount" && status.expiresAt
+      && soonMs !== null && status.expiresAt.getTime() <= soonMs)
+    .sort((a, b) => a.status.expiresAt.getTime() - b.status.expiresAt.getTime());
+
+  return {
+    monthKey,
+    vatRegistered,
+    outsideWindow,
+    outputVat,
+    refundsNotNetted,
+    salesCount: monthSales.length,
+    inputVat,
+    claimedCount: inPeriod.length - blocked.length,
+    blocked,
+    expiringClaims,
+    netPayable: outputVat - inputVat
+  };
+}
+
+function purchasesCoverageFromMs() {
+  const list = state.purchases || [];
+  if (list.length < ACCOUNTS_HISTORY_LIMIT) return null;
+  let oldest = null;
+  for (const p of list) {
+    const at = p.createdAt?.toDate ? p.createdAt.toDate().getTime() : null;
+    if (at === null) continue;
+    if (oldest === null || at < oldest) oldest = at;
+  }
+  return oldest;
+}
+
+function renderVatNav() {
+  const item = qs('.nav-item[data-view="vat"]');
+  // Hidden outright for a business that does not collect VAT. DESIGN-vat.md
+  // decision 4: an unregistered duka must not be shown a scheme it is not in.
+  if (item) item.hidden = !vatSettings().registered || !isManagerOrOwnerRole();
+}
+
+function renderVatRecord() {
+  const view = qs("#vat");
+  const grid = qs("#vatGrid");
+  const note = qs("#vatNote");
+  if (!view || !grid || !note) return;
+  const expiringCard = qs("#vatExpiringCard");
+  const blockedCard = qs("#vatBlockedCard");
+
+  if (!isManagerOrOwnerRole() || !vatSettings().registered) {
+    grid.innerHTML = "";
+    note.textContent = "";
+    if (expiringCard) expiringCard.hidden = true;
+    if (blockedCard) blockedCard.hidden = true;
+    return;
+  }
+
+  const input = qs("#vatMonthInput");
+  if (input && !input.value) input.value = localMonthKey(new Date());
+  const monthKey = input?.value || localMonthKey(new Date());
+
+  const r = summariseVatPeriod({
+    sales: state.sales,
+    purchases: state.purchases,
+    monthKey,
+    vatRegistered: true,
+    salesCoverageFromMs: salesCoverageFromMs(),
+    purchasesCoverageFromMs: purchasesCoverageFromMs(),
+    nowMs: Date.now()
+  });
+
+  // Refuses rather than under-reporting. A VAT return computed from a partial
+  // window is too LOW, and that is the direction that gets filed and then
+  // corrected by someone else.
+  if (r.outsideWindow) {
+    grid.innerHTML = "";
+    if (expiringCard) expiringCard.hidden = true;
+    if (blockedCard) blockedCard.hidden = true;
+    note.textContent = t("vatRecord.outsideWindow", {
+      date: new Date(salesCoverageFromMs() || purchasesCoverageFromMs()).toLocaleDateString()
+    });
+    return;
+  }
+
+  grid.innerHTML = [
+    controlTile(t("vatRecord.output"), money(r.outputVat), "",
+      t("vatRecord.outputNote", { count: String(r.salesCount) })),
+    controlTile(t("vatRecord.input"), money(r.inputVat), "accent",
+      t("vatRecord.inputNote", { count: String(r.claimedCount) })),
+    controlTile(t("vatRecord.net"), money(r.netPayable),
+      r.netPayable >= 0 ? "" : "accent",
+      r.netPayable >= 0 ? t("vatRecord.netNote") : t("vatRecord.netCreditNote"))
+  ].join("");
+
+  // L-12, disclosed rather than buried. The output figure does not net refunds,
+  // so it is conservatively HIGH -- and whoever files should see by how much
+  // rather than meet it in an audit.
+  note.textContent = r.refundsNotNetted > 0
+    ? t("vatRecord.refundsNotNetted", { amount: money(r.refundsNotNetted) })
+    : "";
+
+  const expiringRows = r.expiringClaims.map(({ purchase, status }) => `<tr>
+    <td>${esc(purchaseReceiptDate(purchase)?.toLocaleDateString() || "")}</td>
+    <td>${esc(purchase.productName || "")}</td>
+    <td>${esc(money(purchase.totalPaid))}</td>
+    <td>${esc(status.expiresAt?.toLocaleDateString() || "")}</td>
+  </tr>`).join("");
+  if (expiringCard) expiringCard.hidden = expiringRows.length === 0;
+  const expiringBody = qs("#vatExpiringBody");
+  if (expiringBody) expiringBody.innerHTML = expiringRows;
+
+  const blockedRows = r.blocked.map(({ purchase, reason }) => `<tr>
+    <td>${esc(purchaseReceiptDate(purchase)?.toLocaleDateString() || "")}</td>
+    <td>${esc(purchase.productName || "")}</td>
+    <td>${esc(money(purchase.totalPaid))}</td>
+    <td>${esc(t("vatRecord.reason." + reason))}</td>
+  </tr>`).join("");
+  if (blockedCard) blockedCard.hidden = blockedRows.length === 0;
+  const blockedBody = qs("#vatBlockedBody");
+  if (blockedBody) blockedBody.innerHTML = blockedRows;
+}
+
 function summariseProfit({ sales, costIndex, expenses, monthKey, coverageFromMs, vatRegistered }) {
   const monthSales = (sales || []).filter((sale) => {
     const at = saleTimestamp(sale);
@@ -6956,7 +7244,8 @@ function renderProductCostFields(isEdit) {
   if (receiptFields) receiptFields.hidden = isEdit || !canRecordCost() || !vatSettings().registered;
   const hasReceipt = qs("#productHasReceiptInput");
   if (hasReceipt) hasReceipt.checked = false;
-  for (const id of ["#productTotalPaidInput", "#productReceiptInput", "#productReceiptDateInput"]) {
+  for (const id of ["#productTotalPaidInput", "#productReceiptInput", "#productReceiptDateInput",
+                    "#productVatAmountInput"]) {
     const node = qs(id);
     if (node) node.value = "";
   }
@@ -7158,6 +7447,7 @@ async function saveProduct(product, costCapture = null) {
             ...(costCapture.receiptNumber ? { receiptNumber: costCapture.receiptNumber } : {}),
             ...(costCapture.supplierName ? { supplierName: costCapture.supplierName } : {}),
             ...(costCapture.receiptDate ? { receiptDate: Timestamp.fromDate(costCapture.receiptDate) } : {}),
+            ...(costCapture.vatAmount ? { vatAmount: costCapture.vatAmount } : {}),
             recordedByUid: state.user.uid,
             createdAt: stamp()
           });
@@ -7450,7 +7740,8 @@ function renderRestockCostFields() {
   if (receiptFields) receiptFields.hidden = !canRecordCost() || !vatSettings().registered;
   const hasReceipt = qs("#restockHasReceiptInput");
   if (hasReceipt) hasReceipt.checked = false;
-  for (const id of ["#restockTotalPaidInput", "#restockSupplierInput", "#restockReceiptInput"]) {
+  for (const id of ["#restockTotalPaidInput", "#restockSupplierInput", "#restockReceiptInput",
+                    "#restockVatAmountInput"]) {
     const node = qs(id);
     if (node) node.value = "";
   }
@@ -7528,6 +7819,11 @@ async function confirmRestock() {
   // number was counted as having lost a VAT claim they actually have, and
   // anything typed in the box -- "n/a" included -- asserted one exists.
   const hasFiscalReceipt = recordingCost && Boolean(qs("#restockHasReceiptInput")?.checked);
+  // Copied off the receipt rather than derived -- DESIGN-vat.md. Only meaningful
+  // for a registered business, so it is only read for one.
+  const vatAmount = (recordingCost && vatSettings().registered)
+    ? clampNonNegativeNumber(String(qs("#restockVatAmountInput")?.value || "").trim() || "0", MAX_MONEY)
+    : null;
   const totalPaid = totalPaidRaw ? clampNonNegativeNumber(totalPaidRaw, MAX_MONEY) : null;
   const errorSlot = qs("#restockTotalPaidError");
   if (errorSlot) errorSlot.textContent = "";
@@ -7542,6 +7838,14 @@ async function confirmRestock() {
   }
   if (totalPaidRaw && (totalPaid === null || totalPaid <= 0)) {
     if (errorSlot) errorSlot.textContent = t("restock.totalPaidInvalid");
+    return;
+  }
+  // Refused, not clamped. A VAT figure above the total is a typo, and silently
+  // reducing it would file a number the receipt does not say.
+  const vatSlot = qs("#restockVatAmountError");
+  if (vatSlot) vatSlot.textContent = "";
+  if (vatAmount && totalPaid && vatAmount > totalPaid) {
+    if (vatSlot) vatSlot.textContent = t("restock.vatAmountInvalid");
     return;
   }
 
@@ -7649,6 +7953,11 @@ async function confirmRestock() {
             // claim the shop was entitled to, and until now it was in the schema,
             // permitted by the rules, and written by nothing.
             ...(receiptDate ? { receiptDate: Timestamp.fromDate(receiptDate) } : {}),
+            // Omitted when absent, never written as zero: a zero would read as
+            // "the supplier charged no VAT", which is a different claim from
+            // "nobody has recorded it yet" -- and the VAT record distinguishes
+            // them.
+            ...(vatAmount ? { vatAmount } : {}),
             recordedByUid: state.user?.uid || null,
             createdAt: serverTimestamp()
           });
@@ -11822,6 +12131,10 @@ function canOpenView(viewId) {
   // inference, and a manager already sees revenue, shift variance and staff
   // performance without it.
   if (viewId === "profit") return isOwnerRole();
+  // Manager and owner, unlike Profit: a VAT record states what was charged and
+  // what may be reclaimed, and carries no buying-price-against-selling-price
+  // inference. Refused outright for a business that is not registered.
+  if (viewId === "vat") return isManagerOrOwnerRole() && vatSettings().registered;
   return isManagerOrOwnerRole() || CASHIER_ALLOWED_VIEWS.includes(viewId);
 }
 
@@ -11978,6 +12291,8 @@ function renderAll() {
   renderExpenses();
   renderPurchases();
   renderProfit();
+  renderVatNav();
+  renderVatRecord();
   renderManagerControl();
   renderAdminControl();
   // Depends on the resolved account name, which arrives with the role after
@@ -12120,6 +12435,8 @@ function bindEvents() {
     const remove = event.target.closest("[data-delete-purchase]");
     if (remove) deletePurchase(remove.dataset.deletePurchase);
   });
+  qs("#vatMonthInput")?.addEventListener("change", () => renderVatRecord());
+  qs("#openVatRecordLink")?.addEventListener("click", () => openView("vat"));
   qs("#profitMonthInput")?.addEventListener("change", (event) => {
     state.profitMonthSelection = event.currentTarget.value || state.profitMonthSelection;
     state.profitMonthTouched = true;
@@ -13158,8 +13475,18 @@ function bindEvents() {
           const parsed = new Date(ry, (rm || 1) - 1, rd || 1, 12, 0, 0);
           if (!Number.isNaN(parsed.getTime())) receiptDate = parsed;
         }
+        const vatRaw = vatSettings().registered
+          ? clampNonNegativeNumber(String(qs("#productVatAmountInput")?.value || "").trim() || "0", MAX_MONEY)
+          : null;
+        const vatSlot = qs("#productVatAmountError");
+        if (vatSlot) vatSlot.textContent = "";
+        if (vatRaw && vatRaw > totalPaid) {
+          if (vatSlot) vatSlot.textContent = t("product.vatAmountInvalid");
+          return;
+        }
         costCapture = {
           totalPaid,
+          vatAmount: vatRaw,
           quantity: openingQty,
           hasFiscalReceipt: Boolean(qs("#productHasReceiptInput")?.checked),
           receiptNumber: String(qs("#productReceiptInput")?.value || "").trim().slice(0, 60),

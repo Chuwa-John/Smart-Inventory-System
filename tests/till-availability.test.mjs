@@ -317,6 +317,8 @@ console.log("\n=== Restock is held to the same rule ===");
       "#restockTotalPaidError": { textContent: "" },
       "#restockReceiptInput": { value: withCost ? "RCT001" : "" },
       "#restockSupplierInput": { value: withCost ? "Wholesale Ltd" : "" },
+      "#restockVatAmountInput": { value: withCost ? "18000" : "" },
+      "#restockVatAmountError": { textContent: "" },
       "#confirmRestockButton": button
     };
     const state = {
@@ -346,6 +348,7 @@ console.log("\n=== Restock is held to the same rule ===");
       "describeOperationError", "renderAll", "console",
       "canRecordCost", "clampNonNegativeNumber", "MAX_MONEY", "safeNumber",
       "nextUnitCost", "productCostKnown", "isOfflineNow", "awaitRestockTransaction",
+      "vatSettings",
       `${source} return confirmRestock;`
     )(
       state, (selector) => elements[selector], (m) => calls.toasts.push(m), (key) => key,
@@ -360,7 +363,11 @@ console.log("\n=== Restock is held to the same rule ===");
       // the point of THIS suite is the double-click guard, and the timeout gets
       // its own assertions in purchases.test.mjs.
       () => false,
-      (attempt) => attempt.then(() => "committed")
+      (attempt) => attempt.then(() => "committed"),
+      // Registered on purpose: an unregistered stub would skip the VAT capture
+      // branch entirely and this suite would stop covering the path it is
+      // named after.
+      () => ({ registered: true, vrn: "", tin: "" })
     );
     return { run, calls, button };
   }

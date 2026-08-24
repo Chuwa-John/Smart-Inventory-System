@@ -153,3 +153,136 @@ than by review, and all three would have failed quietly in production:
   check now reads the call's own arguments.
 
 The arithmetic itself, written first and exhaustively, needed no correction.
+
+---
+
+# The VAT record — two-sided
+
+Written 2026-08-24. Decided by the owner the same day: Accounts gets a VAT
+record next, and **Accounts is the book while Reports links to it**.
+
+`RESEARCH-accounts.md` §6 marked VAT records "Partly — output only, and
+overstated". The output half is unchanged. The input half is newly possible, and
+that is the whole reason this is next: `DESIGN-purchases.md` Phase B/C started
+capturing `hasFiscalReceipt`, `receiptNumber` and `receiptDate` on every
+purchase, and §5.3 of the research is explicit that the six-month input-VAT
+window runs from **the date on the receipt**, not the day it was recorded.
+
+Every other book on the list makes a shop tidier. This one gives it money back.
+
+## What it is
+
+One screen, per month, for a VAT-registered business:
+
+    Output VAT      what was charged to customers
+    Input VAT       what was paid to suppliers, and is claimable
+    ---------------------------------------------------------
+    Net payable     output less input
+
+Not a filing. Not a return submitted anywhere. A record the business reads
+before it files, and hands to an auditor to make an objection unnecessary
+(§11 position 3: reconciliation, not reports).
+
+## Input VAT is a claim, and a claim has conditions
+
+This is the part that must not be generous. An overstated claim is not an
+untidy book; it is an underpayment, and §3.7 prices those. Four conditions,
+all of which must hold:
+
+1. **The business is VAT registered.** `vatSettings().registered`. An
+   unregistered duka has no claim and must not be shown one.
+2. **The purchase has a fiscal receipt.** `hasFiscalReceipt === true`. Not
+   "there is a number in the box" — asserted, for the reason
+   `DESIGN-purchases.md` already gives about that field.
+3. **The receipt date is inside the six-month window.** §5.3. Measured from
+   `receiptDate`, and a purchase whose receipt date is missing has no provable
+   window and is not claimable.
+4. **The purchase is on or after the business registered.** Forward-only, the
+   same rule as output VAT (decision 4 in this document). A shop cannot claim
+   input tax from before it was in the scheme.
+
+Anything failing these is still shown — as *recorded but not claimable*, with
+the reason. Silently omitting it would leave the owner unable to see why their
+claim is smaller than their spending.
+
+## The open decision: how we know the VAT on a purchase
+
+A purchase records `totalPaid` and nothing about its tax treatment. Three ways
+to get from one to the other:
+
+**A. Derive it: `totalPaid × 18/118`.** One line of code, no new field, and
+wrong for anything exempt or zero-rated — which in Tanzania includes a great
+deal of food. It would overstate a claim by default, which is the direction
+that costs the shop a penalty rather than a refund. **Rejected.**
+
+**B. Capture a tax class on the purchase**, prefilled from the product, and
+derive from that. Correct per class, one dropdown. But it asks the shopkeeper
+to classify a supplier's goods, which is the supplier's job and is already
+printed on the receipt they are holding.
+
+**C. Capture the VAT amount printed on the fiscal receipt**, prefilled with the
+standard-rated derivation so the common case is one glance and a tab. This is
+what an accountant does and what an auditor checks: the receipt states the VAT,
+and the claim is that number. A mixed basket — some exempt, some standard — is
+handled correctly with no apportionment logic at all, because the supplier
+already did it.
+
+**Recommendation: C**, with B's dropdown deliberately not built. The field is
+optional; a purchase without it is recorded and not claimable, which is exactly
+what a purchase with no receipt already is.
+
+## The output side is overstated, and the screen must say so
+
+L-12: a refund does not reduce the VAT owed on it, because the tax class of a
+returned line is unknowable for any sale rung up before 2026-08-07, and
+apportioning pro rata would be a plausible-looking wrong answer on a filed
+figure.
+
+The consequence is that **output VAT is conservatively high** — the shop is
+shown as owing more than it does. That is the safe direction, and it stays.
+What is not acceptable is showing that figure without saying so. The screen
+names the refund total it did not net out, so the person filing can see the size
+of the discrepancy rather than discovering it in an audit.
+
+## It refuses rather than estimating
+
+§11 position 2, and the L-11 precedent already applied on the Profit screen.
+`subscribeToSales()` holds the newest 1,000 sales; a month that has fallen out
+of that window would produce a VAT return that is **too low**, which is the
+dangerous direction for a figure a business files. The screen names the date it
+can see back to and refuses the period rather than under-reporting it.
+
+Input VAT has the same exposure through `ACCOUNTS_HISTORY_LIMIT` on purchases,
+and refuses on the same rule.
+
+## Reports links, it does not duplicate
+
+Decided 2026-08-24. Reports keeps the operational VAT line it already shows for
+a day's trading; the formal monthly record lives in Accounts, and Reports links
+across to it. One computation, one place. Two screens computing the same
+statutory figure is how they come to disagree, and being shown two different
+numbers is the worst thing an auditor can be handed.
+
+## Deliberately out of scope
+
+Unchanged from the list above, plus:
+
+- **Filing.** Nothing is submitted to TRA. §5.5 alone justifies waiting.
+- **Reverse charge, imports, capital goods.** Out for the same reason as before,
+  and now explicitly out for the input side too.
+- **Backfilling.** A purchase recorded before this ships has no VAT amount and
+  is not claimable. Forward-only, like everything else in this document.
+- **Bad-debt relief**, and any adjustment that is not a purchase or a sale.
+
+## Order of work
+
+1. The claimability rules as pure functions — the four conditions, the window,
+   and the period totals — tested before anything renders them.
+2. The purchase field (decision C), in rules and both capture paths (restock
+   and the Add Product form), with the expression budget re-measured.
+3. The screen, including the refusal and the L-12 disclosure.
+4. The Reports link.
+
+Step 1 first, for the same reason it was first last time: a tax figure that is
+wrong is worse than one that is absent, because it is wrong on a document the
+shop is audited on.
