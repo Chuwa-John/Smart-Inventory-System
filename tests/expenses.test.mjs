@@ -25,14 +25,31 @@ function extract(name) {
   return src.slice(start, i + 1);
 }
 
-const { summariseExpenses, expenseSpentAt, localDateInputValue, localMonthKey, moneyAuditEntry } = new Function(
+// The category -> default nature map comes out of app.js rather than being
+// restated here: a restated table is one that can drift from the one that ships,
+// and this one decides which line of the Profit Report a cost lands on.
+function objectLiteral(name) {
+  const start = src.indexOf(`const ${name} = {`);
+  if (start === -1) throw new Error(`${name} not found in app.js`);
+  const end = src.indexOf("};", start);
+  return src.slice(start, end + 2);
+}
+
+const { summariseExpenses, expenseSpentAt, localDateInputValue, localMonthKey, moneyAuditEntry,
+        expenseNature, EXPENSE_NATURE_BY_CATEGORY, summariseLandedForMonth } = new Function(
   `${extract("safeNumber")}
    ${extract("expenseSpentAt")}
    ${extract("localMonthKey")}
+   ${objectLiteral("EXPENSE_NATURE_BY_CATEGORY")}
+   ${extract("expenseNature")}
    ${extract("summariseExpenses")}
+   ${extract("deliveryReceivedAt")}
+   ${src.slice(src.indexOf("const DELIVERY_COST_TYPES = "), src.indexOf("];", src.indexOf("const DELIVERY_COST_TYPES = ")) + 2)}
+   ${extract("summariseLandedForMonth")}
    ${extract("moneyAuditEntry")}
    ${extract("localDateInputValue")}
-   return { summariseExpenses, expenseSpentAt, localDateInputValue, localMonthKey, moneyAuditEntry };`
+   return { summariseExpenses, expenseSpentAt, localDateInputValue, localMonthKey, moneyAuditEntry,
+            expenseNature, EXPENSE_NATURE_BY_CATEGORY, summariseLandedForMonth };`
 )();
 
 const results = [];
@@ -353,10 +370,20 @@ console.log("\n=== a cashier neither subscribes to nor renders expenses ===");
   // The nav-level gate. canOpenView() is the choke point the command palette
   // and stale click handlers also pass through, so an entry here would open the
   // screen for a cashier regardless of what the render function decides.
-  check("the cashier allowlist is still just the till",
-    /const CASHIER_ALLOWED_VIEWS = \["pos"\];/.test(noComments), true);
-  check("expenses is not in the cashier allowlist",
-    /CASHIER_ALLOWED_VIEWS = \[[^\]]*expenses/.test(noComments), false);
+  // Asserted as the CLAIM, not as a literal list. The literal form was
+  // `["pos"]` until Settings was added, which a cashier must reach to sign out
+  // and switch language -- so the list legitimately grew, and a literal check
+  // turned red on a change that widened nothing that matters. What must stay
+  // true is that no screen carrying money or cost is in it.
+  const allowlist = (noComments.match(/const CASHIER_ALLOWED_VIEWS = \[([^\]]*)\]/) || [])[1] || "";
+  check("the cashier allowlist was found", allowlist.length > 0, true);
+  for (const view of ["expenses", "purchases", "deliveries", "profit", "reports", "vat",
+                      "inventory", "dashboard", "ai"]) {
+    check(`${view} is not in the cashier allowlist`, allowlist.includes(`"${view}"`), false);
+  }
+  check("...and what IS in it is only the till and settings",
+    allowlist.split(",").map((v) => v.trim().replace(/"/g, "")).sort().join(","),
+    "pos,settings");
 }
 
 console.log("\n=== corrections are the owner's ===");
@@ -577,9 +604,14 @@ console.log("\n=== every label exists in both languages ===");
   // and near-invisible in Swahili, where "rent" merely looks untranslated.
   const categories = /const EXPENSE_CATEGORIES = \[([\s\S]*?)\];/.exec(noComments)?.[1] || "";
   const names = [...categories.matchAll(/"([a-z]+)"/g)].map((m) => m[1]);
-  check("all nine categories were found", names.length, 9);
+  // Nine until DESIGN-landed-costs.md phase 5 added the three the docx section
+  // 11 names as DIRECT operating expenses -- commission, delivery and packaging
+  // -- which until then had nowhere to go but 'other', the one category no
+  // report can act on.
+  check("all twelve categories were found", names.length, 12);
   check("the set matches the design", names.join(","),
-    "rent,utilities,wages,transport,supplies,repairs,licences,marketing,other");
+    "rent,utilities,wages,transport,supplies,repairs,licences,marketing,other," +
+    "commission,delivery,packaging");
   for (const name of names) {
     check(`cat.${name} has an English label`, enDict.includes(`"cat.${name}":`), true);
     check(`cat.${name} has a Swahili label`, swDict.includes(`"cat.${name}":`), true);
@@ -691,6 +723,162 @@ console.log("\n=== the audit entry omits, it never nulls ===");
   check("createdAt comes from the server, not the device", entry.createdAt, "ts");
   delete globalThis.state;
 }
+
+// ===========================================================================
+console.log("\n=== phase 5: direct and indirect operating expenses ===");
+{
+  // The map decides which line of the docx section 9 statement a cost lands on,
+  // so every category must appear in it. A category missing from the map falls
+  // back to "indirect", which is a plausible wrong answer rather than an error.
+  const categories = /const EXPENSE_CATEGORIES = \[([\s\S]*?)\];/.exec(
+    src.replace(/\/\/[^\n]*/g, ""))?.[1] || "";
+  const names = [...categories.matchAll(/"([a-z]+)"/g)].map((m) => m[1]);
+  for (const name of names) {
+    check(`${name} has a default nature`,
+      EXPENSE_NATURE_BY_CATEGORY[name] === "direct" || EXPENSE_NATURE_BY_CATEGORY[name] === "indirect",
+      true);
+  }
+  check("the map has no category the set does not",
+    Object.keys(EXPENSE_NATURE_BY_CATEGORY).filter((k) => !names.includes(k)).join(","), "");
+
+  // The docx section 11 table, both columns.
+  for (const name of ["commission", "delivery", "packaging"]) {
+    check(`${name} defaults to direct`, EXPENSE_NATURE_BY_CATEGORY[name], "direct");
+  }
+  for (const name of ["rent", "utilities", "wages", "marketing", "licences", "other"]) {
+    check(`${name} defaults to indirect`, EXPENSE_NATURE_BY_CATEGORY[name], "indirect");
+  }
+
+  // THE PROPERTY THAT MAKES THE FIELD SAFE TO ADD WITHOUT A MIGRATION. Every
+  // category that existed before phase 5 defaults to indirect, so an expense
+  // written before the field existed reads the same whether the fallback is the
+  // map or a bare "indirect". If a direct-by-default category is ever added to
+  // that list, this goes red -- and it should, because history would then depend
+  // on which fallback was used.
+  for (const name of ["rent", "utilities", "wages", "transport", "supplies",
+                      "repairs", "licences", "marketing", "other"]) {
+    check(`${name} predates the field and reads as indirect`,
+      EXPENSE_NATURE_BY_CATEGORY[name], "indirect");
+  }
+}
+
+console.log("\n=== expenseNature() reads stored, then the category ===");
+{
+  check("a stored direct wins", expenseNature({ category: "rent", nature: "direct" }), "direct");
+  check("a stored indirect wins", expenseNature({ category: "commission", nature: "indirect" }), "indirect");
+  check("no nature falls back to the category default",
+    expenseNature({ category: "commission" }), "direct");
+  check("a legacy expense with no nature reads as indirect",
+    expenseNature({ category: "rent" }), "indirect");
+  // Garbage is not a third class. firestore.rules permits only the two values,
+  // so anything else came from a bug or a hand-edited document, and reading it
+  // as its category's default is the answer that cannot invent a new line on the
+  // statement.
+  check("an invented nature falls back rather than being trusted",
+    expenseNature({ category: "commission", nature: "capitalised" }), "direct");
+  check("an empty nature falls back", expenseNature({ category: "rent", nature: "" }), "indirect");
+  check("an unknown category with no nature is indirect",
+    expenseNature({ category: "zzz" }), "indirect");
+  check("no expense at all does not throw", expenseNature(undefined), "indirect");
+}
+
+console.log("\n=== the split adds to the total, and never to more than it ===");
+{
+  const month = "2026-09";
+  const at = (day) => new Date(2026, 8, day, 12, 0, 0);
+  const rows = [
+    { category: "rent", nature: "indirect", amount: 300000, spentAt: at(1), paidFrom: "other" },
+    { category: "commission", nature: "direct", amount: 50000, spentAt: at(2), paidFrom: "other" },
+    { category: "packaging", nature: "direct", amount: 20000, spentAt: at(3), paidFrom: "till" },
+    // No nature at all -- the pre-phase-5 shape.
+    { category: "utilities", amount: 80000, spentAt: at(4), paidFrom: "other" },
+    // Overridden away from its category default, which is the whole point of
+    // the box being editable: a boda delivering a customer's order is direct.
+    { category: "transport", nature: "direct", amount: 10000, spentAt: at(5), paidFrom: "till" },
+    // Another month, and must not be counted at all.
+    { category: "rent", nature: "indirect", amount: 999999, spentAt: new Date(2026, 7, 1, 12, 0, 0), paidFrom: "other" }
+  ];
+  const s = summariseExpenses(rows, month);
+
+  check("the month total is unchanged by the split", s.total, 460000);
+  check("direct is commission + packaging + the overridden transport", s.direct, 80000);
+  check("indirect is rent + utilities", s.indirect, 380000);
+  // THE INVARIANT. Two lines of a statement that add to the line above them.
+  check("direct + indirect === total", s.direct + s.indirect, s.total);
+  check("the count is unchanged", s.count, 5);
+  check("paidFrom is unaffected by the split", s.fromTill, 30000);
+
+  const empty = summariseExpenses([], month);
+  check("an empty month splits to zero and zero", `${empty.direct}/${empty.indirect}`, "0/0");
+  check("...and still balances", empty.direct + empty.indirect, empty.total);
+}
+
+console.log("\n=== landed costs are shown, and are NOT expenses ===");
+{
+  const month = "2026-09";
+  const deliveries = [
+    { receivedAt: new Date(2026, 8, 3, 12, 0, 0), additionalTotal: 1800000, totalCost: 11800000,
+      freight: 800000, importDuty: 500000, clearing: 300000, transport: 200000,
+      handling: 0, insurance: 0, otherCost: 0 },
+    // No additional costs: a delivery, but nothing to report here.
+    { receivedAt: new Date(2026, 8, 9, 12, 0, 0), additionalTotal: 0, totalCost: 400000,
+      freight: 0, importDuty: 0, clearing: 0, transport: 0,
+      handling: 0, insurance: 0, otherCost: 0 },
+    // Another month.
+    { receivedAt: new Date(2026, 7, 1, 12, 0, 0), additionalTotal: 500000, totalCost: 900000,
+      freight: 500000, importDuty: 0, clearing: 0, transport: 0,
+      handling: 0, insurance: 0, otherCost: 0 }
+  ];
+  const landed = summariseLandedForMonth(deliveries, month);
+  check("only this month's landed costs are totalled", landed.total, 1800000);
+  check("a delivery with no additional costs is not listed", landed.count, 1);
+  check("the breakdown names freight", landed.byType.get("freight"), 800000);
+  check("...and duty", landed.byType.get("importDuty"), 500000);
+  check("...and clearing", landed.byType.get("clearing"), 300000);
+  check("...and transport", landed.byType.get("transport"), 200000);
+  check("a zero cost type is left out of the breakdown", landed.byType.has("handling"), false);
+  check("the breakdown adds up to the total",
+    [...landed.byType.values()].reduce((a, b) => a + b, 0), landed.total);
+
+  // THE ERROR THIS WHOLE PANEL EXISTS TO AVOID. Landed cost reaches the profit
+  // statement as cost of sales, through each product's unit cost. If it were
+  // also added to operating expenses the shop would be charged twice for the
+  // same freight, and profit would read low by the whole of it.
+  const expenses = summariseExpenses(
+    [{ category: "rent", nature: "indirect", amount: 300000,
+       spentAt: new Date(2026, 8, 1, 12, 0, 0), paidFrom: "other" }], month);
+  check("the expense total does not include landed costs", expenses.total, 300000);
+  check("...nor does the indirect line", expenses.indirect, 300000);
+  check("...nor the direct line", expenses.direct, 0);
+}
+
+console.log("\n=== the screen keeps the two apart ===");
+{
+  const render = body("function renderExpenses(");
+  check("the expense tiles show the direct line", /expenses\.direct/.test(render), true);
+  check("...and the indirect line", /expenses\.indirect/.test(render), true);
+  check("the landed panel is rendered from renderExpenses",
+    /renderLandedCostSection\(/.test(render), true);
+
+  const landed = body("function renderLandedCostSection(");
+  check("the landed panel is fed by summariseLandedForMonth",
+    /summariseLandedForMonth\(/.test(landed), true);
+  // It must never touch the expense summary, or the separation is one edit away
+  // from collapsing.
+  check("the landed panel never reads the expense totals",
+    /summariseExpenses\(/.test(landed), false);
+  check("it says the total is excluded", /expenses\.landedExcluded/.test(landed), true);
+  check("it hides itself when there is nothing to show", /panel\.hidden = /.test(landed), true);
+
+  // The audit trail already carried category; nature rides on the same document
+  // and needs no new audit field, but the expense payload must carry it or the
+  // Profit Report has to guess.
+  const save = body("async function saveExpense(");
+  check("saveExpense writes nature onto the expense", /\n\s*nature,/.test(save), true);
+  check("...falling back to the category default rather than a fixed value",
+    /EXPENSE_NATURE_BY_CATEGORY\[category\]/.test(save), true);
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 process.exit(failed.length ? 1 : 0);

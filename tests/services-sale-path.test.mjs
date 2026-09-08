@@ -377,8 +377,16 @@ console.log("\n=== Phase E: the tab, and who is allowed to touch it ===");
 
 console.log("\n=== Phase E: the screen says the right word ===");
 {
+  // The nav item now carries an inline SVG icon as its first child, so the label
+  // is written to an inner span: assigning textContent on the BUTTON would erase
+  // the icon. That is the same hazard translateStaticDom() has, which is why
+  // every other nav item keeps its data-i18n key on a span too.
   check("the heading follows the business type",
-    /nav\.textContent = label;\s*qs\("#servicesTitle"\)\.textContent = label;/.test(noComments));
+    /navLabel\.textContent = label;\s*qs\("#servicesTitle"\)\.textContent = label;/.test(noComments));
+  check("...and the label span is resolved from the nav item, with a fallback",
+    /const navLabel = qs\("#servicesNavLabel"\) \|\| nav;/.test(noComments), true);
+  check("...so the icon survives a business-type change",
+    /<button class="nav-item" data-view="services" id="servicesNavItem" hidden><svg class="nav-icon"/.test(html), true);
   // Caught in the browser: translateStaticDom() applies every data-i18n key
   // with no parameters, so a key taking {label} rendered literally as
   // "Add to {label}" until the dialog was opened. openServiceDialog() is the

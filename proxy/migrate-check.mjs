@@ -25,6 +25,12 @@ await db.doc(`users/${A}/products/p2`).set({ ...base, costPrice: 5000, costKnown
 await db.doc(`users/${A}/products/p3`).set({ ...base });                 // clean already
 await db.doc(`users/${B}/products/p4`).set({ ...base, costKnownFrom: new Date() });
 await db.doc(`users/${B}/sales/s1`).set({ total: 999, costPrice: 123 }); // must NOT be touched
+// A ROOT-LEVEL products document. collectionGroup("products") matches it, and
+// the first production dry run found eight of them -- a seed catalogue that no
+// client can reach, because firestore.rules has no root-level /products match.
+// The harness never seeded one, which is why the sweep was too broad for two
+// weeks without anything going red.
+await db.doc("products/root-1").set({ ...base, costPrice: 430, costKnownFrom: new Date() });
 
 const run = (...flags) => execFileSync("node", ["migrate-strip-product-cost.mjs", ...flags],
   { encoding: "utf8", env: { ...process.env } });
@@ -55,6 +61,10 @@ check("every other field survived", [p2.name, p2.quantity, p2.sellingPrice, p2.s
 check("an already-clean product is untouched", p3.name, "Lotion");
 check("second tenant migrated too", "costKnownFrom" in p4, false);
 check("a NON-product doc with costPrice is left alone", sale.costPrice, 123);
+const rootDoc = (await db.doc("products/root-1").get()).data();
+check("a ROOT-LEVEL products doc is left alone", rootDoc.costPrice, 430);
+check("...including its costKnownFrom", "costKnownFrom" in rootDoc, true);
+check("...and the dry run reported skipping it", /skipped, not a tenant product/.test(dry), true);
 
 let verifyOut = "", verifyCode = 0;
 try { verifyOut = run("--verify"); } catch (e) { verifyOut = String(e.stdout || ""); verifyCode = 1; }

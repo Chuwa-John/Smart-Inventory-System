@@ -1,0 +1,11 @@
+{
+  "_comment": "Dev-only. Runs the Firestore emulator on the port dev-server.mjs patches app.js to use (8080), with the REAL firestore.rules loaded so a local walkthrough exercises the same permissions production does. Paths are relative to the PROJECT dir (the repo root, which is cwd when this runs), not to this file -- firebase refuses a rules path outside the project. Not the deploy config -- that is firebase.json, which deliberately has no emulators block because the Auth emulator would refuse to start without one and firebase.json is a tracked file the live project deploys from.",
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "emulators": {
+    "firestore": { "host": "127.0.0.1", "port": 8080 },
+    "ui": { "enabled": true, "port": 4000 }
+  }
+}

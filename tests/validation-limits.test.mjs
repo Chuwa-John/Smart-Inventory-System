@@ -156,7 +156,8 @@ console.log("\n=== fields already bounded stayed correct ===");
     ["posCustomerPhone", 20, "phone"],
     ["paymentNoteInput", 200, "note"],
     ["transferStaffNameInput", 80, "staffName"],
-    ["businessName", 120, "clampString on businessName"]
+    ["businessName", 120, "clampString on businessName"],
+    ["ownerName", 80, "becomes a sale staffName, which rules cap at 80"]
   ];
   for (const [id, cap, why] of pinned) {
     const f = fields.get(id);

@@ -59,8 +59,20 @@ function body(header, from = src) {
   return rest.slice(0, next === -1 ? rest.length : next);
 }
 
+// summariseExpenses() has read the category -> nature map since
+// DESIGN-landed-costs.md phase 5, and summariseProfit() calls it. Lifted out of
+// app.js rather than restated: a restated table can drift from the one that
+// ships, and this one decides which line of the Profit Report a cost lands on.
+function objectLiteral(name) {
+  const start = src.indexOf(`const ${name} = {`);
+  if (start === -1) throw new Error(`${name} not found in app.js`);
+  return src.slice(start, src.indexOf("};", start) + 2);
+}
+
 const { nextUnitCost, productCostKnown, summarisePurchases, purchasedAt, localMonthKey,
-        costInForceAt, buildCostIndex, summariseProfit } = new Function(
+        costInForceAt, buildCostIndex, summariseProfit, summariseCostOfGoods,
+        summariseProductProfit, summariseStockValuation, summariseSuppliers,
+        summariseSalesByProduct } = new Function(
   `${extract("safeNumber")}
    ${extract("localMonthKey")}
    ${extract("nextUnitCost")}
@@ -72,12 +84,22 @@ const { nextUnitCost, productCostKnown, summarisePurchases, purchasedAt, localMo
    ${extract("isServiceLine")}
    ${extract("saleTimestamp")}
    ${extract("summariseSales")}
+   ${extract("saleReturnedQtyMap")}
    ${extract("summariseCostOfGoods")}
    ${extract("expenseSpentAt")}
+   ${objectLiteral("EXPENSE_NATURE_BY_CATEGORY")}
+   ${extract("expenseNature")}
    ${extract("summariseExpenses")}
    ${extract("summariseProfit")}
+   ${extract("landedRatioByProduct")}
+   ${extract("summariseProductProfit")}
+   ${extract("summariseStockValuation")}
+   ${extract("deliveryReceivedAt")}
+   ${extract("summariseSuppliers")}
+   ${extract("summariseSalesByProduct")}
    return { nextUnitCost, productCostKnown, summarisePurchases, purchasedAt, localMonthKey,
-            costInForceAt, buildCostIndex, summariseProfit };`
+            costInForceAt, buildCostIndex, summariseProfit, summariseCostOfGoods,
+            summariseProductProfit, summariseStockValuation, summariseSuppliers, summariseSalesByProduct };`
 )();
 
 const results = [];
@@ -349,8 +371,13 @@ console.log("\n=== roles and lifecycle ===");
     /if \(!isManagerOrOwnerRole\(\)\) \{[\s\S]{0,200}return;\s*\}/.test(body("function renderPurchases(")), true);
   check("...and empties the table rather than leaving stale rows",
     /table\.innerHTML = "";/.test(body("function renderPurchases(")), true);
+  // The claim, not the literal list -- see the note in expenses.test.mjs. This
+  // said `= ["pos"]` and so went red when Settings joined the list, which is a
+  // change that does not put a buying price anywhere near a till.
   check("purchases is not in the cashier allowlist",
-    /CASHIER_ALLOWED_VIEWS = \["pos"\]/.test(noComments), true);
+    /CASHIER_ALLOWED_VIEWS = \[[^\]]*"purchases"/.test(noComments), false);
+  check("...nor is deliveries, which carries the same disclosure",
+    /CASHIER_ALLOWED_VIEWS = \[[^\]]*"deliveries"/.test(noComments), false);
 
   // Scoped to renderAll's own body. The earlier [\s\S]*? spanned past its
   // closing brace and matched the renderPurchases() call in the month-input
@@ -373,8 +400,19 @@ console.log("\n=== roles and lifecycle ===");
   check("subscribeToProductCosts refuses a cashier",
     /if \(!isManagerOrOwnerRole\(\)\) \{\s*state\.productCosts = \[\];\s*return;\s*\}/.test(
       body("async function subscribeToProductCosts(")), true);
-  check("signing in subscribes to product costs",
-    /subscribeToPurchases\(\);\s*subscribeToProductCosts\(\);/.test(noComments), true);
+  // Presence in the sign-in path, not adjacency to subscribeToPurchases().
+  // Written as an adjacency regex first, which broke the moment
+  // DESIGN-landed-costs.md phase 4 inserted subscribeToDeliveries() between the
+  // two -- a green-to-red on a change that did not touch the claim at all. The
+  // claim is that signing in subscribes to costs; where the call sits among its
+  // siblings is not part of it.
+  {
+    const signIn = body("async function initFirebase(");
+    check("signing in subscribes to product costs",
+      /subscribeToProductCosts\(\);/.test(signIn), true);
+    check("...and to purchases", /subscribeToPurchases\(\);/.test(signIn), true);
+    check("...and to the cost history", /subscribeToProductCostHistory\(\);/.test(signIn), true);
+  }
   check("the cost listener is detached on sign-out",
     /if \(state\.unsubscribeProductCosts\) state\.unsubscribeProductCosts\(\);/.test(noComments), true);
   check("...and the costs themselves are cleared",
@@ -498,10 +536,20 @@ console.log("\n=== VAT copy is not shown to a shop that does not collect VAT ===
 console.log("\n=== a role change re-runs the subscriptions gated on it ===");
 {
   const resub = body("function resubscribeRoleGatedCollections(");
-  check("promotion re-subscribes expenses, purchases and costs",
-    /subscribeToExpenses\(\);\s*subscribeToPurchases\(\);\s*subscribeToProductCosts\(\);/.test(resub), true);
-  check("...and demotion empties what was already loaded",
-    /state\.expenses = \[\];\s*state\.purchases = \[\];\s*state\.productCosts = \[\];/.test(resub), true);
+  // Each call asserted on its own rather than as one adjacency regex. The
+  // adjacency form broke when phase 4 inserted subscribeToDeliveries() into the
+  // sequence, and it would have gone red for every future collection too --
+  // while a genuinely missing call in the middle would look identical to a
+  // harmless insertion. Named individually, a missing one names itself.
+  for (const fn of ["subscribeToExpenses", "subscribeToPurchases",
+                    "subscribeToProductCosts", "subscribeToProductCostHistory"]) {
+    check(`promotion re-subscribes via ${fn}()`,
+      new RegExp(`${fn}\\(\\);`).test(resub), true);
+  }
+  for (const key of ["expenses", "purchases", "productCosts", "productCostHistory"]) {
+    check(`...and demotion empties state.${key}`,
+      new RegExp(`state\\.${key} = \\[\\];`).test(resub), true);
+  }
   check("...and detaches the listeners first",
     resub.indexOf("state[key]()") < resub.indexOf("state.expenses = []"), true);
   check("the membership watcher calls it on a role change",
@@ -814,10 +862,21 @@ console.log("\n=== Phase E: the surface, and who may see it ===");
   check("profit is owner-only in canOpenView",
     /if \(viewId === "profit"\) return isOwnerRole\(\);/.test(noComments), true);
   const render = body("function renderProfit(");
+  // The bound was 160 characters until phase 7 added the drill-down's clearing
+  // to the same block. Widened rather than dropped: what matters is that the
+  // refusal RETURNS without falling through, and an unbounded [\s\S]* would
+  // match a `return` anywhere later in the function and prove nothing.
   check("renderProfit refuses a non-owner",
-    /if \(!isOwnerRole\(\)\) \{[\s\S]{0,160}return;\s*\}/.test(render), true);
+    /if \(!isOwnerRole\(\)\) \{[\s\S]{0,600}return;\s*\}/.test(render), true);
   check("...and empties rather than leaving stale figures",
     /grid\.innerHTML = "";/.test(render), true);
+  // Phase 7: the per-product table is the strongest disclosure in the app -- a
+  // buying price against a selling price, per product. A demoted owner must not
+  // keep it in the DOM behind a hidden attribute.
+  check("...and clears the per-product table too",
+    /productTable\.innerHTML = "";/.test(render), true);
+  check("...and hides its panel",
+    /productPanel\.hidden = true;/.test(render), true);
   // The refusal must EXIST and come before any tile is built.
   //
   // Presence is asserted separately because indexOf returns -1 when the text
@@ -826,14 +885,41 @@ console.log("\n=== Phase E: the surface, and who may see it ===");
   // negative control that removed the whole refusal block came back green on
   // exactly that.
   check("the refusal exists at all", render.indexOf("p.outsideWindow") > -1, true);
+  // Re-anchored in DESIGN-landed-costs.md phase 6: the four tiles became the
+  // docx section 9 statement, so `grid.innerHTML = [` is gone and `const rows =
+  // [` is where the figures start being built. Both halves of the original
+  // assertion are kept -- presence AND ordering -- for the reason the comment
+  // above gives.
+  check("the figures are built somewhere in here at all",
+    render.indexOf("const rows = [") > -1, true);
   check("the refusal is reached before any figure is rendered",
     render.indexOf("p.outsideWindow") > -1
-    && render.indexOf("p.outsideWindow") < render.indexOf("grid.innerHTML = ["), true);
+    && render.indexOf("const rows = [") > -1
+    && render.indexOf("p.outsideWindow") < render.indexOf("const rows = ["), true);
   check("...and it returns rather than falling through",
     /if \(p\.outsideWindow\) \{[\s\S]{0,300}return;\s*\}/.test(render), true);
-  // Section 11 rule 1: gross and net are never summed into one headline.
-  check("gross and net are separate tiles",
-    /profit\.gross"\)[\s\S]*profit\.net"\)/.test(render), true);
+  // Section 11 rule 1: gross and net are never summed into one headline. As a
+  // statement they are two rows with their own captions, which is a stronger
+  // form of the same rule than two tiles side by side.
+  check("gross and net are separate rows",
+    /profit\.stGross"\)[\s\S]*profit\.stNet"\)/.test(render), true);
+  // Phase 6: cost of goods is a STATED line, not an intermediate the reader has
+  // to infer from revenue minus gross -- the docx section 9 asks for it by name.
+  check("cost of goods sold is a line of its own",
+    /profit\.stCogs"\)/.test(render), true);
+  // ...and the docx section 9 split, which is the whole reason phase 5 captured
+  // a nature.
+  check("direct operating expenses are their own line",
+    /profit\.stDirect"\)/.test(render), true);
+  check("indirect operating expenses are their own line",
+    /profit\.stIndirect"\)/.test(render), true);
+  // UNKNOWN COST BLANKS THREE ROWS, not one. Cost of goods, gross and net are
+  // all derived from it; printing revenue against a zero cost reports the whole
+  // of revenue as profit, which is the defect DESIGN-purchases.md 2 found live.
+  check("cost of goods shows nothing until a cost is known",
+    /p\.anyCostKnown \? deduct\(p\.cogs\) : unknown/.test(render), true);
+  check("gross shows nothing until a cost is known",
+    /p\.anyCostKnown \? `\$\{money\(p\.grossProfit\)\}/.test(render), true);
   // Asserted as the CONDITION, not the fallback character. app.js is mixed
   // between the em-dash and its \u2014 escape and both render the same thing;
   // what matters is that net profit is not shown at all until there is a cost
@@ -843,7 +929,11 @@ console.log("\n=== Phase E: the surface, and who may see it ===");
   check("renderAll repaints it", /renderProfit\(\);/.test(body("function renderAll(")), true);
 
   for (const key of ["nav.profit", "profit.gross", "profit.net", "profit.grossNoCost",
-                     "profit.expensesNone", "profit.outsideWindow", "profit.netNote"]) {
+                     "profit.expensesNone", "profit.outsideWindow", "profit.netNote",
+                     // The docx section 9 statement, phase 6.
+                     "profit.stRevenue", "profit.stCogs", "profit.stGross",
+                     "profit.stDirect", "profit.stIndirect", "profit.stNet",
+                     "profit.deduction"]) {
     check(`${key} exists in both languages`,
       (src.match(new RegExp(`"${key.replace(/\./g, "\\.")}"`, "g")) || []).length >= 2, true);
   }
@@ -953,6 +1043,574 @@ console.log("\n=== Phase E: the surface, and who may see it ===");
     check(`${key} exists in both languages`,
       (src.match(new RegExp(`"${key.replace(/\./g, "\.")}"`, "g")) || []).length >= 2, true);
   }
+}
+
+
+// ===========================================================================
+console.log("\n=== phase 6: the docx section 9 statement adds up ===");
+{
+  // The docx section 9 figures, scaled to a shop: revenue 45m, COGS 27m, gross
+  // 18m, direct 2m, indirect 8m, net 8m. Built from real sales and real
+  // expenses so the statement is derived, not asserted against itself.
+  const monthKey = "2026-09";
+  const at = (d) => new Date(2026, 8, d, 12, 0, 0);
+  const sales = [{
+    createdAt: at(5), total: 45000000,
+    items: [{ productId: "p1", qty: 900, lineTotal: 45000000 }]
+  }];
+  // 900 units at 30,000 cost each = 27,000,000.
+  const costIndex = buildCostIndex([
+    { productId: "p1", effectiveFrom: new Date(2026, 7, 1, 12, 0, 0), costPrice: 30000 }
+  ]);
+  const expenses = [
+    { category: "commission", nature: "direct", amount: 2000000, spentAt: at(6), paidFrom: "other" },
+    { category: "rent", nature: "indirect", amount: 8000000, spentAt: at(7), paidFrom: "other" }
+  ];
+  const p = summariseProfit({ sales, costIndex, expenses, monthKey,
+                              coverageFromMs: null, vatRegistered: false });
+
+  check("sales revenue", p.revenue, 45000000);
+  check("cost of goods sold", p.cogs, 27000000);
+  check("GROSS PROFIT", p.grossProfit, 18000000);
+  check("direct operating expenses", p.directExpenses, 2000000);
+  check("indirect operating expenses", p.indirectExpenses, 8000000);
+  check("NET PROFIT", p.netProfit, 8000000);
+
+  // The two arithmetic identities the statement is: each total is the lines
+  // above it, and nothing is counted twice.
+  check("gross === revenue - cogs", p.grossProfit, p.revenue - p.cogs);
+  check("net === gross - direct - indirect",
+    p.netProfit, p.grossProfit - p.directExpenses - p.indirectExpenses);
+  check("direct + indirect === the expense total",
+    p.directExpenses + p.indirectExpenses, p.expenses);
+
+  // THE PROPERTY THAT MAKES THE SPLIT SAFE. Reclassify every expense the other
+  // way and the bottom line does not move -- which is why the box is editable
+  // and why a shop cannot damage its own profit figure with it.
+  const flipped = summariseProfit({
+    sales, costIndex, monthKey, coverageFromMs: null, vatRegistered: false,
+    expenses: expenses.map((e) => ({ ...e, nature: e.nature === "direct" ? "indirect" : "direct" }))
+  });
+  check("flipping every classification leaves net profit alone", flipped.netProfit, p.netProfit);
+  check("...and gross profit alone", flipped.grossProfit, p.grossProfit);
+  check("...while the two lines swap", `${flipped.directExpenses}/${flipped.indirectExpenses}`,
+    "8000000/2000000");
+}
+
+console.log("\n=== an expense with no nature still lands on a line ===");
+{
+  const monthKey = "2026-09";
+  const at = (d) => new Date(2026, 8, d, 12, 0, 0);
+  const p = summariseProfit({
+    sales: [], costIndex: new Map(), monthKey, coverageFromMs: null, vatRegistered: false,
+    // The pre-phase-5 shape: no nature at all.
+    expenses: [{ category: "rent", amount: 300000, spentAt: at(2), paidFrom: "other" },
+               { category: "commission", amount: 50000, spentAt: at(3), paidFrom: "other" }]
+  });
+  check("a legacy expense falls to indirect", p.indirectExpenses, 300000);
+  check("...and a direct-by-default category to direct", p.directExpenses, 50000);
+  check("nothing is lost between the two lines",
+    p.directExpenses + p.indirectExpenses, p.expenses);
+}
+
+console.log("\n=== unknown cost blanks three lines, not one ===");
+{
+  // Section 11 rule 3 generalised. Cost of goods, gross and net are all derived
+  // from a cost that is not there; reporting revenue against a zero cost would
+  // print the whole of revenue as profit, which is the defect
+  // DESIGN-purchases.md 2 found live on the control panel.
+  const monthKey = "2026-09";
+  const p = summariseProfit({
+    sales: [{ createdAt: new Date(2026, 8, 5, 12, 0, 0), total: 100000,
+              items: [{ productId: "nope", qty: 5, lineTotal: 100000 }] }],
+    costIndex: new Map(),
+    expenses: [{ category: "rent", nature: "indirect", amount: 10000,
+                 spentAt: new Date(2026, 8, 6, 12, 0, 0), paidFrom: "other" }],
+    monthKey, coverageFromMs: null, vatRegistered: false
+  });
+  check("no cost is known", p.anyCostKnown, false);
+  check("revenue is still real", p.revenue, 100000);
+  // The figures still compute -- the RENDER is what refuses to print them, and
+  // purchases.test.mjs asserts that. What must not happen is the summary
+  // claiming the cost was known.
+  check("cogs sums to zero because nothing could be costed", p.cogs, 0);
+  check("...and the surface is told so rather than left to infer it",
+    p.anyCostKnown === false && p.uncostedLines > 0, true);
+  // The expense lines are unaffected: they are recorded facts, not derived ones.
+  check("the indirect line is still stated", p.indirectExpenses, 10000);
+}
+
+
+// ===========================================================================
+console.log("\n=== phase 7: the docx section 10 drill-down ===");
+{
+  const monthKey = "2026-09";
+  const at = (d) => new Date(2026, 8, d, 12, 0, 0);
+  // The docx section 6/7 delivery, sold: Product A costs 11,800 landed, of which
+  // 10,000 was the supplier's price and 1,800 was freight, duty and clearing.
+  const purchases = [
+    { productId: "a", goodsCost: 5000000, landedCost: 900000, totalPaid: 5900000,
+      quantity: 500, createdAt: at(1) },
+    { productId: "b", goodsCost: 3000000, landedCost: 540000, totalPaid: 3540000,
+      quantity: 200, createdAt: at(1) },
+    // Bought before the landed split existed: no goodsCost, no landedCost.
+    { productId: "c", totalPaid: 2000000, quantity: 100, createdAt: at(1) }
+  ];
+  const costIndex = buildCostIndex([
+    { productId: "a", effectiveFrom: at(1), costPrice: 11800 },
+    { productId: "b", effectiveFrom: at(1), costPrice: 17700 },
+    { productId: "c", effectiveFrom: at(1), costPrice: 20000 }
+  ]);
+  const sales = [{
+    createdAt: at(10),
+    items: [
+      { productId: "a", name: "Product A", qty: 100, lineTotal: 1500000 },
+      { productId: "b", name: "Product B", qty: 10, lineTotal: 250000 },
+      { productId: "c", name: "Product C", qty: 5, lineTotal: 150000 }
+    ]
+  }];
+
+  const d = summariseProductProfit({ sales, costIndex, purchases, monthKey });
+  const byId = new Map(d.rows.map((r) => [r.productId, r]));
+  const a = byId.get("a");
+
+  // The docx section 7 sale, per product this time.
+  check("A sold 100 units", a.unitsSold, 100);
+  check("A's average cost is the landed unit cost", a.averageCost, 11800);
+  check("A's cost of sales", a.cogs, 1180000);
+  check("A's revenue", a.revenue, 1500000);
+  check("A's gross profit", a.grossProfit, 320000);
+  check("A's margin", a.grossMarginPct, 21);
+
+  // The two middle columns the goodsCost/landedCost split exists for. A's
+  // lifetime landed share is 900,000 / 5,900,000, applied to its cost of sales.
+  check("A's cost of sales splits into goods...", a.cogsGoods, 1180000 * (5000000 / 5900000));
+  check("...and landed", a.cogsLanded, 1180000 * (900000 / 5900000));
+  check("the split adds back to the cost of sales",
+    Math.abs(a.cogsGoods + a.cogsLanded - a.cogs) < 1e-9, true);
+  // Sanity against the docx: 100 units carried 1,800 of landed cost each.
+  check("A's landed share is 180,000 -- 100 units at 1,800",
+    Math.abs(a.cogsLanded - 180000) < 1e-6, true);
+
+  // A product bought before the split has NO attribution, and null is not zero.
+  const c = byId.get("c");
+  check("C has no landed ratio at all", c.landedRatio, null);
+  check("...so its goods column is unknown, not zero", c.cogsGoods, null);
+  check("...and its landed column too", c.cogsLanded, null);
+  check("...but its cost of sales is still known", c.cogs, 100000);
+  check("the surface is told how many products lack the split",
+    d.productsWithoutLandedSplit, 1);
+
+  // Totals.
+  check("total cost of sales", d.totals.cogs, 1180000 + 177000 + 100000);
+  check("total revenue", d.totals.revenue, 1900000);
+  check("total gross profit", d.totals.grossProfit, 1900000 - (1180000 + 177000 + 100000));
+  check("total units", d.totals.unitsSold, 115);
+  // The attributed columns sum only what could be attributed, which is why they
+  // do not add to the cost-of-sales total -- and why the note says so.
+  check("the attributed columns exclude the unattributable product",
+    Math.abs(d.totals.cogsGoods + d.totals.cogsLanded - (1180000 + 177000)) < 1e-9, true);
+
+  // Ordered by cost of sales -- this is a costing table.
+  check("rows are ordered by cost of sales", d.rows.map((r) => r.productId).join(","), "a,b,c");
+}
+
+console.log("\n=== a product with no cost is named, not dropped ===");
+{
+  const monthKey = "2026-09";
+  const at = (d) => new Date(2026, 8, d, 12, 0, 0);
+  const d = summariseProductProfit({
+    sales: [{ createdAt: at(9), items: [
+      { productId: "x", name: "Uncosted", qty: 4, lineTotal: 80000 },
+      { productId: "y", name: "Costed", qty: 2, lineTotal: 60000 }
+    ] }],
+    costIndex: buildCostIndex([{ productId: "y", effectiveFrom: at(1), costPrice: 10000 }]),
+    purchases: [], monthKey
+  });
+  const byId = new Map(d.rows.map((r) => [r.productId, r]));
+  check("both products appear", d.rows.length, 2);
+  check("the uncosted one is flagged", byId.get("x").costKnown, false);
+  check("...its average cost is unknown, not zero", byId.get("x").averageCost, null);
+  check("...its gross profit is unknown, not the whole of revenue",
+    byId.get("x").grossProfit, null);
+  check("...and its margin is unknown, not 100%", byId.get("x").grossMarginPct, null);
+  check("...while its revenue is still stated", byId.get("x").revenue, 80000);
+  check("the count of uncosted products is reported", d.productsWithoutCost, 1);
+  check("the costed one is unaffected", byId.get("y").grossProfit, 40000);
+}
+
+console.log("\n=== the drill-down counts only the month, and only goods ===");
+{
+  const monthKey = "2026-09";
+  const d = summariseProductProfit({
+    sales: [
+      { createdAt: new Date(2026, 8, 5, 12, 0, 0),
+        items: [{ productId: "a", name: "A", qty: 1, lineTotal: 100 }] },
+      // Another month.
+      { createdAt: new Date(2026, 7, 5, 12, 0, 0),
+        items: [{ productId: "a", name: "A", qty: 99, lineTotal: 9900 }] },
+      // Voided: never counted anywhere.
+      { createdAt: new Date(2026, 8, 6, 12, 0, 0), voided: true,
+        items: [{ productId: "a", name: "A", qty: 50, lineTotal: 5000 }] },
+      // A service line has no product to drill into. Two shapes, because the
+      // sale-item builder writes the first and only the second would reach the
+      // isServiceLine() guard -- and a fixture with only the first cannot tell
+      // the two guards apart.
+      { createdAt: new Date(2026, 8, 7, 12, 0, 0),
+        items: [{ kind: "service", serviceId: "s1", name: "Braiding", qty: 1, lineTotal: 15000 }] },
+      { createdAt: new Date(2026, 8, 8, 12, 0, 0),
+        items: [{ kind: "service", serviceId: "s2", productId: "a",
+                  name: "Braiding", qty: 7, lineTotal: 70000 }] }
+    ],
+    costIndex: new Map(), purchases: [], monthKey
+  });
+  check("only this month's sale is counted", d.totals.unitsSold, 1);
+  check("a voided sale contributes nothing", d.totals.revenue, 100);
+  check("a service line creates no product row", d.rows.length, 1);
+}
+
+console.log("\n=== stock valuation is at COST, and says what it could not value ===");
+{
+  const products = [
+    { id: "a", name: "A", quantity: 10, sellingPrice: 3000 },
+    { id: "b", name: "B", quantity: 5, sellingPrice: 1000 },
+    // Negative stock is real -- an offline oversell is taken and flagged.
+    { id: "c", name: "C", quantity: -3, sellingPrice: 500 }
+  ];
+  const costById = new Map([["a", 2000], ["c", 100]]);
+  const v = summariseStockValuation(products, costById);
+
+  check("value at cost counts only what is costed", v.atCost, 20000);
+  check("...and never a negative quantity", v.atCost, 10 * 2000);
+  check("retail value is reported separately", v.atRetail, 10 * 3000 + 5 * 1000);
+  check("a negative shelf still counts in the unit total", v.units, 12);
+  check("products with a cost are counted", v.costedProducts, 2);
+  check("products without one are counted too", v.uncostedProducts, 1);
+  check("...and the units they represent are named", v.uncostedUnits, 5);
+  check("the most valuable line sorts first", v.rows[0].id, "a");
+  check("an uncosted line reports null value, not zero", v.rows.find((r) => r.id === "b").value, null);
+
+  const empty = summariseStockValuation([], new Map());
+  check("an empty shop values at zero, not NaN", empty.atCost, 0);
+}
+
+console.log("\n=== the supplier report totals goods and landed without double counting ===");
+{
+  const monthKey = "2026-09";
+  const at = (d) => new Date(2026, 8, d, 12, 0, 0);
+  const purchases = [
+    // Two lines of one delivery: their goods costs add, and their ALLOCATED
+    // landed shares must not be counted -- the header carries the freight.
+    { supplierName: "Festive Ltd", goodsCost: 5000000, landedCost: 900000,
+      totalPaid: 5900000, createdAt: at(3) },
+    { supplierName: "festive ltd ", goodsCost: 3000000, landedCost: 540000,
+      totalPaid: 3540000, createdAt: at(3) },
+    // A legacy purchase with no split: totalPaid is its goods cost.
+    { supplierName: "Kilimo Co", totalPaid: 700000, createdAt: at(4) },
+    // Another month.
+    { supplierName: "Festive Ltd", goodsCost: 999999, landedCost: 1, totalPaid: 1000000,
+      createdAt: new Date(2026, 7, 3, 12, 0, 0) }
+  ];
+  const deliveries = [
+    { supplierName: "Festive Ltd", additionalTotal: 1440000, receivedAt: at(3) }
+  ];
+  const s = summariseSuppliers(purchases, deliveries, monthKey);
+
+  check("suppliers typed inconsistently are one row", s.rows.length, 2);
+  check("the busiest supplier sorts first", s.rows[0].name, "Festive Ltd");
+  check("goods costs add across that supplier's lines", s.rows[0].goods, 8000000);
+  check("landed comes off the delivery, not the lines", s.rows[0].landed, 1440000);
+  check("...so the freight is counted exactly once", s.rows[0].total, 9440000);
+  check("a legacy purchase counts its total as goods", s.rows[1].goods, 700000);
+  check("...and contributes no landed cost", s.rows[1].landed, 0);
+  check("last month is excluded", s.total, 9440000 + 700000);
+  check("line counts are reported", s.rows[0].purchases, 2);
+  check("delivery counts are reported", s.rows[0].deliveries, 1);
+
+  const blank = summariseSuppliers(
+    [{ supplierName: "", totalPaid: 5000, createdAt: at(3) },
+     { totalPaid: 5000, createdAt: at(3) }], [], monthKey);
+  check("a purchase with no supplier makes no row", blank.rows.length, 0);
+}
+
+
+// ===========================================================================
+console.log("\n=== returns come off the COST, not only off the revenue ===");
+// Found on a live walkthrough, 2026-09-08. Revenue had always been netted
+// (summariseSales does `total - refunded`); the cost side had no equivalent, so
+// a partial return reduced revenue and left cost untouched. Gross profit read
+// LOW by the cost of the returned goods -- and because those goods go back on
+// the shelf, they were counted in stock valuation AND in cost of sales at once.
+{
+  const monthKey = "2026-09";
+  const at = (d) => new Date(2026, 8, d, 12, 0, 0);
+  const costIndex = buildCostIndex([
+    { productId: "a", effectiveFrom: at(1), costPrice: 11800 }
+  ]);
+  // The walkthrough's numbers: 100 units sold at 15,000, 20 returned.
+  const sale = {
+    createdAt: at(10), total: 1500000, refundedAmount: 300000,
+    items: [{ productId: "a", name: "Product A", qty: 100, lineTotal: 1500000 }],
+    returns: [{ items: [{ productId: "a", name: "Product A", qty: 20, lineTotal: 300000 }],
+                refundAmount: 300000 }]
+  };
+
+  const goods = summariseCostOfGoods([sale], costIndex);
+  check("cost of goods counts 80 units, not 100", goods.cogs, 80 * 11800);
+  check("...which is 236,000 less than before the fix", 100 * 11800 - goods.cogs, 236000);
+
+  const p = summariseProfit({ sales: [sale], costIndex, expenses: [], monthKey,
+                              coverageFromMs: null, vatRegistered: false });
+  check("revenue is netted, as it always was", p.revenue, 1200000);
+  check("COGS is netted too, which it was not", p.cogs, 944000);
+  check("gross profit", p.grossProfit, 256000);
+
+  // THE INVARIANT THE DEFECT BROKE. Units returned to the shelf are counted in
+  // stock; they must not also be counted in cost of sales.
+  const stillOnShelf = 20;
+  check("returned units are not in cost of sales",
+    goods.cogs + stillOnShelf * 11800, 100 * 11800);
+
+  // A FULLY returned sale contributes nothing, and is not reported as an
+  // uncosted line either -- its costedness says nothing about the month.
+  const full = summariseCostOfGoods([{
+    createdAt: at(11), total: 150000,
+    items: [{ productId: "a", name: "Product A", qty: 10, lineTotal: 150000 }],
+    returns: [{ items: [{ productId: "a", qty: 10 }] }]
+  }], costIndex);
+  check("a wholly returned sale costs nothing", full.cogs, 0);
+  check("...and is not counted as a costed line", full.costedLines, 0);
+  check("...nor as an uncosted one", full.uncostedLines, 0);
+
+  // Over-returning cannot drive cost negative.
+  const over = summariseCostOfGoods([{
+    createdAt: at(12), total: 150000,
+    items: [{ productId: "a", qty: 10, lineTotal: 150000 }],
+    returns: [{ items: [{ productId: "a", qty: 99 }] }]
+  }], costIndex);
+  check("an over-return floors at zero rather than going negative", over.cogs, 0);
+
+  // THE DUPLICATE-LINE TRAP. saleReturnedQtyMap() totals per PRODUCT across the
+  // sale, so a naive subtraction takes the whole returned quantity off EVERY
+  // line carrying that product. Two lines of 10, five returned, must cost 15
+  // units -- not 10, which is what subtracting 5 from each would give.
+  const twoLines = summariseCostOfGoods([{
+    createdAt: at(13), total: 300000,
+    items: [{ productId: "a", qty: 10, lineTotal: 150000 },
+            { productId: "a", qty: 10, lineTotal: 150000 }],
+    returns: [{ items: [{ productId: "a", qty: 5 }] }]
+  }], costIndex);
+  check("a product on two lines nets the return ONCE", twoLines.cogs, 15 * 11800);
+
+  // The case Math.min() actually exists for: a return that SPANS both lines.
+  // 20 sold across two lines, 15 returned, so 5 units cost the shop money.
+  // Without the min, the first line absorbs all 15, goes negative, is skipped by
+  // the <= 0 guard, and the second line is charged in full -- 10 units, double
+  // what it should be. A control that removed the min came back GREEN against
+  // the single-line fixtures above, which is how this gap was found.
+  const spanning = summariseCostOfGoods([{
+    createdAt: at(14), total: 300000,
+    items: [{ productId: "a", qty: 10, lineTotal: 150000 },
+            { productId: "a", qty: 10, lineTotal: 150000 }],
+    returns: [{ items: [{ productId: "a", qty: 15 }] }]
+  }], costIndex);
+  check("a return spanning two lines is applied across them", spanning.cogs, 5 * 11800);
+  check("...and does not double-charge the second line", spanning.cogs !== 10 * 11800, true);
+
+  // A void is unaffected: the whole sale is skipped before any of this runs.
+  const voided = summariseCostOfGoods([{ ...sale, voided: true }], costIndex);
+  check("a voided sale still costs nothing", voided.cogs, 0);
+}
+
+console.log("\n=== the drill-down nets BOTH sides, so its margin stays honest ===");
+{
+  const monthKey = "2026-09";
+  const at = (d) => new Date(2026, 8, d, 12, 0, 0);
+  const costIndex = buildCostIndex([{ productId: "a", effectiveFrom: at(1), costPrice: 11800 }]);
+  const d = summariseProductProfit({
+    sales: [{ createdAt: at(10), total: 1500000, refundedAmount: 300000,
+      items: [{ productId: "a", name: "Product A", qty: 100, lineTotal: 1500000 }],
+      returns: [{ items: [{ productId: "a", qty: 20, lineTotal: 300000 }] }] }],
+    costIndex,
+    purchases: [{ productId: "a", goodsCost: 5000000, landedCost: 900000, createdAt: at(1) }],
+    monthKey
+  });
+  const row = d.rows[0];
+  check("units sold are net of the return", row.unitsSold, 80);
+  check("revenue is netted in the same proportion", row.revenue, 1200000);
+  check("cost of sales is netted", row.cogs, 80 * 11800);
+  check("gross profit follows from both", row.grossProfit, 1200000 - 80 * 11800);
+  // The row must be internally consistent: netting only one side would leave a
+  // margin that disagrees with the two columns beside it.
+  check("margin agrees with the row's own revenue and cost",
+    row.grossMarginPct, Math.round(((row.revenue - row.cogs) / row.revenue) * 100));
+  check("average cost is unchanged by a return", row.averageCost, 11800);
+  // The landed attribution still splits the NETTED cost.
+  check("goods and landed still add back to the netted cost",
+    Math.abs(row.cogsGoods + row.cogsLanded - row.cogs) < 1e-9, true);
+}
+
+
+console.log("\n=== Sales by Product -- the docx section 12 report that was missing ===");
+{
+  const at = (d) => new Date(2026, 8, d, 12, 0, 0);
+  const sales = [
+    { createdAt: at(2), items: [
+      { productId: "a", name: "Product A", qty: 10, lineTotal: 150000 },
+      { productId: "b", name: "Product B", qty: 2, lineTotal: 50000 } ] },
+    { createdAt: at(3), items: [
+      { productId: "a", name: "Product A", qty: 5, lineTotal: 75000 } ] },
+    // Voided: never counted.
+    { createdAt: at(4), voided: true, items: [
+      { productId: "a", name: "Product A", qty: 99, lineTotal: 1485000 } ] },
+    // A service sells too, and a salon wants it in this list.
+    { createdAt: at(5), items: [
+      { kind: "service", serviceId: "s1", name: "Braiding", qty: 3, lineTotal: 45000 } ] }
+  ];
+  const s = summariseSalesByProduct(sales);
+
+  check("a voided sale contributes nothing", s.rows.every((r) => r.units !== 99), true);
+  check("the same product across two orders is one row", s.rows.filter((r) => r.name === "Product A").length, 1);
+  const a = s.rows.find((r) => r.name === "Product A");
+  check("...with its units added", a.units, 15);
+  check("...its revenue added", a.revenue, 225000);
+  check("...and its order count", a.orders, 2);
+
+  // Ordered by REVENUE. Ordering by units would put the cheapest thing on the
+  // shelf at the top of every list, which is the opposite of useful when the
+  // question is what to buy again.
+  check("rows are ordered by revenue", s.rows.map((r) => r.name).join(","),
+    "Product A,Product B,Braiding");
+
+  const svc = s.rows.find((r) => r.name === "Braiding");
+  check("a service appears", Boolean(svc), true);
+  check("...and is marked as one", svc.isService, true);
+  check("a product is not marked as a service",
+    s.rows.find((r) => r.name === "Product A").isService, false);
+
+  check("total units", s.totalUnits, 15 + 2 + 3);
+  check("total revenue", s.totalRevenue, 225000 + 50000 + 45000);
+
+  // Returns come off, the same way every other surface nets them: a product
+  // sold and brought back did not sell.
+  const withReturn = summariseSalesByProduct([{
+    createdAt: at(6),
+    items: [{ productId: "a", name: "Product A", qty: 10, lineTotal: 150000 }],
+    returns: [{ items: [{ productId: "a", qty: 4 }] }]
+  }]);
+  check("returned units are not counted as sold", withReturn.rows[0].units, 6);
+  check("...and revenue is netted in the same proportion", withReturn.rows[0].revenue, 90000);
+
+  const fullyReturned = summariseSalesByProduct([{
+    createdAt: at(7),
+    items: [{ productId: "a", name: "Product A", qty: 5, lineTotal: 75000 }],
+    returns: [{ items: [{ productId: "a", qty: 5 }] }]
+  }]);
+  check("a wholly returned line leaves no row at all", fullyReturned.rows.length, 0);
+
+  check("an empty range totals to zero, not NaN", summariseSalesByProduct([]).totalRevenue, 0);
+}
+
+console.log("\n=== ...and it stays out of the cost disclosure ===");
+{
+  const fn = body("function renderSalesByProduct(");
+  check("it is manager-and-owner, not owner-strict",
+    /if \(!isManagerOrOwnerRole\(\)\) \{/.test(fn), true);
+  check("...and empties rather than merely hiding",
+    /table\.innerHTML = "";/.test(fn), true);
+  // The whole reason this panel can sit on a manager's screen.
+  check("it never reads a cost", /costInForceAt|productCostMap|unitCost|costPrice/.test(fn), false);
+  check("it reads the SAME range as the payment panel above it",
+    /filteredSales\(\)/.test(fn), true);
+  check("it is drawn whenever the reports are",
+    /renderSalesByProduct\(\);/.test(noComments), true);
+}
+
+console.log("\n=== the pruned panels are gone, root and branch ===");
+{
+  const html = readFileSync(new URL("../app.html", import.meta.url), "utf8");
+  for (const id of ["topCustomersTable", "dailyStaffReportDate", "dailyStaffReportButton",
+                    "dailyStaffReportResult"]) {
+    check(`#${id} is gone from the markup`, html.includes(id), false);
+  }
+  for (const fn of ["renderTopCustomers", "computeCustomerBreakdown",
+                    "renderDailyStaffReport", "computeDailyStaffReport"]) {
+    check(`${fn}() is gone from app.js`, src.includes(fn), false);
+  }
+  for (const key of ["reports.topCustomersTitle", "reports.dailyStaffReportTitle",
+                     "reports.dailyStaffReportGrandTotal"]) {
+    check(`the dead key ${key} is gone`, src.includes(key), false);
+  }
+  // Order Lookup STAYS. It looks like the most redundant of the staff panels and
+  // is the only route to Return / Refund -- deleting it would remove the returns
+  // function from the app.
+  check("Order Lookup survives, because it is the returns entry point",
+    html.includes("staffOrderLookupButton") && src.includes("data-return-sale"), true);
+  // Sold While Offline STAYS: it names which shelves stopped being trustworthy
+  // after an outage, which the unsynced banner does not.
+  check("Sold While Offline survives", html.includes("offlineSalesReport"), true);
+}
+
+
+console.log("\n=== the Settings view keeps its gates after the move ===");
+{
+  const html = readFileSync(new URL("../app.html", import.meta.url), "utf8");
+  const start = html.indexOf('<section class="view" id="settings"');
+  check("the settings view exists", start > -1, true);
+  const view = html.slice(start, html.indexOf("</section>", html.indexOf("</article>", start)) + 400);
+
+  // Every control moved off the topbar and the dashboard title row. Same ids,
+  // so applyStoreOwnerControlsVisibility() and updateAuthUi() still find them --
+  // that is what made a change this wide safe in one pass.
+  for (const id of ["signOutButton", "downloadBackupButton", "deleteAccountButton",
+                    "overridePasswordSettingsButton", "addStoreButton", "renameStoreButton",
+                    "setBusinessTypeButton", "setCurrencyButton", "vatSettingsButton",
+                    "archiveStoreButton", "langToggleButton", "themeButton"]) {
+    check(`#${id} now lives in Settings`, view.includes(`id="${id}"`), true);
+  }
+
+  // ...and are GONE from the topbar, or the move only duplicated the clutter.
+  const topbar = html.slice(html.indexOf('<header class="topbar"'), html.indexOf("</header>"));
+  for (const id of ["signOutButton", "downloadBackupButton", "deleteAccountButton",
+                    "overridePasswordSettingsButton", "langToggleButton", "themeButton"]) {
+    check(`#${id} is gone from the topbar`, topbar.includes(id), false);
+  }
+  check("the topbar keeps the identity chip", topbar.includes('id="userEmail"'), true);
+  // Add Product was in the topbar AND in the Inventory title row -- the same
+  // dialog behind two buttons. The topbar copy is gone: adding a product is an
+  // inventory action and belongs on the inventory screen. That styles.css
+  // already hid the topbar copy on mobile is the tell that it was always the
+  // redundant one.
+  check("the duplicate Add Product is gone from the topbar",
+    topbar.includes("newProductButton"), false);
+  const inventory = html.slice(html.indexOf('<section class="view" id="inventory"'),
+                               html.indexOf('<div class="filters">'));
+  check("...and Add Product survives where it belongs, on Inventory",
+    inventory.includes('id="inventoryAddButton"'), true);
+  check("the dead topbar.addProduct key went with it",
+    src.includes("topbar.addProduct"), false);
+
+  // The store SWITCHER stays on the dashboard: it scopes every screen and is not
+  // a setting. Its six configuration buttons went.
+  const dash = html.slice(html.indexOf('<section class="view active" id="dashboard"'),
+                          html.indexOf('<div class="kpi-grid" id="kpiGrid">'));
+  check("the dashboard keeps the store switcher", dash.includes('id="storeSwitcher"'), true);
+  check("...and lost the branch configuration buttons", dash.includes("renameStoreButton"), false);
+
+  // THE GATE ITSELF. The owner-only list is keyed by id, so a button that moved
+  // house keeps its gate -- but only while the id stays in this list.
+  const gate = body("function applyStoreOwnerControlsVisibility(");
+  for (const id of ["renameStoreButton", "setBusinessTypeButton", "setCurrencyButton",
+                    "archiveStoreButton", "overridePasswordSettingsButton",
+                    "vatSettingsButton", "downloadBackupButton"]) {
+    check(`${id} is still owner-gated`, gate.includes(`"${id}"`), true);
+  }
+  // Sign out and language are deliberately NOT gated: a cashier needs both.
+  check("sign out is not owner-gated", gate.includes("signOutButton"), false);
+  check("the language toggle is not owner-gated", gate.includes("langToggleButton"), false);
+  // The staff panel is owner-only, because /members is owner-only in the rules.
+  check("the settings staff panel is hidden for non-owners",
+    /settingsStaffPanel[\s\S]{0,120}hidden = !isOwner/.test(noComments), true);
 }
 
 const failed = results.filter((r) => !r.pass);

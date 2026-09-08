@@ -100,6 +100,11 @@ function legacyFieldsOn(data) {
 // A collection-group sweep, paged by document path. Ordering by __name__ needs
 // no composite index and gives a stable cursor, which is what makes an
 // interrupted run resumable simply by running it again.
+// Paths the sweep deliberately passed over. Collected so they can be reported:
+// a migration that quietly ignores documents is indistinguishable from one whose
+// query is broken.
+const skipped = [];
+
 async function sweep(onDoc) {
   let cursor = null;
   let scanned = 0;
@@ -109,9 +114,32 @@ async function sweep(onDoc) {
     const snap = await q.get();
     if (snap.empty) break;
     for (const doc of snap.docs) {
+      // A collection-group query matches EVERY collection named "products", at
+      // any depth -- not only the tenant subcollections this migration is about.
+      //
+      // Found by the first production dry run, 2026-09-07: there is a ROOT-LEVEL
+      // `products` collection of 8 seed documents (a sanitary-ware catalogue
+      // dated 2026-06-21), and the sweep counted each one as its own "tenant",
+      // because segment 1 of `products/tap-004` is the product id rather than a
+      // uid. --apply would have stripped cost from all eight.
+      //
+      // They must not be touched, and the reason is not caution -- it is that
+      // stripping them would achieve NOTHING. firestore.rules has no root-level
+      // /products match; the only one is nested inside match /users/{userId}.
+      // Firestore default-denies, so no client can read or write those
+      // documents, and validProduct() -- the clause stage 2 exists to tighten --
+      // never applies to them.
+      //
+      // So: check the SHAPE of the path rather than trusting the collection
+      // name. users/{uid}/products/{id} is exactly four segments beginning
+      // with "users".
+      const segments = doc.ref.path.split("/");
+      if (segments.length !== 4 || segments[0] !== "users") {
+        skipped.push(doc.ref.path);
+        continue;
+      }
       scanned++;
-      // users/{uid}/products/{id} -- segment 1 is the tenant.
-      const tenant = doc.ref.path.split("/")[1];
+      const tenant = segments[1];
       if (ONLY_TENANT && tenant !== ONLY_TENANT) continue;
       await onDoc(doc, tenant);
     }
@@ -159,6 +187,13 @@ async function run() {
 
   console.log(`\nproducts scanned      : ${scanned}`);
   console.log(`carrying legacy cost  : ${affected}`);
+  // Reported rather than silently dropped: a migration that quietly ignores
+  // documents is indistinguishable from one whose query is broken.
+  if (skipped.length) {
+    console.log(`skipped, not a tenant product : ${skipped.length}`);
+    for (const path of skipped.slice(0, 10)) console.log(`    ${path}`);
+    if (skipped.length > 10) console.log(`    ...and ${skipped.length - 10} more`);
+  }
   for (const [tenant, n] of [...perTenant.entries()].sort((a, b) => b[1] - a[1])) {
     console.log(`    ${tenant}  ${n}`);
   }

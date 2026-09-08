@@ -273,7 +273,10 @@ td small,
    over nothing reads as a broken menu. */
 .nav-group-label {
   margin: var(--space-3) 0 2px;
-  padding: 0 var(--space-3);
+  /* Indented to line up with the nav items' TEXT rather than with their icons:
+     the items below it are icon-led, and a label flush with the icons reads as
+     a heading for the icon column instead of for the group. */
+  padding: 0 var(--space-3) 0 calc(var(--space-3) + 18px + var(--space-3));
   font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -296,6 +299,7 @@ td small,
   min-height: 40px;
   display: flex;
   align-items: center;
+  gap: var(--space-3);
   font-size: 0.875rem;
   font-weight: 550;
   letter-spacing: -0.006em;
@@ -2075,10 +2079,6 @@ label textarea {
     max-width: none;
   }
 
-  #newProductButton {
-    display: none;
-  }
-
   .page-title {
     align-items: flex-start;
     flex-direction: column;
@@ -2227,4 +2227,222 @@ label textarea {
    visible at once, so this is allowed to be absolute. */
 [hidden] {
   display: none !important;
+}
+
+/* Receive delivery -- DESIGN-landed-costs.md phase 4.
+   Wider than the standard dialog because this one carries a table: the docx
+   section 6 allocation preview has six columns, and at 760px they wrap into
+   unreadability on a laptop. The min() keeps it inside a phone viewport, where
+   the table scrolls horizontally inside .table-scroll rather than pushing the
+   page sideways. */
+dialog.wide-dialog {
+  width: min(1040px, calc(100vw - 28px));
+}
+
+.delivery-block {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.delivery-block h3 {
+  margin: 0 0 var(--space-2);
+  font-size: 1rem;
+}
+
+/* One product line. Wide enough for a product name, then two numeric boxes and
+   a remove button; collapses to a stack on a phone rather than shrinking the
+   product picker to a width nobody can read a name in. */
+.delivery-line {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr) minmax(0, 1.3fr) auto;
+  gap: var(--space-3);
+  align-items: end;
+  margin-bottom: var(--space-3);
+}
+
+.delivery-line.has-manual {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 0.9fr) minmax(0, 1.1fr) minmax(0, 1.1fr) auto;
+}
+
+.delivery-line label {
+  min-width: 0;
+}
+
+.delivery-line .line-remove {
+  /* Aligns with the inputs rather than their labels. */
+  margin-bottom: 2px;
+}
+
+@media (max-width: 720px) {
+  .delivery-line,
+  .delivery-line.has-manual {
+    grid-template-columns: 1fr 1fr;
+  }
+  .delivery-line > label:first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+/* The preview's TOTAL row. It is the number the shop reconciles against the
+   supplier's invoice, so it is the one row that must not read as another line. */
+.delivery-preview-total td {
+  font-weight: 650;
+  border-top: 2px solid var(--line-strong);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The Profit Report -- DESIGN-landed-costs.md phase 6, docx section 9.
+   A statement, not a grid of tiles. The figures are read down a column and
+   compared to each other, which is what a right-aligned single column of money
+   is for; four tiles put them side by side, where GROSS and NET read as two
+   unrelated headlines. */
+.statement-wrap {
+  overflow-x: auto;
+}
+
+table.statement {
+  width: 100%;
+  border-collapse: collapse;
+  /* Tabular figures, so the digits line up down the column. Without it a 1 is
+     narrower than an 8 and a column of money reads as ragged. */
+  font-variant-numeric: tabular-nums;
+}
+
+table.statement th,
+table.statement td {
+  padding: var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--line);
+  vertical-align: baseline;
+}
+
+table.statement th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text);
+}
+
+/* The caption under each line: what the figure is computed from, and what it is
+   not. DESIGN-purchases.md 11 -- completeness is stated, never assumed -- and
+   this is where it is stated. */
+table.statement th span.muted {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.82rem;
+  font-weight: 400;
+}
+
+table.statement td {
+  text-align: right;
+  white-space: nowrap;
+  font-weight: 550;
+}
+
+/* GROSS PROFIT and NET PROFIT. A rule above and heavier type, because they are
+   subtotals of the lines above them and not more lines.
+
+   Written as `table.statement .statement-total td`, not `.statement-total td`.
+   The shorter form loses to `table.statement td` above on specificity -- two
+   elements and a class beats one element and a class -- so the border applied
+   and the weight silently did not. Caught by measuring the rendered weight,
+   which came back identical to an ordinary line. */
+table.statement .statement-total th,
+table.statement .statement-total td {
+  border-top: 2px solid var(--line-strong);
+  font-weight: 700;
+}
+
+table.statement .statement-bottom th,
+table.statement .statement-bottom td {
+  border-bottom: none;
+  font-size: 1.05rem;
+}
+
+/* The tones the tiles used, kept: a gross profit that has gone negative on real
+   revenue, and a net profit at or below zero. */
+/* --red and --amber, which are the tokens this file actually defines. The first
+   version used --danger and --warn: undefined custom properties, so `color`
+   resolved to nothing and the tone silently did not apply. Same names
+   .control-table td.warn already uses. */
+table.statement td.danger { color: var(--red); }
+table.statement td.warn { color: var(--amber); }
+
+@media (max-width: 560px) {
+  table.statement th,
+  table.statement td {
+    padding: var(--space-2) 0;
+  }
+}
+
+/* The docx section 10 drill-down. Nine columns of which seven are money, so the
+   figures get the same treatment as the statement above them: right-aligned,
+   tabular digits, and a TOTAL row ruled off. Reuses .statement-total, which is
+   why that rule is scoped to `table.statement` AND matched here explicitly --
+   see the specificity note above. */
+table.statement-figures {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+table.statement-figures th,
+table.statement-figures td {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+table.statement-figures th { text-align: left; }
+
+/* Every column but the product name is a figure. */
+table.statement-figures th:not(:first-child),
+table.statement-figures td:not(:first-child) {
+  text-align: right;
+}
+
+table.statement-figures .statement-total td {
+  border-top: 2px solid var(--line-strong);
+  border-bottom: none;
+  font-weight: 700;
+}
+
+table.statement-figures td.danger { color: var(--red); }
+
+/* Nav icons. Inline SVG rather than an icon font or a sprite: this app is
+   offline-first and ships no external assets beyond the Firebase SDK, so an
+   icon that needed the network would be a blank square on the one day it
+   matters most.
+
+   Stroked in currentColor, so they inherit the nav item's own colour and
+   follow hover, the active state and the light/dark theme with no extra rules
+   and nothing to keep in sync. */
+.nav-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  /* Slightly recessive against the label, which is what a reader scans. The
+     active item brings its icon up to full strength below. */
+  opacity: 0.75;
+  transition: opacity 0.13s ease;
+}
+
+.nav-item:hover .nav-icon,
+.nav-item.active .nav-icon {
+  opacity: 1;
 }

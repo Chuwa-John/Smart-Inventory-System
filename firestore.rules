@@ -136,7 +136,32 @@ service cloud.firestore {
         && (!('warehouse' in d) || (d.warehouse is string && d.warehouse.size() <= 60))
         && (!('shelf' in d) || (d.shelf is string && d.shelf.size() <= 60))
         && (!('sku' in d) || (d.sku is string && d.sku.size() <= 40))
-        // STAGE 1 OF 2 -- tolerated here, and only here.
+        // STAGE 2, RESTORED 2026-09-07. Cost is refused on a product document
+        // outright, which is what DESIGN-purchases.md 10 always specified.
+        //
+        // The migration ran the same day: `proxy/migrate-strip-product-cost.mjs
+        // --apply` removed the field from 556 documents across 13 tenants, and
+        // `--verify` reports 734 tenant products carrying none. Every one of the
+        // 556 held `costPrice: 0` and none held `costKnownFrom` -- the legacy
+        // zero the deployed client wrote in a loop, never a real cost -- so
+        // nothing of value was removed and nothing needs backfilling.
+        //
+        // THE ORDERING THIS DEPENDS ON, and it is not optional: production must
+        // already be serving a client that does not write the field. It is
+        // (20260823d, verified by fetching the live app.js and reading it: every
+        // costPrice write targets /productCostHistory or /productCosts, and the
+        // product form's numericFields loop no longer contains it). Deploying
+        // this ahead of such a client breaks Add Product, Edit Product and every
+        // owner-driven stock decrement -- i.e. selling -- because an update is
+        // validated against the RESULTING document. Staff selling would be
+        // unaffected, so it presents as "the owner cannot sell but the till
+        // can", which is not a hypothesis anyone reaches quickly.
+        //
+        // If an old client is ever found still writing it, re-run --verify: a
+        // count that has gone dirty again means the writer is still out there,
+        // and this pair of lines goes back to the stage-1 tolerance below.
+        //     && (!('costPrice' in d) || moneyInRange(d.costPrice))
+        //     && (!('costKnownFrom' in d) || d.costKnownFrom is timestamp)
         //
         // Cost belongs in /productCosts, which a cashier cannot read at all:
         // Firestore has no field-level read security and a cashier's POS reads
@@ -144,29 +169,16 @@ service cloud.firestore {
         // cashier can read. That is what DESIGN-purchases.md 10 exists to
         // prevent, and the destination is still an outright refusal.
         //
-        // It cannot be refused yet. The deployed client (20260808o) assigns
-        // costPrice = 0 in the numericFields loop of its product form whether
-        // or not the form has the box, so every product it saves carries the
-        // field -- and every product document already in production carries it
-        // too. Refusing it here breaks Add Product, Edit Product, and, because
-        // an update is validated against the RESULTING document, every
-        // owner-driven stock decrement: i.e. selling. Verified against the
-        // emulator with the deployed client's exact payload.
+        // The other half of the guarantee was never relaxed even under stage 1:
+        // a cashier or manager cannot put cost on a product, because that
+        // refusal comes from stockMovementKeys() via validStockMovementShape(),
+        // which allows only quantity, sold30, sold90, updatedAt and
+        // movementReason. This clause closes the remaining hole -- the owner's
+        // own writes -- so cost cannot reach a product document by any path.
         //
-        // What this does NOT relax: a cashier or manager still cannot put cost
-        // on a product. That refusal comes from stockMovementKeys() via
-        // validStockMovementShape(), which allows only quantity, sold30,
-        // sold90, updatedAt and movementReason -- so it is untouched by this
-        // clause and stays enforced. Only the owner's own writes tolerate the
-        // legacy field, and only within moneyInRange.
-        //
-        // STAGE 2, once every client is on the new build and costPrice has been
-        // migrated off existing product documents, is to restore:
-        //     && !('costPrice' in d)
-        //     && !('costKnownFrom' in d)
-        // See KNOWN-LIMITATIONS.md L-15.
-        && (!('costPrice' in d) || moneyInRange(d.costPrice))
-        && (!('costKnownFrom' in d) || d.costKnownFrom is timestamp)
+        // See KNOWN-LIMITATIONS.md L-15 for the whole two-stage account.
+        && !('costPrice' in d)
+        && !('costKnownFrom' in d)
         && (!('sellingPrice' in d) || moneyInRange(d.sellingPrice))
         && (!('reorderLevel' in d) || countInRange(d.reorderLevel))
         && (!('expiryDate' in d) || (d.expiryDate is string && d.expiryDate.size() <= 10))
@@ -267,6 +279,14 @@ service cloud.firestore {
                                'totalPaid', 'unitCost', 'recordedByUid', 'createdAt',
                                'supplierName', 'supplierTin', 'receiptNumber',
                                'receiptDate', 'hasFiscalReceipt', 'note',
+                               // DESIGN-landed-costs.md 3. All three optional:
+                               // every purchase written before this design has
+                               // none of them, and the restock and product-form
+                               // paths still write none. Absent reads as
+                               // goodsCost == totalPaid and landedCost == 0,
+                               // which is exactly true of a delivery that had no
+                               // additional costs.
+                               'deliveryId', 'goodsCost', 'landedCost',
                                // The VAT printed on the supplier's fiscal
                                // receipt. DESIGN-vat.md: captured, not derived
                                // -- 18/118 assumes the whole basket was
@@ -325,7 +345,27 @@ service cloud.firestore {
         // A claim can never exceed what was paid. Enforced here as well as in
         // the client because this figure is filed with a tax authority: an
         // amount above the total is a typo, and an overclaim is an underpayment.
-        && (!('vatAmount' in d) || (moneyInRange(d.vatAmount) && d.vatAmount <= d.totalPaid));
+        && (!('vatAmount' in d) || (moneyInRange(d.vatAmount) && d.vatAmount <= d.totalPaid))
+        // The delivery this line belongs to. Unvalidated as a reference -- rules
+        // cannot cheaply prove the header exists, and a get() here would put a
+        // document read on the restock path.
+        && (!('deliveryId' in d) || (d.deliveryId is string && d.deliveryId.size() > 0 && d.deliveryId.size() <= 120))
+        && (!('goodsCost' in d) || moneyInRange(d.goodsCost))
+        && (!('landedCost' in d) || moneyInRange(d.landedCost))
+        // DESIGN-landed-costs.md 3.1: totalPaid carries the LANDED total, so the
+        // split must add back up to it. Written as a pair of bounds rather than
+        // an equality for the same reason the unitCost invariant above is: the
+        // allocated share is an unrounded fraction and float64 does not come
+        // back exact. One shilling, orders of magnitude above the representation
+        // error and far below any figure a human would mis-key.
+        //
+        // Both-or-neither. A line carrying goodsCost alone would report its
+        // landed cost as zero in the drill-down while totalPaid said otherwise,
+        // which is a book disagreeing with itself.
+        && (('goodsCost' in d) == ('landedCost' in d))
+        && (!('goodsCost' in d) || (
+               d.goodsCost + d.landedCost >= d.totalPaid - 1
+            && d.goodsCost + d.landedCost <= d.totalPaid + 1));
     }
 
     function validPurchaseCreate() {
@@ -355,6 +395,125 @@ service cloud.firestore {
         && after.totalPaid == before.totalPaid
         && after.unitCost == before.unitCost
         && after.recordedByUid == before.recordedByUid
+        && after.createdAt == before.createdAt
+        // The landed split settles with everything else it was derived from.
+        // Editing it afterwards would leave the drill-down attributing money to
+        // freight that the weighted average already spent as goods cost, and the
+        // header's allocation would no longer reconcile to its lines.
+        //
+        // .get() with a sentinel rather than an `in` test on both sides: these
+        // are optional, absent on every purchase written before this design, and
+        // reading a missing field directly is an error rather than a null. -1 is
+        // outside moneyInRange, so it cannot collide with a real value.
+        && after.get('deliveryId', '') == before.get('deliveryId', '')
+        && after.get('goodsCost', -1) == before.get('goodsCost', -1)
+        && after.get('landedCost', -1) == before.get('landedCost', -1);
+    }
+
+    // The goods received note -- DESIGN-landed-costs.md 3.
+    //
+    // A header document, NOT an array of lines. Every rule in this file is
+    // written flat and constant-cost on purpose (see the note above
+    // validExpense(), and rules-budget-probe.mjs, which exists because the
+    // 1000-expression ceiling has been hit here before). Validating an unbounded
+    // array of line items means iteration, and iteration is where the budget
+    // goes. The lines are /purchases documents, each validated flat on its own.
+    //
+    // The seven additional cost types are REQUIRED, not optional -- a departure
+    // from the design's first draft, decided while writing this clause. Optional
+    // would mean seven `('freight' in d) ? d.freight : 0` terms to sum them, and
+    // the sum has to be checked or the header's own breakdown need not add up to
+    // its own total. Required-with-explicit-zeros makes the arithmetic one line
+    // and costs seven zeroes on one document per delivery.
+    function validDelivery() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['storeId', 'reference', 'supplierName', 'supplierTin',
+                               'receivedAt', 'goodsCost',
+                               'freight', 'importDuty', 'clearing', 'transport',
+                               'handling', 'insurance', 'otherCost',
+                               'additionalTotal', 'totalCost', 'allocationBasis',
+                               'lineCount', 'recordedByUid', 'createdAt', 'note'])
+        && d.storeId is string && d.storeId.size() > 0 && d.storeId.size() <= 120
+        // Zero is legitimate: a delivery of free goods that still cost freight.
+        // What cannot be zero is totalCost -- a delivery that cost nothing is
+        // not a delivery, and it would divide by zero downstream.
+        && moneyInRange(d.goodsCost)
+        && moneyInRange(d.freight) && moneyInRange(d.importDuty)
+        && moneyInRange(d.clearing) && moneyInRange(d.transport)
+        && moneyInRange(d.handling) && moneyInRange(d.insurance)
+        && moneyInRange(d.otherCost)
+        && moneyInRange(d.additionalTotal)
+        && d.totalCost is number && d.totalCost > 0 && d.totalCost <= 1000000000
+        // The header must add up to itself. Both to a shilling, not exactly, for
+        // the reason given on the unitCost invariant above: these figures are
+        // sums of unrounded allocations and float64 does not return them exact.
+        && d.freight + d.importDuty + d.clearing + d.transport
+           + d.handling + d.insurance + d.otherCost >= d.additionalTotal - 1
+        && d.freight + d.importDuty + d.clearing + d.transport
+           + d.handling + d.insurance + d.otherCost <= d.additionalTotal + 1
+        && d.goodsCost + d.additionalTotal >= d.totalCost - 1
+        && d.goodsCost + d.additionalTotal <= d.totalCost + 1
+        // The basis ACTUALLY used, which is not always the one the screen asked
+        // for: a delivery of free goods cannot be split by value and falls back
+        // to quantity. A header claiming 'value' over an allocation done by
+        // quantity is a book that lies about its own arithmetic.
+        // 'weight' is deliberately absent -- DESIGN-landed-costs.md 2.
+        && d.allocationBasis in ['value', 'quantity', 'manual']
+        // Whole lines, at least one. The ceiling is arithmetic, not taste, and
+        // phase 2 got it WRONG: it counted four writes a line and forgot the
+        // stock movement. Receiving a line writes FIVE documents inside the
+        // transaction -- the product, its cost, its cost history, the purchase
+        // and the movement -- and the header and its audit entry take two more.
+        // Firestore caps a transaction at 500 writes, so the old ceiling of 100
+        // was 502: one over, failing only after a shop had typed in a
+        // hundred-line delivery. 80 x 5 + 2 = 402, which leaves room for a sixth
+        // per-line document without another rules change.
+        // DELIVERY_MAX_LINES in app.js carries the same number and the same sum.
+        && d.lineCount is number && d.lineCount > 0 && d.lineCount <= 80
+        && math.floor(d.lineCount) == d.lineCount
+        // The day the goods arrived, which is routinely not the day it was
+        // typed -- the same separation spentAt makes for an expense. The Purchase
+        // Book and every period report bucket on it.
+        && d.receivedAt is timestamp
+        && d.receivedAt < request.time + duration.value(2, 'd')
+        && d.recordedByUid is string && d.recordedByUid.size() > 0
+        && d.createdAt is timestamp
+        && (!('reference' in d) || (d.reference is string && d.reference.size() <= 60))
+        && (!('supplierName' in d) || (d.supplierName is string && d.supplierName.size() <= 120))
+        && (!('supplierTin' in d) || (d.supplierTin is string && d.supplierTin.size() <= 20))
+        && (!('note' in d) || (d.note is string && d.note.size() <= 200));
+    }
+
+    function validDeliveryCreate() {
+      return validDelivery() && request.resource.data.recordedByUid == request.auth.uid;
+    }
+
+    // What a delivery cost is settled the moment it is recorded, for the same
+    // reason a purchase is: the allocation has already been spread across the
+    // lines and folded into each product's weighted average, which is a cached
+    // derivation computed once and never recomputed. Editing an amount here
+    // leaves the header, the lines and the averages permanently disagreeing.
+    //
+    // What stays editable is the paperwork that turns up later: the supplier's
+    // name, their TIN, the invoice reference, and the note.
+    function deliveryImmutableFieldsUnchanged() {
+      let after = request.resource.data;
+      let before = resource.data;
+      return after.storeId == before.storeId
+        && after.goodsCost == before.goodsCost
+        && after.freight == before.freight
+        && after.importDuty == before.importDuty
+        && after.clearing == before.clearing
+        && after.transport == before.transport
+        && after.handling == before.handling
+        && after.insurance == before.insurance
+        && after.otherCost == before.otherCost
+        && after.additionalTotal == before.additionalTotal
+        && after.totalCost == before.totalCost
+        && after.allocationBasis == before.allocationBasis
+        && after.lineCount == before.lineCount
+        && after.receivedAt == before.receivedAt
+        && after.recordedByUid == before.recordedByUid
         && after.createdAt == before.createdAt;
     }
 
@@ -363,14 +522,26 @@ service cloud.firestore {
     function validExpense() {
       let d = request.resource.data;
       return d.keys().hasOnly(['storeId', 'category', 'amount', 'paidFrom',
-                               'spentAt', 'recordedByUid', 'createdAt', 'note'])
+                               'spentAt', 'recordedByUid', 'createdAt', 'note',
+                               // DESIGN-landed-costs.md 5. Optional: every
+                               // expense written before phase 5 has none, and
+                               // absent reads as 'indirect' -- which is the
+                               // default of all nine categories that existed
+                               // then, so absent and stored agree on history.
+                               'nature'])
         && d.storeId is string && d.storeId.size() > 0 && d.storeId.size() <= 120
         // Closed set, not free text. A category nobody can report on is a note,
         // and two of these carry a tax consequence later (rent withholding at
         // 10%; entertainment input VAT is not deductible, which is why there is
         // no entertainment category and such spending goes to 'other').
+        //
+        // The last three arrived with DESIGN-landed-costs.md 5: the docx section
+        // 11 names sales commission, delivery related to a sale, and sales
+        // packaging as DIRECT operating expenses, and until now they had nowhere
+        // to go but 'other' -- which is the one category no report can act on.
         && d.category in ['rent', 'utilities', 'wages', 'transport',
-                          'supplies', 'repairs', 'licences', 'marketing', 'other']
+                          'supplies', 'repairs', 'licences', 'marketing', 'other',
+                          'commission', 'delivery', 'packaging']
         // Strictly positive. A zero expense is a mis-key, and a negative one is
         // income wearing the wrong hat.
         && d.amount is number && d.amount > 0 && d.amount <= 1000000000
@@ -390,7 +561,21 @@ service cloud.firestore {
         // and is unaffected.
         && d.spentAt < request.time + duration.value(2, 'd')
         && d.recordedByUid is string && d.recordedByUid.size() > 0
-        && (!('note' in d) || (d.note is string && d.note.size() <= 200));
+        && (!('note' in d) || (d.note is string && d.note.size() <= 200))
+        // Direct or indirect OPERATING expense -- the docx section 9 statement
+        // has a line for each. Both sit below gross profit and both subtract
+        // from it, so misclassifying one as the other cannot move gross profit
+        // and cannot move net profit; only the split between two lines that add
+        // to the same total. This is the rare money field where getting it wrong
+        // is presentational, which is why it is self-classified rather than
+        // derived from the category and pinned.
+        //
+        // A third value is NOT permitted. Inventory and landed costs are the
+        // docx's third tier and they never reach this collection at all -- they
+        // are capitalised into stock by the delivery path. An expense document
+        // claiming to be one would be counted once in COGS and once in operating
+        // expenses, understating profit by the whole of it.
+        && (!('nature' in d) || d.nature in ['direct', 'indirect']);
     }
 
     function validExpenseCreate() {
@@ -735,7 +920,13 @@ service cloud.firestore {
               // A manager is who spends on the shop's behalf, so a manager is
               // who records the spending -- and therefore who records that they
               // recorded it. Correcting and removing stay with the owner below.
-              'EXPENSE_RECORDED']);
+              'EXPENSE_RECORDED',
+              // A manager receives deliveries, so a manager records that they
+              // did. ONE entry per delivery, not one per line -- the per-product
+              // trail is /stockMovements, which the stock ledger reconciles
+              // against, and a sixth write a line would cost the transaction its
+              // headroom under Firestore's 500-write cap.
+              'DELIVERY_RECEIVED']);
     }
     // The ACCOUNT_* entries are the deletion-lifecycle evidence trail. Two of
     // them are written by the proxy's Admin SDK, which bypasses these rules
@@ -750,7 +941,7 @@ service cloud.firestore {
          // why the removal has to leave a trace: every other money-touching
          // collection in this file refuses deletion outright, and a document
          // that can vanish silently is a note rather than a book.
-         'EXPENSE_UPDATED', 'EXPENSE_DELETED', 'PURCHASE_DELETED',
+         'EXPENSE_UPDATED', 'EXPENSE_DELETED', 'PURCHASE_DELETED', 'DELIVERY_DELETED',
          'PRODUCT_CREATED', 'PRODUCT_EDITED', 'PRODUCT_DELETED', 'STORE_CURRENCY_CHANGED', 'STORE_ARCHIVED',
          'ACCOUNT_DELETION_REQUESTED', 'ACCOUNT_DELETION_CANCELLED', 'ACCOUNT_ACCESS_DURING_GRACE',
          'VAT_REGISTRATION_ENABLED', 'VAT_REGISTRATION_DISABLED']);
@@ -773,6 +964,9 @@ service cloud.firestore {
               // expense amount and a purchase total; `qtyAdded` and `name` are
               // reused for the units and the product on a purchase.
               'category', 'expenseId', 'purchaseId',
+              // Deliveries reuse `amount` for the delivery's total cost and
+              // `itemCount` for how many product lines it carried.
+              'deliveryId',
               // Shift close. `variance` is the only signed figure in this list:
               // a short drawer is negative and moneyInRange() would refuse it,
               // which is why it is bounded separately below.
@@ -802,6 +996,7 @@ service cloud.firestore {
         && (!('category' in d) || (d.category is string && d.category.size() <= 40))
         && (!('expenseId' in d) || (d.expenseId is string && d.expenseId.size() <= 120))
         && (!('purchaseId' in d) || (d.purchaseId is string && d.purchaseId.size() <= 120))
+        && (!('deliveryId' in d) || (d.deliveryId is string && d.deliveryId.size() <= 120))
         && (!('shiftId' in d) || (d.shiftId is string && d.shiftId.size() <= 120))
         && (!('expectedCash' in d) || moneyInRange(d.expectedCash))
         && (!('countedCash' in d) || moneyInRange(d.countedCash))
@@ -954,6 +1149,35 @@ service cloud.firestore {
               && memberCanAccessStore(userId, request.resource.data.storeId)));
         allow update: if isOwner(userId) && tenantNotFrozen(userId)
           && validPurchase() && purchaseImmutableFieldsUnchanged();
+        allow delete: if isOwner(userId) && tenantNotFrozen(userId);
+      }
+
+      // The goods received notes -- DESIGN-landed-costs.md phase 2.
+      //
+      // Scoped exactly like /purchases, because it is the same disclosure: a
+      // delivery header states what a shop paid for a shipment, and a cashier
+      // who knows that knows the margin on everything in it. Managers write,
+      // because managers receive deliveries; corrections are the owner's.
+      //
+      // DELETE, opened in phase 3 and not before. Phase 2 refused it outright
+      // because /purchases pairs deletion with a PURCHASE_DELETED audit entry and
+      // there was no DELIVERY_DELETED -- no client could write one, so permitting
+      // the delete would have put an untraceable removal of a money document live
+      // ahead of anything that could record it. deleteDelivery() in app.js now
+      // writes that entry, and takes the delivery's purchase lines with it: a
+      // header removed while its lines survive makes the Purchase Book
+      // double-count the moment the delivery is re-recorded.
+      // Owner only, like every other correction in this file.
+      match /deliveries/{deliveryId} {
+        allow read: if isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager"])
+              && (resource == null || memberCanAccessStore(userId, resource.data.storeId)));
+        allow create: if tenantNotFrozen(userId) && validDeliveryCreate() && (
+             isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager"])
+              && memberCanAccessStore(userId, request.resource.data.storeId)));
+        allow update: if isOwner(userId) && tenantNotFrozen(userId)
+          && validDelivery() && deliveryImmutableFieldsUnchanged();
         allow delete: if isOwner(userId) && tenantNotFrozen(userId);
       }
 

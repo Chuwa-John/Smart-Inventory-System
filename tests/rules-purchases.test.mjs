@@ -184,55 +184,71 @@ await check("cashier cannot either", false, () =>
   updateDoc(doc(cashierDb, "users", OWNER, "products", "prodA"), {
     quantity: 82, updatedAt: new Date(), movementReason: "restock", costPrice: 2050
   }));
-// STAGE 1 OF 2. The owner goes through validProduct(), which TOLERATES the
-// legacy field rather than refusing it -- and must, until the deployed client
-// stops sending it and existing documents have been migrated. See the comment
-// on the clause in firestore.rules and KNOWN-LIMITATIONS.md L-15.
+// STAGE 2, LANDED 2026-09-07. These two were pinned as `true` under stage 1 --
+// the owner's write TOLERATED the legacy field, because the deployed client sent
+// it on every save and every existing document carried it. They are FLIPPED
+// here, not deleted: a test that had simply been removed would not have told
+// anyone the behaviour changed, which is the whole reason stage 1 asserted a
+// temporary concession rather than leaving it untested.
 //
-// This is asserted rather than left untested precisely because it is temporary:
-// when stage 2 lands these two flip back to false, and a test that had simply
-// been deleted would not have told anyone the behaviour changed.
-await check("STAGE 1: the owner's write TOLERATES a legacy costPrice", true, () =>
+// What made the flip safe, in order: the deployed client (20260823d) stopped
+// writing the field; `migrate-strip-product-cost.mjs --apply` removed it from
+// 556 documents across 13 tenants; and `--verify` reported 734 tenant products
+// carrying none. KNOWN-LIMITATIONS.md L-15 has the full account.
+await check("STAGE 2: the owner's write REFUSES a legacy costPrice", false, () =>
   setDoc(doc(ownerDb, "users", OWNER, "products", "prodA"), {
     id: "prodA", name: "Body Lotion", category: "Cosmetics", brand: "X", supplier: "Y",
     quantity: 90, storeId: STORE_A, sellingPrice: 3000, createdAt: SEEDED_AT,
     costPrice: 2000
   }));
-await check("STAGE 1: ...and a legacy costKnownFrom", true, () =>
+await check("STAGE 2: ...and a legacy costKnownFrom", false, () =>
   setDoc(doc(ownerDb, "users", OWNER, "products", "prodA"), {
     id: "prodA", name: "Body Lotion", category: "Cosmetics", brand: "X", supplier: "Y",
     quantity: 90, storeId: STORE_A, sellingPrice: 3000, createdAt: SEEDED_AT,
     costKnownFrom: KNOWN_FROM
   }));
-// Tolerated is not unvalidated. A tolerated field that accepted anything would
-// be a hole, not a concession.
-await check("but the tolerated costPrice is still bounded", false, () =>
+// The zero is the case that matters most, and it is the one every migrated
+// document held. Stage 1 accepted it because moneyInRange(0) is true; under
+// stage 2 the field is refused whatever its value, so a client that regressed to
+// writing `costPrice: 0` in a loop is stopped rather than tolerated.
+await check("STAGE 2: even a zero is refused, which is what the old client wrote", false, () =>
+  setDoc(doc(ownerDb, "users", OWNER, "products", "prodA"), {
+    id: "prodA", name: "Body Lotion", category: "Cosmetics", brand: "X", supplier: "Y",
+    quantity: 90, storeId: STORE_A, sellingPrice: 3000, createdAt: SEEDED_AT,
+    costPrice: 0
+  }));
+await check("STAGE 2: an out-of-range cost is refused too, as it always was", false, () =>
   setDoc(doc(ownerDb, "users", OWNER, "products", "prodA"), {
     id: "prodA", name: "Body Lotion", category: "Cosmetics", brand: "X", supplier: "Y",
     quantity: 90, storeId: STORE_A, sellingPrice: 3000, createdAt: SEEDED_AT,
     costPrice: 999999999999
   }));
-await check("...and must still be a number, not a string", false, () =>
-  setDoc(doc(ownerDb, "users", OWNER, "products", "prodA"), {
-    id: "prodA", name: "Body Lotion", category: "Cosmetics", brand: "X", supplier: "Y",
-    quantity: 90, storeId: STORE_A, sellingPrice: 3000, createdAt: SEEDED_AT,
-    costPrice: "2000"
-  }));
-await check("...and costKnownFrom must still be a timestamp", false, () =>
+await check("STAGE 2: ...and a string, as it always was", false, () =>
   setDoc(doc(ownerDb, "users", OWNER, "products", "prodA"), {
     id: "prodA", name: "Body Lotion", category: "Cosmetics", brand: "X", supplier: "Y",
     quantity: 90, storeId: STORE_A, sellingPrice: 3000, createdAt: SEEDED_AT,
     costKnownFrom: "yesterday"
   }));
-// The thing stage 1 must NOT relax, restated as its own case: the concession is
-// the owner's alone. A till still cannot put a cost where a till can read it.
-await check("STAGE 1 does not let a cashier write cost", false, () =>
+// Unchanged by stage 2, and restated because it is the guarantee the whole
+// two-stage exercise existed to complete: a till cannot put a cost where a till
+// can read it. This refusal never came from validProduct() -- it comes from
+// stockMovementKeys() via validStockMovementShape() -- so it held throughout.
+await check("a cashier still cannot write cost", false, () =>
   updateDoc(doc(cashierDb, "users", OWNER, "products", "prodA"), {
     quantity: 83, updatedAt: new Date(), movementReason: "sale", costPrice: 2050
   }));
-await check("STAGE 1 does not let a manager write cost", false, () =>
+await check("a manager still cannot write cost", false, () =>
   updateDoc(doc(managerDb, "users", OWNER, "products", "prodA"), {
     quantity: 84, updatedAt: new Date(), movementReason: "restock", costPrice: 2050
+  }));
+// THE OUTAGE THIS ORDERING PREVENTS, pinned as a passing case. An update is
+// validated against the RESULTING document, so a product that still carried the
+// legacy field would have every owner-driven stock decrement refused -- selling.
+// The seeded product has no cost, because the migration removed it, and the
+// owner can still sell from it.
+await check("the owner can still decrement stock on a migrated product", true, () =>
+  updateDoc(doc(ownerDb, "users", OWNER, "products", "prodB"), {
+    quantity: 39, updatedAt: new Date(), movementReason: "sale"
   }));
 await check("a product with no cost is written normally", true, () =>
   setDoc(doc(ownerDb, "users", OWNER, "products", "prodA"), {

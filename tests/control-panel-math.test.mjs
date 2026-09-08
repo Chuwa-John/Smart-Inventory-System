@@ -298,6 +298,7 @@ const { summariseCostOfGoods, buildCostIndex } = new Function(
   `${extract("safeNumber")}
    ${extract("isServiceLine")}
    ${extract("saleTimestamp")}
+   ${extract("saleReturnedQtyMap")}
    ${extract("costInForceAt")}
    ${extract("buildCostIndex")}
    ${extract("summariseCostOfGoods")}

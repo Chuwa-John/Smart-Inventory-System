@@ -789,7 +789,7 @@ and is refused an invalid product. `tests/rules-workflow.test.mjs` carried
 flipped and annotated rather than deleted, so the change is visible to whoever
 reads it next.
 
-## L-15 Legacy `costPrice` on product documents — **OPEN, blocks the cost refusal**
+## L-15 Legacy `costPrice` on product documents — **CLOSED 2026-09-07** (was OPEN)
 
 Found on 2026-08-23 while checking whether `firestore.rules` could be deployed
 ahead of the client, and verified against the emulator with the deployed
@@ -881,6 +881,130 @@ updated, run `--apply`, run `--verify`, and only tighten `validProduct()` when
 verify reports clean. If verify is dirty, something is still writing it — find
 that before tightening, because tightening against a live writer is what breaks
 selling.
+
+**Pre-flight, 2026-09-07 — everything but the run is now done.** The migration
+was due on or after 2026-08-30 and is overdue. Four preconditions were checked
+today; three pass, and the fourth is the blocker.
+
+1. **The script still works.** `proxy/migrate-check.mjs` re-run against the
+   emulator: **10/10**, unchanged after two weeks and after the
+   `DESIGN-landed-costs.md` phase 2 rules work. Including the check that matters
+   most for a sweep — a **non-product** document carrying `costPrice` is left
+   alone, which now covers the `/purchases` documents that legitimately carry
+   `goodsCost` and `landedCost`.
+
+2. **Production is past the threshold, verified against the deployed artifact
+   rather than the stamp.** `https://sanitaryflow-erp.web.app/app.html` serves
+   `?v=20260823d`, which is later than the pre-`20260822c` builds that write the
+   field. Fetching the live `app.js` and reading it confirms the behaviour rather
+   than inferring it from the version: every `costPrice` write in the deployed
+   build targets `productCostHistory` or `productCosts`, **none targets a product
+   document**, and the product form's `numericFields` loop — the exact defect
+   this limitation describes — no longer contains the field.
+
+3. **No index is needed.** The sweep is `collectionGroup("products")` ordered by
+   `__name__` with no filter, so it needs no composite index. Worth checking
+   explicitly: the emulator does not enforce index requirements and production
+   does, which is a standard way a migration passes locally and fails live.
+
+4. **BLOCKED: there is still no credential on this machine.**
+   `GOOGLE_APPLICATION_CREDENTIALS`, `FIREBASE_SERVICE_ACCOUNT_KEY_BASE64` and
+   gcloud ADC are all absent, and `proxy/.env` carries none. The Firebase CLI
+   being logged in does not help — the Admin SDK needs its own credential to read
+   across tenants. The script refuses to run rather than guessing, which is
+   correct.
+
+**The one question only the dry run can answer.** Preconditions 1–3 establish
+that the *deployed* client is clean. They do **not** establish that every shop is
+running it. A shop that has not reopened the app since 2026-08-23 is still on the
+old build behind its service worker, and its next product edit puts `costPrice`
+back. The dry run's per-tenant counts are the evidence: a tenant whose count is
+non-zero and unchanged across two runs has not reopened. That check needs the
+credential, so it has not been made.
+
+**A failure mode worth knowing before `--apply` runs.** `batch.update()` throws
+if a document is deleted between the read and the commit, which aborts that batch
+of up to 400 and exits 1. Because the sweep is paged by `__name__` and deleting a
+field does not move a document, re-running simply resumes; and `--verify` will
+report NOT CLEAN until it is finished. It fails closed, which is the right
+direction, but a partial run is a real state and `--verify` is what detects it —
+not the exit code of `--apply` alone.
+
+**The first production dry run found a defect in the migration, 2026-09-07.**
+`collectionGroup("products")` matches every collection of that name at any
+depth, and production has a **root-level `products` collection** of 8 seed
+documents -- a sanitary-ware catalogue dated 2026-06-21. The sweep derived the
+tenant from path segment 1, so `products/tap-004` was counted as a tenant named
+`tap-004`, and `--apply` would have stripped `costPrice` and `costKnownFrom`
+from all eight.
+
+They must not be touched, and not merely out of caution: `firestore.rules` has
+**no root-level `/products` match** -- the only one is nested inside
+`match /users/{userId}` -- so Firestore default-denies and no client can read or
+write them. `validProduct()`, the clause stage 2 exists to tighten, never applies
+to them. Stripping them would have achieved nothing.
+
+`proxy/migrate-strip-product-cost.mjs` now shape-checks the path
+(`users/{uid}/products/{id}` is exactly four segments beginning with `users`) and
+**reports what it skipped, by path**, rather than passing over documents
+silently. `proxy/migrate-check.mjs` seeds a root-level product and asserts it
+survives; removing the guard turns that harness red. It had passed for two weeks
+without catching this because its fixture only ever seeded `users/...`.
+
+Corrected dry run: **734 tenant products scanned, 557 carrying legacy cost,
+across 14 tenants, 8 non-tenant documents skipped.** Nothing has been applied.
+
+**Single-tenant rehearsal applied, 2026-09-07.** `--tenant=ku8nt3fBDTdpk6WmI7tgfbsjINk1
+--apply` on one document, snapshotted first. The document went from 22 fields to
+21: `costPrice` removed, nothing added, and **no other field changed** -- name,
+quantity and selling price all identical, checked against the snapshot rather
+than assumed. `--verify` on that tenant reports clean, and a full dry run
+afterwards shows 557 -> 556 with every other tenant's count unchanged and the 8
+non-tenant documents still skipped.
+
+The value removed was `costPrice: 0` -- the legacy zero this limitation
+describes, present because the deployed client assigned it in a loop, never a
+real cost. That is what makes the sweep safe: it removes a field that has never
+held a meaningful number.
+
+**Remaining: 556 documents across 13 tenants**, the largest holding 473.
+
+**CLOSED 2026-09-07.** The full sweep ran and stage 2 is restored.
+
+- **Backed up first.** Every field the migration would remove was read out to a
+  file beforehand. That backup established the fact that made the rest safe:
+  **all 556 documents held `costPrice: 0` and none held `costKnownFrom`** -- not
+  one non-zero value anywhere in production. The legacy zero this limitation
+  describes, written by the old client's `numericFields` loop, never a real cost.
+  There was no data to lose.
+- **`--apply`**: 556 documents across 13 tenants, in two commits.
+- **`--verify`**: 734 tenant products, 0 carrying legacy cost, exit 0.
+- **Proven per document, not in aggregate.** All 556 were re-read and compared
+  against the backup: none deleted, none still carrying cost, none emptied.
+  The single-tenant rehearsal was diffed field by field -- 22 fields to 21,
+  `costPrice` removed, nothing added, no other field changed.
+- **The 8 non-tenant documents are untouched**, confirmed after the fact.
+- **`validProduct()` now refuses `costPrice` and `costKnownFrom` outright.**
+  `tests/rules-purchases.test.mjs` flips the two stage-1 assertions to `false`
+  rather than deleting them, and gains a case for `costPrice: 0` specifically --
+  the value every migrated document held, which stage 1 accepted because
+  `moneyInRange(0)` is true. **127/127**, and the whole rules suite green.
+- **The outage this ordering prevents is pinned as a passing case**: the owner
+  can still decrement stock on a migrated product. An update is validated against
+  the resulting document, so a product that still carried the field would have
+  had every owner-driven sale refused.
+
+**Not yet deployed.** The tightened ruleset is in the working tree only.
+Production still runs the stage-1 rules, which are correct for it: the data is
+now clean, so stage-1 tolerance and stage-2 refusal both behave identically
+against every document that exists. Deploying the tightening closes the hole for
+future writes and is a separate, explicit decision.
+
+**Not done, and deliberately not prepared in the working tree:** the
+`validProduct()` tightening. Writing `&& !('costPrice' in d)` into
+`firestore.rules` before `--verify` reports clean would leave the outage this
+limitation describes sitting one `firebase deploy --only firestore:rules` away
+from eight live shops. It stays unwritten until verify is clean.
 
 ## L-10 A cashier can write off a customer's debt — **OPEN, detective fix owed**
 

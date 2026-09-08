@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "static",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["-e", "process.env.SAVIA_EMULATOR='1'; import('./dev-server.mjs');"],
+      "port": 5173
+    }
+  ]
+}

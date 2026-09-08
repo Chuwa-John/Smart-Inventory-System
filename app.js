@@ -53,6 +53,7 @@ const state = {
   user: null,
   unsubscribeProducts: null,
   pendingBusinessName: "",
+  pendingOwnerName: "",
   cachedProfile: null,
   chatHistory: [],
   cartHistory: [],
@@ -117,6 +118,15 @@ const state = {
   unsubscribeExpenses: null,
   purchases: [],
   unsubscribePurchases: null,
+  deliveries: [],
+  unsubscribeDeliveries: null,
+  reportsCostMonth: localMonthKey(new Date()),
+  deliveryMonthSelection: localMonthKey(new Date()),
+  deliveryMonthTouched: false,
+  // The dialog's working copy. Held on state rather than read out of the DOM on
+  // every keystroke, because the preview recomputes from it and a half-typed
+  // number in an input is not the same thing as the value the shop means.
+  deliveryDraft: null,
   productCosts: [],
   unsubscribeProductCosts: null,
   productCostHistory: [],
@@ -318,14 +328,38 @@ const DICTIONARY = {
   en: {
     "nav.dashboard": "Dashboard", "nav.inventory": "Inventory", "nav.pos": "Point of Sale",
     "nav.expenses": "Expenses",
+    "nav.settings": "Settings",
+    "settings.eyebrow": "Your account and business",
+    "settings.title": "Settings",
+    "settings.accountTitle": "Account",
+    "settings.signedInAs": "Signed in as",
+    "settings.emailLabel": "Email", "settings.changeNameButton": "Change Name",
+    "settings.branchEyebrow": "This branch",
+    "settings.branchTitle": "Branch & business",
+    "settings.branchIntro": "These apply to the branch selected on the dashboard. Currency and VAT change how every figure in the app is shown and filed, so they are the owner's alone.",
+    "settings.staffTitle": "Staff",
+    "settings.staffIntro": "Who may sign in, and what they may do. The till has its own shortcut to this list, because that is where a sale gets attributed.",
+    "settings.securityTitle": "Security",
+    "settings.securityIntro": "The discount password is asked for before a price override, a refund or a void, so only trusted staff can approve one.",
+    "settings.dataTitle": "Your data",
+    "settings.dataIntro": "The backup is a file of everything this account holds, downloaded to this device. Deleting the account is scheduled, not immediate, and can be undone during the grace period.",
+    "settings.displayTitle": "Language & appearance",
     "nav.reports": "Reports", "nav.ai": "AI Advisor",
     "brand.tagline": "AI Inventory ERP",
     "sidebar.connectionHintSignedOut": "Sign in to sync inventory",
     "topbar.searchPlaceholder": "Search your products...",
-    "topbar.signOut": "Sign out", "topbar.addProduct": "Add Product", "topbar.langToggle": "Kiswahili",
+    "topbar.signOut": "Sign out", "topbar.langToggle": "Kiswahili",
     "dashboard.eyebrowToday": "Today", "dashboard.title": "Operations Command Center",
+    "dashboard.profitEyebrow": "Performance",
+    "dashboard.profitTitle": "Net profit",
+    "dashboard.profitNote": "Revenue less what the goods cost and what you spent, for each period. Only as complete as the expenses you have entered — the Profit Report shows the working.",
+    "dashboard.chartWeek": "Weekly",
+    "dashboard.chartMonth": "Monthly",
+    "dashboard.chartYear": "Annual",
+    "chart.profitEmpty": "No profit to show yet. Record a sale against a product that has a cost price.",
+    "chart.noCost": "no cost",
     "dashboard.addStore": "+ Store", "dashboard.analyticsEyebrow": "Inventory analytics",
-    "dashboard.stockLevelsTitle": "Stock levels", "dashboard.chartQuantity": "Quantity",
+    
     "dashboard.alertsEyebrow": "Smart alerts", "dashboard.needsAttention": "Needs attention",
     "dashboard.popupAlerts": "Popup alerts", "dashboard.movementTitle": "Movement classes",
     "dashboard.aiEngineEyebrow": "AI reorder engine", "dashboard.recommendationsTitle": "Purchase recommendations",
@@ -409,11 +443,68 @@ const DICTIONARY = {
     "vatRecord.reason.noVatAmount": "VAT not recorded from the receipt",
     "vatRecord.reason.expired": "The six-month claim window has closed",
     "vatRecord.reason.exceedsTotal": "Recorded VAT is more than the amount paid",
-    "nav.profit": "Profit",
+    "nav.profit": "Profit Report",
     "profit.eyebrow": "What the shop kept",
-    "profit.title": "Profit",
+    "profit.title": "Profit Report",
     "profit.monthLabel": "Month",
     "profit.intro": "Revenue less what the stock cost, less what the shop spent. The first two are worked out from your records; the last one is only as complete as what you have entered.",
+    "reports.costEyebrow": "Cost and supply",
+    "reports.costMonthLabel": "Month",
+    "reports.sbpTitle": "Sales by Product",
+    "reports.sbpThProduct": "Product",
+    "reports.sbpThUnits": "Units sold",
+    "reports.sbpThOrders": "Orders",
+    "reports.sbpThRevenue": "Revenue",
+    "reports.sbpEmpty": "No sales in this range yet.",
+    "reports.sbpService": "(service)",
+    "reports.sbpNote": "Units and revenue for the range above, with returns taken off and voided sales excluded. Ordered by what brought the most money in.",
+    "reports.stockValuationTitle": "Stock Valuation",
+    "reports.stockAtCost": "Stock at cost",
+    "reports.stockAtRetail": "If it all sold at list price",
+    "reports.stockAtRetailNote": "What the shelves would bring in at today's prices. Not what the stock is worth.",
+    "reports.stockComplete": "Every product on the shelf has a recorded cost.",
+    "reports.stockPartial": "{missing} products have no recorded cost, covering {units} units — they are missing from this total.",
+    "reports.stockEmpty": "No products in this branch yet.",
+    "reports.svThProduct": "Product",
+    "reports.svThQuantity": "On hand",
+    "reports.svThUnitCost": "Unit cost",
+    "reports.svThValue": "Value at cost",
+    "reports.supplierTitle": "Supplier Report",
+    "reports.supplierEmpty": "No purchases recorded against a supplier this month.",
+    "reports.supThSupplier": "Supplier",
+    "reports.supThLines": "Lines",
+    "reports.supThDeliveries": "Deliveries",
+    "reports.supThGoods": "Goods",
+    "reports.supThLanded": "Landed",
+    "reports.supThTotal": "Total paid",
+    "reports.expenseNatureTitle": "Direct & Indirect Expense Report",
+    "reports.expenseNatureEmpty": "No expenses recorded this month.",
+    "reports.enThCategory": "Category",
+    "reports.enThAmount": "Amount",
+    "profit.pdEyebrow": "Where the profit came from",
+    "profit.pdTitle": "By product",
+    "profit.pdThProduct": "Product",
+    "profit.pdThUnits": "Units sold",
+    "profit.pdThAvgCost": "Average cost",
+    "profit.pdThCogs": "Cost of sales",
+    "profit.pdThGoods": "of which goods",
+    "profit.pdThLanded": "of which landed",
+    "profit.pdThRevenue": "Revenue",
+    "profit.pdThGross": "Gross profit",
+    "profit.pdThMargin": "Margin",
+    "profit.pdTotal": "TOTAL",
+    "profit.pdNoCost": "{count} products have no recorded cost, so their margin cannot be worked out.",
+    "profit.pdNoLanded": "{count} products were bought before landed costs were recorded, so nothing is attributed to freight for them.",
+    "profit.pdAttribution": "The goods and landed columns split each product's cost of sales in the same proportion as everything ever bought of it — they are an attribution, not a separate measurement.",
+    "profit.stRevenue": "Sales revenue",
+    "profit.stCogs": "Cost of goods sold",
+    "profit.stCogsNote": "What the goods you sold this month cost you, including freight and duty",
+    "profit.stGross": "GROSS PROFIT",
+    "profit.stDirect": "Direct operating expenses",
+    "profit.stDirectNote": "Costs that only happen because something was sold",
+    "profit.stIndirect": "Indirect operating expenses",
+    "profit.stNet": "NET PROFIT",
+    "profit.deduction": "({value})",
     "profit.revenue": "Revenue",
     "profit.revenueNote": "{count} sales, after refunds",
     "profit.revenueNoteOne": "1 sale, after refunds",
@@ -460,6 +551,100 @@ const DICTIONARY = {
     "toast.purchaseFailed": "Could not delete that delivery. Try again.",
     "purchases.empty": "No deliveries recorded for this month yet.",
     "purchases.emptyNoStore": "Pick a branch to see what it bought.",
+    "nav.deliveries": "Deliveries",
+    "deliveries.eyebrow": "Goods received",
+    "deliveries.title": "Deliveries",
+    "deliveries.intro": "One delivery, many products, and the costs of getting it here. Freight, duty, clearing and transport are spread across the goods they brought in, so each item carries what it truly cost — not just what the supplier charged.",
+    "deliveries.receiveButton": "Receive delivery",
+    "deliveries.listTitle": "Recorded",
+    "deliveries.monthLabel": "Month",
+    "deliveries.monthTotal": "Received this month",
+    "deliveries.monthCount": "{count} {delivery}, {units} {unit}",
+    "deliveries.deliverySingular": "delivery",
+    "deliveries.deliveryPlural": "deliveries",
+    "deliveries.landedTotal": "Landed costs capitalised",
+    "deliveries.landedNote": "Freight, duty, clearing and transport, added to what the stock is worth rather than charged as an expense.",
+    "deliveries.landedNone": "No additional costs recorded this month.",
+    "deliveries.thDate": "Received",
+    "deliveries.thReference": "Reference",
+    "deliveries.thSupplier": "Supplier",
+    "deliveries.thLines": "Products",
+    "deliveries.thGoods": "Goods",
+    "deliveries.thLanded": "Landed",
+    "deliveries.thTotal": "Total cost",
+    "deliveries.thBasis": "Spread by",
+    "deliveries.thActions": "Actions",
+    "deliveries.empty": "No deliveries recorded for this month yet.",
+    "deliveries.emptyNoStore": "Pick a branch to record a delivery.",
+    "deliveries.basisValue": "Product value",
+    "deliveries.basisQuantity": "Quantity",
+    "deliveries.basisManual": "Entered by hand",
+    "deliveries.deleteButton": "Delete",
+    "deliveries.deleteConfirm": "Delete this delivery and its {count} purchase {line}? What it already added to your stock and its cost stays — record a new delivery to correct that.",
+    "deliveries.lineSingular": "line",
+    "deliveries.linePlural": "lines",
+    "deliveries.dialogTitle": "Receive delivery",
+    "deliveries.supplierLabel": "Supplier (optional)",
+    "deliveries.supplierTinLabel": "Supplier TIN (optional)",
+    "deliveries.referenceLabel": "Invoice or reference (optional)",
+    "deliveries.receivedAtLabel": "Date received",
+    "deliveries.noteLabel": "Note (optional)",
+    "deliveries.linesTitle": "What arrived",
+    "deliveries.addLineButton": "Add product",
+    "deliveries.removeLine": "Remove",
+    "deliveries.lineProduct": "Product",
+    "deliveries.lineQuantity": "Quantity",
+    "deliveries.lineGoodsCost": "Total paid for these",
+    "deliveries.linePickProduct": "Choose a product…",
+    "deliveries.goodsTotal": "Goods cost: {value}",
+    "deliveries.costsTitle": "Additional costs",
+    "deliveries.costsIntro": "What it cost to get the goods here and ready to sell. These are added to the value of the stock, not charged as an expense — they become cost of sales when the goods sell.",
+    "deliveries.costFreight": "Freight",
+    "deliveries.costImportDuty": "Import duty",
+    "deliveries.costClearing": "Clearing charges",
+    "deliveries.costTransport": "Transport",
+    "deliveries.costHandling": "Handling",
+    "deliveries.costInsurance": "Insurance",
+    "deliveries.costOtherCost": "Other",
+    "deliveries.additionalTotal": "Additional costs: {value}",
+    "deliveries.basisLabel": "Spread additional costs by",
+    "deliveries.basisValueHint": "Each product takes a share in proportion to what it cost. Suits most deliveries.",
+    "deliveries.basisQuantityHint": "Each product takes a share in proportion to how many units arrived.",
+    "deliveries.basisManualHint": "You decide each share. They must add up to the additional costs exactly.",
+    "deliveries.manualLabel": "Share",
+    "deliveries.previewTitle": "What each product will cost",
+    "deliveries.previewIntro": "Worked out before anything is saved. The last column is what one unit will cost you — and what will be charged to cost of sales when it sells.",
+    "deliveries.thOriginal": "Goods cost",
+    "deliveries.thAllocation": "Share of additional",
+    "deliveries.thFinal": "Final inventory cost",
+    "deliveries.thEach": "Each",
+    "deliveries.totalRow": "TOTAL",
+    "deliveries.totalCost": "Total inventory cost",
+    "deliveries.saveButton": "Record delivery",
+    "deliveries.emptyPreview": "Add a product to see what the delivery will cost.",
+    "deliveries.errNoLines": "Add at least one product before recording the delivery.",
+    "deliveries.errTooManyLines": "A delivery can carry at most {max} products. Record the rest as a second delivery.",
+    "deliveries.errDuplicateProduct": "{name} is on this delivery twice. Put it on one line with the full quantity.",
+    "deliveries.errMissingProduct": "Choose a product for every line.",
+    "deliveries.errBadQuantity": "Line {line}: enter how many units arrived, as a whole number.",
+    "deliveries.errBadGoodsCost": "Line {line}: enter what you paid for those units.",
+    "deliveries.errLineCostsNothing": "{name} would cost nothing at all. Give it a price, or spread the additional costs by quantity so it carries a share.",
+    "deliveries.errDeliveryCostsNothing": "This delivery has no cost recorded anywhere.",
+    "deliveries.errDeliveryTooLarge": "That total is larger than this app can record.",
+    "deliveries.errManualMismatch": "Your shares add up to {short} less than the additional costs. Adjust them so they match exactly.",
+    "deliveries.errManualMismatchOver": "Your shares add up to {over} more than the additional costs. Adjust them so they match exactly.",
+    "deliveries.errManualLength": "Enter a share for every product.",
+    "deliveries.errNegativeAmount": "A share cannot be negative.",
+    "deliveries.errNoWeight": "These products have neither a cost nor a quantity to spread the additional costs across.",
+    "deliveries.errNoStore": "Pick a single branch before recording a delivery.",
+    "deliveries.errNeedsConnection": "A delivery needs a connection — there is nowhere to record it offline.",
+    "deliveries.errUnconfirmed": "The delivery was sent but not confirmed. Check the list before recording it again.",
+    "deliveries.errTransactionFailed": "Could not record that delivery. Nothing was saved. Try again.",
+    "deliveries.errNoDelivery": "That delivery no longer exists.",
+    "deliveries.errDeleteFailed": "Could not delete that delivery. Try again.",
+    "deliveries.basisFellBack": "These products have no value to spread by, so the additional costs were spread by quantity instead.",
+    "toast.deliveryRecorded": "Delivery recorded: {count} {unit}, {value}.",
+    "toast.deliveryDeleted": "Delivery deleted.",
     "restock.totalPaidLabel": "Total paid for this delivery (optional)",
     "restock.totalPaidPlaceholder": "e.g. 400000",
     "restock.totalPaidInvalid": "Enter what you paid, or leave it blank.",
@@ -516,6 +701,26 @@ const DICTIONARY = {
     "expenses.delete": "Delete",
     "expenses.confirmDelete": "Delete this expense? The month total will change.",
     "expenses.recordedBy": "by {name}",
+    "cat.commission": "Sales commission",
+    "cat.delivery": "Delivery to a customer",
+    "cat.packaging": "Sales packaging",
+    "expenses.natureLabel": "Type of cost",
+    "expenses.natureDirect": "Direct — attributable to a sale",
+    "expenses.natureIndirect": "Indirect — running the business",
+    "expenses.natureDirectHint": "Costs that only happen because something was sold: commission, delivery to a customer, packaging. Shown on its own line under gross profit.",
+    "expenses.natureIndirectHint": "Costs of keeping the shop open whether or not you sell today: rent, power, salaries, licences. Shown on its own line under gross profit.",
+    "expenses.thNature": "Type",
+    "expenses.direct": "Direct expenses",
+    "expenses.directNote": "Costs that only happen because something was sold.",
+    "expenses.indirect": "Indirect expenses",
+    "expenses.indirectNote": "Costs of keeping the shop open, sale or no sale.",
+    "expenses.landedEyebrow": "Not an expense",
+    "expenses.landedTitle": "Landed costs, capitalised into stock",
+    "expenses.landedIntro": "Freight, duty, clearing and transport from {count} {delivery} received this month. This money is not spent — it is held in the value of your stock, and becomes cost of sales when those goods sell.",
+    "expenses.landedThType": "Cost",
+    "expenses.landedThAmount": "Amount",
+    "expenses.landedTotalRow": "TOTAL CAPITALISED",
+    "expenses.landedExcluded": "Shown here for reference only. This total is NOT included in the expense figures above — counting it twice would understate your profit.",
     "cat.rent": "Rent",
     "cat.utilities": "Power and water",
     "cat.wages": "Wages",
@@ -583,13 +788,6 @@ const DICTIONARY = {
     "reports.staffOrderLookupColQty": "Qty",
     "reports.staffOrderLookupColUnitPrice": "Unit Price",
     "reports.staffOrderLookupColLineTotal": "Line Total",
-    "reports.dailyStaffReportTitle": "Daily Staff Report",
-    "reports.dailyStaffReportButton": "Generate Daily Report",
-    "reports.dailyStaffReportEmpty": "Choose a date and click Generate Daily Report.",
-    "reports.dailyStaffReportNoSales": "No sales recorded for this date.",
-    "reports.dailyStaffReportItemsLabel": "Items",
-    "reports.dailyStaffReportOrderColumn": "Order #",
-    "reports.dailyStaffReportGrandTotal": "Grand Total (All Staff)",
     "reports.staffOrderLookupAllButton": "Generate All Orders",
     "reports.staffOrderLookupNoOrders": "No orders found for this staff member.",
     "reports.staffOrderLookupSelectStaffDate": "Select a staff member and date first.",
@@ -624,6 +822,7 @@ const DICTIONARY = {
     "auth.eyebrow": "Account access",
     "auth.accessRemoved": "Your access to this business was removed. Ask the owner if you think this is a mistake.",
     "auth.copy": "Create an account or sign in to manage your own inventory, stock levels, sales, and AI recommendations.",
+    "auth.ownerName": "Your name",
     "auth.businessName": "Business name", "auth.email": "Email", "auth.password": "Password", "auth.forgotPassword": "Forgot password?",
     "auth.confirmPassword": "Confirm password",
     "auth.consentPrefix": "I agree to the", "auth.consentTerms": "Terms & Conditions",
@@ -752,8 +951,10 @@ const DICTIONARY = {
     "localAi.disclaimer": "(This advisor uses only your signed-in inventory snapshot. The AI proxy is unavailable, so this is a local, rule-based summary.)",
     "dashboard.renameStore": "Rename", "dashboard.archiveStore": "Archive", "dashboard.setBusinessType": "Business Type",
     "dialog.renameStorePrompt": "New name for this store:",
+    "dialog.ownerNamePrompt": "Your name, as it should appear on sales you ring up:",
     "dialog.archiveStoreConfirm": "Archive \"{name}\"? It will be hidden from the store switcher but its history is kept.",
     "toast.selectSpecificStore": "Select a specific store first.",
+    "toast.ownerNameSaved": "Your name has been saved.", "toast.couldNotSaveOwnerName": "Could not save your name.",
     "toast.storeRenamed": "Store renamed to {name}.", "toast.couldNotRenameStore": "Could not rename store.",
     "toast.businessTypeSet": "Business type updated. Category suggestions will reflect it.",
     "toast.storeArchived": "{name} archived.", "toast.couldNotArchiveStore": "Could not archive store.",
@@ -942,8 +1143,6 @@ const DICTIONARY = {
     "pos.customerNamePlaceholder": "e.g. Amina",
     "pos.customerPhonePlaceholder": "e.g. 07XXXXXXXX",
     "receipt.customerLabel": "Customer",
-    "reports.topCustomersTitle": "Top Customers",
-    "reports.topCustomersEmpty": "No customer sales recorded yet for this range.",
     "reports.colCustomerName": "Customer",
     "reports.colCustomerPhone": "Phone",
     "reports.colTotalSpent": "Total Spent",
@@ -1004,6 +1203,7 @@ const DICTIONARY = {
     "update.reloadButton": "Reload now",
     "dashboard.vatSettings": "VAT",
     "vat.dialogTitle": "VAT registration",
+    "vat.classStandard": "Standard rated", "vat.classZeroRated": "Zero rated", "vat.classExempt": "Exempt",
     "vat.dialogHelp": "Only switch this on if this business is registered for VAT with the TRA. Sales already recorded are not changed.",
     "vat.registeredLabel": "This business is registered for VAT",
     "vat.vrnLabel": "VAT registration number (VRN)",
@@ -1187,10 +1387,18 @@ const DICTIONARY = {
     "dialog.transferStaffPlaceholder": "e.g. Juma Ally",
     "toast.transferStaffRequired": "Enter the name of the person making this transfer.",
     "movement.title": "Product Movement",
-    "movement.subtitle": "Sales and transfer history for {name}",
+    "movement.subtitle": "What has happened to {name}: what it sold, where it moved, and what it cost.",
     "movement.salesSectionTitle": "Sales History",
+    "movement.purchasesSectionTitle": "Bought / added",
+    "movement.purchasesSubtitle": "When this product came in, and what it cost. Newest first.",
+    "movement.colSupplier": "Supplier",
+    "movement.colTotalPaid": "Total paid",
+    "movement.colEach": "Each",
+    "movement.colLanded": "of which landed",
+    "movement.noLanded": "—",
+    "movement.noPurchases": "Nothing recorded yet. Costs are recorded when you receive a delivery or restock with a price.",
     "movement.transfersSectionTitle": "Transfer History",
-    "movement.noSales": "No sales recorded for this product yet.",
+    "movement.noSalesForProduct": "No sales recorded for this product yet.",
     "movement.noTransfers": "No transfers recorded for this product yet.",
     "movement.colDate": "Date",
     "movement.colStaff": "Staff",
@@ -1235,14 +1443,38 @@ const DICTIONARY = {
   sw: {
     "nav.dashboard": "Dashibodi", "nav.inventory": "Hisa", "nav.pos": "Mauzo",
     "nav.expenses": "Matumizi",
+    "nav.settings": "Mipangilio",
+    "settings.eyebrow": "Akaunti na biashara yako",
+    "settings.title": "Mipangilio",
+    "settings.accountTitle": "Akaunti",
+    "settings.signedInAs": "Umeingia kama",
+    "settings.emailLabel": "Barua pepe", "settings.changeNameButton": "Badilisha Jina",
+    "settings.branchEyebrow": "Tawi hili",
+    "settings.branchTitle": "Tawi na biashara",
+    "settings.branchIntro": "Haya yanahusu tawi lililochaguliwa kwenye dashibodi. Sarafu na VAT hubadilisha jinsi kila takwimu inavyoonyeshwa na kuwasilishwa, hivyo ni ya mmiliki pekee.",
+    "settings.staffTitle": "Wafanyakazi",
+    "settings.staffIntro": "Nani anaweza kuingia, na anaweza kufanya nini. Kaunta ina njia yake ya haraka kwenye orodha hii, kwa sababu hapo ndipo mauzo yanapohusishwa.",
+    "settings.securityTitle": "Usalama",
+    "settings.securityIntro": "Nenosiri la punguzo linaulizwa kabla ya kubadilisha bei, kurejesha fedha au kutengua mauzo, ili wafanyakazi wanaoaminika pekee waweze kuidhinisha.",
+    "settings.dataTitle": "Data yako",
+    "settings.dataIntro": "Nakala rudufu ni faili la kila kitu akaunti hii inashikilia, linalopakuliwa kwenye kifaa hiki. Kufuta akaunti kunapangwa, si mara moja, na kunaweza kutenguliwa ndani ya kipindi cha neema.",
+    "settings.displayTitle": "Lugha na muonekano",
     "nav.reports": "Ripoti", "nav.ai": "Mshauri wa AI",
     "brand.tagline": "ERP ya Hisa yenye AI",
     "sidebar.connectionHintSignedOut": "Ingia ili kusawazisha hisa yako",
     "topbar.searchPlaceholder": "Tafuta bidhaa zako...",
-    "topbar.signOut": "Toka", "topbar.addProduct": "Ongeza Bidhaa", "topbar.langToggle": "English",
+    "topbar.signOut": "Toka", "topbar.langToggle": "English",
     "dashboard.eyebrowToday": "Leo", "dashboard.title": "Kituo cha Uendeshaji",
+    "dashboard.profitEyebrow": "Utendaji",
+    "dashboard.profitTitle": "Faida halisi",
+    "dashboard.profitNote": "Mapato ukiondoa gharama ya bidhaa na matumizi, kwa kila kipindi. Ni kamili kadri ya matumizi uliyoingiza — Ripoti ya Faida inaonyesha hesabu.",
+    "dashboard.chartWeek": "Kwa wiki",
+    "dashboard.chartMonth": "Kwa mwezi",
+    "dashboard.chartYear": "Kwa mwaka",
+    "chart.profitEmpty": "Hakuna faida ya kuonyesha bado. Rekodi mauzo ya bidhaa yenye bei ya gharama.",
+    "chart.noCost": "hakuna gharama",
     "dashboard.addStore": "+ Duka", "dashboard.analyticsEyebrow": "Uchambuzi wa hisa",
-    "dashboard.stockLevelsTitle": "Kiwango cha hisa", "dashboard.chartQuantity": "Kiasi",
+    
     "dashboard.alertsEyebrow": "Arifa muhimu", "dashboard.needsAttention": "Yanayohitaji uangalizi",
     "dashboard.popupAlerts": "Arifa za dirisha ibukizi", "dashboard.movementTitle": "Mwendo wa bidhaa",
     "dashboard.aiEngineEyebrow": "Injini ya kuagiza upya ya AI", "dashboard.recommendationsTitle": "Mapendekezo ya ununuzi",
@@ -1326,11 +1558,68 @@ const DICTIONARY = {
     "vatRecord.reason.noVatAmount": "VAT haijaandikwa kutoka kwenye risiti",
     "vatRecord.reason.expired": "Muda wa miezi sita wa kudai umeisha",
     "vatRecord.reason.exceedsTotal": "VAT iliyoandikwa ni kubwa kuliko kiasi kilicholipwa",
-    "nav.profit": "Faida",
+    "nav.profit": "Ripoti ya Faida",
     "profit.eyebrow": "Kilichobaki",
-    "profit.title": "Faida",
+    "profit.title": "Ripoti ya Faida",
     "profit.monthLabel": "Mwezi",
     "profit.intro": "Mapato ukiondoa gharama ya bidhaa, ukiondoa matumizi ya duka. Mbili za kwanza zinahesabiwa kutoka kwenye rekodi zako; ya mwisho ni kamili kadri ulivyoingiza.",
+    "reports.costEyebrow": "Gharama na ugavi",
+    "reports.costMonthLabel": "Mwezi",
+    "reports.sbpTitle": "Mauzo kwa Bidhaa",
+    "reports.sbpThProduct": "Bidhaa",
+    "reports.sbpThUnits": "Vipande vilivyouzwa",
+    "reports.sbpThOrders": "Oda",
+    "reports.sbpThRevenue": "Mapato",
+    "reports.sbpEmpty": "Hakuna mauzo katika kipindi hiki bado.",
+    "reports.sbpService": "(huduma)",
+    "reports.sbpNote": "Vipande na mapato kwa kipindi kilicho hapo juu, marejesho yameondolewa na mauzo yaliyotenguliwa hayajajumuishwa. Yamepangwa kwa yaliyoingiza fedha nyingi zaidi.",
+    "reports.stockValuationTitle": "Thamani ya Hisa",
+    "reports.stockAtCost": "Hisa kwa gharama",
+    "reports.stockAtRetail": "Ikiuzwa yote kwa bei ya orodha",
+    "reports.stockAtRetailNote": "Kiasi ambacho rafu zingeingiza kwa bei za leo. Si thamani halisi ya hisa.",
+    "reports.stockComplete": "Kila bidhaa iliyopo rafuni ina gharama iliyorekodiwa.",
+    "reports.stockPartial": "Bidhaa {missing} hazina gharama iliyorekodiwa, zinazohusisha vipande {units} — hazipo kwenye jumla hii.",
+    "reports.stockEmpty": "Hakuna bidhaa katika tawi hili bado.",
+    "reports.svThProduct": "Bidhaa",
+    "reports.svThQuantity": "Zilizopo",
+    "reports.svThUnitCost": "Gharama ya kipande",
+    "reports.svThValue": "Thamani kwa gharama",
+    "reports.supplierTitle": "Ripoti ya Wasambazaji",
+    "reports.supplierEmpty": "Hakuna manunuzi yaliyorekodiwa kwa msambazaji mwezi huu.",
+    "reports.supThSupplier": "Msambazaji",
+    "reports.supThLines": "Safu",
+    "reports.supThDeliveries": "Mizigo",
+    "reports.supThGoods": "Bidhaa",
+    "reports.supThLanded": "Gharama za ziada",
+    "reports.supThTotal": "Jumla iliyolipwa",
+    "reports.expenseNatureTitle": "Ripoti ya Gharama za Moja kwa Moja na Zisizo",
+    "reports.expenseNatureEmpty": "Hakuna matumizi yaliyorekodiwa mwezi huu.",
+    "reports.enThCategory": "Kundi",
+    "reports.enThAmount": "Kiasi",
+    "profit.pdEyebrow": "Faida ilitoka wapi",
+    "profit.pdTitle": "Kwa bidhaa",
+    "profit.pdThProduct": "Bidhaa",
+    "profit.pdThUnits": "Vipande vilivyouzwa",
+    "profit.pdThAvgCost": "Gharama ya wastani",
+    "profit.pdThCogs": "Gharama ya mauzo",
+    "profit.pdThGoods": "kati ya hizo, bidhaa",
+    "profit.pdThLanded": "kati ya hizo, gharama za ziada",
+    "profit.pdThRevenue": "Mapato",
+    "profit.pdThGross": "Faida ghafi",
+    "profit.pdThMargin": "Kiwango",
+    "profit.pdTotal": "JUMLA",
+    "profit.pdNoCost": "Bidhaa {count} hazina gharama iliyorekodiwa, hivyo kiwango chake cha faida hakiwezi kupatikana.",
+    "profit.pdNoLanded": "Bidhaa {count} zilinunuliwa kabla gharama za ziada hazijarekodiwa, hivyo hakuna kilichotengwa kwa usafirishaji.",
+    "profit.pdAttribution": "Safu za bidhaa na gharama za ziada zinagawanya gharama ya mauzo ya kila bidhaa kwa uwiano sawa na kila kilichowahi kununuliwa — ni ugawaji, si kipimo tofauti.",
+    "profit.stRevenue": "Mapato ya mauzo",
+    "profit.stCogs": "Gharama ya bidhaa zilizouzwa",
+    "profit.stCogsNote": "Gharama ya bidhaa ulizouza mwezi huu, pamoja na usafirishaji na ushuru",
+    "profit.stGross": "FAIDA GHAFI",
+    "profit.stDirect": "Gharama za uendeshaji za moja kwa moja",
+    "profit.stDirectNote": "Gharama zinazotokea kwa sababu tu kitu kimeuzwa",
+    "profit.stIndirect": "Gharama za uendeshaji zisizo za moja kwa moja",
+    "profit.stNet": "FAIDA HALISI",
+    "profit.deduction": "({value})",
     "profit.revenue": "Mapato",
     "profit.revenueNote": "Mauzo {count}, baada ya marejesho",
     "profit.revenueNoteOne": "Mauzo 1, baada ya marejesho",
@@ -1377,6 +1666,100 @@ const DICTIONARY = {
     "toast.purchaseFailed": "Imeshindwa kufuta mzigo huo. Jaribu tena.",
     "purchases.empty": "Hakuna mzigo uliorekodiwa mwezi huu bado.",
     "purchases.emptyNoStore": "Chagua tawi ili kuona kilichonunuliwa.",
+    "nav.deliveries": "Mizigo",
+    "deliveries.eyebrow": "Bidhaa zilizopokelewa",
+    "deliveries.title": "Mizigo",
+    "deliveries.intro": "Mzigo mmoja, bidhaa nyingi, na gharama za kuufikisha hapa. Usafirishaji, ushuru, uondoshaji bandarini na usafiri vinagawanywa kwa bidhaa vilizoleta, ili kila kitu kibebe gharama yake halisi — si tu kile msambazaji alichotoza.",
+    "deliveries.receiveButton": "Pokea mzigo",
+    "deliveries.listTitle": "Iliyorekodiwa",
+    "deliveries.monthLabel": "Mwezi",
+    "deliveries.monthTotal": "Iliyopokelewa mwezi huu",
+    "deliveries.monthCount": "{count} {delivery}, {units} {unit}",
+    "deliveries.deliverySingular": "mzigo",
+    "deliveries.deliveryPlural": "mizigo",
+    "deliveries.landedTotal": "Gharama za ziada zilizoongezwa kwenye thamani",
+    "deliveries.landedNote": "Usafirishaji, ushuru, uondoshaji na usafiri, vimeongezwa kwenye thamani ya bidhaa badala ya kutozwa kama matumizi.",
+    "deliveries.landedNone": "Hakuna gharama za ziada zilizorekodiwa mwezi huu.",
+    "deliveries.thDate": "Ilipokelewa",
+    "deliveries.thReference": "Kumbukumbu",
+    "deliveries.thSupplier": "Msambazaji",
+    "deliveries.thLines": "Bidhaa",
+    "deliveries.thGoods": "Bidhaa",
+    "deliveries.thLanded": "Gharama za ziada",
+    "deliveries.thTotal": "Jumla ya gharama",
+    "deliveries.thBasis": "Imegawanywa kwa",
+    "deliveries.thActions": "Vitendo",
+    "deliveries.empty": "Hakuna mzigo uliorekodiwa mwezi huu bado.",
+    "deliveries.emptyNoStore": "Chagua tawi ili kurekodi mzigo.",
+    "deliveries.basisValue": "Thamani ya bidhaa",
+    "deliveries.basisQuantity": "Idadi",
+    "deliveries.basisManual": "Imewekwa kwa mkono",
+    "deliveries.deleteButton": "Futa",
+    "deliveries.deleteConfirm": "Futa mzigo huu na {count} {line} zake za manunuzi? Kile kilichoongezwa kwenye hisa yako na gharama yake kitabaki — rekodi mzigo mpya ili kurekebisha hilo.",
+    "deliveries.lineSingular": "safu",
+    "deliveries.linePlural": "safu",
+    "deliveries.dialogTitle": "Pokea mzigo",
+    "deliveries.supplierLabel": "Msambazaji (si lazima)",
+    "deliveries.supplierTinLabel": "TIN ya msambazaji (si lazima)",
+    "deliveries.referenceLabel": "Ankara au kumbukumbu (si lazima)",
+    "deliveries.receivedAtLabel": "Tarehe ya kupokea",
+    "deliveries.noteLabel": "Maelezo (si lazima)",
+    "deliveries.linesTitle": "Kilichofika",
+    "deliveries.addLineButton": "Ongeza bidhaa",
+    "deliveries.removeLine": "Ondoa",
+    "deliveries.lineProduct": "Bidhaa",
+    "deliveries.lineQuantity": "Idadi",
+    "deliveries.lineGoodsCost": "Jumla uliyolipa kwa hizi",
+    "deliveries.linePickProduct": "Chagua bidhaa…",
+    "deliveries.goodsTotal": "Gharama ya bidhaa: {value}",
+    "deliveries.costsTitle": "Gharama za ziada",
+    "deliveries.costsIntro": "Gharama za kufikisha bidhaa hapa na kuziandaa kuuzwa. Hizi zinaongezwa kwenye thamani ya hisa, hazitozwi kama matumizi — zinakuwa gharama ya mauzo bidhaa zinapouzwa.",
+    "deliveries.costFreight": "Usafirishaji",
+    "deliveries.costImportDuty": "Ushuru wa forodha",
+    "deliveries.costClearing": "Gharama za uondoshaji",
+    "deliveries.costTransport": "Usafiri",
+    "deliveries.costHandling": "Upakiaji",
+    "deliveries.costInsurance": "Bima",
+    "deliveries.costOtherCost": "Nyingine",
+    "deliveries.additionalTotal": "Gharama za ziada: {value}",
+    "deliveries.basisLabel": "Gawanya gharama za ziada kwa",
+    "deliveries.basisValueHint": "Kila bidhaa inachukua sehemu kulingana na gharama yake. Inafaa kwa mizigo mingi.",
+    "deliveries.basisQuantityHint": "Kila bidhaa inachukua sehemu kulingana na idadi ya vipande vilivyofika.",
+    "deliveries.basisManualHint": "Wewe unaamua kila sehemu. Lazima zijumuishe gharama za ziada sawasawa.",
+    "deliveries.manualLabel": "Sehemu",
+    "deliveries.previewTitle": "Kila bidhaa itagharimu kiasi gani",
+    "deliveries.previewIntro": "Imehesabiwa kabla ya kuhifadhi chochote. Safu ya mwisho ni gharama ya kipande kimoja — na ndiyo itakayotozwa kwenye gharama ya mauzo kitakapouzwa.",
+    "deliveries.thOriginal": "Gharama ya bidhaa",
+    "deliveries.thAllocation": "Sehemu ya gharama za ziada",
+    "deliveries.thFinal": "Gharama ya mwisho ya hisa",
+    "deliveries.thEach": "Kila kimoja",
+    "deliveries.totalRow": "JUMLA",
+    "deliveries.totalCost": "Jumla ya gharama ya hisa",
+    "deliveries.saveButton": "Rekodi mzigo",
+    "deliveries.emptyPreview": "Ongeza bidhaa ili kuona mzigo utagharimu kiasi gani.",
+    "deliveries.errNoLines": "Ongeza angalau bidhaa moja kabla ya kurekodi mzigo.",
+    "deliveries.errTooManyLines": "Mzigo mmoja unaweza kubeba bidhaa {max} pekee. Rekodi zilizobaki kama mzigo wa pili.",
+    "deliveries.errDuplicateProduct": "{name} imo kwenye mzigo huu mara mbili. Iweke kwenye safu moja na idadi kamili.",
+    "deliveries.errMissingProduct": "Chagua bidhaa kwa kila safu.",
+    "deliveries.errBadQuantity": "Safu {line}: weka idadi ya vipande vilivyofika, kwa namba kamili.",
+    "deliveries.errBadGoodsCost": "Safu {line}: weka ulicholipa kwa vipande hivyo.",
+    "deliveries.errLineCostsNothing": "{name} isingegharimu chochote. Ipe bei, au gawanya gharama za ziada kwa idadi ili ibebe sehemu.",
+    "deliveries.errDeliveryCostsNothing": "Mzigo huu hauna gharama yoyote iliyorekodiwa.",
+    "deliveries.errDeliveryTooLarge": "Jumla hiyo ni kubwa kuliko programu hii inavyoweza kurekodi.",
+    "deliveries.errManualMismatch": "Sehemu zako zinapungua {short} kutoka gharama za ziada. Zirekebishe zilingane sawasawa.",
+    "deliveries.errManualMismatchOver": "Sehemu zako zinazidi {over} kuliko gharama za ziada. Zirekebishe zilingane sawasawa.",
+    "deliveries.errManualLength": "Weka sehemu kwa kila bidhaa.",
+    "deliveries.errNegativeAmount": "Sehemu haiwezi kuwa hasi.",
+    "deliveries.errNoWeight": "Bidhaa hizi hazina gharama wala idadi ya kugawanya gharama za ziada.",
+    "deliveries.errNoStore": "Chagua tawi moja kabla ya kurekodi mzigo.",
+    "deliveries.errNeedsConnection": "Mzigo unahitaji muunganisho — hakuna pa kuurekodi bila mtandao.",
+    "deliveries.errUnconfirmed": "Mzigo ulitumwa lakini haukuthibitishwa. Angalia orodha kabla ya kuurekodi tena.",
+    "deliveries.errTransactionFailed": "Haikuwezekana kurekodi mzigo huo. Hakuna kilichohifadhiwa. Jaribu tena.",
+    "deliveries.errNoDelivery": "Mzigo huo haupo tena.",
+    "deliveries.errDeleteFailed": "Haikuwezekana kufuta mzigo huo. Jaribu tena.",
+    "deliveries.basisFellBack": "Bidhaa hizi hazina thamani ya kugawanya, hivyo gharama za ziada zimegawanywa kwa idadi.",
+    "toast.deliveryRecorded": "Mzigo umerekodiwa: {count} {unit}, {value}.",
+    "toast.deliveryDeleted": "Mzigo umefutwa.",
     "restock.totalPaidLabel": "Jumla uliyolipa kwa mzigo huu (si lazima)",
     "restock.totalPaidPlaceholder": "mfano, 400000",
     "restock.totalPaidInvalid": "Weka ulicholipa, au iache wazi.",
@@ -1433,6 +1816,26 @@ const DICTIONARY = {
     "expenses.delete": "Futa",
     "expenses.confirmDelete": "Futa matumizi haya? Jumla ya mwezi itabadilika.",
     "expenses.recordedBy": "na {name}",
+    "cat.commission": "Kamisheni ya mauzo",
+    "cat.delivery": "Usafirishaji kwa mteja",
+    "cat.packaging": "Vifungashio vya mauzo",
+    "expenses.natureLabel": "Aina ya gharama",
+    "expenses.natureDirect": "Ya moja kwa moja — inatokana na mauzo",
+    "expenses.natureIndirect": "Isiyo ya moja kwa moja — uendeshaji wa biashara",
+    "expenses.natureDirectHint": "Gharama zinazotokea kwa sababu tu kitu kimeuzwa: kamisheni, usafirishaji kwa mteja, vifungashio. Inaonyeshwa kwenye mstari wake chini ya faida ghafi.",
+    "expenses.natureIndirectHint": "Gharama za kuweka duka wazi hata kama hujauza leo: kodi ya pango, umeme, mishahara, leseni. Inaonyeshwa kwenye mstari wake chini ya faida ghafi.",
+    "expenses.thNature": "Aina",
+    "expenses.direct": "Gharama za moja kwa moja",
+    "expenses.directNote": "Gharama zinazotokea kwa sababu tu kitu kimeuzwa.",
+    "expenses.indirect": "Gharama zisizo za moja kwa moja",
+    "expenses.indirectNote": "Gharama za kuweka duka wazi, uuze au usiuze.",
+    "expenses.landedEyebrow": "Si matumizi",
+    "expenses.landedTitle": "Gharama za ziada, zimeongezwa kwenye thamani ya hisa",
+    "expenses.landedIntro": "Usafirishaji, ushuru, uondoshaji na usafiri kutoka {count} {delivery} iliyopokelewa mwezi huu. Fedha hizi hazijatumika — zimehifadhiwa kwenye thamani ya hisa yako, na zitakuwa gharama ya mauzo bidhaa hizo zitakapouzwa.",
+    "expenses.landedThType": "Gharama",
+    "expenses.landedThAmount": "Kiasi",
+    "expenses.landedTotalRow": "JUMLA ILIYOONGEZWA",
+    "expenses.landedExcluded": "Imeonyeshwa hapa kwa kumbukumbu tu. Jumla hii HAIJAJUMUISHWA kwenye takwimu za matumizi hapo juu — kuihesabu mara mbili kungepunguza faida yako.",
     "cat.rent": "Kodi ya pango",
     "cat.utilities": "Umeme na maji",
     "cat.wages": "Mishahara",
@@ -1499,13 +1902,6 @@ const DICTIONARY = {
     "reports.staffOrderLookupColQty": "Kiasi",
     "reports.staffOrderLookupColUnitPrice": "Bei kwa Kitengo",
     "reports.staffOrderLookupColLineTotal": "Jumla ya Bidhaa",
-    "reports.dailyStaffReportTitle": "Ripoti ya Wafanyakazi ya Siku",
-    "reports.dailyStaffReportButton": "Tengeneza Ripoti ya Siku",
-    "reports.dailyStaffReportEmpty": "Chagua tarehe kisha bofya Tengeneza Ripoti ya Siku.",
-    "reports.dailyStaffReportNoSales": "Hakuna mauzo yaliyorekodiwa kwa tarehe hii.",
-    "reports.dailyStaffReportItemsLabel": "Bidhaa",
-    "reports.dailyStaffReportOrderColumn": "Oda #",
-    "reports.dailyStaffReportGrandTotal": "Jumla Kuu (Wafanyakazi Wote)",
     "reports.staffOrderLookupAllButton": "Tengeneza Oda Zote",
     "reports.staffOrderLookupNoOrders": "Hakuna oda zilizopatikana kwa mfanyakazi huyu.",
     "reports.staffOrderLookupSelectStaffDate": "Chagua mfanyakazi kwanza.",
@@ -1541,6 +1937,7 @@ const DICTIONARY = {
     "auth.eyebrow": "Ufikiaji wa akaunti",
     "auth.accessRemoved": "Ufikiaji wako kwa biashara hii umeondolewa. Muulize mmiliki kama unadhani ni makosa.",
     "auth.copy": "Fungua akaunti au ingia ili kusimamia hisa yako, viwango vya bidhaa, mauzo, na mapendekezo ya AI.",
+    "auth.ownerName": "Jina lako",
     "auth.businessName": "Jina la biashara", "auth.email": "Barua pepe", "auth.password": "Nenosiri", "auth.forgotPassword": "Umesahau nenosiri?",
     "auth.confirmPassword": "Thibitisha nenosiri",
     "auth.consentPrefix": "Nakubali", "auth.consentTerms": "Sheria na Masharti",
@@ -1669,8 +2066,10 @@ const DICTIONARY = {
     "localAi.disclaimer": "(Mshauri huyu hutumia tu picha ya hisa ya akaunti uliyoingia. Proksi ya AI haipatikani, hivyo huu ni muhtasari wa ndani, wa kanuni.)",
     "dashboard.renameStore": "Badilisha Jina", "dashboard.archiveStore": "Hifadhi Kumbukumbu", "dashboard.setBusinessType": "Aina ya Biashara",
     "dialog.renameStorePrompt": "Jina jipya la duka hili:",
+    "dialog.ownerNamePrompt": "Jina lako, kama linavyotakiwa kuonekana kwenye mauzo unayofanya:",
     "dialog.archiveStoreConfirm": "Hifadhi kumbukumbu ya \"{name}\"? Litafichwa kwenye kibadilishaji duka lakini historia yake itabaki.",
     "toast.selectSpecificStore": "Chagua duka mahususi kwanza.",
+    "toast.ownerNameSaved": "Jina lako limehifadhiwa.", "toast.couldNotSaveOwnerName": "Imeshindwa kuhifadhi jina lako.",
     "toast.storeRenamed": "Jina la duka limebadilishwa kuwa {name}.", "toast.couldNotRenameStore": "Imeshindwa kubadilisha jina la duka.",
     "toast.businessTypeSet": "Aina ya biashara imesasishwa. Mapendekezo ya aina za bidhaa yatabadilika.",
     "toast.storeArchived": "{name} imehifadhiwa kumbukumbu.", "toast.couldNotArchiveStore": "Imeshindwa kuhifadhi kumbukumbu ya duka.",
@@ -1859,8 +2258,6 @@ const DICTIONARY = {
     "pos.customerNamePlaceholder": "mfano, Amina",
     "pos.customerPhonePlaceholder": "mfano, 07XXXXXXXX",
     "receipt.customerLabel": "Mteja",
-    "reports.topCustomersTitle": "Wateja Bora",
-    "reports.topCustomersEmpty": "Hakuna mauzo ya wateja yaliyorekodiwa kwa muda huu.",
     "reports.colCustomerName": "Mteja",
     "reports.colCustomerPhone": "Simu",
     "reports.colTotalSpent": "Jumla Aliyotumia",
@@ -1921,6 +2318,7 @@ const DICTIONARY = {
     "update.reloadButton": "Pakia upya sasa",
     "dashboard.vatSettings": "VAT",
     "vat.dialogTitle": "Usajili wa VAT",
+    "vat.classStandard": "Kiwango cha kawaida", "vat.classZeroRated": "Kiwango sifuri", "vat.classExempt": "Imesamehewa",
     "vat.dialogHelp": "Washa hii tu kama biashara hii imesajiliwa kwa VAT na TRA. Mauzo yaliyokwisha rekodiwa hayabadilishwi.",
     "vat.registeredLabel": "Biashara hii imesajiliwa kwa VAT",
     "vat.vrnLabel": "Namba ya usajili wa VAT (VRN)",
@@ -2104,10 +2502,18 @@ const DICTIONARY = {
     "dialog.transferStaffPlaceholder": "mfano, Juma Ally",
     "toast.transferStaffRequired": "Weka jina la mtu anayefanya uhamishaji huu.",
     "movement.title": "Mwendo wa Bidhaa",
-    "movement.subtitle": "Historia ya mauzo na uhamishaji wa {name}",
+    "movement.subtitle": "Yaliyotokea kwa {name}: iliuzwa kiasi gani, ilihamishwa wapi, na iligharimu kiasi gani.",
     "movement.salesSectionTitle": "Historia ya Mauzo",
+    "movement.purchasesSectionTitle": "Zilizonunuliwa / kuongezwa",
+    "movement.purchasesSubtitle": "Bidhaa hii iliingia lini, na iligharimu kiasi gani. Mpya kwanza.",
+    "movement.colSupplier": "Msambazaji",
+    "movement.colTotalPaid": "Jumla iliyolipwa",
+    "movement.colEach": "Kila kimoja",
+    "movement.colLanded": "kati ya hizo, gharama za ziada",
+    "movement.noLanded": "—",
+    "movement.noPurchases": "Hakuna kilichorekodiwa bado. Gharama hurekodiwa unapopokea mzigo au kuongeza hisa na bei.",
     "movement.transfersSectionTitle": "Historia ya Uhamishaji",
-    "movement.noSales": "Hakuna mauzo yaliyorekodiwa kwa bidhaa hii bado.",
+    "movement.noSalesForProduct": "Hakuna mauzo yaliyorekodiwa kwa bidhaa hii bado.",
     "movement.noTransfers": "Hakuna uhamishaji uliorekodiwa kwa bidhaa hii bado.",
     "movement.colDate": "Tarehe",
     "movement.colStaff": "Mfanyakazi",
@@ -2383,87 +2789,184 @@ function renderKpis() {
     .join("");
 }
 
+// Profit over time, bucketed by week, month or year.
+//
+// This replaced a line chart of stock quantity per product. Stock level is a
+// snapshot and a line between two products means nothing -- the slope invited a
+// reading ("stock is falling") that the data did not support, because the x axis
+// was a list of products, not time. Profit over time is a real series, so a
+// chart earns its place, and bars are the honest mark for discrete periods.
+//
+// NET profit, not gross: "am I making money" is the question a dashboard is
+// asked, and gross answers a different one. The caveat DESIGN-purchases.md 11
+// attaches to net travels with it -- the panel says the figure is only as
+// complete as the expenses entered.
+function profitTrendBuckets(period) {
+  const now = new Date();
+  const buckets = [];
+  if (period === "year") {
+    for (let i = 4; i >= 0; i--) {
+      const y = now.getFullYear() - i;
+      buckets.push({ label: String(y), start: new Date(y, 0, 1), end: new Date(y + 1, 0, 1) });
+    }
+  } else if (period === "week") {
+    // Weeks run Monday to Monday, which is how a shop talks about a week.
+    const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    for (let i = 7; i >= 0; i--) {
+      const start = new Date(monday); start.setDate(start.getDate() - i * 7);
+      const end = new Date(start); end.setDate(end.getDate() + 7);
+      buckets.push({ label: `${start.getDate()}/${start.getMonth() + 1}`, start, end });
+    }
+  } else {
+    for (let i = 11; i >= 0; i--) {
+      const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+      buckets.push({ label: start.toLocaleDateString(undefined, { month: "short" }), start, end });
+    }
+  }
+  return buckets;
+}
+
+function summariseProfitTrend(period) {
+  const buckets = profitTrendBuckets(period);
+  const costIndex = buildCostIndex(state.productCostHistory);
+  const scopedSales = state.currentStoreId === "all"
+    ? (state.sales || [])
+    : (state.sales || []).filter((sale) => saleStoreId(sale) === state.currentStoreId);
+  const expenses = storeExpenses();
+
+  return buckets.map((bucket) => {
+    const from = bucket.start.getTime();
+    const to = bucket.end.getTime();
+    const sales = scopedSales.filter((sale) => {
+      const at = saleTimestamp(sale);
+      return at ? at.getTime() >= from && at.getTime() < to : false;
+    });
+    const takings = summariseSales(sales);
+    const goods = summariseCostOfGoods(sales, costIndex);
+    const spent = expenses.reduce((sum, expense) => {
+      const at = expenseSpentAt(expense);
+      return at && at.getTime() >= from && at.getTime() < to ? sum + safeNumber(expense.amount) : sum;
+    }, 0);
+    return {
+      label: bucket.label,
+      // Null, not zero, where nothing sold had a recorded cost. Reporting
+      // revenue as profit is the defect DESIGN-purchases.md 2 found live on
+      // this very screen; a bar drawn from it would put it back.
+      net: goods.anyCostKnown ? takings.net - goods.cogs - spent : null,
+      hasSales: takings.count > 0,
+      costKnown: goods.anyCostKnown
+    };
+  });
+}
+
 function renderChart() {
   const canvas = qs("#salesChart");
+  if (!canvas) return;
   const ctx = canvas.getContext("2d");
-  const chartProducts = storeProducts().slice(0, 12);
-  const labels = chartProducts.map((product) => {
-    const parts = [product.name, product.brand, product.category].filter(Boolean);
-    return parts.join(" \u2022 ").slice(0, 28);
-  });
-  const data = chartProducts.map((product) => Number(product.quantity || 0));
+  const period = qs("#chartRange")?.value || "month";
+  const series = summariseProfitTrend(period);
+
   const width = canvas.width;
   const height = canvas.height;
-  const padLeft = 56;
+  const padLeft = 76;
   const padRight = 20;
   const padTop = 24;
-  const padBottom = 78;
-  const max = Math.max(...data, 1) * 1.18;
-  const mutedColor = getComputedStyle(document.documentElement).getPropertyValue("--muted");
+  const padBottom = 52;
+  const css = getComputedStyle(document.documentElement);
+  const mutedColor = css.getPropertyValue("--muted");
+  const lineColor = css.getPropertyValue("--line");
 
   ctx.clearRect(0, 0, width, height);
-  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--line");
-  ctx.lineWidth = 1;
+  ctx.font = "11px Inter, sans-serif";
+
+  const known = series.filter((b) => b.net !== null).map((b) => b.net);
+  if (!known.length) {
+    ctx.fillStyle = mutedColor;
+    ctx.font = "15px Inter, sans-serif";
+    ctx.fillText(t("chart.profitEmpty"), padLeft, height / 2);
+    return;
+  }
+
+  // A LOSS IS A BAR BELOW THE LINE, not a clipped one. The old chart assumed
+  // every value was positive, which is true of a stock count and false of a
+  // profit -- so the scale is built from both ends and zero is always on it.
+  const rawMax = Math.max(...known, 0);
+  const rawMin = Math.min(...known, 0);
+  const span = (rawMax - rawMin) || 1;
+  const max = rawMax + span * 0.12;
+  const min = rawMin - (rawMin < 0 ? span * 0.12 : 0);
+  const plotTop = padTop;
+  const plotBottom = height - padBottom;
+  const yFor = (v) => plotBottom - ((v - min) / (max - min)) * (plotBottom - plotTop);
+  const zeroY = yFor(0);
 
   const gridLines = 5;
+  ctx.strokeStyle = lineColor;
+  ctx.lineWidth = 1;
   for (let i = 0; i < gridLines; i += 1) {
-    const y = padTop + ((height - padTop - padBottom) / (gridLines - 1)) * i;
+    const value = max - ((max - min) / (gridLines - 1)) * i;
+    const y = yFor(value);
     ctx.beginPath();
     ctx.moveTo(padLeft, y);
     ctx.lineTo(width - padRight, y);
     ctx.stroke();
-
-    const value = Math.round(max - (max / (gridLines - 1)) * i);
     ctx.fillStyle = mutedColor;
-    ctx.font = "11px Inter, sans-serif";
     ctx.textAlign = "right";
-    ctx.fillText(String(value), padLeft - 8, y + 4);
-  }
-  ctx.textAlign = "left";
-
-  if (!data.length) {
-    ctx.fillStyle = mutedColor;
-    ctx.font = "15px Inter, sans-serif";
-    ctx.fillText(t("chart.emptyPrompt"), padLeft, height / 2);
-    return;
+    ctx.fillText(compactMoney(value), padLeft - 8, y + 4);
   }
 
-  const points = data.map((value, index) => ({
-    x: padLeft + ((width - padLeft - padRight) / Math.max(data.length - 1, 1)) * index,
-    y: height - padBottom - (value / max) * (height - padTop - padBottom)
-  }));
-
-  const gradient = ctx.createLinearGradient(0, padTop, 0, height - padBottom);
-  gradient.addColorStop(0, "rgba(70, 194, 161, 0.35)");
-  gradient.addColorStop(1, "rgba(106, 167, 255, 0.02)");
-
+  // The zero line, drawn heavier than the grid: on a chart that can go negative
+  // it is the only line that means anything on its own.
   ctx.beginPath();
-  ctx.moveTo(points[0].x, height - padBottom);
-  points.forEach((point) => ctx.lineTo(point.x, point.y));
-  ctx.lineTo(points[points.length - 1].x, height - padBottom);
-  ctx.closePath();
-  ctx.fillStyle = gradient;
-  ctx.fill();
-
-  ctx.beginPath();
-  points.forEach((point, index) => {
-    if (index === 0) ctx.moveTo(point.x, point.y);
-    else ctx.lineTo(point.x, point.y);
-  });
-  ctx.strokeStyle = "#46c2a1";
-  ctx.lineWidth = 4;
+  ctx.moveTo(padLeft, zeroY);
+  ctx.lineTo(width - padRight, zeroY);
+  ctx.strokeStyle = mutedColor;
+  ctx.lineWidth = 1.5;
   ctx.stroke();
+  ctx.lineWidth = 1;
 
-  ctx.fillStyle = mutedColor;
-  ctx.font = "11px Inter, sans-serif";
-  labels.forEach((label, index) => {
-    ctx.save();
-    ctx.translate(points[index].x, height - padBottom + 14);
-    ctx.rotate(-Math.PI / 5);
-    ctx.textAlign = "right";
-    ctx.fillText(label, 0, 0);
-    ctx.restore();
+  const slot = (width - padLeft - padRight) / series.length;
+  const barWidth = Math.min(slot * 0.62, 46);
+
+  series.forEach((bucket, index) => {
+    const cx = padLeft + slot * index + slot / 2;
+    ctx.textAlign = "center";
+
+    if (bucket.net === null) {
+      // Nothing sold, or nothing sold with a known cost. An empty slot with its
+      // label, never a zero bar -- a zero bar says "no profit", which is a
+      // different statement from "we cannot tell".
+      ctx.fillStyle = mutedColor;
+      ctx.globalAlpha = 0.5;
+      ctx.fillText(bucket.hasSales ? t("chart.noCost") : "–", cx, zeroY - 6);
+      ctx.globalAlpha = 1;
+    } else {
+      const y = yFor(bucket.net);
+      const top = Math.min(y, zeroY);
+      const barHeight = Math.max(Math.abs(y - zeroY), 1);
+      ctx.fillStyle = bucket.net < 0 ? "#ef6666" : "#46c2a1";
+      ctx.beginPath();
+      ctx.roundRect(cx - barWidth / 2, top, barWidth, barHeight, 4);
+      ctx.fill();
+    }
+
+    ctx.fillStyle = mutedColor;
+    ctx.textAlign = "center";
+    ctx.fillText(bucket.label, cx, height - padBottom + 18);
   });
+  ctx.textAlign = "left";
+}
+
+// Axis labels on a money chart: 1,200,000 in a 60px gutter is unreadable, and
+// the exact figure is on the Profit Report anyway. The axis is for shape.
+function compactMoney(value) {
+  const abs = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  if (abs >= 1000000) return `${sign}${(abs / 1000000).toFixed(abs >= 10000000 ? 0 : 1)}M`;
+  if (abs >= 1000) return `${sign}${Math.round(abs / 1000)}k`;
+  return `${sign}${Math.round(abs)}`;
 }
 
 function renderRevenueChart() {
@@ -2878,7 +3381,12 @@ function renderServices() {
   if (addButton) addButton.hidden = !canEdit;
 
   const label = t(serviceLabelKey());
-  nav.textContent = label;
+  // The LABEL span, not the button. The nav item carries an inline SVG icon as
+  // its first child, and assigning textContent on the button would erase it --
+  // the same hazard translateStaticDom() has, which is why every other nav item
+  // keeps its data-i18n key on an inner span rather than on the button.
+  const navLabel = qs("#servicesNavLabel") || nav;
+  navLabel.textContent = label;
   qs("#servicesTitle").textContent = label;
   qs("#servicesThName").textContent = label === t("services.menuTitle")
     ? t("services.thItem")
@@ -3841,6 +4349,92 @@ function renderVatReport() {
   `;
 }
 
+// Docx section 12: Sales by Product. The one report on that list that existed
+// nowhere, and the most actionable a shop has -- what actually sells is what
+// decides what to buy again.
+//
+// Deliberately NOT a margin report. The Profit Report's drill-down already shows
+// cost against price per product and is owner-strict for exactly that reason;
+// this is units and revenue, which a manager may see and act on. Keeping cost
+// out is what lets this panel sit on a screen managers can open.
+//
+// Returns are netted the same way summariseCostOfGoods() nets them -- a product
+// that was sold and then brought back did not sell. The map is consumed rather
+// than read, because it totals per product across the sale.
+function summariseSalesByProduct(sales) {
+  const rows = new Map();
+  for (const sale of sales || []) {
+    if (sale.voided) continue;
+    const returnedRemaining = saleReturnedQtyMap(sale);
+    for (const item of sale.items || []) {
+      // Services sell too, and a salon wants them in this list -- so unlike the
+      // costing surfaces this one keeps them, and says which is which.
+      const key = isServiceLine(item) ? `s:${item.serviceId}` : `p:${item.productId}`;
+      if (key === "s:undefined" || key === "p:undefined") continue;
+      const soldQty = safeNumber(item.qty);
+      const outstanding = safeNumber(returnedRemaining.get(item.productId));
+      const returnedHere = Math.min(soldQty, outstanding);
+      if (returnedHere > 0) returnedRemaining.set(item.productId, outstanding - returnedHere);
+      const qty = soldQty - returnedHere;
+      if (qty <= 0) continue;
+      const row = rows.get(key) || {
+        key, name: String(item.name || "").slice(0, 120),
+        isService: isServiceLine(item), units: 0, revenue: 0, orders: 0
+      };
+      row.units += qty;
+      row.revenue += safeNumber(item.lineTotal) * (soldQty > 0 ? qty / soldQty : 0);
+      row.orders += 1;
+      rows.set(key, row);
+    }
+  }
+  const list = [...rows.values()];
+  // By revenue, not by units. A shop deciding what to restock cares which lines
+  // bring the money in; ordering by units puts the cheapest thing on the shelf
+  // at the top of every list.
+  list.sort((a, b) => b.revenue - a.revenue || b.units - a.units);
+  return {
+    rows: list,
+    totalUnits: list.reduce((sum, r) => sum + r.units, 0),
+    totalRevenue: list.reduce((sum, r) => sum + r.revenue, 0)
+  };
+}
+
+function renderSalesByProduct() {
+  const table = qs("#salesByProductTable");
+  const note = qs("#salesByProductNote");
+  if (!table || !note) return;
+  // Manager and owner. Units and revenue only -- no cost, so this widens no
+  // disclosure over the sales figures those roles already read.
+  if (!isManagerOrOwnerRole()) {
+    table.innerHTML = "";
+    note.textContent = "";
+    return;
+  }
+
+  // The same range the payment report above it uses, so the two panels always
+  // describe the same period. A report that quietly used a different window
+  // from the one on screen is worse than no report.
+  const summary = summariseSalesByProduct(filteredSales());
+  if (!summary.rows.length) {
+    table.innerHTML = `<tr><td colspan="4" class="muted">${esc(t("reports.sbpEmpty"))}</td></tr>`;
+    note.textContent = "";
+    return;
+  }
+
+  table.innerHTML = summary.rows.map((row) => `<tr>
+    <td>${esc(row.name)}${row.isService ? ` <span class="muted">${esc(t("reports.sbpService"))}</span>` : ""}</td>
+    <td>${row.units}</td>
+    <td>${row.orders}</td>
+    <td><strong>${money(row.revenue)}</strong></td>
+  </tr>`).join("") + `<tr class="statement-total">
+    <td>${esc(t("profit.pdTotal"))}</td>
+    <td>${summary.totalUnits}</td>
+    <td></td>
+    <td>${money(summary.totalRevenue)}</td>
+  </tr>`;
+  note.textContent = t("reports.sbpNote");
+}
+
 function renderPaymentReports() {
   const grid = qs("#paymentMethodGrid");
   const summary = qs("#paymentSummary");
@@ -3869,8 +4463,8 @@ function renderPaymentReports() {
   renderStoreBreakdown();
   renderStaffBreakdown();
   renderOfflineSalesReport();
+  renderSalesByProduct();
   renderVatReport();
-  renderTopCustomers();
   renderStaffOrderLookupSelect();
   renderCustomerAccounts();
 }
@@ -4073,45 +4667,6 @@ function renderStaffBreakdown() {
     : "";
 
   tbody.innerHTML = bodyRows + totalRow || `<tr><td colspan="7" class="empty-state">${t("cart.empty")}</td></tr>`;
-}
-
-function computeCustomerBreakdown() {
-  const sales = filteredSales();
-  const byCustomer = new Map();
-  sales.forEach((sale) => {
-    const phone = String(sale.customerPhone || "").trim();
-    const name = String(sale.customerName || "").trim();
-    if (!phone && !name) return;
-    const key = phone || `name:${name.toLowerCase()}`;
-    if (!byCustomer.has(key)) {
-      byCustomer.set(key, { name: "", phone: "", orders: 0, total: 0, lastVisit: null });
-    }
-    const entry = byCustomer.get(key);
-    if (name && !entry.name) entry.name = name;
-    if (phone && !entry.phone) entry.phone = phone;
-    entry.orders += 1;
-    entry.total += Number(sale.total || 0);
-    const date = saleDate(sale);
-    if (date && (!entry.lastVisit || date > entry.lastVisit)) entry.lastVisit = date;
-  });
-  return [...byCustomer.values()].sort((a, b) => b.total - a.total);
-}
-
-function renderTopCustomers() {
-  const tbody = qs("#topCustomersTable");
-  if (!tbody) return;
-  const rows = computeCustomerBreakdown().slice(0, 10);
-  tbody.innerHTML = rows
-    .map(
-      (row) => `<tr>
-        <td>${esc(row.name || t("report.none"))}</td>
-        <td>${esc(row.phone || "-")}</td>
-        <td>${row.orders}</td>
-        <td><strong>${money(row.total)}</strong></td>
-        <td>${row.lastVisit ? row.lastVisit.toLocaleDateString() : "-"}</td>
-      </tr>`
-    )
-    .join("") || `<tr><td colspan="5" class="empty-state">${t("reports.topCustomersEmpty")}</td></tr>`;
 }
 
 function saleMatchesDate(sale, dateStr) {
@@ -4512,77 +5067,6 @@ function renderStaffAllOrdersResult() {
   const cards = sales.map((sale) => buildStaffOrderCard(sale)).join("");
 
   container.innerHTML = `<div class="payment-summary-row"><strong>${esc(staffName)}</strong><strong>${money(rangeTotal)}</strong></div>` + cards;
-}
-
-function computeDailyStaffReport(dateStr) {
-  if (!dateStr) return { staffEntries: [], grandTotal: 0 };
-  const scoped = state.sales.filter((sale) => {
-    if (sale.voided) return false;
-    if (state.db && state.currentStoreId !== "all" && saleStoreId(sale) !== state.currentStoreId) return false;
-    return saleMatchesDate(sale, dateStr);
-  });
-
-  const byStaff = new Map();
-  scoped.forEach((sale) => {
-    const key = sale.staffId || "unassigned";
-    if (!byStaff.has(key)) byStaff.set(key, { staffName: sale.staffName || t("report.none"), sales: [], total: 0 });
-    const entry = byStaff.get(key);
-    entry.sales.push(sale);
-    entry.total += Number(sale.total || 0);
-  });
-
-  const staffEntries = [...byStaff.values()].sort((a, b) => b.total - a.total);
-  const grandTotal = staffEntries.reduce((sum, entry) => sum + entry.total, 0);
-  return { staffEntries, grandTotal };
-}
-
-function renderDailyStaffReport() {
-  const container = qs("#dailyStaffReportResult");
-  if (!container) return;
-  const dateStr = qs("#dailyStaffReportDate")?.value || "";
-  if (!dateStr) {
-    container.innerHTML = `<p class="muted">${t("reports.dailyStaffReportEmpty")}</p>`;
-    return;
-  }
-
-  const { staffEntries, grandTotal } = computeDailyStaffReport(dateStr);
-  if (!staffEntries.length) {
-    container.innerHTML = `<p class="muted">${t("reports.dailyStaffReportNoSales")}</p>`;
-    return;
-  }
-
-  container.innerHTML = staffEntries
-    .map((entry) => {
-      const orderRows = entry.sales
-        .map((sale) => {
-          const date = saleDate(sale);
-          const itemsSummary = (sale.items || []).map((item) => `${item.name} (${item.qty})`).join(", ");
-          return `<tr>
-            <td>#${esc(sale.orderNumber || "")}</td>
-            <td>${date ? date.toLocaleTimeString() : "-"}</td>
-            <td>${paymentMethodLabel(sale.paymentMethod || "cash")}</td>
-            <td>${esc(itemsSummary)}</td>
-            <td>${money(sale.total)}</td>
-          </tr>`;
-        })
-        .join("");
-      return `<div class="daily-staff-card">
-        <div class="payment-summary-row"><strong>${esc(entry.staffName)}</strong><strong>${money(entry.total)}</strong></div>
-        <table>
-          <thead>
-            <tr>
-              <th>${t("reports.dailyStaffReportOrderColumn")}</th>
-              <th>${t("reports.staffOrderLookupTimeLabel")}</th>
-              <th>${t("report.colPaymentMethod")}</th>
-              <th>${t("reports.dailyStaffReportItemsLabel")}</th>
-              <th>${t("pos.total")}</th>
-            </tr>
-          </thead>
-          <tbody>${orderRows}</tbody>
-        </table>
-      </div>`;
-    })
-    .join("") + `<div class="payment-summary-row"><strong>${t("reports.dailyStaffReportGrandTotal")}</strong><strong>${money(grandTotal)}</strong></div>`;
 }
 
 function searchOrderNumber() {
@@ -5370,8 +5854,51 @@ const EXPENSE_BACKDATE_LIMIT_DAYS = 730;
 // at the till, so it can afford to wait a little longer before giving up.
 const RESTOCK_TRANSACTION_TIMEOUT_MS = 15000;
 
+// The last three arrived with DESIGN-landed-costs.md 5. The docx section 11
+// names sales commission, delivery related to a sale, and sales packaging as
+// DIRECT operating expenses, and until phase 5 they had nowhere to go but
+// 'other' -- the one category no report can act on.
 const EXPENSE_CATEGORIES = ["rent", "utilities", "wages", "transport",
-                            "supplies", "repairs", "licences", "marketing", "other"];
+                            "supplies", "repairs", "licences", "marketing", "other",
+                            "commission", "delivery", "packaging"];
+
+// What each category is, before anyone overrides it.
+//
+// Every category that existed before phase 5 defaults to 'indirect', which is
+// why an expense with no `nature` at all can be read as indirect with no risk:
+// absent and stored agree on the whole of the history. The three new ones are
+// direct because that is the only reason they exist.
+//
+// `transport` and `wages` are the genuinely ambiguous pair -- a boda delivering
+// a customer's order is direct and a boda to the bank is not; a sales commission
+// is direct and an office salary is not -- and they default to indirect because
+// that is the safer half of the guess: the docx section 9 statement subtracts
+// both lines from gross profit, so the split is presentational either way, and
+// indirect is the reading that does not claim a cost was attributable when
+// nobody said so.
+const EXPENSE_NATURE_BY_CATEGORY = {
+  rent: "indirect", utilities: "indirect", wages: "indirect", transport: "indirect",
+  supplies: "indirect", repairs: "indirect", licences: "indirect",
+  marketing: "indirect", other: "indirect",
+  commission: "direct", delivery: "direct", packaging: "direct"
+};
+
+// Direct or indirect, for an expense that may predate the field entirely.
+//
+// A stored value wins; anything else falls back to the category's default. Not
+// a bare "indirect" fallback: those agree today, because every pre-phase-5
+// category defaults to indirect -- but they would stop agreeing the moment a
+// direct-by-default category is added, and the version that reads the map is the
+// one that stays correct.
+function expenseNature(expense) {
+  const stored = expense?.nature;
+  if (stored === "direct" || stored === "indirect") return stored;
+  return EXPENSE_NATURE_BY_CATEGORY[expense?.category] || "indirect";
+}
+
+function expenseNatureLabel(nature) {
+  return t(nature === "direct" ? "expenses.natureDirect" : "expenses.natureIndirect");
+}
 
 function expenseCategoryLabel(category) {
   const key = `cat.${category}`;
@@ -5405,6 +5932,11 @@ function summariseExpenses(expenses, monthKey) {
   let total = 0;
   let fromTill = 0;
   let count = 0;
+  // The docx section 9 statement has a line for each. They add to `total` and
+  // never to anything else: the split is a presentation of the same money, not
+  // a third category of it.
+  let direct = 0;
+  let indirect = 0;
   const byCategory = new Map();
   for (const expense of expenses) {
     const at = expenseSpentAt(expense);
@@ -5413,6 +5945,7 @@ function summariseExpenses(expenses, monthKey) {
     const amount = safeNumber(expense.amount);
     total += amount;
     count += 1;
+    if (expenseNature(expense) === "direct") direct += amount; else indirect += amount;
     if (expense.paidFrom === "till") fromTill += amount;
     byCategory.set(expense.category, safeNumber(byCategory.get(expense.category)) + amount);
   }
@@ -5421,7 +5954,38 @@ function summariseExpenses(expenses, monthKey) {
   for (const [category, amount] of byCategory) {
     if (amount > topAmount) { topCategory = category; topAmount = amount; }
   }
-  return { total, fromTill, count, topCategory, topAmount };
+  return { total, fromTill, count, topCategory, topAmount, direct, indirect };
+}
+
+// What the deliveries in this month capitalised into stock.
+//
+// The docx section 4 asks for exactly this: "Inventory/Landed Costs should
+// ideally be entered from Inventory -> Receive Stock rather than as a normal
+// expense. The Expenses module can still display these costs for reporting."
+//
+// Display, and nothing else. This figure is NEVER added to the operating
+// expense total: the freight is already inside each product's unit cost and
+// reaches the profit statement as cost of sales when the goods sell. Counting it
+// here as well would charge it twice and understate profit by the whole of it --
+// which is the error DESIGN-landed-costs.md 1 exists to prevent, arriving from
+// the opposite direction.
+function summariseLandedForMonth(deliveries, monthKey) {
+  let total = 0;
+  let count = 0;
+  const byType = new Map();
+  for (const delivery of deliveries) {
+    const at = deliveryReceivedAt(delivery);
+    if (!at || localMonthKey(at) !== monthKey) continue;
+    const additional = safeNumber(delivery.additionalTotal);
+    if (additional <= 0) continue;
+    total += additional;
+    count += 1;
+    for (const type of DELIVERY_COST_TYPES) {
+      const amount = safeNumber(delivery[type]);
+      if (amount > 0) byType.set(type, safeNumber(byType.get(type)) + amount);
+    }
+  }
+  return { total, count, byType };
 }
 
 async function subscribeToExpenses() {
@@ -5485,6 +6049,69 @@ function setExpenseError(slot, message) {
   if (node) node.textContent = message;
 }
 
+// The docx section 4 panel: landed costs, shown in Expenses, capitalised into
+// stock, and never in the operating expense total.
+//
+// It is a separate panel rather than rows in the table on purpose. In the table
+// it would sit under the same column headings as spending that DOES reduce this
+// month's profit, and the only thing keeping the two apart would be a label in a
+// cell. A reader summing the screen by eye must not be able to reach a different
+// number from the one the screen reports.
+function renderLandedCostSection(monthKey) {
+  const panel = qs("#expenseLandedPanel");
+  const body = qs("#expenseLandedBody");
+  if (!panel || !body) return;
+
+  const summary = summariseLandedForMonth(storeDeliveries(), monthKey);
+  // Hidden entirely when there is nothing to show. A shop that has never
+  // recorded a landed cost should not be shown an empty panel explaining a
+  // distinction it has not met yet.
+  panel.hidden = summary.total <= 0;
+  if (panel.hidden) {
+    body.innerHTML = "";
+    return;
+  }
+
+  const rows = [...summary.byType.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([type, amount]) => `<tr>
+      <td>${esc(t(`deliveries.cost${type.charAt(0).toUpperCase()}${type.slice(1)}`))}</td>
+      <td><strong>${money(amount)}</strong></td>
+    </tr>`).join("");
+
+  body.innerHTML = `
+    <p class="muted">${esc(t("expenses.landedIntro", {
+      count: String(summary.count),
+      delivery: t(summary.count === 1 ? "deliveries.deliverySingular" : "deliveries.deliveryPlural")
+    }))}</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>${esc(t("expenses.landedThType"))}</th>
+          <th>${esc(t("expenses.landedThAmount"))}</th>
+        </tr></thead>
+        <tbody>${rows}
+          <tr class="delivery-preview-total">
+            <td>${esc(t("expenses.landedTotalRow"))}</td>
+            <td>${money(summary.total)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">${esc(t("expenses.landedExcluded"))}</p>`;
+}
+
+// One sentence under the box saying what the choice means for the Profit
+// Report, because "direct" and "indirect" are accounting words and the shop
+// using this screen did not pick them.
+function renderExpenseNatureHint() {
+  const hint = qs("#expenseNatureHint");
+  const select = qs("#expenseNatureSelect");
+  if (!hint || !select) return;
+  hint.textContent = t(select.value === "direct"
+    ? "expenses.natureDirectHint" : "expenses.natureIndirectHint");
+}
+
 function openExpenseDialog(expenseId) {
   const dialog = qs("#expenseDialog");
   const form = qs("#expenseForm");
@@ -5516,6 +6143,11 @@ function openExpenseDialog(expenseId) {
   form.elements.id.value = existing?.id || "";
   form.elements.amount.value = existing ? safeNumber(existing.amount) : "";
   form.elements.category.value = existing?.category || "other";
+  // An existing expense shows what it was classified as -- including one written
+  // before the field existed, which expenseNature() reads from the category's
+  // default rather than leaving the box blank.
+  if (form.elements.nature) form.elements.nature.value = existing ? expenseNature(existing) : "indirect";
+  renderExpenseNatureHint();
   form.elements.paidFrom.value = existing?.paidFrom || "other";
   const at = existing ? expenseSpentAt(existing) : new Date();
   form.elements.spentAt.value = at ? localDateInputValue(at) : "";
@@ -5620,6 +6252,13 @@ async function saveExpense(input) {
   }
 
   const category = EXPENSE_CATEGORIES.includes(input.category) ? input.category : "other";
+  // Falls back to the category's default rather than to a fixed "indirect", so a
+  // form that somehow submits without the field still classifies a commission as
+  // direct. firestore.rules permits only these two values, so anything else
+  // would be refused rather than stored.
+  const nature = (input.nature === "direct" || input.nature === "indirect")
+    ? input.nature
+    : (EXPENSE_NATURE_BY_CATEGORY[category] || "indirect");
   const paidFrom = input.paidFrom === "till" ? "till" : "other";
   const note = String(input.note || "").trim().slice(0, 200);
 
@@ -5637,6 +6276,10 @@ async function saveExpense(input) {
       storeId: existing?.storeId || state.currentStoreId,
       recordedByUid: existing?.recordedByUid || state.user.uid,
       category,
+      // Always written, never omitted. It is one word on a document that is
+      // already being written, and an expense that carries it explicitly is one
+      // the Profit Report does not have to infer anything about.
+      nature,
       amount,
       paidFrom,
       spentAt: Timestamp.fromDate(spentAt),
@@ -5752,6 +6395,13 @@ function renderExpenses() {
   totals.innerHTML = [
     controlTile(t("expenses.monthTotal"), money(summary.total), summary.total > 0 ? "warn" : "",
       t("expenses.monthCount", { count: String(summary.count) })),
+    // The docx section 9 split. Two tiles rather than one, because they are two
+    // lines of the statement -- and neither is a subtotal of the other: they add
+    // to the month total above and to nothing else.
+    controlTile(t("expenses.direct"), money(summary.direct), "",
+      t("expenses.directNote")),
+    controlTile(t("expenses.indirect"), money(summary.indirect), "",
+      t("expenses.indirectNote")),
     // Shown separately because it is the figure that explains a short drawer.
     // Nothing subtracts it from expected cash yet -- DESIGN-purchases.md 8.3 --
     // so the note says what it means rather than implying the shift knows.
@@ -5762,6 +6412,8 @@ function renderExpenses() {
       "",
       summary.topCategory ? money(summary.topAmount) : "")
   ].join("");
+
+  renderLandedCostSection(monthKey);
 
   const rows = scoped
     .filter((expense) => {
@@ -5776,7 +6428,9 @@ function renderExpenses() {
 
   if (!rows.length) {
     const message = state.currentStoreId ? t("expenses.empty") : t("expenses.emptyNoStore");
-    table.innerHTML = `<tr><td colspan="6" class="empty-state">${esc(message)}</td></tr>`;
+    // Seven columns since phase 5 added Nature. A colspan that disagrees with
+    // the header leaves the empty-state message boxed under part of the table.
+    table.innerHTML = `<tr><td colspan="7" class="empty-state">${esc(message)}</td></tr>`;
     return;
   }
 
@@ -5786,6 +6440,7 @@ function renderExpenses() {
     return `<tr>
       <td>${esc(at ? at.toLocaleDateString() : "—")}</td>
       <td>${esc(expenseCategoryLabel(expense.category))}</td>
+      <td>${esc(expenseNatureLabel(expenseNature(expense)))}</td>
       <td>${esc(expense.note || "")}${recorderName(expense) ? ` <span class="muted">${esc(t("expenses.recordedBy", { name: recorderName(expense) }))}</span>` : ""}</td>
       <td>${esc(t(expense.paidFrom === "till" ? "expenses.paidFromTill" : "expenses.paidFromOther"))}</td>
       <td><strong>${money(safeNumber(expense.amount))}</strong></td>
@@ -5834,6 +6489,962 @@ function nextUnitCost({ oldQuantity, oldUnitCost, costKnown, deliveredQuantity, 
   const newQuantity = oldQty + delivered;
   if (newQuantity <= 0) return batchUnitCost;
   return (oldQty * safeNumber(oldUnitCost) + paid) / newQuantity;
+}
+
+// Landed costs -- DESIGN-landed-costs.md phase 1.
+//
+// Freight, duty, clearing and transport are paid on a DELIVERY, not on a
+// product. Until they are spread across the products that delivery brought in,
+// they either reduce profit in the wrong month (logged as an expense) or vanish
+// (not logged at all). Both undervalue stock and both make margin read HIGH,
+// which is the direction a shop prices against.
+//
+// Nothing calls these yet. The arithmetic is proven before anything depends on
+// it, which is the order DESIGN-vat.md established.
+
+// The seven named cost types from DESIGN-landed-costs.md section 3. A closed set
+// of fields rather than a list, so the rules clause that will validate them in
+// phase 2 stays flat and constant-cost.
+const DELIVERY_COST_TYPES = ["freight", "importDuty", "clearing", "transport",
+                             "handling", "insurance", "otherCost"];
+
+// A negative field is FLOORED AT ZERO rather than allowed to subtract. A
+// negative freight is a mis-key or a supplier discount; either way, letting it
+// reduce the total moves money quietly out of inventory, and section 4.3 refuses
+// negatives at the line level for exactly the same reason.
+function deliveryAdditionalTotal(costs) {
+  let total = 0;
+  for (const type of DELIVERY_COST_TYPES) {
+    total += Math.max(0, safeNumber(costs?.[type]));
+  }
+  return total;
+}
+
+// Spread `additionalTotal` across the delivery's lines.
+//
+// Returns { amounts, basis, ok, error }. `amounts` is parallel to `lines`.
+// `basis` is the basis ACTUALLY USED, which is not always the one asked for --
+// see the value-with-no-value case below. The delivery header records this one,
+// because a header claiming 'value' over an allocation done by quantity is a
+// book that lies about its own arithmetic.
+//
+// The invariant the whole feature is judged on, and the reason this function
+// exists rather than three lines at the call site:
+//
+//   sum(amounts) === additionalTotal, EXACTLY.
+//
+// 1,000,000 across three equal lines is 333,333.33... each, and three of those
+// is not 1,000,000. Dropping the difference means the delivery no longer
+// reconciles to the invoice -- the same trap DESIGN-purchases.md section 3
+// defused for unit cost, arriving from the other direction.
+function allocateLandedCosts({ lines, additionalTotal, basis, manualAmounts } = {}) {
+  const rows = Array.isArray(lines) ? lines : [];
+  const zero = rows.map(() => 0);
+  const total = safeNumber(additionalTotal);
+  const asked = basis === "quantity" || basis === "manual" ? basis : "value";
+
+  if (total < 0) {
+    return { amounts: zero, basis: asked, ok: false, error: "negativeTotal" };
+  }
+  if (!rows.length) {
+    // No lines and no money is fine. No lines and money to spread is not: there
+    // is nowhere for it to go, and returning ok would lose it.
+    return { amounts: zero, basis: asked, ok: total === 0, error: total === 0 ? "" : "noLines" };
+  }
+  // Section 3.2. A delivery with no additional costs allocates nothing and is
+  // byte-identical to what the restock path writes today. This is the case that
+  // will be exercised most, so it is the one that short-circuits.
+  if (total === 0) return { amounts: zero, basis: asked, ok: true, error: "" };
+
+  if (asked === "manual") {
+    const manual = Array.isArray(manualAmounts) ? manualAmounts : [];
+    // One amount per line, checked before the sum. A short list would read its
+    // missing entries as zero and could still balance -- so a caller that lost a
+    // line would get a plausible allocation with a product silently carrying no
+    // landed cost, rather than an error. The screen always supplies one box per
+    // line; a length that disagrees is a bug, not an input.
+    if (manual.length !== rows.length) {
+      return { amounts: zero, basis: "manual", ok: false, error: "manualLength" };
+    }
+    const amounts = rows.map((_, i) => safeNumber(manual[i]));
+    if (amounts.some((amount) => amount < 0)) {
+      return { amounts: zero, basis: "manual", ok: false, error: "negativeAmount" };
+    }
+    const sum = amounts.reduce((a, b) => a + b, 0);
+    // Refused, never corrected. Silently rescaling a manual allocation to fit
+    // would defeat the only reason anyone chooses manual.
+    if (Math.abs(sum - total) > 1e-6) {
+      return { amounts: zero, basis: "manual", ok: false, error: "manualMismatch", difference: total - sum };
+    }
+    return { amounts, basis: "manual", ok: true, error: "" };
+  }
+
+  // A negative goods cost or a negative quantity is not a delivery line.
+  const goods = rows.map((line) => safeNumber(line?.goodsCost));
+  const quantities = rows.map((line) => safeNumber(line?.quantity));
+  if (goods.some((g) => g < 0) || quantities.some((q) => q < 0)) {
+    return { amounts: zero, basis: asked, ok: false, error: "negativeLine" };
+  }
+
+  let used = asked;
+  let weights = asked === "quantity" ? quantities : goods;
+  let weightTotal = weights.reduce((a, b) => a + b, 0);
+
+  // Section 4.3. A delivery of free samples with a freight bill cannot be split
+  // by a value that is zero. Fall back to quantity and SAY SO -- the caller
+  // writes the returned basis, not the requested one.
+  if (weightTotal <= 0 && asked === "value") {
+    used = "quantity";
+    weights = quantities;
+    weightTotal = weights.reduce((a, b) => a + b, 0);
+  }
+  if (weightTotal <= 0) {
+    return { amounts: zero, basis: used, ok: false, error: "noWeight" };
+  }
+
+  const amounts = weights.map((w) => (w / weightTotal) * total);
+
+  // The residual. Unrounded shares still miss by float error, and a rounded
+  // preview will miss by more. It goes to the LARGEST line: the correction is
+  // then the smallest fraction of any line it could land on. Ties break on the
+  // lowest index, so two runs on the same delivery produce the same document --
+  // an offline replay that disagreed with the write it was replaying would be
+  // worse than the drift it was fixing.
+  let largest = 0;
+  for (let i = 1; i < amounts.length; i++) {
+    if (amounts[i] > amounts[largest]) largest = i;
+  }
+  const drift = total - amounts.reduce((a, b) => a + b, 0);
+  amounts[largest] += drift;
+
+  // Asserted HERE, not only in the tests. A pure function that can silently
+  // return an allocation which does not reconcile to the invoice is the exact
+  // failure this design exists to prevent, and the suite is not present at the
+  // till. A negative amount after the correction means the drift exceeded the
+  // line it was applied to, which should be impossible -- so it is checked.
+  const settled = amounts.reduce((a, b) => a + b, 0);
+  if (Math.abs(settled - total) > 1e-6 || amounts.some((a) => a < 0)) {
+    return { amounts: zero, basis: used, ok: false, error: "didNotReconcile" };
+  }
+  return { amounts, basis: used, ok: true, error: "" };
+}
+
+// How many product lines one delivery may carry, and the number is arithmetic
+// rather than taste.
+//
+// Receiving a line writes FIVE documents inside the transaction: the product
+// itself, its cost, its cost history, the purchase, and the stock movement.
+// Firestore caps a transaction at 500 writes, and the delivery header and its
+// audit entry take two more:
+//
+//     80 x 5 + 2 = 402 writes, against a hard ceiling of 500.
+//
+// Phase 2 set this at 100 in firestore.rules, having counted four writes a line
+// and forgotten recordStockMovement(). 100 lines is 502 -- one over the cap, and
+// it would have failed at the worst possible moment: after a shop had typed in a
+// hundred-line delivery. Corrected in both places; the arithmetic is written
+// down here so the next person to raise it can check the sum rather than guess.
+// 80 also leaves room for a sixth per-line document without another rules change.
+const DELIVERY_MAX_LINES = 80;
+
+// Longer than a restock's 15s: a delivery reads two documents per line and
+// writes five, so the wire time is a multiple of one restock's, and it is even
+// further from the till than a restock is.
+const DELIVERY_TRANSACTION_TIMEOUT_MS = 45000;
+
+// Everything a delivery needs decided BEFORE a transaction opens: the
+// allocation, the per-line totals, the header, and every reason to refuse.
+//
+// Pure, and separate from receiveDelivery() on purpose. A transaction callback
+// is re-run by Firestore on contention, so anything that can be decided once
+// must be -- and a refusal that only surfaces from inside the transaction
+// surfaces after the shop has typed the whole delivery in, as a bare permission
+// error with nothing pointing at the cause.
+//
+// Returns { ok, error, errorIndex, header, lines }. `error` is a code, not a
+// sentence: the screen in phase 4 owns the wording.
+function prepareDelivery({ lines, costs, basis, manualAmounts } = {}) {
+  const rows = Array.isArray(lines) ? lines : [];
+  const fail = (error, errorIndex = -1) => ({ ok: false, error, errorIndex, header: null, lines: [] });
+
+  if (!rows.length) return fail("noLines");
+  if (rows.length > DELIVERY_MAX_LINES) return fail("tooManyLines");
+
+  // Two lines for the same product would each read the same shelf, and the
+  // second write would land on top of the first -- so one of the two deliveries
+  // would be silently lost, quantity and cost alike, inside a transaction that
+  // reported success. Refused rather than merged, because merging two lines the
+  // shop deliberately typed separately guesses at which price was meant.
+  const seen = new Set();
+  for (let i = 0; i < rows.length; i++) {
+    const productId = String(rows[i]?.productId || "");
+    if (!productId) return fail("missingProduct", i);
+    if (seen.has(productId)) return fail("duplicateProduct", i);
+    seen.add(productId);
+
+    const quantity = safeNumber(rows[i]?.quantity);
+    if (!(quantity > 0) || Math.floor(quantity) !== quantity || quantity > MAX_COUNT) {
+      return fail("badQuantity", i);
+    }
+    const goodsCost = safeNumber(rows[i]?.goodsCost);
+    if (goodsCost < 0 || goodsCost > MAX_MONEY) return fail("badGoodsCost", i);
+  }
+
+  const additionalTotal = deliveryAdditionalTotal(costs);
+  const allocation = allocateLandedCosts({
+    lines: rows, additionalTotal, basis, manualAmounts
+  });
+  if (!allocation.ok) {
+    return { ok: false, error: allocation.error, errorIndex: -1, header: null, lines: [],
+             difference: allocation.difference };
+  }
+
+  const prepared = rows.map((line, i) => {
+    const quantity = safeNumber(line.quantity);
+    const goodsCost = safeNumber(line.goodsCost);
+    const landedCost = allocation.amounts[i];
+    const totalPaid = goodsCost + landedCost;
+    return {
+      productId: String(line.productId),
+      productName: String(line.productName || "").slice(0, 120),
+      quantity,
+      goodsCost,
+      landedCost,
+      totalPaid,
+      // Unrounded, on purpose -- DESIGN-purchases.md 3. Rounding loses money
+      // against the invoice on every delivery.
+      unitCost: totalPaid / quantity
+    };
+  });
+
+  // DESIGN-landed-costs.md 11.4. A line that ends up costing nothing cannot be
+  // written: firestore.rules has required totalPaid > 0 and unitCost > 0 since
+  // phase B, and a million units at no cost each is exactly what that rule was
+  // written to refuse. It happens when free goods are received alongside priced
+  // ones and the basis is `value` -- the free line allocates to zero, correctly,
+  // and then has nothing at all to record.
+  //
+  // Caught HERE rather than at the rules layer, because at the rules layer it
+  // takes the whole delivery down after the fact.
+  for (let i = 0; i < prepared.length; i++) {
+    if (!(prepared[i].totalPaid > 0)) return fail("lineCostsNothing", i);
+  }
+
+  const goodsCost = prepared.reduce((sum, line) => sum + line.goodsCost, 0);
+  const totalCost = goodsCost + additionalTotal;
+  if (!(totalCost > 0)) return fail("deliveryCostsNothing");
+  if (totalCost > MAX_MONEY) return fail("deliveryTooLarge");
+
+  // The seven cost types are written explicitly, zeros included -- validDelivery()
+  // requires all seven so that its "does this header add up to itself" check is
+  // one expression instead of seven conditionals. DESIGN-landed-costs.md 11.1.
+  const header = { goodsCost, additionalTotal, totalCost, lineCount: prepared.length,
+    // The basis ACTUALLY used, which is not always the one asked for: a delivery
+    // of free goods cannot be split by value and falls back to quantity. A header
+    // claiming 'value' over an allocation done by quantity is a book that lies
+    // about its own arithmetic.
+    allocationBasis: allocation.basis };
+  for (const type of DELIVERY_COST_TYPES) {
+    header[type] = Math.max(0, safeNumber(costs?.[type]));
+  }
+
+  return { ok: true, error: "", errorIndex: -1, header, lines: prepared };
+}
+
+// Receive a delivery: stock up, cost history, product costs, purchase lines, and
+// the header that ties them together -- all in ONE transaction.
+//
+// Why a transaction and not a writeBatch. DESIGN-purchases.md 13i used a batch
+// for cost capture on the product form, correctly, because a product that did
+// not exist a moment ago has no shelf count to race against. A delivery is the
+// opposite: every line adds to a quantity and averages against a cost that
+// another till may be moving underneath it. The restock path has read the shelf
+// inside the transaction since phase B for exactly this reason, and a delivery
+// is a restock of several products at once.
+//
+// All reads before any write -- Firestore refuses the other order -- and issued
+// CONCURRENTLY. Sequentially, an eighty-line delivery would be 160 round trips
+// before the first write, which is how a correct transaction times out anyway.
+//
+// Returns { ok, error, errorIndex, deliveryId, outcome }. It does not toast and
+// does not touch the DOM: phase 4 owns the screen, and a function that both
+// decides and renders cannot be tested without one.
+async function receiveDelivery(input = {}) {
+  const prep = prepareDelivery(input);
+  if (!prep.ok) {
+    return { ok: false, error: prep.error, errorIndex: prep.errorIndex, difference: prep.difference };
+  }
+
+  const storeId = String(input.storeId || "");
+  if (!storeId || storeId === "all") return { ok: false, error: "noStore", errorIndex: -1 };
+  if (!state.db || !state.user || !state.businessOwnerUid) {
+    // The same refusal saveExpense() and the restock cost path make. There is
+    // nowhere to put a delivery in local-only mode, and silently dropping what
+    // the shop typed is worse than refusing it.
+    return { ok: false, error: "needsConnection", errorIndex: -1 };
+  }
+
+  const { doc, collection, runTransaction, serverTimestamp, Timestamp } = state.firebaseApi.firestore;
+  const root = ["users", state.businessOwnerUid];
+  const deliveryRef = doc(collection(state.db, ...root, "deliveries"));
+  const refs = prep.lines.map((line) => ({
+    product: doc(state.db, ...root, "products", line.productId),
+    cost: doc(state.db, ...root, "productCosts", line.productId)
+  }));
+
+  try {
+    const attempt = runTransaction(state.db, async (transaction) => {
+      const productSnaps = await Promise.all(refs.map((r) => transaction.get(r.product)));
+      const costSnaps = await Promise.all(refs.map((r) => transaction.get(r.cost)));
+
+      // Every existence check before any write, so a delivery naming a product
+      // that has since been deleted refuses whole rather than half-applying.
+      for (let i = 0; i < productSnaps.length; i++) {
+        if (!productSnaps[i].exists()) {
+          throw new Error(t("txerror.itemGone", { name: prep.lines[i].productName }));
+        }
+      }
+
+      for (let i = 0; i < prep.lines.length; i++) {
+        const line = prep.lines[i];
+        const before = productSnaps[i].data();
+        const currentQuantity = safeNumber(before.quantity);
+        const existingCost = costSnaps[i].exists() ? costSnaps[i].data() : null;
+
+        // Recomputed from what the shelf ACTUALLY holds inside the transaction,
+        // not from the copy the screen opened with. `totalPaid` here is the
+        // LANDED total -- DESIGN-landed-costs.md 3.1 -- which is the whole point:
+        // the freight reaches the weighted average, and from there COGS, without
+        // the sale path changing at all.
+        const unitCost = nextUnitCost({
+          oldQuantity: currentQuantity,
+          oldUnitCost: safeNumber(existingCost?.costPrice),
+          costKnown: productCostKnown(existingCost),
+          deliveredQuantity: line.quantity,
+          totalPaid: line.totalPaid
+        });
+
+        transaction.set(doc(collection(state.db, ...root, "productCostHistory")), {
+          productId: line.productId,
+          storeId,
+          costPrice: unitCost,
+          // serverTimestamp, not the device clock: this decides which cost
+          // applied to a sale, and a sale's createdAt is a serverTimestamp too.
+          effectiveFrom: serverTimestamp(),
+          reason: "purchase",
+          createdAt: serverTimestamp()
+        });
+        transaction.set(refs[i].cost, {
+          storeId,
+          costPrice: unitCost,
+          // Carried forward, never restamped -- firestore.rules pins it across
+          // updates, so sending anything else is refused rather than silently
+          // moving the moment cost became knowable.
+          costKnownFrom: existingCost?.costKnownFrom || Timestamp.now(),
+          updatedAt: serverTimestamp()
+        });
+        transaction.set(doc(collection(state.db, ...root, "purchases")), {
+          storeId,
+          productId: line.productId,
+          // Denormalised, like every other purchase: the Purchase Book is a
+          // record of what was paid and must survive the product being deleted.
+          productName: line.productName,
+          quantity: line.quantity,
+          // The landed total. goodsCost and landedCost are carried alongside so
+          // the drill-down can separate "what the supplier charged" from "what it
+          // cost to get it here" -- neither is recoverable from the other.
+          totalPaid: line.totalPaid,
+          unitCost: line.unitCost,
+          goodsCost: line.goodsCost,
+          landedCost: line.landedCost,
+          deliveryId: deliveryRef.id,
+          ...(input.supplierName ? { supplierName: String(input.supplierName).slice(0, 120) } : {}),
+          ...(input.supplierTin ? { supplierTin: String(input.supplierTin).slice(0, 20) } : {}),
+          recordedByUid: state.user?.uid || null,
+          createdAt: serverTimestamp()
+        });
+        transaction.update(refs[i].product, {
+          quantity: currentQuantity + line.quantity,
+          updatedAt: serverTimestamp(),
+          // The existing reason, deliberately. A delivery line IS a restock, and
+          // validStockMovementUpdate()'s closed reason list already carries it --
+          // inventing a "delivery" reason would be a rules change on the one
+          // allowlist DESIGN-purchases.md 9 calls the trap.
+          movementReason: "restock"
+        });
+        // The fifth write a line pays for, and the one the DELIVERY_MAX_LINES
+        // arithmetic forgot in phase 2. Without it the stock ledger cannot
+        // reconcile -- units would appear on a shelf with nothing explaining them.
+        recordStockMovement(transaction, {
+          productId: line.productId, productName: line.productName, storeId,
+          reason: "restock", delta: line.quantity, quantityBefore: currentQuantity
+        });
+      }
+
+      transaction.set(deliveryRef, {
+        storeId,
+        ...prep.header,
+        receivedAt: Timestamp.fromDate(input.receivedAt instanceof Date ? input.receivedAt : new Date()),
+        ...(input.reference ? { reference: String(input.reference).slice(0, 60) } : {}),
+        ...(input.supplierName ? { supplierName: String(input.supplierName).slice(0, 120) } : {}),
+        ...(input.supplierTin ? { supplierTin: String(input.supplierTin).slice(0, 20) } : {}),
+        ...(input.note ? { note: String(input.note).slice(0, 200) } : {}),
+        recordedByUid: state.user?.uid || null,
+        createdAt: serverTimestamp()
+      });
+
+      // ONE entry for the delivery, not one per line. Every write in a
+      // transaction pays its own rules evaluation, and a per-line entry would be
+      // a sixth document each -- for a trail /stockMovements already keeps, per
+      // product, and which the stock ledger reconciles against.
+      transaction.set(doc(collection(state.db, ...root, "auditLogs")),
+        moneyAuditEntry("DELIVERY_RECEIVED", {
+          deliveryId: deliveryRef.id,
+          storeId,
+          amount: prep.header.totalCost,
+          itemCount: prep.header.lineCount
+        }));
+    });
+
+    // Unlike a sale, a delivery that times out is NOT quietly accepted: there is
+    // no offline queue behind it, so an unconfirmed transaction may or may not
+    // have landed. The shop is told exactly that rather than shown a success it
+    // cannot rely on when counting the shelf.
+    const outcome = await awaitDeliveryTransaction(attempt);
+    if (outcome === "unconfirmed") return { ok: false, error: "unconfirmed", errorIndex: -1 };
+  } catch (error) {
+    console.warn("[receiveDelivery]", error);
+    return { ok: false, error: "transactionFailed", errorIndex: -1, cause: error };
+  }
+
+  return { ok: true, error: "", errorIndex: -1, deliveryId: deliveryRef.id };
+}
+
+async function awaitDeliveryTransaction(attempt) {
+  let timeoutId = null;
+  try {
+    return await Promise.race([
+      attempt.then(() => "committed"),
+      new Promise((resolve) => {
+        timeoutId = window.setTimeout(() => resolve("unconfirmed"), DELIVERY_TRANSACTION_TIMEOUT_MS);
+      })
+    ]);
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+// Removing a mis-keyed delivery takes its purchase lines with it.
+//
+// Deleting the header alone would leave the Purchase Book holding lines for a
+// delivery that no longer exists -- and re-recording the delivery, which is how
+// a wrong amount is corrected, would then count the money twice. What CANNOT be
+// undone is the weighted average those lines already fed: that is a cached
+// derivation computed once inside the transaction above, and DESIGN-purchases.md
+// 12 accepted it for /purchases before this. Correcting cost means recording a
+// new delivery, not deleting an old one.
+//
+// A batch rather than a transaction: nothing here is read-modify-write.
+async function deleteDelivery(deliveryId) {
+  const id = String(deliveryId || "");
+  if (!id) return { ok: false, error: "noDelivery" };
+  if (!state.db || !state.user || !state.businessOwnerUid) {
+    return { ok: false, error: "needsConnection" };
+  }
+  const { doc, collection, query, where, getDocs, writeBatch } = state.firebaseApi.firestore;
+  const root = ["users", state.businessOwnerUid];
+
+  try {
+    // Queried rather than read out of state.purchases: the client cache is
+    // windowed to the newest N, and a delivery old enough to have fallen out of
+    // it would have its lines silently left behind.
+    const lines = await getDocs(query(
+      collection(state.db, ...root, "purchases"), where("deliveryId", "==", id)));
+
+    const batch = writeBatch(state.db);
+    lines.forEach((line) => batch.delete(line.ref));
+    batch.delete(doc(state.db, ...root, "deliveries", id));
+    // Audited, because this is a money document that can vanish. Every other
+    // money-touching collection in firestore.rules refuses deletion outright;
+    // deliveries and purchases are deletable by decision, and a document that
+    // can vanish without a trace is a note rather than a book.
+    batch.set(doc(collection(state.db, ...root, "auditLogs")),
+      moneyAuditEntry("DELIVERY_DELETED", { deliveryId: id, itemCount: lines.size }));
+    await batch.commit();
+    return { ok: true, error: "", lineCount: lines.size };
+  } catch (error) {
+    console.warn("[deleteDelivery]", error);
+    return { ok: false, error: "deleteFailed", cause: error };
+  }
+}
+
+
+// ===========================================================================
+// The Receive Stock screen -- DESIGN-landed-costs.md phase 4, docx 5 and 6.
+
+// prepareDelivery() returns codes, not sentences, so that the arithmetic can be
+// tested without a DOM and translated without touching it. This is the one place
+// that turns a code into something a shop can act on. Every code the two
+// functions can return is listed; an unrecognised one falls back to the generic
+// failure rather than printing a key.
+function deliveryErrorMessage(result, lines) {
+  const index = Number.isInteger(result?.errorIndex) ? result.errorIndex : -1;
+  const named = index >= 0 && lines?.[index]
+    ? (productNameById(lines[index].productId) || t("deliveries.linePickProduct"))
+    : "";
+  switch (result?.error) {
+    case "noLines": return t("deliveries.errNoLines");
+    case "tooManyLines": return t("deliveries.errTooManyLines", { max: String(DELIVERY_MAX_LINES) });
+    case "duplicateProduct": return t("deliveries.errDuplicateProduct", { name: named });
+    case "missingProduct": return t("deliveries.errMissingProduct");
+    case "badQuantity": return t("deliveries.errBadQuantity", { line: String(index + 1) });
+    case "badGoodsCost": return t("deliveries.errBadGoodsCost", { line: String(index + 1) });
+    case "lineCostsNothing": return t("deliveries.errLineCostsNothing", { name: named });
+    case "deliveryCostsNothing": return t("deliveries.errDeliveryCostsNothing");
+    case "deliveryTooLarge": return t("deliveries.errDeliveryTooLarge");
+    case "manualLength": return t("deliveries.errManualLength");
+    case "negativeAmount": return t("deliveries.errNegativeAmount");
+    case "negativeLine": return t("deliveries.errBadGoodsCost", { line: String(index + 1) });
+    case "noWeight": return t("deliveries.errNoWeight");
+    case "noStore": return t("deliveries.errNoStore");
+    case "needsConnection": return t("deliveries.errNeedsConnection");
+    case "unconfirmed": return t("deliveries.errUnconfirmed");
+    case "noDelivery": return t("deliveries.errNoDelivery");
+    case "deleteFailed": return t("deliveries.errDeleteFailed");
+    case "manualMismatch": {
+      // Signed, and the sign is the whole message: "you are 100 short" and "you
+      // are 100 over" are different corrections, and a shop given the wrong one
+      // adjusts in the wrong direction.
+      const difference = safeNumber(result.difference);
+      return difference >= 0
+        ? t("deliveries.errManualMismatch", { short: money(difference) })
+        : t("deliveries.errManualMismatchOver", { over: money(-difference) });
+    }
+    default: return t("deliveries.errTransactionFailed");
+  }
+}
+
+function productNameById(productId) {
+  return state.products.find((item) => item.id === productId)?.name || "";
+}
+
+function emptyDeliveryDraft() {
+  const costs = {};
+  for (const type of DELIVERY_COST_TYPES) costs[type] = "";
+  return {
+    lines: [{ productId: "", quantity: "", goodsCost: "", manual: "" }],
+    costs,
+    basis: "value"
+  };
+}
+
+function storeDeliveries() {
+  if (!state.currentStoreId) return [];
+  if (state.currentStoreId === "all") return state.deliveries;
+  return state.deliveries.filter((delivery) => delivery.storeId === state.currentStoreId);
+}
+
+function deliveryReceivedAt(delivery) {
+  const at = delivery?.receivedAt;
+  if (at?.toDate) return at.toDate();
+  if (at instanceof Date) return at;
+  const parsed = at ? new Date(at) : null;
+  return parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;
+}
+
+function deliveryBasisLabel(basis) {
+  if (basis === "quantity") return t("deliveries.basisQuantity");
+  if (basis === "manual") return t("deliveries.basisManual");
+  return t("deliveries.basisValue");
+}
+
+async function subscribeToDeliveries() {
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
+  if (state.unsubscribeDeliveries) state.unsubscribeDeliveries();
+  // A cashier is refused this collection by firestore.rules -- a delivery header
+  // states what a shipment cost. Subscribing anyway would put a
+  // permission-denied in every cashier's console on every sign-in.
+  if (!isManagerOrOwnerRole()) {
+    state.deliveries = [];
+    return;
+  }
+  try {
+    const { collection, limit, onSnapshot, orderBy, query, where } = state.firebaseApi.firestore;
+    const ref = collection(state.db, "users", state.businessOwnerUid, "deliveries");
+    const queryStoreIds = await resolveQueryStoreIds();
+    if (queryStoreIds !== null && queryStoreIds.length === 0) {
+      state.deliveries = [];
+      scheduleRenderAll();
+      return;
+    }
+    const deliveriesQuery = queryStoreIds === null
+      ? query(ref, orderBy("createdAt", "desc"), limit(ACCOUNTS_HISTORY_LIMIT))
+      : query(ref, where("storeId", "in", queryStoreIds),
+              orderBy("createdAt", "desc"), limit(ACCOUNTS_HISTORY_LIMIT));
+    state.unsubscribeDeliveries = onSnapshot(
+      deliveriesQuery,
+      (snapshot) => {
+        state.deliveries = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        scheduleRenderAll();
+      },
+      (error) => {
+        console.warn("[deliveries listener]", error.code || error, "queryStoreIds=", queryStoreIds);
+      }
+    );
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
+function summariseDeliveries(deliveries, monthKey) {
+  let total = 0;
+  let landed = 0;
+  let units = 0;
+  let count = 0;
+  for (const delivery of deliveries) {
+    const at = deliveryReceivedAt(delivery);
+    if (!at || localMonthKey(at) !== monthKey) continue;
+    count++;
+    total += safeNumber(delivery.totalCost);
+    landed += safeNumber(delivery.additionalTotal);
+    units += safeNumber(delivery.lineCount);
+  }
+  return { total, landed, units, count };
+}
+
+function renderDeliveries() {
+  const table = qs("#deliveriesTable");
+  const totals = qs("#deliveryTotals");
+  if (!table || !totals) return;
+  // Emptied, not merely skipped: a demoted manager's rows would otherwise sit in
+  // a section hidden by CSS with every buying price still in the DOM.
+  if (!isManagerOrOwnerRole()) {
+    table.innerHTML = "";
+    totals.innerHTML = "";
+    return;
+  }
+
+  if (!state.deliveryMonthTouched) state.deliveryMonthSelection = localMonthKey(new Date());
+  const monthInput = qs("#deliveryMonthInput");
+  if (monthInput && monthInput.value !== state.deliveryMonthSelection) {
+    monthInput.value = state.deliveryMonthSelection;
+  }
+
+  const scoped = storeDeliveries();
+  const monthKey = state.deliveryMonthSelection;
+  const summary = summariseDeliveries(scoped, monthKey);
+
+  totals.innerHTML = [
+    controlTile(t("deliveries.monthTotal"), money(summary.total), "",
+      t("deliveries.monthCount", {
+        count: String(summary.count),
+        delivery: t(summary.count === 1 ? "deliveries.deliverySingular" : "deliveries.deliveryPlural"),
+        units: String(summary.units),
+        unit: t(summary.units === 1 ? "deliveries.lineSingular" : "deliveries.linePlural")
+      })),
+    // The number this whole design exists to make visible: money that used to
+    // have nowhere to go, now sitting in the value of the stock instead of
+    // reducing this month's profit.
+    controlTile(t("deliveries.landedTotal"), money(summary.landed), "",
+      summary.landed > 0 ? t("deliveries.landedNote") : t("deliveries.landedNone"))
+  ].join("");
+
+  const canDelete = isOwnerRole();
+  const rows = scoped
+    .filter((delivery) => {
+      const at = deliveryReceivedAt(delivery);
+      return at ? localMonthKey(at) === monthKey : false;
+    })
+    .sort((a, b) => (deliveryReceivedAt(b)?.getTime() || 0) - (deliveryReceivedAt(a)?.getTime() || 0));
+
+  if (!rows.length) {
+    table.innerHTML = `<tr><td colspan="9" class="muted">${
+      state.currentStoreId ? t("deliveries.empty") : t("deliveries.emptyNoStore")
+    }</td></tr>`;
+    return;
+  }
+
+  table.innerHTML = rows.map((delivery) => {
+    const at = deliveryReceivedAt(delivery);
+    return `<tr>
+      <td>${at ? at.toLocaleDateString() : "-"}</td>
+      <td>${esc(delivery.reference || "-")}</td>
+      <td>${esc(delivery.supplierName || "-")}</td>
+      <td>${safeNumber(delivery.lineCount)}</td>
+      <td>${money(safeNumber(delivery.goodsCost))}</td>
+      <td>${money(safeNumber(delivery.additionalTotal))}</td>
+      <td>${money(safeNumber(delivery.totalCost))}</td>
+      <td>${esc(deliveryBasisLabel(delivery.allocationBasis))}</td>
+      <td>${canDelete
+        ? `<button class="ghost-button compact danger" type="button" data-delete-delivery="${esc(delivery.id)}">${t("deliveries.deleteButton")}</button>`
+        : "-"}</td>
+    </tr>`;
+  }).join("");
+}
+
+// --- the dialog ------------------------------------------------------------
+
+function deliveryDraftLines() {
+  // The shape prepareDelivery() takes. Strings out of the DOM become numbers
+  // exactly once, here, so the preview and the write path cannot disagree about
+  // what the shop typed.
+  return state.deliveryDraft.lines.map((line) => ({
+    productId: line.productId,
+    productName: productNameById(line.productId),
+    quantity: safeNumber(line.quantity),
+    goodsCost: safeNumber(line.goodsCost)
+  }));
+}
+
+function renderDeliveryLines() {
+  const container = qs("#deliveryLines");
+  if (!container) return;
+  const products = storeProducts()
+    .slice()
+    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  const manual = state.deliveryDraft.basis === "manual";
+
+  container.innerHTML = state.deliveryDraft.lines.map((line, index) => {
+    const options = [`<option value="">${t("deliveries.linePickProduct")}</option>`]
+      .concat(products.map((product) =>
+        `<option value="${esc(product.id)}"${product.id === line.productId ? " selected" : ""}>${esc(product.name)}</option>`))
+      .join("");
+    return `<div class="delivery-line${manual ? " has-manual" : ""}" data-line="${index}">
+      <label><span>${t("deliveries.lineProduct")}</span>
+        <select data-field="productId">${options}</select>
+      </label>
+      <label><span>${t("deliveries.lineQuantity")}</span>
+        <input data-field="quantity" type="number" min="1" step="1" inputmode="numeric"
+               value="${esc(line.quantity)}" autocomplete="off" />
+      </label>
+      <label><span>${t("deliveries.lineGoodsCost")}</span>
+        <input data-field="goodsCost" type="number" min="0" step="1" inputmode="decimal"
+               value="${esc(line.goodsCost)}" autocomplete="off" />
+      </label>
+      ${manual ? `<label><span>${t("deliveries.manualLabel")}</span>
+        <input data-field="manual" type="number" min="0" step="1" inputmode="decimal"
+               value="${esc(line.manual)}" autocomplete="off" />
+      </label>` : ""}
+      <button class="icon-button line-remove" type="button" data-remove-line="${index}"
+              aria-label="${t("deliveries.removeLine")}">&times;</button>
+    </div>`;
+  }).join("");
+}
+
+function renderDeliveryCostFields() {
+  const container = qs("#deliveryCostFields");
+  if (!container) return;
+  container.innerHTML = DELIVERY_COST_TYPES.map((type) => {
+    const key = `deliveries.cost${type.charAt(0).toUpperCase()}${type.slice(1)}`;
+    return `<label><span>${t(key)}</span>
+      <input data-cost="${type}" type="number" min="0" step="1" inputmode="decimal"
+             value="${esc(state.deliveryDraft.costs[type])}" autocomplete="off" />
+    </label>`;
+  }).join("");
+}
+
+// The docx section 6 table, recomputed on every keystroke by the SAME function
+// the write path calls. A preview computed a second way is a preview that can
+// disagree with what is saved, and the number a shop reconciles against its
+// supplier's invoice is exactly the wrong one to have two opinions about.
+function renderDeliveryPreview() {
+  const table = qs("#deliveryPreviewTable");
+  const errorSlot = qs("#deliveryFormError");
+  const goodsSlot = qs("#deliveryGoodsTotal");
+  const additionalSlot = qs("#deliveryAdditionalTotal");
+  const fellBack = qs("#deliveryBasisFellBack");
+  const saveButton = qs("#saveDeliveryButton");
+  if (!table) return;
+
+  const lines = deliveryDraftLines();
+  const costs = state.deliveryDraft.costs;
+  const additionalTotal = deliveryAdditionalTotal(costs);
+  if (additionalSlot) additionalSlot.textContent = t("deliveries.additionalTotal", { value: money(additionalTotal) });
+  if (goodsSlot) {
+    goodsSlot.textContent = t("deliveries.goodsTotal", {
+      value: money(lines.reduce((sum, line) => sum + line.goodsCost, 0))
+    });
+  }
+
+  const hint = qs("#deliveryBasisHint");
+  if (hint) {
+    hint.textContent = t(state.deliveryDraft.basis === "quantity" ? "deliveries.basisQuantityHint"
+      : state.deliveryDraft.basis === "manual" ? "deliveries.basisManualHint"
+      : "deliveries.basisValueHint");
+  }
+
+  const prep = prepareDelivery({
+    lines,
+    costs,
+    basis: state.deliveryDraft.basis,
+    manualAmounts: state.deliveryDraft.basis === "manual"
+      ? state.deliveryDraft.lines.map((line) => safeNumber(line.manual))
+      : undefined
+  });
+
+  if (!prep.ok) {
+    // The preview is emptied rather than left showing the last valid state. A
+    // stale table beside a fresh error reads as though the error is advisory.
+    table.innerHTML = `<tr><td colspan="6" class="muted">${t("deliveries.emptyPreview")}</td></tr>`;
+    if (errorSlot) {
+      // "no lines yet" is the state every dialog opens in. Showing it as an
+      // error the moment the dialog opens trains people to ignore the slot.
+      errorSlot.textContent = prep.error === "noLines" || prep.error === "missingProduct"
+        ? "" : deliveryErrorMessage(prep, lines);
+    }
+    if (fellBack) fellBack.hidden = true;
+    if (saveButton) saveButton.disabled = true;
+    return;
+  }
+
+  if (errorSlot) errorSlot.textContent = "";
+  if (saveButton) saveButton.disabled = false;
+  // Said out loud, because the header will record the basis actually used and a
+  // shop that asked for one and got another should not have to notice.
+  //
+  // The TEXT as well as the visibility. The first version toggled `hidden` and
+  // never set textContent, so the notice appeared as an empty paragraph -- the
+  // fallback was announced by a gap. Caught by rendering it, not by reading it.
+  if (fellBack) {
+    const swapped = prep.header.allocationBasis !== state.deliveryDraft.basis;
+    fellBack.hidden = !swapped;
+    fellBack.textContent = swapped ? t("deliveries.basisFellBack") : "";
+  }
+
+  const rows = prep.lines.map((line) => `<tr>
+    <td>${esc(line.productName || productNameById(line.productId))}</td>
+    <td>${line.quantity}</td>
+    <td>${money(line.goodsCost)}</td>
+    <td>${money(line.landedCost)}</td>
+    <td>${money(line.totalPaid)}</td>
+    <td>${money(line.unitCost)}</td>
+  </tr>`).join("");
+
+  table.innerHTML = rows + `<tr class="delivery-preview-total">
+    <td>${t("deliveries.totalRow")}</td>
+    <td>${prep.lines.reduce((sum, line) => sum + line.quantity, 0)}</td>
+    <td>${money(prep.header.goodsCost)}</td>
+    <td>${money(prep.header.additionalTotal)}</td>
+    <td>${money(prep.header.totalCost)}</td>
+    <td></td>
+  </tr>`;
+}
+
+function renderDeliveryDialog() {
+  renderDeliveryLines();
+  renderDeliveryCostFields();
+  renderDeliveryPreview();
+}
+
+function openDeliveryDialog() {
+  const dialog = qs("#deliveryDialog");
+  if (!dialog) return;
+  if (!isManagerOrOwnerRole()) return;
+  // A delivery names one branch. The same refusal saveProduct(), saveService()
+  // and saveExpense() make, and it is made HERE rather than on submit so nobody
+  // types a twelve-line delivery into a dialog that was never going to save it.
+  if (!state.currentStoreId || state.currentStoreId === "all") {
+    showToast(t("deliveries.errNoStore"));
+    return;
+  }
+  state.deliveryDraft = emptyDeliveryDraft();
+  const form = qs("#deliveryForm");
+  if (form) {
+    form.reset();
+    const dateInput = form.elements.receivedAt;
+    if (dateInput) dateInput.value = localDateInputValue(new Date());
+  }
+  const basisSelect = qs("#deliveryBasis");
+  if (basisSelect) basisSelect.value = "value";
+  renderDeliveryDialog();
+  dialog.showModal();
+}
+
+async function submitDelivery() {
+  const button = qs("#saveDeliveryButton");
+  const errorSlot = qs("#deliveryFormError");
+  const form = qs("#deliveryForm");
+  if (!button || !form) return;
+  // The fourth of these, after #completeSaleButton, #confirmTransferButton and
+  // #confirmRestockButton, and for the same reason: the transaction reads each
+  // shelf and adds to what it finds, so two runs add the delivery twice and the
+  // shop believes it holds stock that never arrived.
+  if (button.disabled) return;
+  button.disabled = true;
+
+  try {
+    // Local parts at midday, the way every other date in this app is parsed.
+    // new Date("2026-09-07") is UTC midnight, which is the previous day west of
+    // Greenwich and the wrong month on the 1st.
+    let receivedAt = new Date();
+    const raw = String(form.elements.receivedAt?.value || "").trim();
+    if (raw) {
+      const [y, m, d] = raw.split("-").map(Number);
+      const parsed = new Date(y, (m || 1) - 1, d || 1, 12, 0, 0);
+      if (!Number.isNaN(parsed.getTime())) receivedAt = parsed;
+    }
+
+    const result = await receiveDelivery({
+      storeId: state.currentStoreId,
+      receivedAt,
+      supplierName: String(form.elements.supplierName?.value || "").trim(),
+      supplierTin: String(form.elements.supplierTin?.value || "").trim(),
+      reference: String(form.elements.reference?.value || "").trim(),
+      note: String(form.elements.note?.value || "").trim(),
+      lines: deliveryDraftLines(),
+      costs: state.deliveryDraft.costs,
+      basis: state.deliveryDraft.basis,
+      manualAmounts: state.deliveryDraft.basis === "manual"
+        ? state.deliveryDraft.lines.map((line) => safeNumber(line.manual))
+        : undefined
+    });
+
+    if (!result.ok) {
+      if (errorSlot) errorSlot.textContent = deliveryErrorMessage(result, deliveryDraftLines());
+      return;
+    }
+
+    const prep = prepareDelivery({
+      lines: deliveryDraftLines(), costs: state.deliveryDraft.costs,
+      basis: state.deliveryDraft.basis,
+      manualAmounts: state.deliveryDraft.basis === "manual"
+        ? state.deliveryDraft.lines.map((line) => safeNumber(line.manual))
+        : undefined
+    });
+    qs("#deliveryDialog")?.close();
+    state.deliveryDraft = emptyDeliveryDraft();
+    renderAll();
+    showToast(t("toast.deliveryRecorded", {
+      count: String(prep.ok ? prep.header.lineCount : 0),
+      unit: t((prep.ok ? prep.header.lineCount : 0) === 1 ? "deliveries.lineSingular" : "deliveries.linePlural"),
+      value: money(prep.ok ? prep.header.totalCost : 0)
+    }));
+  } finally {
+    // Every path, including the early return an error takes, so a refused
+    // delivery cannot leave the next one facing a dead button.
+    button.disabled = false;
+  }
+}
+
+async function confirmDeleteDelivery(deliveryId) {
+  const delivery = state.deliveries.find((item) => item.id === deliveryId);
+  const lineCount = safeNumber(delivery?.lineCount);
+  // Says what survives the deletion as well as what does not. The weighted
+  // average this delivery already fed is a cached derivation and nothing
+  // recomputes it -- DESIGN-purchases.md 12 -- so a shop that deletes expecting
+  // its cost to revert would be wrong, and would find out much later.
+  if (!window.confirm(t("deliveries.deleteConfirm", {
+    count: String(lineCount),
+    line: t(lineCount === 1 ? "deliveries.lineSingular" : "deliveries.linePlural")
+  }))) return;
+
+  const result = await deleteDelivery(deliveryId);
+  if (!result.ok) {
+    showToast(deliveryErrorMessage(result, []));
+    return;
+  }
+  showToast(t("toast.deliveryDeleted"));
+  renderAll();
 }
 
 // The existence of a cost document IS the answer. It is created by the first
@@ -6381,12 +7992,453 @@ function summariseProfit({ sales, costIndex, expenses, monthKey, coverageFromMs,
     grossMarginPct: revenue > 0 ? Math.round((grossProfit / revenue) * 100) : 0,
     expenses: spending.total,
     expenseCount: spending.count,
+    // The two lines the docx section 9 statement puts under gross profit.
+    // They add to `expenses` and to nothing else -- the split is a presentation
+    // of the same money, so net profit is unchanged by it and a shop that
+    // classifies everything wrongly still gets the right bottom line.
+    directExpenses: spending.direct,
+    indirectExpenses: spending.indirect,
     netProfit,
     // Deliberately separate from anyCostKnown. A month with no expenses recorded
     // is not the same as a month with none spent, and the surface must not imply
     // the second.
     anyExpensesRecorded: spending.count > 0
   };
+}
+
+// The docx section 10 drill-down: what each product contributed, for the period.
+//
+// The two middle columns -- "original inventory cost" and "landed costs" -- are
+// the reason DESIGN-landed-costs.md 3.1 kept `goodsCost` and `landedCost` on the
+// purchase line rather than only the landed total. Neither is recoverable from
+// the other, and without them this table cannot answer the question the docx
+// asks it to.
+//
+// HOW THE SPLIT IS ATTRIBUTED, and why it is a ratio rather than a sum.
+//
+// goodsCost and landedCost are properties of what was BOUGHT. Units sold are a
+// property of what was SOLD. Putting a period's purchases beside the same
+// period's sales on one row would be a category error -- a delivery received on
+// the 30th would appear in full against a month of sales it barely touched.
+//
+// So the split is applied as a PROPORTION. Across everything ever recorded for a
+// product, landedCost / (goodsCost + landedCost) is the share of its unit cost
+// that is freight, duty and clearing rather than the supplier's price. Applying
+// that share to the period's cost of sales answers the question a shop actually
+// has: "of the cost of goods I sold, how much of it was getting them here?"
+//
+// It is an attribution, not a measurement, and the surface says so. A product
+// whose purchases predate the landed split has a ratio of zero, which is exactly
+// true of it: nothing was ever capitalised onto those units.
+function landedRatioByProduct(purchases) {
+  const totals = new Map();
+  for (const purchase of purchases || []) {
+    // Both-or-neither on the document, so testing one is enough -- and a
+    // purchase without them contributes to neither side, rather than dragging
+    // the ratio toward zero as though its freight had been zero.
+    if (purchase?.goodsCost === undefined || purchase?.landedCost === undefined) continue;
+    const goods = safeNumber(purchase.goodsCost);
+    const landed = safeNumber(purchase.landedCost);
+    const key = purchase.productId;
+    if (!key) continue;
+    const entry = totals.get(key) || { goods: 0, landed: 0 };
+    entry.goods += goods;
+    entry.landed += landed;
+    totals.set(key, entry);
+  }
+  const ratios = new Map();
+  for (const [productId, { goods, landed }] of totals) {
+    const total = goods + landed;
+    // A batch that cost nothing cannot have a landed share. Skipped rather than
+    // stored as zero, so the surface can tell "no landed cost" from "no data".
+    if (total > 0) ratios.set(productId, landed / total);
+  }
+  return ratios;
+}
+
+// One row per product sold in the period, ordered by what it contributed.
+//
+// Owner-strict at the render, like the statement above it -- this is the
+// strongest disclosure in the app: it names a buying price against a selling
+// price, per product, in one table.
+function summariseProductProfit({ sales, costIndex, purchases, monthKey }) {
+  const rows = new Map();
+  const ratios = landedRatioByProduct(purchases);
+
+  for (const sale of sales || []) {
+    if (sale.voided) continue;
+    const soldAt = saleTimestamp(sale);
+    if (!soldAt || localMonthKey(soldAt) !== monthKey) continue;
+    // Netted the same way summariseCostOfGoods() nets it, and for the same
+    // reason -- see the long note there. BOTH sides are netted here, cost and
+    // revenue, because this table shows them beside each other: netting only the
+    // cost would leave a row whose margin disagrees with its own two columns.
+    const returnedRemaining = saleReturnedQtyMap(sale);
+    for (const item of sale.items || []) {
+      // A haircut has no cost of goods and no product to drill into.
+      //
+      // REDUNDANT HERE, and kept deliberately. The sale-item builder gives a
+      // service line `serviceId` and omits `productId` entirely, so the guard
+      // below already excludes every service; a negative control that deleted
+      // this line changed no behaviour, which is how that was established.
+      // summariseCostOfGoods() needs its copy for a reason this function does
+      // not -- there the cost lookup runs before any productId test, so a
+      // service would count as an uncosted line and report every salon month as
+      // incomplete. Left in place so the two functions read alike and so a
+      // future line shape that does carry both cannot quietly slip through.
+      if (isServiceLine(item)) continue;
+      const productId = item.productId;
+      if (!productId) continue;
+      const row = rows.get(productId) || {
+        productId,
+        productName: String(item.name || "").slice(0, 120),
+        unitsSold: 0, revenue: 0, cogs: 0,
+        costedLines: 0, uncostedLines: 0
+      };
+      // The name from the newest line wins only if the row has none: a product
+      // renamed mid-month should not flicker between two labels.
+      if (!row.productName && item.name) row.productName = String(item.name).slice(0, 120);
+      const soldQty = safeNumber(item.qty);
+      const outstanding = safeNumber(returnedRemaining.get(productId));
+      const returnedHere = Math.min(soldQty, outstanding);
+      if (returnedHere > 0) returnedRemaining.set(productId, outstanding - returnedHere);
+      const qty = soldQty - returnedHere;
+      if (qty <= 0) continue;
+      // Revenue netted in the same PROPORTION as the units, because lineTotal is
+      // qty x sellingPrice and the returned units came off that line. Taking the
+      // refund amount instead would mix a post-discount figure into a
+      // pre-discount column.
+      row.unitsSold += qty;
+      row.revenue += safeNumber(item.lineTotal) * (soldQty > 0 ? qty / soldQty : 0);
+      const unitCost = costInForceAt(costIndex, productId, soldAt);
+      if (unitCost !== null && unitCost > 0) {
+        row.cogs += unitCost * qty;
+        row.costedLines += 1;
+      } else {
+        row.uncostedLines += 1;
+      }
+      rows.set(productId, row);
+    }
+  }
+
+  const list = [...rows.values()].map((row) => {
+    const costKnown = row.costedLines > 0;
+    const costComplete = costKnown && row.uncostedLines === 0;
+    const ratio = ratios.has(row.productId) ? ratios.get(row.productId) : null;
+    const grossProfit = row.revenue - row.cogs;
+    return {
+      ...row,
+      costKnown,
+      costComplete,
+      // Null, not zero: "we do not know" and "it cost nothing" are different
+      // statements and the surface must not conflate them.
+      averageCost: costKnown && row.unitsSold > 0 ? row.cogs / row.unitsSold : null,
+      landedRatio: ratio,
+      // The docx section 10 middle columns, attributed per the note above.
+      cogsLanded: ratio === null ? null : row.cogs * ratio,
+      cogsGoods: ratio === null ? null : row.cogs * (1 - ratio),
+      grossProfit: costKnown ? grossProfit : null,
+      grossMarginPct: costKnown && row.revenue > 0
+        ? Math.round((grossProfit / row.revenue) * 100)
+        : null
+    };
+  });
+
+  // By cost of sales, not by revenue: this is a costing table, and the product
+  // that consumed the most stock value is the one worth looking at first. A
+  // product with no known cost sorts by revenue among its own kind rather than
+  // being dropped -- it is precisely the row someone needs to notice.
+  list.sort((a, b) => (b.cogs - a.cogs) || (b.revenue - a.revenue));
+
+  const totals = list.reduce((sum, row) => ({
+    unitsSold: sum.unitsSold + row.unitsSold,
+    revenue: sum.revenue + row.revenue,
+    cogs: sum.cogs + row.cogs,
+    cogsLanded: sum.cogsLanded + safeNumber(row.cogsLanded),
+    cogsGoods: sum.cogsGoods + safeNumber(row.cogsGoods)
+  }), { unitsSold: 0, revenue: 0, cogs: 0, cogsLanded: 0, cogsGoods: 0 });
+
+  return {
+    rows: list,
+    totals: { ...totals, grossProfit: totals.revenue - totals.cogs },
+    // How much of the table can be trusted, stated rather than assumed --
+    // DESIGN-purchases.md 11 rule 2, applied per product.
+    productsWithoutCost: list.filter((row) => !row.costKnown).length,
+    productsWithoutLandedSplit: list.filter((row) => row.landedRatio === null).length
+  };
+}
+
+// The docx section 10 table, under the statement it explains.
+//
+// Owner-strict by inheritance: it lives inside #profit, and canOpenView() gates
+// that on isOwnerRole(). renderProfit() checks the role again before this is
+// reached, for the same reason it did before -- the nav is not the security
+// boundary.
+function renderProductProfit(p, monthKey) {
+  const panel = qs("#profitProductPanel");
+  const table = qs("#profitProductTable");
+  const note = qs("#profitProductNote");
+  if (!panel || !table || !note) return;
+
+  const scopedSales = state.currentStoreId === "all"
+    ? state.sales
+    : (state.sales || []).filter((sale) => saleStoreId(sale) === state.currentStoreId);
+
+  const d = summariseProductProfit({
+    sales: scopedSales,
+    costIndex: buildCostIndex(state.productCostHistory),
+    purchases: storePurchases(),
+    monthKey
+  });
+
+  // Nothing sold, or a month the statement already refused: no table at all,
+  // rather than an empty one implying the month was quiet when it was unloaded.
+  panel.hidden = p.outsideWindow || d.rows.length === 0;
+  if (panel.hidden) {
+    table.innerHTML = "";
+    note.textContent = "";
+    return;
+  }
+
+  const dash = "—";
+  const cell = (value, render) => (value === null || value === undefined ? dash : render(value));
+
+  table.innerHTML = d.rows.map((row) => `<tr>
+    <td>${esc(row.productName || row.productId)}</td>
+    <td>${row.unitsSold}</td>
+    <td>${cell(row.averageCost, money)}</td>
+    <td>${cell(row.costKnown ? row.cogs : null, money)}</td>
+    <td>${cell(row.cogsGoods, money)}</td>
+    <td>${cell(row.cogsLanded, money)}</td>
+    <td>${money(row.revenue)}</td>
+    <td class="${row.grossProfit !== null && row.grossProfit <= 0 ? "danger" : ""}">${
+      cell(row.grossProfit, money)}</td>
+    <td>${cell(row.grossMarginPct, (v) => `${v}%`)}</td>
+  </tr>`).join("") + `<tr class="statement-total">
+    <td>${esc(t("profit.pdTotal"))}</td>
+    <td>${d.totals.unitsSold}</td>
+    <td></td>
+    <td>${money(d.totals.cogs)}</td>
+    <td>${money(d.totals.cogsGoods)}</td>
+    <td>${money(d.totals.cogsLanded)}</td>
+    <td>${money(d.totals.revenue)}</td>
+    <td>${money(d.totals.grossProfit)}</td>
+    <td></td>
+  </tr>`;
+
+  // Two different incompletenesses, said separately because they mean different
+  // things: a product with no cost at all cannot be judged, while one with no
+  // landed split simply never had freight capitalised onto it.
+  const parts = [];
+  if (d.productsWithoutCost > 0) {
+    parts.push(t("profit.pdNoCost", { count: String(d.productsWithoutCost) }));
+  }
+  if (d.productsWithoutLandedSplit > 0) {
+    parts.push(t("profit.pdNoLanded", { count: String(d.productsWithoutLandedSplit) }));
+  }
+  parts.push(t("profit.pdAttribution"));
+  note.textContent = parts.join(" ");
+}
+
+// Docx section 12: Stock Valuation. What the shelves are worth AT COST, which is
+// the figure a balance sheet would carry and the one no screen stated before.
+//
+// Retail value is deliberately NOT the headline. A shop asked what its stock is
+// worth means what it paid, not what it hopes to sell for -- and reporting the
+// latter as "value" is how inventory gets overstated.
+function summariseStockValuation(products, costById) {
+  let atCost = 0;
+  let atRetail = 0;
+  let costedProducts = 0;
+  let uncostedProducts = 0;
+  let uncostedUnits = 0;
+  let units = 0;
+  const rows = [];
+  for (const product of products || []) {
+    const quantity = safeNumber(product.quantity);
+    // Negative stock is real here -- an offline oversell is taken and flagged --
+    // but it cannot contribute negative VALUE to a valuation without making the
+    // total meaningless. Counted in the unit total, excluded from the money.
+    const valuedQuantity = Math.max(0, quantity);
+    const unitCost = safeNumber(costById.get(product.id));
+    units += quantity;
+    atRetail += valuedQuantity * safeNumber(product.sellingPrice);
+    if (unitCost > 0) {
+      atCost += valuedQuantity * unitCost;
+      costedProducts += 1;
+      rows.push({ id: product.id, name: product.name || "", quantity,
+                  unitCost, value: valuedQuantity * unitCost });
+    } else {
+      uncostedProducts += 1;
+      uncostedUnits += valuedQuantity;
+      rows.push({ id: product.id, name: product.name || "", quantity,
+                  unitCost: null, value: null });
+    }
+  }
+  rows.sort((a, b) => safeNumber(b.value) - safeNumber(a.value));
+  return { atCost, atRetail, units, costedProducts, uncostedProducts, uncostedUnits, rows };
+}
+
+// Docx section 12: Supplier Report. What each supplier was paid, across both the
+// Purchase Book and the delivery headers.
+//
+// Keyed on the supplier NAME as typed, because that is all this design captures
+// -- DESIGN-purchases.md 3 has supplierName as free text and there is no
+// supplier record to join to. Trimmed and case-folded so "Festive Ltd" and
+// "festive ltd " are one row rather than two, which is the whole of what can be
+// done without inventing a supplier collection.
+function summariseSuppliers(purchases, deliveries, monthKey) {
+  const rows = new Map();
+  const key = (name) => String(name || "").trim().toLowerCase();
+  const add = (name, amount, kind) => {
+    const k = key(name);
+    if (!k) return;
+    const row = rows.get(k) || { name: String(name).trim(), goods: 0, landed: 0, deliveries: 0, purchases: 0 };
+    if (kind === "delivery") { row.landed += amount; row.deliveries += 1; }
+    else { row.goods += amount; row.purchases += 1; }
+    rows.set(k, row);
+  };
+
+  for (const purchase of purchases || []) {
+    const at = purchasedAt(purchase);
+    if (!at || localMonthKey(at) !== monthKey) continue;
+    // goodsCost where the line carries the split, totalPaid where it does not --
+    // which is exactly true of a purchase recorded before landed costs existed.
+    const goods = purchase.goodsCost === undefined
+      ? safeNumber(purchase.totalPaid)
+      : safeNumber(purchase.goodsCost);
+    add(purchase.supplierName, goods, "purchase");
+  }
+  // Landed cost comes off the DELIVERY, not off its lines: the lines carry an
+  // allocated share each, and summing both would count the freight twice.
+  for (const delivery of deliveries || []) {
+    const at = deliveryReceivedAt(delivery);
+    if (!at || localMonthKey(at) !== monthKey) continue;
+    add(delivery.supplierName, safeNumber(delivery.additionalTotal), "delivery");
+  }
+
+  const list = [...rows.values()].map((row) => ({ ...row, total: row.goods + row.landed }));
+  list.sort((a, b) => b.total - a.total);
+  return { rows: list, total: list.reduce((sum, row) => sum + row.total, 0) };
+}
+
+// Docx section 12: the Direct and Indirect Expense Reports. Phase 5 put the two
+// totals on the Expenses screen; this is the breakdown inside each of them,
+// which is what makes a total actionable rather than merely true.
+function summariseExpensesByNature(expenses, monthKey) {
+  const buckets = { direct: new Map(), indirect: new Map() };
+  const totals = { direct: 0, indirect: 0 };
+  for (const expense of expenses || []) {
+    const at = expenseSpentAt(expense);
+    if (!at || localMonthKey(at) !== monthKey) continue;
+    const nature = expenseNature(expense);
+    const amount = safeNumber(expense.amount);
+    totals[nature] += amount;
+    const bucket = buckets[nature];
+    bucket.set(expense.category, safeNumber(bucket.get(expense.category)) + amount);
+  }
+  const listOf = (nature) => [...buckets[nature].entries()]
+    .map(([category, amount]) => ({ category, amount }))
+    .sort((a, b) => b.amount - a.amount);
+  return {
+    direct: { total: totals.direct, rows: listOf("direct") },
+    indirect: { total: totals.indirect, rows: listOf("indirect") },
+    total: totals.direct + totals.indirect
+  };
+}
+
+// The three phase 7 reports, on the Reports screen. Manager and owner, which is
+// the same gate /purchases and /productCosts already carry -- each of these is
+// built from a collection those roles can already read, so none of them widens
+// a disclosure.
+function renderCostReports() {
+  const panel = qs("#costReportsPanel");
+  if (!panel) return;
+  panel.hidden = !isManagerOrOwnerRole();
+  if (panel.hidden) {
+    // Emptied as well as hidden, for the reason every other money surface in
+    // this file is: a demoted manager must not keep buying prices in the DOM.
+    for (const id of ["#stockValuationTable", "#supplierReportTable", "#expenseNatureTable"]) {
+      const el = qs(id);
+      if (el) el.innerHTML = "";
+    }
+    return;
+  }
+
+  const monthKey = state.reportsCostMonth || localMonthKey(new Date());
+  const monthInput = qs("#costReportMonthInput");
+  if (monthInput && monthInput.value !== monthKey) monthInput.value = monthKey;
+
+  // --- Stock valuation ---------------------------------------------------
+  const valuation = summariseStockValuation(storeProducts(), productCostMap());
+  const valuationTotals = qs("#stockValuationTotals");
+  if (valuationTotals) {
+    valuationTotals.innerHTML = [
+      // At cost is the headline. What a shop paid is what its stock is worth;
+      // what it hopes to sell for is a different question, and reporting the
+      // second as "value" is how inventory gets overstated.
+      controlTile(t("reports.stockAtCost"),
+        valuation.costedProducts > 0 ? money(valuation.atCost) : "—",
+        "",
+        valuation.uncostedProducts > 0
+          ? t("reports.stockPartial", {
+              missing: String(valuation.uncostedProducts),
+              units: String(valuation.uncostedUnits)
+            })
+          : t("reports.stockComplete")),
+      controlTile(t("reports.stockAtRetail"), money(valuation.atRetail), "",
+        t("reports.stockAtRetailNote"))
+    ].join("");
+  }
+  const valuationTable = qs("#stockValuationTable");
+  if (valuationTable) {
+    valuationTable.innerHTML = valuation.rows.length
+      ? valuation.rows.map((row) => `<tr>
+          <td>${esc(row.name)}</td>
+          <td>${row.quantity}</td>
+          <td>${row.unitCost === null ? "—" : money(row.unitCost)}</td>
+          <td>${row.value === null ? "—" : money(row.value)}</td>
+        </tr>`).join("")
+      : `<tr><td colspan="4" class="muted">${esc(t("reports.stockEmpty"))}</td></tr>`;
+  }
+
+  // --- Supplier report ---------------------------------------------------
+  const suppliers = summariseSuppliers(storePurchases(), storeDeliveries(), monthKey);
+  const supplierTable = qs("#supplierReportTable");
+  if (supplierTable) {
+    supplierTable.innerHTML = suppliers.rows.length
+      ? suppliers.rows.map((row) => `<tr>
+          <td>${esc(row.name)}</td>
+          <td>${row.purchases}</td>
+          <td>${row.deliveries}</td>
+          <td>${money(row.goods)}</td>
+          <td>${money(row.landed)}</td>
+          <td><strong>${money(row.total)}</strong></td>
+        </tr>`).join("") + `<tr class="statement-total">
+          <td>${esc(t("profit.pdTotal"))}</td><td></td><td></td><td></td><td></td>
+          <td>${money(suppliers.total)}</td>
+        </tr>`
+      : `<tr><td colspan="6" class="muted">${esc(t("reports.supplierEmpty"))}</td></tr>`;
+  }
+
+  // --- Direct and indirect expense reports -------------------------------
+  const byNature = summariseExpensesByNature(storeExpenses(), monthKey);
+  const natureTable = qs("#expenseNatureTable");
+  if (natureTable) {
+    const section = (nature, group) => {
+      if (!group.rows.length) return "";
+      return `<tr class="statement-total">
+        <td>${esc(t(nature === "direct" ? "expenses.direct" : "expenses.indirect"))}</td>
+        <td>${money(group.total)}</td>
+      </tr>` + group.rows.map((row) => `<tr>
+        <td>${esc(expenseCategoryLabel(row.category))}</td>
+        <td>${money(row.amount)}</td>
+      </tr>`).join("");
+    };
+    const body = section("direct", byNature.direct) + section("indirect", byNature.indirect);
+    natureTable.innerHTML = body
+      || `<tr><td colspan="2" class="muted">${esc(t("reports.expenseNatureEmpty"))}</td></tr>`;
+  }
 }
 
 function renderProfit() {
@@ -6400,6 +8452,13 @@ function renderProfit() {
   if (!isOwnerRole()) {
     grid.innerHTML = "";
     note.textContent = "";
+    // Emptied, not merely hidden. A demoted owner's per-product buying prices
+    // would otherwise sit in a panel hidden by CSS with every figure still in
+    // the DOM -- the same rule renderExpenses() and renderDeliveries() follow.
+    const productPanel = qs("#profitProductPanel");
+    if (productPanel) productPanel.hidden = true;
+    const productTable = qs("#profitProductTable");
+    if (productTable) productTable.innerHTML = "";
     return;
   }
 
@@ -6431,43 +8490,95 @@ function renderProfit() {
     note.textContent = t("profit.outsideWindow", {
       date: new Date(salesCoverageFromMs()).toLocaleDateString()
     });
+    // The drill-down goes with it. A month the statement refuses to total must
+    // not be shown a product table built from the same unloaded window -- it
+    // would be a confident breakdown of an admittedly incomplete period.
+    renderProductProfit(p, state.profitMonthSelection);
     return;
   }
 
-  grid.innerHTML = [
-    controlTile(t("profit.revenue"), money(p.revenue), "",
-      t(p.salesCount === 1
+  // The docx section 9 statement, in its order, as a statement rather than four
+  // tiles:
+  //
+  //     Sales Revenue                        45,000,000
+  //     Cost of Goods Sold                 (27,000,000)
+  //     GROSS PROFIT                         18,000,000
+  //     Direct Operating Expenses           (2,000,000)
+  //     Indirect Operating Expenses         (8,000,000)
+  //     NET PROFIT                            8,000,000
+  //
+  // Every trust rule from DESIGN-purchases.md 11 survives the change, and two of
+  // them are easier to honour as a statement than they were as tiles: gross and
+  // net are rows with their own captions and are never summed into one headline,
+  // and a figure that cannot be computed shows a dash on its own row rather than
+  // being quietly folded into a neighbour.
+  //
+  // UNKNOWN COST BLANKS THREE ROWS, not one. Cost of goods, gross profit and net
+  // profit are all derived from it, and printing revenue against a zero cost
+  // would report the whole of revenue as profit -- which is exactly the defect
+  // DESIGN-purchases.md 2 found live on the control panel.
+  const unknown = "—";
+  // Parenthesised, per the docx. Through t() rather than hard-coded brackets,
+  // because it is punctuation carrying meaning -- "this is subtracted" -- and
+  // that is a translatable decision.
+  const deduct = (value) => t("profit.deduction", { value: money(value) });
+
+  const rows = [
+    { label: t("profit.stRevenue"), value: money(p.revenue),
+      note: t(p.salesCount === 1
         ? (vatSettings().registered ? "profit.revenueNoteVatOne" : "profit.revenueNoteOne")
         : (vatSettings().registered ? "profit.revenueNoteVat" : "profit.revenueNote"),
-        { count: String(p.salesCount) })),
-    // Gross: computed, and honest about what it could not cost.
-    controlTile(t("profit.gross"),
-      p.anyCostKnown ? `${money(p.grossProfit)} \u00b7 ${p.grossMarginPct}%` : "\u2014",
-      p.anyCostKnown && p.grossProfit <= 0 && p.revenue > 0 ? "danger" : "",
-      !p.anyCostKnown
+        { count: String(p.salesCount) }) },
+    // Cost of goods is now a STATED LINE rather than an intermediate the reader
+    // has to infer from revenue minus gross. It carries the completeness caption
+    // because it is the figure the completeness is about.
+    { label: t("profit.stCogs"),
+      value: p.anyCostKnown ? deduct(p.cogs) : unknown,
+      note: !p.anyCostKnown
         ? t("profit.grossNoCost")
         : p.allCostKnown
-          ? t("profit.grossNote")
+          ? t("profit.stCogsNote")
           : t("profit.grossPartial", {
               missing: String(p.uncostedLines),
               total: String(p.costedLines + p.uncostedLines)
-            })),
-    controlTile(t("profit.expenses"), money(p.expenses), "",
-      p.anyExpensesRecorded
+            }) },
+    { label: t("profit.stGross"), total: true,
+      value: p.anyCostKnown ? `${money(p.grossProfit)} · ${p.grossMarginPct}%` : unknown,
+      tone: p.anyCostKnown && p.grossProfit <= 0 && p.revenue > 0 ? "danger" : "",
+      note: p.anyCostKnown ? t("profit.grossNote") : "" },
+    { label: t("profit.stDirect"), value: deduct(p.directExpenses),
+      note: t("profit.stDirectNote") },
+    { label: t("profit.stIndirect"), value: deduct(p.indirectExpenses),
+      note: p.anyExpensesRecorded
         ? t("profit.expensesNote", { count: String(p.expenseCount) })
-        : t("profit.expensesNone")),
-    // Net: never shown as a confident figure when the two things underneath it
-    // are not both known. A forgotten expense makes this look BETTER, which is
-    // the direction that gets acted on.
-    controlTile(t("profit.net"),
-      p.anyCostKnown ? money(p.netProfit) : "\u2014",
-      p.anyCostKnown && p.netProfit <= 0 ? "warn" : "",
-      p.anyCostKnown ? t("profit.netNote") : t("profit.netNoCost"))
-  ].join("");
+        : t("profit.expensesNone") },
+    // Net: never shown as a confident figure while the cost underneath it is
+    // unknown. A forgotten expense makes this look BETTER, which is the
+    // direction that gets acted on.
+    { label: t("profit.stNet"), total: true, bottom: true,
+      value: p.anyCostKnown ? money(p.netProfit) : unknown,
+      tone: p.anyCostKnown && p.netProfit <= 0 ? "warn" : "",
+      note: p.anyCostKnown ? t("profit.netNote") : t("profit.netNoCost") }
+  ];
+
+  // A real <table>: this is tabular data with a row header and a figure, and a
+  // screen reader should be able to say "Gross profit, 18,000,000" rather than
+  // read two unrelated columns of text.
+  grid.innerHTML = `<table class="statement">
+    <tbody>${rows.map((row) => `<tr class="${row.total ? "statement-total" : ""}${
+      row.bottom ? " statement-bottom" : ""}">
+      <th scope="row">${esc(row.label)}${
+        row.note ? `<span class="muted">${esc(row.note)}</span>` : ""}</th>
+      <td class="${row.tone || ""}">${esc(row.value)}</td>
+    </tr>`).join("")}</tbody>
+  </table>`;
 
   note.textContent = p.anyCostKnown && p.allCostKnown && p.anyExpensesRecorded
     ? t("profit.complete")
     : t("profit.incomplete");
+
+  // The docx section 10 drill-down, under the statement it explains.
+  renderProductProfit(p, state.profitMonthSelection);
 }
 
 function renderPurchases() {
@@ -6980,11 +9091,45 @@ function productTransferEntries(productId) {
     .sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
 }
 
+// When this product was bought or otherwise added, and what it cost.
+//
+// The dialog already answered "where did it go" -- sales and transfers -- and
+// said nothing about where it CAME from, which is the other half of a stock
+// question and the half that carries the money.
+//
+// Read from the Purchase Book, so a delivery line, a costed restock and the
+// cost captured on a product form all appear here in one list without this
+// function knowing which was which. A cashier restock records no purchase and
+// so does not appear; that is the same gap DESIGN-purchases.md 12 accepts
+// everywhere else, and the stock ledger is where an uncosted addition shows up.
+function productPurchaseEntries(productId) {
+  return (state.purchases || [])
+    .filter((purchase) => purchase.productId === productId)
+    .map((purchase) => ({
+      date: purchasedAt(purchase),
+      supplierName: purchase.supplierName || "",
+      qty: safeNumber(purchase.quantity),
+      totalPaid: safeNumber(purchase.totalPaid),
+      unitCost: safeNumber(purchase.unitCost),
+      // Present only on a line that came in on a delivery, which is what tells
+      // a reader the freight in the unit cost is real rather than assumed.
+      landedCost: purchase.landedCost === undefined ? null : safeNumber(purchase.landedCost),
+      fromDelivery: Boolean(purchase.deliveryId)
+    }))
+    .sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
+}
+
 function buildProductMovementHtml(productId) {
   const product = state.products.find((item) => item.id === productId);
   const productName = product ? esc(productDisplayLabel(product)) : "";
   const sales = productSalesEntries(productId);
   const transfers = productTransferEntries(productId);
+  // Cost is manager-and-owner, exactly as /purchases is in firestore.rules --
+  // and state.purchases is empty for a cashier anyway, because
+  // subscribeToPurchases() refuses to subscribe for one. The role test is here
+  // so the section is absent rather than empty, which says something different.
+  const purchases = isManagerOrOwnerRole() ? productPurchaseEntries(productId) : [];
+  const showPurchases = isManagerOrOwnerRole();
 
   const salesRows = sales
     .map(
@@ -6994,6 +9139,21 @@ function buildProductMovementHtml(productId) {
         <td>${entry.qty}</td>
         <td>#${esc(entry.orderNumber)}</td>
         <td>${paymentMethodLabel(entry.paymentMethod)}</td>
+      </tr>`
+    )
+    .join("");
+
+  const purchaseRows = purchases
+    .map(
+      (entry) => `<tr>
+        <td>${entry.date ? entry.date.toLocaleString() : "-"}</td>
+        <td>${esc(entry.supplierName || "-")}</td>
+        <td>${entry.qty}</td>
+        <td>${money(entry.totalPaid)}</td>
+        <td>${money(entry.unitCost)}</td>
+        <td>${entry.landedCost === null
+          ? `<span class="muted">${esc(t("movement.noLanded"))}</span>`
+          : money(entry.landedCost)}</td>
       </tr>`
     )
     .join("");
@@ -7023,7 +9183,7 @@ function buildProductMovementHtml(productId) {
           <th>${t("report.colPaymentMethod")}</th>
         </tr>
       </thead>
-      <tbody>${salesRows || `<tr><td colspan="5" class="empty-state">${t("movement.noSales")}</td></tr>`}</tbody>
+      <tbody>${salesRows || `<tr><td colspan="5" class="empty-state">${t("movement.noSalesForProduct")}</td></tr>`}</tbody>
     </table>
     <h3>${t("movement.transfersSectionTitle")}</h3>
     <table>
@@ -7038,6 +9198,21 @@ function buildProductMovementHtml(productId) {
       </thead>
       <tbody>${transferRows || `<tr><td colspan="5" class="empty-state">${t("movement.noTransfers")}</td></tr>`}</tbody>
     </table>
+    ${showPurchases ? `<h3>${t("movement.purchasesSectionTitle")}</h3>
+    <p class="muted">${t("movement.purchasesSubtitle")}</p>
+    <table>
+      <thead>
+        <tr>
+          <th>${t("movement.colDate")}</th>
+          <th>${t("movement.colSupplier")}</th>
+          <th>${t("movement.colQty")}</th>
+          <th>${t("movement.colTotalPaid")}</th>
+          <th>${t("movement.colEach")}</th>
+          <th>${t("movement.colLanded")}</th>
+        </tr>
+      </thead>
+      <tbody>${purchaseRows || `<tr><td colspan="6" class="empty-state">${t("movement.noPurchases")}</td></tr>`}</tbody>
+    </table>` : ""}
   `;
 }
 
@@ -8905,7 +11080,12 @@ async function resolveCurrentUserName(user, ownerUid) {
       console.warn("Could not resolve staff name from member doc.", error);
     }
   }
-  return clean(user.displayName)
+  // The owner's own name first. displayName below it is the BUSINESS name on
+  // every account created before that field existed, so an owner without one
+  // still rings sales up under the shop name exactly as they did before --
+  // this changes what new accounts record, not what old ones already recorded.
+  return clean(state.cachedProfile?.ownerName)
+    || clean(user.displayName)
     || clean(state.cachedProfile?.businessName)
     || clean((user.email || "").split("@")[0])
     || "Staff";
@@ -10296,13 +12476,39 @@ function summariseCostOfGoods(sales, costIndex) {
     // the history: a delivery next week appends a record and leaves this one
     // alone, so this month's margin still reads the same next month.
     const soldAt = saleTimestamp(sale);
+    // RETURNS COME OFF THE COST, not only off the revenue.
+    //
+    // Revenue has always been netted -- summariseSales() does `total - refunded`
+    // -- and until 2026-09-08 the cost side had no equivalent, so a return
+    // reduced revenue and left cost untouched. Gross profit read LOW by the cost
+    // of the returned goods, and because those goods go back on the shelf they
+    // were counted in stock valuation AND in cost of sales at the same time.
+    // Measured on a live walkthrough: returning 20 units at 11,800 understated
+    // gross profit by 236,000 and overstated inventory by the same 236,000.
+    //
+    // A void was always handled correctly -- the whole sale is skipped above --
+    // which is why this only ever showed up on a partial return.
+    //
+    // The map is consumed rather than read, because it totals per PRODUCT across
+    // the sale. A product on two lines of one sale would otherwise have the full
+    // returned quantity subtracted from each of them.
+    const returnedRemaining = saleReturnedQtyMap(sale);
     for (const item of sale.items || []) {
       // A haircut has no cost of goods, so it is not a gap in the data.
       // Counting it as one would report every bar and salon month incomplete.
       if (isServiceLine(item)) continue;
+      const soldQty = safeNumber(item.qty);
+      const outstanding = safeNumber(returnedRemaining.get(item.productId));
+      const returnedHere = Math.min(soldQty, outstanding);
+      if (returnedHere > 0) returnedRemaining.set(item.productId, outstanding - returnedHere);
+      const netQty = soldQty - returnedHere;
+      // Wholly returned: it cost the shop nothing this period and its
+      // costedness says nothing about the month, so it is not counted as either
+      // a costed or an uncosted line.
+      if (netQty <= 0) continue;
       const unitCost = costInForceAt(costIndex, item.productId, soldAt);
       if (unitCost !== null && unitCost > 0) {
-        cogs += unitCost * safeNumber(item.qty);
+        cogs += unitCost * netQty;
         costedLines += 1;
       } else {
         uncostedLines += 1;
@@ -10544,19 +12750,26 @@ function stockLedgerDiscrepancies() {
 // So the membership watcher calls this on every role change, in both
 // directions. Money must not outlive the role that was allowed to see it.
 function resubscribeRoleGatedCollections() {
-  for (const key of ["unsubscribeExpenses", "unsubscribePurchases", "unsubscribeProductCosts",
+  for (const key of ["unsubscribeExpenses", "unsubscribePurchases", "unsubscribeDeliveries",
+                     "unsubscribeProductCosts",
                      "unsubscribeProductCostHistory"]) {
     if (state[key]) state[key]();
     state[key] = null;
   }
   state.expenses = [];
   state.purchases = [];
+  // Deliveries too. subscribeToDeliveries() empties it for a cashier anyway, so
+  // this is belt and braces -- but the belt is what this block is: a demoted
+  // manager must not keep a screenful of buying prices in memory because a
+  // subscribe call happened to take an early return.
+  state.deliveries = [];
   state.productCosts = [];
   state.productCostHistory = [];
   // Cleared before the re-subscribe so a demotion empties the screens even
   // though the calls below will return early for a cashier.
   subscribeToExpenses();
   subscribeToPurchases();
+  subscribeToDeliveries();
   subscribeToProductCosts();
   subscribeToProductCostHistory();
 }
@@ -10739,7 +12952,17 @@ async function initFirebase() {
         startIdleWatcher();
         await ensureUserProfile(user);
         await loadUserSettings(user);
+        // ensureUserProfile() is what learns the owner's name -- from the
+        // sign-up form, or read back off the stored profile on a later
+        // sign-in. It runs AFTER the first resolve above, so re-resolve here
+        // rather than moving that call: the first one is what lets the app
+        // paint at all, and the two surfaces that show a name are cheap to
+        // redraw on their own.
+        state.currentUserName = await resolveCurrentUserName(user, state.businessOwnerUid);
+        renderStaffSelect();
+        updateAuthUi();
         state.pendingBusinessName = "";
+        state.pendingOwnerName = "";
         subscribeToProducts();
         subscribeToSales();
         subscribeToStores();
@@ -10753,6 +12976,7 @@ async function initFirebase() {
         subscribeToServices();
         subscribeToExpenses();
         subscribeToPurchases();
+        subscribeToDeliveries();
         subscribeToProductCosts();
         subscribeToProductCostHistory();
         watchServerConnection();
@@ -10788,6 +13012,9 @@ async function initFirebase() {
         if (state.unsubscribePurchases) state.unsubscribePurchases();
         state.unsubscribePurchases = null;
         state.purchases = [];
+        if (state.unsubscribeDeliveries) state.unsubscribeDeliveries();
+        state.unsubscribeDeliveries = null;
+        state.deliveries = [];
         if (state.unsubscribeProductCosts) state.unsubscribeProductCosts();
         state.unsubscribeProductCosts = null;
         state.productCosts = [];
@@ -11260,6 +13487,32 @@ async function renameStore() {
   } catch (error) {
     console.warn(error);
     showToast(t("toast.couldNotRenameStore"));
+  }
+}
+
+// Without this the name is reachable only by signing up again: every account
+// that already exists predates the sign-up field. Owner only -- a staff name is
+// the owner's record, set from the invitation.
+async function changeOwnerName() {
+  if (!state.db || !state.user) return showToast(t("toast.firebaseNotConnected"));
+  const current = state.cachedProfile?.ownerName || "";
+  const entered = window.prompt(t("dialog.ownerNamePrompt"), current);
+  if (entered === null) return;
+  const name = entered.trim().slice(0, 80);
+  if (!name) return;
+  try {
+    const { doc, setDoc } = state.firebaseApi.firestore;
+    await setDoc(doc(state.db, "users", state.user.uid), { ownerName: name }, { merge: true });
+    // The cache is what every reader consults; the write above only makes it
+    // survive a reload.
+    state.cachedProfile = { ...(state.cachedProfile || {}), ownerName: name };
+    state.currentUserName = name;
+    renderStaffSelect();
+    updateAuthUi();
+    showToast(t("toast.ownerNameSaved"));
+  } catch (error) {
+    console.warn(error);
+    showToast(t("toast.couldNotSaveOwnerName"));
   }
 }
 
@@ -11770,12 +14023,7 @@ async function setStockAlertPopupEnabled(enabled) {
 
 async function ensureUserProfile(user) {
   if (!state.db) return;
-  const businessName = state.pendingBusinessName || user.displayName || "";
   const cached = state.user?.uid === user.uid ? state.cachedProfile : null;
-  const unchanged = cached
-    && cached.email === (user.email || "")
-    && cached.businessName === businessName;
-  if (unchanged) return;
 
   try {
     const { doc, getDoc, serverTimestamp, setDoc } = state.firebaseApi.firestore;
@@ -11797,6 +14045,32 @@ async function ensureUserProfile(user) {
     // the rest of this write (including the consent record) down with it.
     const profileRef = doc(state.db, "users", user.uid);
     const existing = await getDoc(profileRef).catch(() => null);
+    const stored = existing?.exists() ? existing.data() : null;
+
+    // The owner's OWN name, captured on the sign-up form. It is deliberately
+    // not displayName: three call sites read displayName as the business-name
+    // fallback for accounts created before this field existed, so pointing it
+    // at the person would silently rename those businesses.
+    //
+    // Read back off the stored profile whenever the form did not supply one,
+    // which is every sign-in after the first and every other device. Without
+    // that this field would exist only in the tab that created it.
+    const ownerName = String(state.pendingOwnerName || stored?.ownerName || "").trim().slice(0, 80);
+
+    // Same read-back for the business name, for a narrower reason: it is
+    // derived from displayName, and a merge write of "" would erase a name
+    // already on the record. The fallback only fires where the value would
+    // otherwise be blanked.
+    const businessName = String(
+      state.pendingBusinessName || user.displayName || stored?.businessName || ""
+    );
+
+    const unchanged = cached
+      && cached.email === (user.email || "")
+      && cached.businessName === businessName
+      && cached.ownerName === ownerName;
+    if (unchanged) return;
+
     const isBusinessOwner = !state.businessOwnerUid || user.uid === state.businessOwnerUid;
     const rolePayload = existing?.exists() ? {} : { role: isBusinessOwner ? "Owner" : "Staff" };
 
@@ -11804,12 +14078,15 @@ async function ensureUserProfile(user) {
       uid: user.uid,
       email: user.email || "",
       businessName,
+      // Absent rather than empty: a merge write of "" is a write, and would
+      // clear a name the owner had set from another device.
+      ...(ownerName ? { ownerName } : {}),
       ...rolePayload,
       authProvider: "password",
       updatedAt: serverTimestamp(),
       ...consentPayload
     }, { merge: true });
-    state.cachedProfile = { email: user.email || "", businessName };
+    state.cachedProfile = { email: user.email || "", businessName, ownerName };
     state.pendingConsent = null;
   } catch (error) {
     console.warn(error);
@@ -11828,6 +14105,26 @@ function updateAuthUi() {
   // be scoped to "just my own doc" the way a single get() can), so showing
   // this button to staff would both mislead them and hit a denied query.
   const isOwner = signedIn && state.user.uid === state.businessOwnerUid;
+  // Settings shows the same identity the topbar chip does, and hides the staff
+  // panel for the same reason the till's roster button is hidden: the members
+  // collection is owner-only in firestore.rules, so showing it to staff both
+  // misleads them and hits a denied query.
+  const settingsName = qs("#settingsUserName");
+  if (settingsName) {
+    // The name, not the email. The email stays on its own line below: it is
+    // which account you are in, which still matters when someone has two.
+    settingsName.textContent = state.currentUserName
+      || state.cachedProfile?.ownerName
+      || t("connection.signedInFallback");
+  }
+  const settingsEmail = qs("#settingsUserEmail");
+  if (settingsEmail) settingsEmail.textContent = state.user?.email || "";
+  // Staff names come from the invitation they accepted and are the owner's
+  // record, not theirs to edit here.
+  const changeNameButton = qs("#changeOwnerNameButton");
+  if (changeNameButton) changeNameButton.hidden = !isOwner;
+  const settingsStaffPanel = qs("#settingsStaffPanel");
+  if (settingsStaffPanel) settingsStaffPanel.hidden = !isOwner;
   const rosterButton = qs("#staffRosterButton");
   if (rosterButton) rosterButton.hidden = !isOwner;
 }
@@ -11838,6 +14135,8 @@ function setAuthMode(mode) {
   qs("#authSubmitButton").textContent = isSignup ? t("auth.createAccount") : t("auth.signIn");
   qs("#authModeButton").textContent = isSignup ? t("auth.haveAccount") : t("auth.newAccount");
   qs("#businessName").closest("label").hidden = !isSignup;
+  const ownerNameRow = qs("#authOwnerNameRow");
+  if (ownerNameRow) ownerNameRow.hidden = !isSignup;
   qs("#authPassword").autocomplete = isSignup ? "new-password" : "current-password";
   const consentRow = qs("#authConsentRow");
   if (consentRow) {
@@ -12058,6 +14357,7 @@ async function handleAuthSubmit(event) {
   const email = String(form.get("email") || "").trim();
   const password = String(form.get("password") || "");
   const businessName = String(form.get("businessName") || "").trim();
+  const ownerName = String(form.get("ownerName") || "").trim().slice(0, 80);
 
   const submitButton = qs("#authSubmitButton");
   submitButton.disabled = true;
@@ -12067,6 +14367,7 @@ async function handleAuthSubmit(event) {
     const authApi = state.firebaseApi.auth;
     if (state.authMode === "signup") {
       state.pendingBusinessName = businessName;
+      state.pendingOwnerName = ownerName;
       state.pendingConsent = { accepted: true, version: LEGAL_DOC_VERSION, acceptedAt: new Date().toISOString() };
       const credential = await authApi.createUserWithEmailAndPassword(state.auth, email, password);
       if (businessName) await authApi.updateProfile(credential.user, { displayName: businessName });
@@ -12078,6 +14379,7 @@ async function handleAuthSubmit(event) {
       showToast(t("toast.accountCreated"));
     } else {
       state.pendingBusinessName = "";
+      state.pendingOwnerName = "";
       await authApi.signInWithEmailAndPassword(state.auth, email, password);
       showToast(t("toast.signedIn"));
     }
@@ -12119,7 +14421,11 @@ function warmUpAiProxy() {
 // hidden rather than shown-and-denied. The rules still permit a cashier's
 // restock writes, so this is a deliberate product decision about what belongs
 // on a till, not a security boundary -- firestore.rules remains that.
-const CASHIER_ALLOWED_VIEWS = ["pos"];
+// Settings is open to everyone who can sign in. It carries Sign out and the
+// language toggle, which a cashier needs and which are not owner business;
+// every owner-only control inside it is hidden by id, the same way it was
+// hidden when these buttons lived in the topbar.
+const CASHIER_ALLOWED_VIEWS = ["pos", "settings"];
 
 function canOpenView(viewId) {
   // The services screen is gated by business type as well as by role. The nav
@@ -12290,7 +14596,9 @@ function renderAll() {
   renderServices();
   renderExpenses();
   renderPurchases();
+  renderDeliveries();
   renderProfit();
+  renderCostReports();
   renderVatNav();
   renderVatRecord();
   renderManagerControl();
@@ -12378,6 +14686,7 @@ function bindEvents() {
   qs("#storeSwitcher").addEventListener("change", (event) => switchStore(event.target.value));
   qs("#addStoreButton").addEventListener("click", createStore);
   qs("#renameStoreButton")?.addEventListener("click", renameStore);
+  qs("#changeOwnerNameButton")?.addEventListener("click", changeOwnerName);
   qs("#archiveStoreButton")?.addEventListener("click", archiveStore);
   qs("#setBusinessTypeButton")?.addEventListener("click", setStoreBusinessType);
   qs("#setCurrencyButton")?.addEventListener("click", setStoreCurrency);
@@ -12386,6 +14695,7 @@ function bindEvents() {
   qs("#closeVatSettingsDialog")?.addEventListener("click", () => qs("#vatSettingsDialog").close());
   qs("#cancelVatSettingsDialog")?.addEventListener("click", () => qs("#vatSettingsDialog").close());
   qs("#staffRosterButton")?.addEventListener("click", () => { renderStaffRoster(); qs("#staffRosterDialog").showModal(); });
+  qs("#settingsStaffRosterButton")?.addEventListener("click", () => { renderStaffRoster(); qs("#staffRosterDialog").showModal(); });
   qs("#closeStaffRosterDialog")?.addEventListener("click", () => qs("#staffRosterDialog").close());
   qs("#openInviteStaffButton")?.addEventListener("click", openInviteStaffDialog);
   qs("#closeInviteStaffDialog")?.addEventListener("click", () => qs("#inviteStaffDialog").close());
@@ -12403,7 +14713,6 @@ function bindEvents() {
   qs("#staffOrderLookupDateTo")?.addEventListener("change", renderStaffOrderNumberOptions);
   qs("#staffOrderLookupButton")?.addEventListener("click", renderStaffOrderLookupResult);
   qs("#staffOrderLookupAllButton")?.addEventListener("click", renderStaffAllOrdersResult);
-  qs("#dailyStaffReportButton")?.addEventListener("click", renderDailyStaffReport);
   qs("#langToggleButton").addEventListener("click", () => setLanguage(state.language === "en" ? "sw" : "en"));
   qs("#stockAlertPopupToggle").addEventListener("change", (event) => setStockAlertPopupEnabled(event.target.checked));
   qs("#stockAlertPopupClose").addEventListener("click", closeStockAlertPopup);
@@ -12412,7 +14721,6 @@ function bindEvents() {
     event.preventDefault();
     closeStockAlertPopup();
   });
-  qs("#newProductButton").addEventListener("click", () => openProductDialog());
   qs("#inventoryAddButton").addEventListener("click", () => openProductDialog());
   // The per-unit readout depends on BOTH boxes, so both have to feed it --
   // wiring only the amount would leave a stale figure on screen the moment
@@ -12425,6 +14733,17 @@ function bindEvents() {
   qs("#cancelTransferDialog")?.addEventListener("click", () => qs("#transferDialog").close());
   qs("#confirmTransferButton")?.addEventListener("click", confirmTransfer);
   qs("#expenseAddButton")?.addEventListener("click", () => openExpenseDialog());
+  // Choosing a category RESETS the type of cost to that category's default,
+  // every time -- rather than tracking whether the box has been touched.
+  // Predictable beats clever here: "pick a category, then correct the type if it
+  // is wrong" is one rule a shop can hold, and the alternative silently keeps a
+  // classification chosen for a different category.
+  qs("#expenseCategorySelect")?.addEventListener("change", (event) => {
+    const nature = qs("#expenseNatureSelect");
+    if (nature) nature.value = EXPENSE_NATURE_BY_CATEGORY[event.currentTarget.value] || "indirect";
+    renderExpenseNatureHint();
+  });
+  qs("#expenseNatureSelect")?.addEventListener("change", renderExpenseNatureHint);
   qs("#closeExpenseDialog")?.addEventListener("click", () => qs("#expenseDialog").close());
   qs("#cancelExpenseDialog")?.addEventListener("click", () => qs("#expenseDialog").close());
   qs("#expenseForm")?.addEventListener("submit", (event) => {
@@ -12446,6 +14765,78 @@ function bindEvents() {
     state.purchaseMonthSelection = event.currentTarget.value || state.purchaseMonthSelection;
     state.purchaseMonthTouched = true;
     renderPurchases();
+  });
+  // Deliveries -- DESIGN-landed-costs.md phase 4.
+  qs("#costReportMonthInput")?.addEventListener("change", (event) => {
+    state.reportsCostMonth = event.currentTarget.value || state.reportsCostMonth;
+    renderCostReports();
+  });
+  qs("#openDeliveryDialog")?.addEventListener("click", openDeliveryDialog);
+  qs("#closeDeliveryDialog")?.addEventListener("click", () => qs("#deliveryDialog").close());
+  qs("#cancelDeliveryDialog")?.addEventListener("click", () => qs("#deliveryDialog").close());
+  qs("#deliveryMonthInput")?.addEventListener("change", (event) => {
+    state.deliveryMonthSelection = event.currentTarget.value || state.deliveryMonthSelection;
+    state.deliveryMonthTouched = true;
+    renderDeliveries();
+  });
+  qs("#deliveriesTable")?.addEventListener("click", (event) => {
+    const remove = event.target.closest("[data-delete-delivery]");
+    if (remove) confirmDeleteDelivery(remove.dataset.deleteDelivery);
+  });
+  qs("#addDeliveryLine")?.addEventListener("click", () => {
+    if (state.deliveryDraft.lines.length >= DELIVERY_MAX_LINES) {
+      const slot = qs("#deliveryFormError");
+      if (slot) slot.textContent = t("deliveries.errTooManyLines", { max: String(DELIVERY_MAX_LINES) });
+      return;
+    }
+    state.deliveryDraft.lines.push({ productId: "", quantity: "", goodsCost: "", manual: "" });
+    renderDeliveryDialog();
+  });
+  // Delegated, and on `input` rather than `change`: the preview is the point of
+  // this screen, and a shop should see what a delivery will cost as it types
+  // rather than after it tabs away.
+  //
+  // The rows are re-rendered whenever a line is added or removed, so per-field
+  // listeners would be re-bound on every keystroke's render and leak.
+  qs("#deliveryLines")?.addEventListener("input", (event) => {
+    const row = event.target.closest("[data-line]");
+    const field = event.target.dataset.field;
+    if (!row || !field) return;
+    const line = state.deliveryDraft.lines[Number(row.dataset.line)];
+    if (!line) return;
+    line[field] = event.target.value;
+    // The preview only, not the whole dialog: re-rendering the rows mid-keystroke
+    // would rebuild the input the caret is sitting in and lose the caret with it.
+    renderDeliveryPreview();
+  });
+  qs("#deliveryLines")?.addEventListener("click", (event) => {
+    const remove = event.target.closest("[data-remove-line]");
+    if (!remove) return;
+    // Never below one row. An empty dialog offers nothing to type into and no
+    // way back to a row, and "add a product" is a worse first instruction than
+    // an empty line already waiting.
+    if (state.deliveryDraft.lines.length <= 1) {
+      state.deliveryDraft.lines = [{ productId: "", quantity: "", goodsCost: "", manual: "" }];
+    } else {
+      state.deliveryDraft.lines.splice(Number(remove.dataset.removeLine), 1);
+    }
+    renderDeliveryDialog();
+  });
+  qs("#deliveryCostFields")?.addEventListener("input", (event) => {
+    const type = event.target.dataset.cost;
+    if (!type) return;
+    state.deliveryDraft.costs[type] = event.target.value;
+    renderDeliveryPreview();
+  });
+  qs("#deliveryBasis")?.addEventListener("change", (event) => {
+    state.deliveryDraft.basis = event.currentTarget.value;
+    // The whole dialog, not just the preview: switching to manual adds a Share
+    // box to every row, and switching away removes it.
+    renderDeliveryDialog();
+  });
+  qs("#deliveryForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submitDelivery();
   });
   qs("#restockTotalPaidInput")?.addEventListener("input", renderRestockUnitCostHint);
   qs("#restockQuantityInput")?.addEventListener("input", renderRestockUnitCostHint);

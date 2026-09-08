@@ -250,6 +250,47 @@ console.log("\n=== a withdrawn version string is never reissued ===");
       + `even if you are not deploying yet: the stamp is the bundle's identity, not a deploy marker`);
 }
 
+console.log("\n=== a new shell gets a new cache to live in ===");
+{
+  // sw.js states the contract itself: "A deploy changes CACHE_NAME, so the
+  // updated service worker pre-caches the new shell and removes the previous
+  // version during activation." activate() deletes every cache whose key is
+  // not CACHE_NAME -- so if the name does NOT change, the old entries are
+  // never evicted and the cache grows by a whole shell on every release.
+  //
+  // Nothing caught this: the stamp check above passed while CACHE_NAME sat
+  // unchanged from the live build, because the two are checked independently
+  // and it is the PAIR that has to move together.
+  // cwd is block-scoped to the section above, and a ReferenceError here would
+  // be swallowed by the catch below and read as "no git history" -- a green
+  // run that checked nothing.
+  const repo = fileURLToPath(ROOT);
+  const headOf = (file) => {
+    try { return execFileSync("git", ["show", `HEAD:${file}`], { cwd: repo, encoding: "utf8" }); }
+    catch { return ""; }
+  };
+  const cacheName = (text) => text.match(/CACHE_NAME = "([^"]+)"/)?.[1] || "";
+  const stampOf = (text) => text.match(/app\.js\?v=([0-9a-z]+)/)?.[1] || "";
+
+  const headSw = headOf("sw.js");
+  const headHtml = headOf("app.html");
+  if (!headSw || !headHtml) {
+    check("HEAD was readable", false, "could not read sw.js/app.html at HEAD");
+  } else {
+    const stampMoved = stampOf(appHtml) !== stampOf(headHtml);
+    const nameMoved = cacheName(sw) !== cacheName(headSw);
+    check("a changed shell stamp is matched by a changed CACHE_NAME",
+      !stampMoved || nameMoved,
+      `stamp moved ${stampOf(headHtml)} -> ${stampOf(appHtml)} but CACHE_NAME is still `
+        + `${cacheName(sw)} — activate() keeps the old cache forever`);
+    // The reverse is a smaller mistake but still wrong: a new cache name that
+    // pre-caches byte-identical URLs re-downloads the shell for no reason.
+    check("a changed CACHE_NAME is matched by a changed shell stamp",
+      !nameMoved || stampMoved,
+      `CACHE_NAME moved to ${cacheName(sw)} but the shell stamp is still ${stampOf(appHtml)}`);
+  }
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 process.exit(failed.length ? 1 : 0);

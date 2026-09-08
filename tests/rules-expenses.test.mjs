@@ -71,6 +71,11 @@ await testEnv.withSecurityRulesDisabled(async (ctx) => {
     storeId: STORE_B, category: "rent", amount: 300000, paidFrom: "other",
     spentAt: SPENT_AT, recordedByUid: OWNER, createdAt: SEEDED_AT
   });
+  // Carries `nature`, for the phase 5 reclassification cases.
+  await setDoc(doc(db, "users", OWNER, "expenses", "expSeedNature"), {
+    storeId: STORE_A, category: "transport", amount: 8000, paidFrom: "other",
+    nature: "indirect", spentAt: SPENT_AT, recordedByUid: OWNER, createdAt: SEEDED_AT
+  });
 });
 
 const results = [];
@@ -100,6 +105,9 @@ const exp = (uid, over = {}) => ({
   storeId: STORE_A, category: "transport", amount: 5000, paidFrom: "other",
   spentAt: SPENT_AT, recordedByUid: uid, createdAt: SEEDED_AT, ...over
 });
+
+let n = 0;
+const id = (p) => `${p}_${++n}`;
 
 console.log("=== the owner keeps the book ===");
 await check("owner records an expense", true, () =>
@@ -290,6 +298,76 @@ await check("a missing createdAt is refused on an edit", false, () => {
   const { createdAt, ...rest } = exp(MANAGER, { amount: 4300 });
   return setDoc(doc(ownerDb, "users", OWNER, "expenses", "mgr1"), rest);
 });
+
+
+// ===========================================================================
+console.log("\n=== phase 5: nature, and the three new categories ===");
+// DESIGN-landed-costs.md 5. Two lines of the docx section 9 statement, both
+// below gross profit and both subtracting from it -- so a wrong value here is
+// presentational. What is NOT presentational is a third value: inventory and
+// landed costs are the docx's third tier and they never reach this collection,
+// because the delivery path capitalises them into stock. An expense claiming to
+// be one would be charged once in COGS and once in operating expenses.
+{
+  await check("an expense may be direct", true, () =>
+    setDoc(doc(ownerDb, "users", OWNER, "expenses", id("e")), exp(OWNER, { nature: "direct" })));
+  await check("an expense may be indirect", true, () =>
+    setDoc(doc(ownerDb, "users", OWNER, "expenses", id("e")), exp(OWNER, { nature: "indirect" })));
+  // Optional, because every expense written before phase 5 has none and the
+  // client reads absent as the category's default.
+  await check("an expense with no nature at all is still accepted", true, () => {
+    const body = exp(OWNER);
+    delete body.nature;
+    return setDoc(doc(ownerDb, "users", OWNER, "expenses", id("e")), body);
+  });
+  await check("a third nature is refused", false, () =>
+    setDoc(doc(ownerDb, "users", OWNER, "expenses", id("e")), exp(OWNER, { nature: "capitalised" })));
+  await check("an empty nature is refused", false, () =>
+    setDoc(doc(ownerDb, "users", OWNER, "expenses", id("e")), exp(OWNER, { nature: "" })));
+  await check("a non-string nature is refused", false, () =>
+    setDoc(doc(ownerDb, "users", OWNER, "expenses", id("e")), exp(OWNER, { nature: 1 })));
+
+  // The docx section 11 direct column, which until phase 5 had nowhere to go
+  // but 'other' -- the one category no report can act on.
+  for (const category of ["commission", "delivery", "packaging"]) {
+    await check(`${category} is an accepted category`, true, () =>
+      setDoc(doc(ownerDb, "users", OWNER, "expenses", id("e")),
+        exp(OWNER, { category, nature: "direct" })));
+  }
+  // The nine that were already there must not have been dropped while widening.
+  for (const category of ["rent", "utilities", "wages", "transport", "supplies",
+                          "repairs", "licences", "marketing", "other"]) {
+    await check(`${category} is still accepted`, true, () =>
+      setDoc(doc(ownerDb, "users", OWNER, "expenses", id("e")), exp(OWNER, { category })));
+  }
+  // Still closed. DESIGN-purchases.md 8.2: there is no entertainment category,
+  // because input VAT on entertainment is not deductible and such spending goes
+  // to 'other' with a note until there is a treatment for it.
+  await check("entertainment is still refused", false, () =>
+    setDoc(doc(ownerDb, "users", OWNER, "expenses", id("e")), exp(OWNER, { category: "entertainment" })));
+  await check("an invented category is still refused", false, () =>
+    setDoc(doc(ownerDb, "users", OWNER, "expenses", id("e")), exp(OWNER, { category: "freight" })));
+
+  // A manager records spending on the shop's behalf, so a manager records the
+  // classification with it.
+  await check("a manager may record a direct expense", true, () =>
+    setDoc(doc(managerDb, "users", OWNER, "expenses", id("e")),
+      exp(MANAGER, { category: "commission", nature: "direct" })));
+  await check("a cashier still cannot record one", false, () =>
+    setDoc(doc(cashierDb, "users", OWNER, "expenses", id("e")),
+      exp(CASHIER, { category: "commission", nature: "direct" })));
+
+  // Reclassifying is a correction, and corrections are the owner's -- the same
+  // rule the amount and the category already follow. It is allowed BECAUSE it
+  // cannot move gross or net profit: unlike a purchase, an expense fed no
+  // cached derivation that editing would leave disagreeing with itself.
+  await check("the owner may reclassify an expense", true, () =>
+    updateDoc(doc(ownerDb, "users", OWNER, "expenses", "expSeedNature"), { nature: "direct" }));
+  await check("a manager cannot reclassify one", false, () =>
+    updateDoc(doc(managerDb, "users", OWNER, "expenses", "expSeedNature"), { nature: "indirect" }));
+  await check("reclassifying to an invented value is refused", false, () =>
+    updateDoc(doc(ownerDb, "users", OWNER, "expenses", "expSeedNature"), { nature: "landed" }));
+}
 
 await testEnv.cleanup();
 

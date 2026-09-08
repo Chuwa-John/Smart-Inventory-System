@@ -10,3 +10,6 @@ outputs/
 tests/firestore-debug.log
 firestore-debug.log
 ui-debug.log
+
+# Local Claude Code permission grants — machine state, not project config.
+.claude/settings.local.json
