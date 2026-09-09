@@ -136,6 +136,11 @@ service cloud.firestore {
         && (!('warehouse' in d) || (d.warehouse is string && d.warehouse.size() <= 60))
         && (!('shelf' in d) || (d.shelf is string && d.shelf.size() <= 60))
         && (!('sku' in d) || (d.sku is string && d.sku.size() <= 40))
+        // Spec 4.1. Both optional: every product the eight live shops hold
+        // predates them, and absent `active` must read as ACTIVE or their whole
+        // catalogue would disappear from the till at once.
+        && (!('unit' in d) || (d.unit is string && d.unit.size() <= 20))
+        && (!('active' in d) || d.active is bool)
         // STAGE 2, RESTORED 2026-09-07. Cost is refused on a product document
         // outright, which is what DESIGN-purchases.md 10 always specified.
         //
@@ -294,7 +299,15 @@ service cloud.firestore {
                                // food is exempt, so deriving it would overstate
                                // a CLAIM. That is the direction that earns a
                                // penalty rather than a refund.
-                               'vatAmount'])
+                               'vatAmount',
+                               // DESIGN-suppliers-purchases.md 4.3. Optional,
+                               // like deliveryId above and for the same reason:
+                               // every purchase the eight live shops have ever
+                               // written carries only the free-text
+                               // supplierName. Absent means "typed, not picked",
+                               // and reports fall back to the name so history
+                               // does not split into two suppliers.
+                               'supplierId'])
         && d.storeId is string && d.storeId.size() > 0 && d.storeId.size() <= 120
         && d.productId is string && d.productId.size() > 0 && d.productId.size() <= 120
         && d.productName is string && d.productName.size() > 0 && d.productName.size() <= 120
@@ -432,7 +445,16 @@ service cloud.firestore {
                                'freight', 'importDuty', 'clearing', 'transport',
                                'handling', 'insurance', 'otherCost',
                                'additionalTotal', 'totalCost', 'allocationBasis',
-                               'lineCount', 'recordedByUid', 'createdAt', 'note'])
+                               'lineCount', 'recordedByUid', 'createdAt', 'note',
+                               // Payment terms. Spec 5.1-5.3, phase 2. All
+                               // OPTIONAL: deliveries shipped on 2026-09-08 and
+                               // the live shops already hold header documents
+                               // that carry none of these. Absent amountPaid
+                               // reads as PAID IN FULL, which is what recording
+                               // a delivery meant before terms existed -- the
+                               // safe reading, because it claims no debt that
+                               // nobody entered.
+                               'supplierId', 'amountPaid', 'paymentMethod'])
         && d.storeId is string && d.storeId.size() > 0 && d.storeId.size() <= 120
         // Zero is legitimate: a delivery of free goods that still cost freight.
         // What cannot be zero is totalCost -- a delivery that cost nothing is
@@ -444,6 +466,12 @@ service cloud.firestore {
         && moneyInRange(d.otherCost)
         && moneyInRange(d.additionalTotal)
         && d.totalCost is number && d.totalCost > 0 && d.totalCost <= 1000000000
+        // You cannot pay more than the delivery cost. Overpayment is a credit
+        // note against the supplier, which is a different record from this one,
+        // and allowing it here would drive balanceOwed negative.
+        && (!('amountPaid' in d) || (moneyInRange(d.amountPaid) && d.amountPaid <= d.totalCost))
+        && (!('paymentMethod' in d) || d.paymentMethod in ['cash', 'bank', 'mobile', 'credit'])
+        && (!('supplierId' in d) || (d.supplierId is string && d.supplierId.size() > 0 && d.supplierId.size() <= 120))
         // The header must add up to itself. Both to a shilling, not exactly, for
         // the reason given on the unitCost invariant above: these figures are
         // sums of unrounded allocations and float64 does not return them exact.
@@ -466,7 +494,7 @@ service cloud.firestore {
         // and the movement -- and the header and its audit entry take two more.
         // Firestore caps a transaction at 500 writes, so the old ceiling of 100
         // was 502: one over, failing only after a shop had typed in a
-        // hundred-line delivery. 80 x 5 + 2 = 402, which leaves room for a sixth
+        // hundred-line delivery. 80 x 5 + 3 = 403, which leaves room for a sixth
         // per-line document without another rules change.
         // DELIVERY_MAX_LINES in app.js carries the same number and the same sum.
         && d.lineCount is number && d.lineCount > 0 && d.lineCount <= 80
@@ -663,7 +691,11 @@ service cloud.firestore {
     function validMovementReason() {
       let after = request.resource.data;
       return !('movementReason' in after)
-        || after.movementReason in ['sale', 'restock', 'return', 'void'];
+        // 'supplier-return' is goods going BACK to a supplier -- spec 4.2 lists
+        // it as its own decrease class, distinct from 'return' (a customer
+        // bringing goods back, which INCREASES stock). Labelling one as the
+        // other would make the ledger read backwards.
+        || after.movementReason in ['sale', 'restock', 'return', 'void', 'supplier-return'];
     }
 
     // The cashier allowlist. Unchanged, and deliberately so: a cashier may count
@@ -780,7 +812,10 @@ service cloud.firestore {
         && (!('discountType' in d) || d.discountType in ['none', 'percent', 'fixed'])
         && (!('discountValue' in d) || totalInRange(d.discountValue))
         && (!('discountAmount' in d) || totalInRange(d.discountAmount))
-        && d.paymentMethod in ['cash', 'mobile', 'card', 'credit']
+        // 'bank' added for spec 6, which lists Cash / Bank / Mobile Money /
+        // Credit. 'card' stays: sales already recorded carry it, and dropping a
+        // value from this set would make those sales unwritable on any later edit.
+        && d.paymentMethod in ['cash', 'mobile', 'card', 'bank', 'credit']
         && (!('customerId' in d) || d.customerId == null || (d.customerId is string && d.customerId.size() > 0))
         && (!('amountPaid' in d) || d.amountPaid == null || totalInRange(d.amountPaid))
         && (!('balanceDue' in d) || d.balanceDue == null || totalInRange(d.balanceDue))
@@ -1381,6 +1416,110 @@ service cloud.firestore {
         }
       }
 
+      // Suppliers. DESIGN-suppliers-purchases.md 4.
+      //
+      // Until now a supplier was a free-text string retyped onto every purchase,
+      // so "Twiga Cement", "Twiga cement" and "TWIGA" were three suppliers to
+      // any report that grouped by them, and there was nowhere to record a
+      // phone number, a TIN, or what is owed.
+      //
+      // Purchasing is not a till function, so writes are owner and manager only
+      // -- narrower than /customers, which a cashier must be able to touch
+      // mid-sale to record credit. Reads are wider than writes because the
+      // product list denormalises a supplier name and a denied read would break
+      // rendering for a cashier who is only selling.
+      match /suppliers/{supplierId} {
+        function validSupplier() {
+          let d = request.resource.data;
+          return d.name is string && d.name.size() > 0 && d.name.size() <= 80
+            && d.storeId is string && d.storeId.size() > 0
+            && d.openingBalance is number && d.openingBalance >= 0 && d.openingBalance <= 1000000000000
+            && d.balanceOwed is number && d.balanceOwed >= 0 && d.balanceOwed <= 1000000000000
+            && d.active is bool
+            && (!('phone' in d) || (d.phone is string && d.phone.size() <= 20))
+            && (!('email' in d) || (d.email is string && d.email.size() <= 120))
+            && (!('address' in d) || (d.address is string && d.address.size() <= 200))
+            && (!('tin' in d) || (d.tin is string && d.tin.size() <= 40))
+            && (!('note' in d) || (d.note is string && d.note.size() <= 200));
+        }
+        // resource == null: see the note on the same branch under /sales.
+        allow read: if isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager", "cashier"])
+              && (resource == null || memberCanAccessStore(userId, resource.data.storeId)));
+        allow create: if tenantNotFrozen(userId) && validSupplier() && (
+             isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager"]) && memberCanAccessStore(userId, request.resource.data.storeId)));
+        allow update: if tenantNotFrozen(userId) && validSupplier() && (
+             isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager"]) && memberCanAccessStore(userId, resource.data.storeId)));
+        // Deactivated, never deleted: a supplier is referenced by every purchase
+        // ever made from them, and deleting one would orphan that history.
+        allow delete: if false;
+
+        // What is owed, and what has been paid off it. Spec 5.4.
+        //
+        // The balance is STORED rather than computed from the delivery history,
+        // and that is forced rather than chosen: subscribeToDeliveries() is
+        // bounded by ACCOUNTS_HISTORY_LIMIT (L-13), so a client adding up the
+        // deliveries it happens to hold would silently UNDERSTATE what is owed
+        // to a supplier with more history than the window. An understated debt
+        // is the direction that loses money.
+        //
+        // Same shape as the customer credit book, which has the same problem in
+        // the other direction.
+        match /payments/{paymentId} {
+          function validSupplierPayment() {
+            let d = request.resource.data;
+            return d.amount is number && d.amount > 0 && d.amount <= 1000000000
+              && d.method in ['cash', 'bank', 'mobile']
+              && (!('note' in d) || (d.note is string && d.note.size() <= 200))
+              && (!('reference' in d) || (d.reference is string && d.reference.size() <= 60));
+          }
+          allow read: if isOwner(userId)
+            || (isOwnerOrRole(userId, ["manager"])
+                && memberCanAccessStore(userId, get(/databases/$(database)/documents/users/$(userId)/suppliers/$(supplierId)).data.storeId));
+          allow create: if tenantNotFrozen(userId) && validSupplierPayment() && (
+               isOwner(userId)
+            || (isOwnerOrRole(userId, ["manager"])
+                && memberCanAccessStore(userId, get(/databases/$(database)/documents/users/$(userId)/suppliers/$(supplierId)).data.storeId)));
+          // A payment is a book entry. Correcting one is a new entry, not a
+          // rewrite -- the same rule /customers/payments and /expenses carry.
+          allow update, delete: if false;
+        }
+      }
+
+      // Goods sent back to a supplier. Spec 5.5.
+      //
+      // A separate record rather than an edit to the purchase: the purchase is
+      // what was actually bought and paid, and rewriting it would destroy the
+      // history the Purchase Book exists to keep. The return carries its own
+      // quantity and value, and reports net one against the other.
+      //
+      // Owner and manager only, matching /suppliers -- sending stock back to a
+      // supplier is a buying decision, not a till one.
+      match /purchaseReturns/{returnId} {
+        function validPurchaseReturn() {
+          let d = request.resource.data;
+          return d.storeId is string && d.storeId.size() > 0
+            && d.productId is string && d.productId.size() > 0
+            && d.productName is string && d.productName.size() > 0 && d.productName.size() <= 120
+            && d.quantity is number && d.quantity > 0 && d.quantity <= 1000000
+            && d.amount is number && d.amount >= 0 && d.amount <= 1000000000
+            && (!('purchaseId' in d) || (d.purchaseId is string && d.purchaseId.size() <= 120))
+            && (!('supplierId' in d) || (d.supplierId is string && d.supplierId.size() <= 120))
+            && (!('supplierName' in d) || (d.supplierName is string && d.supplierName.size() <= 120))
+            && (!('reason' in d) || (d.reason is string && d.reason.size() <= 200));
+        }
+        allow read: if isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager"])
+              && (resource == null || memberCanAccessStore(userId, resource.data.storeId)));
+        allow create: if tenantNotFrozen(userId) && validPurchaseReturn() && (
+             isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager"]) && memberCanAccessStore(userId, request.resource.data.storeId)));
+        // A book entry: corrected by another entry, never rewritten.
+        allow update, delete: if false;
+      }
+
       // A shift is one till, one person, one stretch of time: opened with a
       // float, closed with a physical count, and carrying the difference
       // between what the system expected and what was actually there.
@@ -1480,7 +1619,7 @@ service cloud.firestore {
           let d = request.resource.data;
           return d.productId is string && d.productId.size() > 0 && d.productId.size() <= 120
             && d.storeId is string && d.storeId.size() > 0 && d.storeId.size() <= 120
-            && d.reason in ['sale', 'restock', 'return', 'void', 'transfer-in', 'transfer-out', 'adjustment']
+            && d.reason in ['sale', 'restock', 'return', 'void', 'transfer-in', 'transfer-out', 'adjustment', 'supplier-return']
             && d.delta is number && d.delta >= -1000000 && d.delta <= 1000000
             && (!('offline' in d) || d.offline is bool)
             && validMovementShape()
@@ -1488,7 +1627,18 @@ service cloud.firestore {
             && (!('productName' in d) || (d.productName is string && d.productName.size() <= 120))
             && (!('saleId' in d) || (d.saleId is string && d.saleId.size() <= 120))
             && (!('transferId' in d) || (d.transferId is string && d.transferId.size() <= 120))
-            && (!('staffName' in d) || (d.staffName is string && d.staffName.size() <= 80));
+            && (!('staffName' in d) || (d.staffName is string && d.staffName.size() <= 80))
+            // WHY the shelf was corrected. Spec 4.4 asks for the reason to be
+            // recorded, and a closed set rather than free text because this is
+            // the field an owner filters on when asking where stock went --
+            // "Damaged" and "damaged" and "broke it" cannot be counted together.
+            //
+            // Only meaningful alongside reason == 'adjustment', but not tied to
+            // it here: rules validate a write in isolation, and coupling the two
+            // is the same trap documented on validMovementReason() above.
+            && (!('adjustmentReason' in d) || d.adjustmentReason in
+                ['count', 'damaged', 'expired', 'lost', 'theft', 'correction', 'opening', 'other'])
+            && (!('note' in d) || (d.note is string && d.note.size() <= 200));
         }
         allow read: if isOwner(userId);
         allow create: if tenantNotFrozen(userId)

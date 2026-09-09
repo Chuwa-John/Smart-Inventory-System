@@ -704,9 +704,12 @@ group("the line cap is arithmetic, and app.js and the rules agree on it", () => 
 
   // Five writes a line, plus the header and the audit entry, against Firestore's
   // 500-write transaction cap. Phase 2 counted four and set 100, which is 502.
-  ok(inApp * 5 + 2 <= 500,
-    `${inApp} lines is ${inApp * 5 + 2} writes, over Firestore's 500-write transaction cap`);
-  ok(101 * 5 + 2 > 500, "the phase 2 cap of 100 really would have exceeded it");
+  // Five per line, plus the header, the audit entry, and -- since phase 2 of
+  // DESIGN-suppliers-purchases.md -- the supplier balance update a credit
+  // delivery makes. Three fixed writes, not two.
+  ok(inApp * 5 + 3 <= 500,
+    `${inApp} lines is ${inApp * 5 + 3} writes, over Firestore's 500-write transaction cap`);
+  ok(101 * 5 + 3 > 500, "the phase 2 cap of 100 really would have exceeded it");
 });
 
 group("deleteDelivery takes the purchase lines with it", () => {

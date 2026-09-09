@@ -167,6 +167,7 @@ ${extract("summariseLandedForMonth")}
 ${extract("renderLandedCostSection")}
 ${extract("summariseDeliveries")}
 ${extract("deliveryBasisLabel")}
+${extract("deliveryPaymentStatus")}
 ${extract("renderDeliveries")}
 ${extract("summariseStockValuation")}
 ${extract("purchasedAt")}
@@ -207,6 +208,7 @@ ${extract("costInForceAt")}
 let purchasesFixture = [];
 const storePurchases = () => purchasesFixture;
 ${extract("renderProductProfit")}
+${extract("withMargin")}
 ${extract("renderProfit")}
 
 window.harness = {
@@ -234,7 +236,7 @@ window.harness = {
       outsideWindow: false, monthKey: "2026-09",
       revenue: 45000000, salesCount: 12, cogs: 27000000,
       costedLines: 12, uncostedLines: 0, anyCostKnown: true, allCostKnown: true,
-      grossProfit: 18000000, grossMarginPct: 40,
+      grossProfit: 18000000, grossMarginPct: 40, netMarginPct: 18,
       expenses: 10000000, expenseCount: 2,
       directExpenses: 2000000, indirectExpenses: 8000000,
       netProfit: 8000000, anyExpensesRecorded: true
@@ -247,7 +249,7 @@ window.harness = {
       outsideWindow: false, monthKey: "2026-09",
       revenue: 1500000, salesCount: 1, cogs: 1180000,
       costedLines: 1, uncostedLines: 0, anyCostKnown: true, allCostKnown: true,
-      grossProfit: 320000, grossMarginPct: 21,
+      grossProfit: 320000, grossMarginPct: 21, netMarginPct: 21,
       expenses: 0, expenseCount: 0, directExpenses: 0, indirectExpenses: 0,
       netProfit: 320000, anyExpensesRecorded: false
     }, {
@@ -263,7 +265,7 @@ window.harness = {
       outsideWindow: false, monthKey: "2026-09",
       revenue: 100000, salesCount: 1, cogs: 0,
       costedLines: 0, uncostedLines: 3, anyCostKnown: false, allCostKnown: false,
-      grossProfit: 100000, grossMarginPct: 100,
+      grossProfit: 100000, grossMarginPct: 100, netMarginPct: 100,
       expenses: 10000, expenseCount: 1,
       directExpenses: 0, indirectExpenses: 10000,
       netProfit: 90000, anyExpensesRecorded: true
@@ -617,7 +619,7 @@ const wantStatement = [
   ["GROSS PROFIT", "TZS 18,000,000.00 · 40%", true],
   ["Direct operating expenses", "(TZS 2,000,000.00)", false],
   ["Indirect operating expenses", "(TZS 8,000,000.00)", false],
-  ["NET PROFIT", "TZS 8,000,000.00", true]
+  ["NET PROFIT", "TZS 8,000,000.00 · 18%", true]
 ];
 for (const [i, [label, value, total]] of wantStatement.entries()) {
   check(`line ${i + 1} is "${label}"`, statement[i]?.label === label,

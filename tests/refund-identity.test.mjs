@@ -134,9 +134,19 @@ console.log("\n=== credit is treated as a receivable, not as cash returned ===")
 console.log("\n=== the staff row adds up (QA-123) ===");
 {
   const fn = extractFn("computeStaffBreakdown").replace(/\/\/[^\n]*/g, "");
-  check("collected is the sum of its own columns",
-    /entry\.collected = entry\.cash \+ entry\.mobile \+ entry\.card;/.test(fn),
-    "a total that did not equal its columns read as an arithmetic error");
+  // Derived, not pinned: the methods actually accumulated in the loop must be
+  // exactly the ones added into `collected`. A method added to the till and
+  // forgotten here would drop that money out of Collected -- which is the
+  // failure this guards, and which a literal three-term regex would miss.
+  const accumulated = (fn.match(/for \(const method of \[([^\]]*)\]/) || [, ""])[1]
+    .split(",").map((m) => m.trim().replace(/["']/g, "")).filter(Boolean);
+  const collectedExpr = (fn.match(/entry\.collected = ([^;]*);/) || [, ""])[1];
+  check("every method the loop accumulates is added into collected",
+    accumulated.length > 0 && accumulated.every((m) => collectedExpr.includes(`entry.${m}`)),
+    `loop tracks [${accumulated}] but collected is "${collectedExpr}"`);
+  check("...and collected adds nothing else",
+    (collectedExpr.match(/entry\./g) || []).length === accumulated.length,
+    `collected is "${collectedExpr}" against [${accumulated}]`);
   check("net sold is tracked separately", /entry\.net \+= saleNetTotal\(sale\)/.test(fn),
     "sold and collected are different questions and were collapsed into one column");
   check("the columns come from one attribution rule", /saleAmountForMethod\(sale, method\)/.test(fn),
@@ -155,10 +165,18 @@ console.log("\n=== the staff row adds up (QA-123) ===");
   const staffTable = appHtml.slice(tableStart, tableEnd);
   check("the staff table was located", tableStart !== -1 && tableEnd > tableStart);
   const headerCount = (staffTable.match(/<th\b/g) || []).length;
-  check("the header row has seven columns", headerCount === 7,
-    `found ${headerCount} in the staff table — a column added without a matching cell shifts every row`);
-  check("the empty state spans them all", /colspan="7"/.test(extractFn("renderStaffBreakdown")),
-    "a stale colspan leaves the empty message misaligned");
+  // The claim is that the header, the body row and the empty state all agree --
+  // not that there are seven of them. Pinning the number meant adding a column
+  // failed this for the wrong reason, while the real defect it guards (a column
+  // added without a matching cell) is a MISMATCH, whatever the count.
+  const render = extractFn("renderStaffBreakdown");
+  const bodyRow = (render.match(/\(row\) => `<tr>([\s\S]*?)<\/tr>`/) || [, ""])[1];
+  const bodyCells = (bodyRow.match(/<td\b/g) || []).length;
+  check("every header column has a matching body cell", headerCount === bodyCells,
+    `${headerCount} headers against ${bodyCells} cells — a column added without a matching cell shifts every row`);
+  const colspan = Number((render.match(/colspan="(\d+)"/) || [, 0])[1]);
+  check("the empty state spans them all", colspan === headerCount,
+    `colspan is ${colspan} against ${headerCount} columns — a stale colspan leaves the empty message misaligned`);
 
   for (const key of ["reports.collectedColumn", "reports.netSalesColumn"]) {
     const n = [...app.matchAll(new RegExp(`"${key.replace(/\./g, "\\.")}":`, "g"))].length;

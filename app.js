@@ -151,6 +151,10 @@ const state = {
   purchaseOrderGroups: [],
   customers: [],
   unsubscribeCustomers: null,
+  suppliers: [],
+  unsubscribeSuppliers: null,
+  purchaseReturns: [],
+  unsubscribePurchaseReturns: null,
   pendingPaymentCustomerId: null,
   transfers: [],
   unsubscribeTransfers: null,
@@ -333,6 +337,139 @@ const DICTIONARY = {
     "settings.title": "Settings",
     "settings.accountTitle": "Account",
     "settings.signedInAs": "Signed in as",
+    "reports.groupFinancial": "Financial", "reports.groupSales": "Sales",
+    "reports.groupPurchases": "Purchases", "reports.groupInventory": "Inventory",
+    "reports.groupExpenses": "Expenses",
+    "reports.ledgerPendingTitle": "Balance Sheet, Trial Balance, Cash Flow & General Ledger",
+    "reports.ledgerPendingBody": "These four are statements of a double-entry ledger, which this system does not keep yet. Profit & Loss is available now, on its own tab, because it is built from the transactions themselves.",
+    "reports.openProfit": "Open Profit & Loss",
+    "reports.byCustomerTitle": "Sales by Customer",
+    "reports.byCustomerIntro": "Uses the range chosen above. Sales with no customer recorded are grouped as walk-in rather than left out.",
+    "reports.walkIn": "Walk-in",
+    "reports.salesReturnsTitle": "Sales Returns",
+    "reports.purchaseSummaryTitle": "Purchase Summary",
+    "reports.purchaseGross": "Bought", "reports.purchaseGrossNote": "{count} purchase lines, {units} units.",
+    "reports.purchaseReturned": "Sent back",
+    "reports.purchaseReturnedNote": "{units} units returned to suppliers.",
+    "reports.purchaseReturnedNone": "Nothing returned.",
+    "reports.purchaseNet": "Net purchases", "reports.purchaseNetNote": "What was bought, less what went back.",
+    "reports.byProductPurchaseTitle": "Purchases by Product",
+    "reports.purchaseReturnsTitle": "Purchase Returns",
+    "reports.supplierBalancesTitle": "Supplier Balances",
+    "reports.supplierBalancesIntro": "What the business still owes. Only suppliers with something outstanding are listed.",
+    "reports.supplierBalancesTotal": "TOTAL OWED",
+    "reports.stockSummaryTitle": "Stock Summary",
+    "reports.adjustmentsTitle": "Stock Adjustments",
+    "reports.adjustmentsIntro": "Where stock went when it was not sold. Grouped by the reason given at the time.",
+    "reports.adjustmentsNet": "TOTAL",
+    "reports.byCategoryTitle": "Expenses by Category",
+    "reports.natureDirect": "Direct", "reports.natureIndirect": "Indirect",
+    "kpi.receivable": "Owed to you", "kpi.receivableDelta": "Customer credit outstanding",
+    "kpi.payable": "You owe suppliers", "kpi.payableDelta": "Unpaid deliveries",
+    "product.unitLabel": "Unit", "product.unitPlaceholder": "e.g. piece, crate, kg",
+    "product.skuLabel": "SKU (optional)", "product.activeLabel": "Status",
+    "product.activeYes": "Active", "product.activeNo": "Inactive — stop selling it",
+    "movement.colProduct": "Product",
+    "reports.thCustomer": "Customer", "reports.thOrders": "Orders", "reports.thRevenue": "Revenue",
+    "reports.thOrder": "Order", "reports.thRefunded": "Refunded",
+    "reports.thNetUnits": "Units (net)", "reports.thReturned": "Returned", "reports.thNetSpend": "Spent (net)",
+    "reports.thValue": "Value", "reports.thWhy": "Why",
+    "reports.thCategory": "Category", "reports.thOnShelf": "On the shelf",
+    "reports.thMinimum": "Minimum", "reports.thState": "State",
+    "reports.thTimes": "Times", "reports.thNature": "Direct or indirect", "reports.thAmount": "Amount",
+    "reports.stockOk": "OK", "reports.stockLow": "Low", "reports.stockOut": "Out",
+    "reports.noSalesInRange": "No sales in this range.",
+    "reports.noReturnsInRange": "No returns in this range.",
+    "reports.noProducts": "No products yet.",
+    "reports.noExpenses": "No expenses recorded yet.",
+    "reports.noPurchases": "Nothing bought yet.",
+    "reports.noPurchaseReturns": "Nothing has been sent back to a supplier.",
+    "reports.noSupplierBalances": "You do not owe any supplier right now.",
+    "reports.noAdjustments": "No stock adjustments recorded.",
+    "product.quantityLocked": "Use Adjust on the inventory row to correct the shelf count, so the change is recorded with a reason.",
+    "adjust.action": "Adjust", "adjust.title": "Adjust Stock",
+    "adjust.currentLabel": "Currently on the shelf", "adjust.newLabel": "Counted / corrected to",
+    "adjust.reasonLabel": "Why", "adjust.noteLabel": "Note (optional)",
+    "adjust.saveButton": "Record Adjustment",
+    "adjust.qtyInvalid": "Enter the number now on the shelf.",
+    "adjust.noChange": "That is the same as the current count, so there is nothing to record.",
+    "adjust.deltaNone": "No change.",
+    "adjust.deltaUp": "Adds {units} to the shelf.",
+    "adjust.deltaDown": "Takes {units} off the shelf.",
+    "adjust.reason.count": "Physical stock count", "adjust.reason.damaged": "Damaged",
+    "adjust.reason.expired": "Expired", "adjust.reason.lost": "Lost",
+    "adjust.reason.theft": "Theft", "adjust.reason.correction": "Correction",
+    "adjust.reason.opening": "Opening stock", "adjust.reason.other": "Other",
+    "movement.ledgerSectionTitle": "Stock movements",
+    "movement.ledgerSubtitle": "Everything that moved this product, oldest first, with the shelf count carried down.",
+    "movement.colWhat": "What happened", "movement.colIn": "In", "movement.colOut": "Out",
+    "movement.colBalance": "Balance",
+    "movement.balanceUnknown": "not recorded",
+    "movement.noLedger": "Nothing has moved this product yet.",
+    "movement.reason.sale": "Sale", "movement.reason.restock": "Purchase / restock",
+    "movement.reason.return": "Customer return", "movement.reason.void": "Sale voided",
+    "movement.reason.transfer-in": "Transferred in", "movement.reason.transfer-out": "Transferred out",
+    "movement.reason.adjustment": "Adjustment", "movement.reason.supplier-return": "Returned to supplier",
+    "purchaseReturn.action": "Return", "purchaseReturn.allReturned": "All returned",
+    "purchaseReturn.title": "Return to Supplier",
+    "purchaseReturn.summary": "{qty} bought from {supplier}. Up to {max} can still go back.",
+    "purchaseReturn.noSupplier": "no supplier recorded",
+    "purchaseReturn.qtyLabel": "Units going back",
+    "purchaseReturn.reasonLabel": "Why (optional)",
+    "purchaseReturn.reasonPlaceholder": "e.g. damaged in transit",
+    "purchaseReturn.saveButton": "Record Return",
+    "purchaseReturn.qtyInvalid": "Enter how many units are going back.",
+    "purchaseReturn.qtyTooMany": "Only {max} of this purchase can still be returned.",
+    "purchaseReturn.notEnoughStock": "There is not enough of this product on the shelf to send back. Count the shelf first.",
+    "deliveries.thPayment": "Payment",
+    "suppliers.thOwed": "You owe them", "suppliers.statement": "Statement",
+    "suppliers.payButton": "Pay",
+    "suppliers.paymentTitle": "Record Payment",
+    "suppliers.paymentAmountLabel": "Amount", "suppliers.paymentMethodLabel": "Paid by",
+    "suppliers.paymentReferenceLabel": "Reference (optional)", "suppliers.paymentNoteLabel": "Note (optional)",
+    "suppliers.paymentSaveButton": "Record Payment",
+    "suppliers.paymentOwedNow": "You currently owe them {amount}.",
+    "suppliers.paymentAmountInvalid": "Enter an amount greater than zero.",
+    "suppliers.paymentTooMuch": "That is more than you owe them ({owed}). Record what you actually paid.",
+    "suppliers.paymentNothingOwed": "Nothing is owed to this supplier any more.",
+    "suppliers.statementTitle": "Supplier Statement",
+    "suppliers.statementIntro": "What you have bought from {name}, and what you have paid them.",
+    "suppliers.statementOpening": "Owed before you started using SaviaSmart",
+    "suppliers.statementBought": "Bought from them",
+    "suppliers.statementPaidOnDelivery": "Paid when the goods arrived",
+    "suppliers.statementPaid": "Paid to them since",
+    "suppliers.statementOwed": "STILL OWED",
+    "suppliers.statementPurchasesTitle": "Bought", "suppliers.statementPaymentsTitle": "Paid",
+    "suppliers.statementColWhat": "What",
+    "suppliers.statementNoPurchases": "Nothing bought from them yet.",
+    "suppliers.statementNoPayments": "No payments recorded yet.",
+    "suppliers.statementBoundedNote": "The lists show recent history. The amount still owed is kept as a running figure, so it stays right even when the history is longer than this.",
+    "deliveries.amountPaidLabel": "Amount paid now (optional)",
+    "deliveries.amountPaidPlaceholder": "Blank = paid in full",
+    "deliveries.paymentMethodLabel": "Paid by",
+    "deliveries.amountDueLabel": "Still owed on this delivery",
+    "deliveries.statusPaid": "Paid", "deliveries.statusPartial": "Partially paid", "deliveries.statusCredit": "On credit",
+    "deliveries.amountPaidInvalid": "Enter 0 or more, and no more than the delivery total.",
+    "deliveries.creditNeedsSupplier": "Pick a supplier you have recorded before buying on credit, so the debt has somewhere to go.",
+    "txerror.supplierGone": "That supplier record no longer exists.",
+    "suppliers.eyebrow": "Who you buy from", "suppliers.title": "Suppliers",
+    "suppliers.addButton": "+ Supplier", "suppliers.edit": "Edit",
+    "suppliers.intro": "A supplier recorded here can be picked when you buy, so purchases group under one name instead of however it was typed that day.",
+    "suppliers.empty": "No suppliers yet. Add the people you buy stock from.",
+    "suppliers.thName": "Supplier", "suppliers.thPhone": "Phone", "suppliers.thTin": "TIN",
+    "suppliers.thPurchases": "Bought from them", "suppliers.thStatus": "Status", "suppliers.thActions": "Actions",
+    "suppliers.dialogTitle": "Add Supplier", "suppliers.dialogTitleEdit": "Edit Supplier",
+    "suppliers.nameLabel": "Supplier name", "suppliers.namePlaceholder": "e.g. Twiga Cement",
+    "suppliers.phoneLabel": "Phone", "suppliers.emailLabel": "Email", "suppliers.tinLabel": "TIN",
+    "suppliers.addressLabel": "Address",
+    "suppliers.openingBalanceLabel": "Already owed to them",
+    "suppliers.openingBalanceHint": "Leave at 0 unless you already owed them before you started using SaviaSmart.",
+    "suppliers.openingBalanceInvalid": "Enter 0 or a positive amount.",
+    "suppliers.statusLabel": "Status", "suppliers.statusActive": "Active",
+    "suppliers.statusInactive": "Inactive — stop offering them", "suppliers.statusInactiveShort": "Inactive",
+    "suppliers.saveButton": "Save Supplier",
+    "suppliers.nameRequired": "Enter the supplier's name.",
+    "suppliers.nameTaken": "You already have a supplier with this name.",
     "settings.emailLabel": "Email", "settings.changeNameButton": "Change Name",
     "settings.branchEyebrow": "This branch",
     "settings.branchTitle": "Branch & business",
@@ -373,7 +510,7 @@ const DICTIONARY = {
     "pos.eyebrow": "Fast checkout", "pos.title": "Point of Sale", "pos.productSearch": "Product Search",
     "pos.searchPlaceholder": "Search products", "pos.currentSale": "Current Sale",
     "pos.undoAction": "Undo Last Action", "pos.clearCart": "Clear Cart", "pos.total": "Total",
-    "pos.cash": "Cash", "pos.mobile": "Mobile Money", "pos.card": "Card",
+    "pos.cash": "Cash", "pos.mobile": "Mobile Money", "pos.card": "Card", "pos.bank": "Bank",
     "pos.amountTendered": "Amount tendered", "pos.tenderedPlaceholder": "Enter cash received",
     "pos.changeDue": "Change due", "pos.completeSale": "Complete Sale", "pos.undoSale": "Undo Last Sale",
     "pos.staffLabel": "Staff member", "pos.selectStaffPlaceholder": "Select staff",
@@ -955,6 +1092,14 @@ const DICTIONARY = {
     "dialog.archiveStoreConfirm": "Archive \"{name}\"? It will be hidden from the store switcher but its history is kept.",
     "toast.selectSpecificStore": "Select a specific store first.",
     "toast.ownerNameSaved": "Your name has been saved.", "toast.couldNotSaveOwnerName": "Could not save your name.",
+    "toast.supplierAdded": "{name} added to suppliers.", "toast.supplierUpdated": "{name} updated.",
+    "toast.couldNotSaveSupplier": "Could not save supplier.",
+    "toast.supplierPaymentRecorded": "Payment to {name} recorded.",
+    "toast.couldNotSaveSupplierPayment": "Could not record that payment.",
+    "toast.purchaseReturnRecorded": "{qty} x {name} returned to the supplier.",
+    "toast.couldNotSavePurchaseReturn": "Could not record that return.",
+    "toast.adjustmentRecorded": "Stock adjusted for {name}.",
+    "toast.couldNotSaveAdjustment": "Could not record that adjustment.",
     "toast.storeRenamed": "Store renamed to {name}.", "toast.couldNotRenameStore": "Could not rename store.",
     "toast.businessTypeSet": "Business type updated. Category suggestions will reflect it.",
     "toast.storeArchived": "{name} archived.", "toast.couldNotArchiveStore": "Could not archive store.",
@@ -1063,6 +1208,8 @@ const DICTIONARY = {
     "toast.authWeakPassword": "Use a password with at least 6 characters.",
     "toast.authOperationNotAllowed": "Enable Email/Password sign-in in Firebase Auth.",
     "toast.passwordResetSent": "If an account exists for that email, a password reset link has been sent.",
+    "toast.passwordResetOffline": "You are offline, so the reset email cannot be sent. Reconnect and try again.",
+    "toast.passwordResetFailed": "The reset email could not be sent. Check your connection and try again.",
     "toast.verificationEmailSent": "Verification email sent. Please check your inbox.",
     "toast.verificationEmailFailed": "Could not send the verification email. Please try again shortly.",
     "toast.emailVerified": "Email address verified. Thank you.",
@@ -1448,6 +1595,139 @@ const DICTIONARY = {
     "settings.title": "Mipangilio",
     "settings.accountTitle": "Akaunti",
     "settings.signedInAs": "Umeingia kama",
+    "reports.groupFinancial": "Fedha", "reports.groupSales": "Mauzo",
+    "reports.groupPurchases": "Manunuzi", "reports.groupInventory": "Hisa",
+    "reports.groupExpenses": "Matumizi",
+    "reports.ledgerPendingTitle": "Mizania, Salio la Majaribio, Mtiririko wa Fedha na Leja Kuu",
+    "reports.ledgerPendingBody": "Hizi nne ni taarifa za leja ya kuingiza mara mbili, ambayo mfumo huu bado hauitunzi. Faida na Hasara inapatikana sasa, kwenye kichupo chake, kwa sababu inajengwa kutoka kwenye miamala yenyewe.",
+    "reports.openProfit": "Fungua Faida na Hasara",
+    "reports.byCustomerTitle": "Mauzo kwa Mteja",
+    "reports.byCustomerIntro": "Inatumia kipindi kilichochaguliwa hapo juu. Mauzo yasiyo na mteja yamewekwa pamoja kama ya kupita, badala ya kuachwa nje.",
+    "reports.walkIn": "Mteja wa kupita",
+    "reports.salesReturnsTitle": "Marejesho ya Mauzo",
+    "reports.purchaseSummaryTitle": "Muhtasari wa Manunuzi",
+    "reports.purchaseGross": "Ulichonunua", "reports.purchaseGrossNote": "Safu {count} za manunuzi, vipande {units}.",
+    "reports.purchaseReturned": "Ulichorudisha",
+    "reports.purchaseReturnedNote": "Vipande {units} vimerudishwa kwa wasambazaji.",
+    "reports.purchaseReturnedNone": "Hakuna kilichorudishwa.",
+    "reports.purchaseNet": "Manunuzi halisi", "reports.purchaseNetNote": "Ulichonunua, ukiondoa kilichorudi.",
+    "reports.byProductPurchaseTitle": "Manunuzi kwa Bidhaa",
+    "reports.purchaseReturnsTitle": "Marejesho ya Manunuzi",
+    "reports.supplierBalancesTitle": "Salio za Wasambazaji",
+    "reports.supplierBalancesIntro": "Kile biashara inachodaiwa. Wamesajiliwa tu wenye kiasi kilichobaki.",
+    "reports.supplierBalancesTotal": "JUMLA INAYODAIWA",
+    "reports.stockSummaryTitle": "Muhtasari wa Hisa",
+    "reports.adjustmentsTitle": "Marekebisho ya Hisa",
+    "reports.adjustmentsIntro": "Hisa ilikoenda pasipo kuuzwa. Imepangwa kwa sababu iliyotolewa wakati huo.",
+    "reports.adjustmentsNet": "JUMLA",
+    "reports.byCategoryTitle": "Matumizi kwa Aina",
+    "reports.natureDirect": "Ya moja kwa moja", "reports.natureIndirect": "Ya jumla",
+    "kpi.receivable": "Unachodai", "kpi.receivableDelta": "Deni la wateja lililobaki",
+    "kpi.payable": "Unachodaiwa na wasambazaji", "kpi.payableDelta": "Usafirishaji ambao haujalipwa",
+    "product.unitLabel": "Kipimo", "product.unitPlaceholder": "mfano kipande, kreti, kg",
+    "product.skuLabel": "SKU (hiari)", "product.activeLabel": "Hali",
+    "product.activeYes": "Inatumika", "product.activeNo": "Haitumiki — acha kuiuza",
+    "movement.colProduct": "Bidhaa",
+    "reports.thCustomer": "Mteja", "reports.thOrders": "Oda", "reports.thRevenue": "Mapato",
+    "reports.thOrder": "Oda", "reports.thRefunded": "Kilichorejeshwa",
+    "reports.thNetUnits": "Vipande (halisi)", "reports.thReturned": "Vilivyorudi", "reports.thNetSpend": "Kilichotumika (halisi)",
+    "reports.thValue": "Thamani", "reports.thWhy": "Kwa nini",
+    "reports.thCategory": "Aina", "reports.thOnShelf": "Zilizopo rafuni",
+    "reports.thMinimum": "Kiwango cha chini", "reports.thState": "Hali",
+    "reports.thTimes": "Mara", "reports.thNature": "Moja kwa moja au jumla", "reports.thAmount": "Kiasi",
+    "reports.stockOk": "Sawa", "reports.stockLow": "Chache", "reports.stockOut": "Zimeisha",
+    "reports.noSalesInRange": "Hakuna mauzo katika kipindi hiki.",
+    "reports.noReturnsInRange": "Hakuna marejesho katika kipindi hiki.",
+    "reports.noProducts": "Hakuna bidhaa bado.",
+    "reports.noExpenses": "Hakuna matumizi yaliyorekodiwa bado.",
+    "reports.noPurchases": "Hakuna ulichonunua bado.",
+    "reports.noPurchaseReturns": "Hakuna kilichorudishwa kwa msambazaji.",
+    "reports.noSupplierBalances": "Huna deni kwa msambazaji yeyote sasa.",
+    "reports.noAdjustments": "Hakuna marekebisho ya hisa yaliyorekodiwa.",
+    "product.quantityLocked": "Tumia Rekebisha kwenye safu ya bidhaa kusahihisha hesabu ya rafu, ili mabadiliko yarekodiwe na sababu.",
+    "adjust.action": "Rekebisha", "adjust.title": "Rekebisha Hisa",
+    "adjust.currentLabel": "Zilizopo rafuni sasa", "adjust.newLabel": "Zilizohesabiwa / sahihi ni",
+    "adjust.reasonLabel": "Kwa nini", "adjust.noteLabel": "Maelezo (hiari)",
+    "adjust.saveButton": "Rekodi Marekebisho",
+    "adjust.qtyInvalid": "Weka idadi iliyopo rafuni sasa.",
+    "adjust.noChange": "Hiyo ni sawa na hesabu ya sasa, hivyo hakuna cha kurekodi.",
+    "adjust.deltaNone": "Hakuna mabadiliko.",
+    "adjust.deltaUp": "Inaongeza {units} rafuni.",
+    "adjust.deltaDown": "Inaondoa {units} rafuni.",
+    "adjust.reason.count": "Hesabu ya hisa", "adjust.reason.damaged": "Zimeharibika",
+    "adjust.reason.expired": "Zimeisha muda", "adjust.reason.lost": "Zimepotea",
+    "adjust.reason.theft": "Wizi", "adjust.reason.correction": "Marekebisho",
+    "adjust.reason.opening": "Hisa ya kuanzia", "adjust.reason.other": "Nyingine",
+    "movement.ledgerSectionTitle": "Mienendo ya hisa",
+    "movement.ledgerSubtitle": "Kila kilichosogeza bidhaa hii, kuanzia za zamani, na hesabu ya rafu ikishuka nayo.",
+    "movement.colWhat": "Kilichotokea", "movement.colIn": "Ndani", "movement.colOut": "Nje",
+    "movement.colBalance": "Salio",
+    "movement.balanceUnknown": "haikurekodiwa",
+    "movement.noLedger": "Hakuna kilichosogeza bidhaa hii bado.",
+    "movement.reason.sale": "Mauzo", "movement.reason.restock": "Manunuzi / kujaza",
+    "movement.reason.return": "Marejesho ya mteja", "movement.reason.void": "Mauzo yamefutwa",
+    "movement.reason.transfer-in": "Imehamishwa ndani", "movement.reason.transfer-out": "Imehamishwa nje",
+    "movement.reason.adjustment": "Marekebisho", "movement.reason.supplier-return": "Imerudishwa kwa msambazaji",
+    "purchaseReturn.action": "Rudisha", "purchaseReturn.allReturned": "Zote zimerudishwa",
+    "purchaseReturn.title": "Rudisha kwa Msambazaji",
+    "purchaseReturn.summary": "{qty} zilinunuliwa kwa {supplier}. Hadi {max} bado zinaweza kurudi.",
+    "purchaseReturn.noSupplier": "hakuna msambazaji aliyerekodiwa",
+    "purchaseReturn.qtyLabel": "Idadi inayorudi",
+    "purchaseReturn.reasonLabel": "Kwa nini (hiari)",
+    "purchaseReturn.reasonPlaceholder": "mfano ziliharibika njiani",
+    "purchaseReturn.saveButton": "Rekodi Marejesho",
+    "purchaseReturn.qtyInvalid": "Weka idadi ya vipande vinavyorudi.",
+    "purchaseReturn.qtyTooMany": "Ni {max} tu za manunuzi haya zinazoweza kurudishwa.",
+    "purchaseReturn.notEnoughStock": "Hakuna bidhaa za kutosha rafuni kuzirudisha. Hesabu rafu kwanza.",
+    "deliveries.thPayment": "Malipo",
+    "suppliers.thOwed": "Unawadai", "suppliers.statement": "Taarifa",
+    "suppliers.payButton": "Lipa",
+    "suppliers.paymentTitle": "Rekodi Malipo",
+    "suppliers.paymentAmountLabel": "Kiasi", "suppliers.paymentMethodLabel": "Umelipa kwa",
+    "suppliers.paymentReferenceLabel": "Kumbukumbu (hiari)", "suppliers.paymentNoteLabel": "Maelezo (hiari)",
+    "suppliers.paymentSaveButton": "Rekodi Malipo",
+    "suppliers.paymentOwedNow": "Kwa sasa unawadai {amount}.",
+    "suppliers.paymentAmountInvalid": "Weka kiasi kikubwa kuliko sifuri.",
+    "suppliers.paymentTooMuch": "Hicho ni zaidi ya unavyowadai ({owed}). Rekodi ulicholipa hasa.",
+    "suppliers.paymentNothingOwed": "Huna deni tena kwa msambazaji huyu.",
+    "suppliers.statementTitle": "Taarifa ya Msambazaji",
+    "suppliers.statementIntro": "Ulichonunua kwa {name}, na ulichowalipa.",
+    "suppliers.statementOpening": "Deni kabla ya kuanza kutumia SaviaSmart",
+    "suppliers.statementBought": "Ulichonunua kwao",
+    "suppliers.statementPaidOnDelivery": "Ulicholipa bidhaa zilipofika",
+    "suppliers.statementPaid": "Ulichowalipa baadaye",
+    "suppliers.statementOwed": "BADO UNADAIWA",
+    "suppliers.statementPurchasesTitle": "Manunuzi", "suppliers.statementPaymentsTitle": "Malipo",
+    "suppliers.statementColWhat": "Kitu",
+    "suppliers.statementNoPurchases": "Hakuna ulichonunua kwao bado.",
+    "suppliers.statementNoPayments": "Hakuna malipo yaliyorekodiwa bado.",
+    "suppliers.statementBoundedNote": "Orodha zinaonyesha historia ya karibuni. Kiasi kinachodaiwa huhifadhiwa kama namba inayoendelea, hivyo hubaki sahihi hata historia ikiwa ndefu kuliko hii.",
+    "deliveries.amountPaidLabel": "Kiasi ulicholipa sasa (hiari)",
+    "deliveries.amountPaidPlaceholder": "Wazi = umelipa yote",
+    "deliveries.paymentMethodLabel": "Umelipa kwa",
+    "deliveries.amountDueLabel": "Bado unadaiwa kwa usafirishaji huu",
+    "deliveries.statusPaid": "Imelipwa", "deliveries.statusPartial": "Imelipwa kiasi", "deliveries.statusCredit": "Kwa deni",
+    "deliveries.amountPaidInvalid": "Weka 0 au zaidi, na isizidi jumla ya usafirishaji.",
+    "deliveries.creditNeedsSupplier": "Chagua msambazaji uliyemrekodi kabla ya kununua kwa deni, ili deni liwe na pa kwenda.",
+    "txerror.supplierGone": "Rekodi ya msambazaji huyo haipo tena.",
+    "suppliers.eyebrow": "Unaonunua kwao", "suppliers.title": "Wasambazaji",
+    "suppliers.addButton": "+ Msambazaji", "suppliers.edit": "Hariri",
+    "suppliers.intro": "Msambazaji aliyerekodiwa hapa anaweza kuchaguliwa unaponunua, ili manunuzi yajikusanye chini ya jina moja badala ya jinsi lilivyoandikwa siku hiyo.",
+    "suppliers.empty": "Hakuna wasambazaji bado. Ongeza wale unaonunua bidhaa kwao.",
+    "suppliers.thName": "Msambazaji", "suppliers.thPhone": "Simu", "suppliers.thTin": "TIN",
+    "suppliers.thPurchases": "Ulichonunua kwao", "suppliers.thStatus": "Hali", "suppliers.thActions": "Vitendo",
+    "suppliers.dialogTitle": "Ongeza Msambazaji", "suppliers.dialogTitleEdit": "Hariri Msambazaji",
+    "suppliers.nameLabel": "Jina la msambazaji", "suppliers.namePlaceholder": "mfano Twiga Cement",
+    "suppliers.phoneLabel": "Simu", "suppliers.emailLabel": "Barua pepe", "suppliers.tinLabel": "TIN",
+    "suppliers.addressLabel": "Anwani",
+    "suppliers.openingBalanceLabel": "Unachodaiwa nao tayari",
+    "suppliers.openingBalanceHint": "Acha 0 isipokuwa ulikuwa unawadai kabla ya kuanza kutumia SaviaSmart.",
+    "suppliers.openingBalanceInvalid": "Weka 0 au kiasi chanya.",
+    "suppliers.statusLabel": "Hali", "suppliers.statusActive": "Anatumika",
+    "suppliers.statusInactive": "Hatumiki — acha kumpendekeza", "suppliers.statusInactiveShort": "Hatumiki",
+    "suppliers.saveButton": "Hifadhi Msambazaji",
+    "suppliers.nameRequired": "Weka jina la msambazaji.",
+    "suppliers.nameTaken": "Tayari una msambazaji mwenye jina hili.",
     "settings.emailLabel": "Barua pepe", "settings.changeNameButton": "Badilisha Jina",
     "settings.branchEyebrow": "Tawi hili",
     "settings.branchTitle": "Tawi na biashara",
@@ -1488,7 +1768,7 @@ const DICTIONARY = {
     "pos.eyebrow": "Malipo ya haraka", "pos.title": "Sehemu ya Mauzo", "pos.productSearch": "Tafuta Bidhaa",
     "pos.searchPlaceholder": "Tafuta bidhaa", "pos.currentSale": "Mauzo ya Sasa",
     "pos.undoAction": "Tengua Kitendo cha Mwisho", "pos.clearCart": "Futa Kikapu", "pos.total": "Jumla",
-    "pos.cash": "Fedha Taslimu", "pos.mobile": "Pesa za Simu", "pos.card": "Kadi",
+    "pos.cash": "Fedha Taslimu", "pos.mobile": "Pesa za Simu", "pos.card": "Kadi", "pos.bank": "Benki",
     "pos.amountTendered": "Kiasi kilicholipwa", "pos.tenderedPlaceholder": "Weka fedha zilizopokelewa",
     "pos.changeDue": "Chenji", "pos.completeSale": "Kamilisha Mauzo", "pos.undoSale": "Tengua Mauzo ya Mwisho",
     "pos.staffLabel": "Mfanyakazi", "pos.selectStaffPlaceholder": "Chagua mfanyakazi",
@@ -2070,6 +2350,14 @@ const DICTIONARY = {
     "dialog.archiveStoreConfirm": "Hifadhi kumbukumbu ya \"{name}\"? Litafichwa kwenye kibadilishaji duka lakini historia yake itabaki.",
     "toast.selectSpecificStore": "Chagua duka mahususi kwanza.",
     "toast.ownerNameSaved": "Jina lako limehifadhiwa.", "toast.couldNotSaveOwnerName": "Imeshindwa kuhifadhi jina lako.",
+    "toast.supplierAdded": "{name} ameongezwa kwa wasambazaji.", "toast.supplierUpdated": "{name} amesasishwa.",
+    "toast.couldNotSaveSupplier": "Imeshindwa kuhifadhi msambazaji.",
+    "toast.supplierPaymentRecorded": "Malipo kwa {name} yamerekodiwa.",
+    "toast.couldNotSaveSupplierPayment": "Imeshindwa kurekodi malipo hayo.",
+    "toast.purchaseReturnRecorded": "{qty} x {name} zimerudishwa kwa msambazaji.",
+    "toast.couldNotSavePurchaseReturn": "Imeshindwa kurekodi marejesho hayo.",
+    "toast.adjustmentRecorded": "Hisa ya {name} imerekebishwa.",
+    "toast.couldNotSaveAdjustment": "Imeshindwa kurekodi marekebisho hayo.",
     "toast.storeRenamed": "Jina la duka limebadilishwa kuwa {name}.", "toast.couldNotRenameStore": "Imeshindwa kubadilisha jina la duka.",
     "toast.businessTypeSet": "Aina ya biashara imesasishwa. Mapendekezo ya aina za bidhaa yatabadilika.",
     "toast.storeArchived": "{name} imehifadhiwa kumbukumbu.", "toast.couldNotArchiveStore": "Imeshindwa kuhifadhi kumbukumbu ya duka.",
@@ -2178,6 +2466,8 @@ const DICTIONARY = {
     "toast.authWeakPassword": "Tumia nenosiri lenye angalau herufi 6.",
     "toast.authOperationNotAllowed": "Wezesha kuingia kwa Barua pepe/Nenosiri kwenye Firebase Auth.",
     "toast.passwordResetSent": "Kama akaunti ipo kwa barua pepe hiyo, kiungo cha kubadilisha nenosiri kimetumwa.",
+    "toast.passwordResetOffline": "Hauko mtandaoni, hivyo barua pepe ya kubadilisha nenosiri haiwezi kutumwa. Unganisha kisha ujaribu tena.",
+    "toast.passwordResetFailed": "Barua pepe ya kubadilisha nenosiri haikuweza kutumwa. Angalia muunganisho wako kisha ujaribu tena.",
     "toast.verificationEmailSent": "Barua pepe ya uthibitisho imetumwa. Tafadhali angalia kikasha chako.",
     "toast.verificationEmailFailed": "Imeshindwa kutuma barua pepe ya uthibitisho. Tafadhali jaribu tena baadaye.",
     "toast.emailVerified": "Barua pepe yako imethibitishwa. Asante.",
@@ -2784,6 +3074,21 @@ function renderKpis() {
     [t("kpi.outStock"), metrics.out, t("kpi.outStockDelta")]
   ];
 
+  // Spec 11 asks the dashboard for Accounts Receivable and Accounts Payable.
+  // Both are owner figures -- one is what the shop is owed, the other what it
+  // owes -- and both are STORED running balances rather than sums of the
+  // history a client happens to hold, for the reason given in the /suppliers
+  // rules. Shown only to an owner, and only once there is something to show:
+  // two permanent zeroes on a duka's dashboard are noise.
+  if (isOwnerRole()) {
+    const receivable = (state.customers || [])
+      .reduce((sum, customer) => sum + safeNumber(customer.balanceOwed), 0);
+    const payable = (state.suppliers || [])
+      .reduce((sum, supplier) => sum + safeNumber(supplier.balanceOwed), 0);
+    if (receivable > 0) cards.push([t("kpi.receivable"), money(receivable), t("kpi.receivableDelta")]);
+    if (payable > 0) cards.push([t("kpi.payable"), money(payable), t("kpi.payableDelta")]);
+  }
+
   qs("#kpiGrid").innerHTML = cards
     .map(([label, value, delta]) => `<div class="kpi-card"><span class="muted">${label}</span><strong>${value}</strong><span class="delta">${delta}</span></div>`)
     .join("");
@@ -3248,6 +3553,7 @@ function renderInventory() {
         <td>${expiryBadgeHtml(product)}</td>
         <td class="table-actions">
           ${isOwnerRole() ? `<button class="ghost-button compact" data-edit-product="${product.id}">${t("inventory.edit")}</button>` : ""}
+          ${isManagerOrOwnerRole() ? `<button class="ghost-button compact" data-adjust-product="${product.id}">${t("adjust.action")}</button>` : ""}
           <button class="ghost-button compact" data-restock-product="${product.id}">${t("inventory.restock")}</button>
           ${activeStores().length > 1 && isManagerOrOwnerRole() ? `<button class="ghost-button compact" data-transfer-product="${product.id}">${t("inventory.transfer")}</button>` : ""}
           ${isOwnerRole() ? `<button class="ghost-button compact danger" data-delete-product="${product.id}">${t("inventory.delete")}</button>` : ""}
@@ -3277,7 +3583,13 @@ function renderInventory() {
 
 function renderPosProducts() {
   const term = qs("#posSearch").value.trim().toLowerCase();
-  const products = storeProducts().filter((product) => !term || [product.name, product.category, product.brand, product.supplier].join(" ").toLowerCase().includes(term));
+  // Spec 4.1. A discontinued line stays in inventory, in reports and on the
+  // purchases already made, but stops being offered for sale. `active` is
+  // absent on every product that predates the field, so ABSENT MUST READ AS
+  // ACTIVE -- the other way round empties the till for all eight live shops.
+  const products = storeProducts()
+    .filter((product) => product.active !== false)
+    .filter((product) => !term || [product.name, product.category, product.brand, product.supplier].join(" ").toLowerCase().includes(term));
   qs("#posProducts").innerHTML = products
     .slice(0, 8)
     .map((product) => `<div class="pos-product">
@@ -4467,6 +4779,8 @@ function renderPaymentReports() {
   renderVatReport();
   renderStaffOrderLookupSelect();
   renderCustomerAccounts();
+  renderSuppliers();
+  renderSpecReports();
 }
 
 // Sales rung up during an outage, grouped by the product whose count they made
@@ -4604,7 +4918,7 @@ function computeStaffBreakdown() {
   sales.forEach((sale) => {
     const key = sale.staffId || "unassigned";
     if (!byStaff.has(key)) {
-      byStaff.set(key, { staffName: sale.staffName || t("report.none"), cash: 0, mobile: 0, card: 0, collected: 0, net: 0, orders: 0 });
+      byStaff.set(key, { staffName: sale.staffName || t("report.none"), cash: 0, mobile: 0, card: 0, bank: 0, collected: 0, net: 0, orders: 0 });
     }
     const entry = byStaff.get(key);
     // Two different questions, and collapsing them into one "Total" column was
@@ -4612,10 +4926,13 @@ function computeStaffBreakdown() {
     // credit sale while its cash/mobile/card columns held only the deposit, so
     // the row visibly did not add up. It is a real distinction -- sold is not
     // collected -- so it is now two columns rather than one ambiguous number.
-    for (const method of ["cash", "mobile", "card"]) {
+    for (const method of ["cash", "mobile", "card", "bank"]) {
       entry[method] += saleAmountForMethod(sale, method);
     }
-    entry.collected = entry.cash + entry.mobile + entry.card;
+    // Every method the till offers, or money taken by the one left out simply
+    // stops appearing in Collected -- which reads as a staff member who sold
+    // and banked nothing.
+    entry.collected = entry.cash + entry.mobile + entry.card + entry.bank;
     // Net of anything given back. Judged on the gross figure, a commission
     // rewarded goods that came back.
     entry.net += saleNetTotal(sale);
@@ -4633,11 +4950,12 @@ function renderStaffBreakdown() {
       cash: acc.cash + row.cash,
       mobile: acc.mobile + row.mobile,
       card: acc.card + row.card,
+      bank: acc.bank + row.bank,
       collected: acc.collected + row.collected,
       net: acc.net + row.net,
       orders: acc.orders + row.orders
     }),
-    { cash: 0, mobile: 0, card: 0, collected: 0, net: 0, orders: 0 }
+    { cash: 0, mobile: 0, card: 0, bank: 0, collected: 0, net: 0, orders: 0 }
   );
 
   const bodyRows = rows
@@ -4647,6 +4965,7 @@ function renderStaffBreakdown() {
         <td>${money(row.cash)}</td>
         <td>${money(row.mobile)}</td>
         <td>${money(row.card)}</td>
+        <td>${money(row.bank)}</td>
         <td>${money(row.collected)}</td>
         <td><strong>${money(row.net)}</strong></td>
         <td>${row.orders}</td>
@@ -4660,13 +4979,14 @@ function renderStaffBreakdown() {
         <td><strong>${money(totals.cash)}</strong></td>
         <td><strong>${money(totals.mobile)}</strong></td>
         <td><strong>${money(totals.card)}</strong></td>
+        <td><strong>${money(totals.bank)}</strong></td>
         <td><strong>${money(totals.collected)}</strong></td>
         <td><strong>${money(totals.net)}</strong></td>
         <td><strong>${totals.orders}</strong></td>
       </tr>`
     : "";
 
-  tbody.innerHTML = bodyRows + totalRow || `<tr><td colspan="7" class="empty-state">${t("cart.empty")}</td></tr>`;
+  tbody.innerHTML = bodyRows + totalRow || `<tr><td colspan="8" class="empty-state">${t("cart.empty")}</td></tr>`;
 }
 
 function saleMatchesDate(sale, dateStr) {
@@ -6193,6 +6513,986 @@ function moneyAuditEntry(action, fields) {
   return entry;
 }
 
+// --- Suppliers. DESIGN-suppliers-purchases.md 4. ---------------------------
+
+function renderSuppliers() {
+  const table = qs("#suppliersTable");
+  if (!table) return;
+  const panel = qs("#suppliersPanel");
+  // Purchasing is not a till function, and the write rules agree: owner and
+  // manager only. Hidden rather than read-only, because a cashier has nothing
+  // to do on this panel at all.
+  if (panel) panel.hidden = !isManagerOrOwnerRole();
+  if (!isManagerOrOwnerRole()) { table.innerHTML = ""; return; }
+
+  const suppliers = state.suppliers || [];
+
+  // The free-text supplier boxes on the delivery and restock forms offer these
+  // names, so a name that already exists gets picked rather than retyped
+  // slightly differently -- which is what makes supplierLinkFor() match.
+  const options = qs("#supplierNameOptions");
+  if (options) {
+    options.innerHTML = activeSuppliers()
+      .map((supplier) => `<option value="${esc(supplier.name || "")}"></option>`).join("");
+  }
+
+  if (!suppliers.length) {
+    table.innerHTML = `<tr><td colspan="6" class="empty-state">${t("suppliers.empty")}</td></tr>`;
+    return;
+  }
+
+  // What has been bought from each. Counts BOTH the linked purchases and the
+  // ones that only carry a typed name, so a supplier created today still shows
+  // the history that was recorded before they were a record.
+  const spendBySupplier = new Map();
+  for (const purchase of state.purchases || []) {
+    const key = purchase.supplierId || String(purchase.supplierName || "").trim().toLowerCase();
+    if (!key) continue;
+    spendBySupplier.set(key, safeNumber(spendBySupplier.get(key)) + safeNumber(purchase.totalPaid));
+  }
+
+  table.innerHTML = suppliers.map((supplier) => {
+    const byId = safeNumber(spendBySupplier.get(supplier.id));
+    const byName = safeNumber(spendBySupplier.get(String(supplier.name || "").trim().toLowerCase()));
+    const spend = byId + byName;
+    const owed = safeNumber(supplier.balanceOwed);
+    const active = supplier.active !== false;
+    return `<tr>
+      <td>${esc(supplier.name || "")}</td>
+      <td>${esc(supplier.phone || "-")}</td>
+      <td>${esc(supplier.tin || "-")}</td>
+      <td>${money(spend)}</td>
+      <td>${owed > 0 ? `<strong>${money(owed)}</strong>` : `<span class="muted">-</span>`}</td>
+      <td><span class="status ${active ? "healthy" : ""}">${t(active ? "suppliers.statusActive" : "suppliers.statusInactiveShort")}</span></td>
+      <td class="table-actions">
+        <button class="link-button" type="button" data-supplier-statement="${esc(supplier.id)}">${t("suppliers.statement")}</button>
+        ${owed > 0 ? `<button class="ghost-button compact" type="button" data-supplier-pay="${esc(supplier.id)}">${t("suppliers.payButton")}</button>` : ""}
+        <button class="link-button" type="button" data-edit-supplier="${esc(supplier.id)}">${t("suppliers.edit")}</button>
+      </td>
+    </tr>`;
+  }).join("");
+}
+
+function openSupplierDialog(supplierId) {
+  const dialog = qs("#supplierDialog");
+  const form = qs("#supplierForm");
+  if (!dialog || !form) return;
+  const supplier = supplierId ? supplierById(supplierId) : null;
+  form.reset();
+  qs("#supplierNameError").textContent = "";
+  qs("#supplierOpeningBalanceError").textContent = "";
+  qs("#supplierDialogTitle").textContent = t(supplier ? "suppliers.dialogTitleEdit" : "suppliers.dialogTitle");
+  form.elements.id.value = supplier?.id || "";
+  form.elements.name.value = supplier?.name || "";
+  form.elements.phone.value = supplier?.phone || "";
+  form.elements.email.value = supplier?.email || "";
+  form.elements.tin.value = supplier?.tin || "";
+  form.elements.address.value = supplier?.address || "";
+  form.elements.openingBalance.value = supplier ? safeNumber(supplier.openingBalance) : 0;
+  form.elements.active.value = supplier && supplier.active === false ? "false" : "true";
+  dialog.showModal();
+}
+
+async function saveSupplier(input) {
+  const existing = input.id ? supplierById(input.id) : null;
+
+  // "all stores" cannot own a document. The same refusal saveProduct(),
+  // saveService() and saveExpense() make.
+  if (!existing && state.currentStoreId === "all") return showToast(t("toast.selectStoreBeforeAdd"));
+  if (!existing && !state.currentStoreId) return showToast(t("toast.loadingStore"));
+  if (!state.db || !state.user || !state.businessOwnerUid) return showToast(t("toast.signInToAddStore"));
+
+  qs("#supplierNameError").textContent = "";
+  qs("#supplierOpeningBalanceError").textContent = "";
+
+  const name = String(input.name || "").trim().slice(0, 80);
+  if (!name) {
+    qs("#supplierNameError").textContent = t("suppliers.nameRequired");
+    return;
+  }
+
+  // Refused rather than merged: two suppliers with one name is the exact
+  // problem this record exists to end, and silently merging would attach a
+  // purchase to a supplier the user did not choose.
+  const clash = (state.suppliers || []).find((other) =>
+    other.id !== (existing?.id || "") &&
+    String(other.name || "").trim().toLowerCase() === name.toLowerCase());
+  if (clash) {
+    qs("#supplierNameError").textContent = t("suppliers.nameTaken");
+    return;
+  }
+
+  const openingBalance = clampNonNegativeNumber(input.openingBalance || 0, MAX_MONEY);
+  if (openingBalance === null) {
+    qs("#supplierOpeningBalanceError").textContent = t("suppliers.openingBalanceInvalid");
+    return;
+  }
+
+  try {
+    const { doc, collection, setDoc, serverTimestamp } = state.firebaseApi.firestore;
+    const payload = {
+      name,
+      storeId: existing?.storeId || state.currentStoreId,
+      openingBalance,
+      // Maintained by phase 2. Set once on creation so the rules' number check
+      // passes, and never recomputed here -- what is owed is the sum of
+      // purchases and payments, not something typed on this form.
+      balanceOwed: existing ? safeNumber(existing.balanceOwed) : openingBalance,
+      active: String(input.active) !== "false",
+      updatedAt: serverTimestamp()
+    };
+    // Optional fields are OMITTED when blank rather than written as "": the
+    // rules allow absence, and an empty string is a value that would overwrite
+    // something set from another device.
+    for (const [key, max] of [["phone", 20], ["email", 120], ["address", 200], ["tin", 40]]) {
+      const value = String(input[key] || "").trim().slice(0, max);
+      if (value) payload[key] = value;
+    }
+    if (!existing) payload.createdAt = serverTimestamp();
+
+    const ref = existing
+      ? doc(state.db, "users", state.businessOwnerUid, "suppliers", existing.id)
+      : doc(collection(state.db, "users", state.businessOwnerUid, "suppliers"));
+    await setDoc(ref, payload, { merge: true });
+    qs("#supplierDialog")?.close();
+    showToast(t(existing ? "toast.supplierUpdated" : "toast.supplierAdded", { name }));
+  } catch (error) {
+    console.warn(error);
+    showToast(t("toast.couldNotSaveSupplier"));
+  }
+}
+
+// Paying a supplier down. Spec 5.4.
+//
+// A transaction, because the balance is read and written: two people recording
+// payments at once would otherwise both subtract from the same starting figure
+// and one of the payments would vanish.
+async function recordSupplierPayment(input) {
+  const supplier = supplierById(input.supplierId);
+  if (!supplier) return showToast(t("toast.couldNotSaveSupplierPayment"));
+  if (!state.db || !state.user || !state.businessOwnerUid) return showToast(t("toast.signInToAddStore"));
+
+  const errorEl = qs("#supplierPaymentAmountError");
+  if (errorEl) errorEl.textContent = "";
+
+  const amount = clampNonNegativeNumber(input.amount, MAX_MONEY);
+  if (amount === null || amount <= 0) {
+    if (errorEl) errorEl.textContent = t("suppliers.paymentAmountInvalid");
+    return;
+  }
+  // Paying more than is owed is refused rather than parked as a negative
+  // balance. A supplier who owes YOU money is a credit note, which is a
+  // different record; a negative balanceOwed would also be refused by the rules.
+  if (amount > safeNumber(supplier.balanceOwed)) {
+    if (errorEl) errorEl.textContent = t("suppliers.paymentTooMuch", { owed: money(safeNumber(supplier.balanceOwed)) });
+    return;
+  }
+
+  try {
+    const { doc, collection, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
+    const root = ["users", state.businessOwnerUid];
+    const supplierRef = doc(state.db, ...root, "suppliers", supplier.id);
+    const paymentRef = doc(collection(state.db, ...root, "suppliers", supplier.id, "payments"));
+
+    await runTransaction(state.db, async (transaction) => {
+      const snap = await transaction.get(supplierRef);
+      if (!snap.exists()) throw new Error(t("txerror.supplierGone"));
+      const current = safeNumber(snap.data().balanceOwed);
+      // Re-checked INSIDE the transaction against what is actually stored, not
+      // against the copy the dialog opened with.
+      const applied = Math.min(amount, current);
+      if (applied <= 0) throw new Error(t("suppliers.paymentNothingOwed"));
+      transaction.set(paymentRef, {
+        amount: applied,
+        method: String(input.method || "cash"),
+        ...(input.reference ? { reference: String(input.reference).trim().slice(0, 60) } : {}),
+        ...(input.note ? { note: String(input.note).trim().slice(0, 200) } : {}),
+        recordedByUid: state.user?.uid || null,
+        createdAt: serverTimestamp()
+      });
+      transaction.update(supplierRef, {
+        balanceOwed: current - applied,
+        updatedAt: serverTimestamp()
+      });
+    });
+    qs("#supplierPaymentDialog")?.close();
+    showToast(t("toast.supplierPaymentRecorded", { name: supplier.name || "" }));
+  } catch (error) {
+    console.warn(error);
+    showToast(t("toast.couldNotSaveSupplierPayment"));
+  }
+}
+
+function openSupplierPaymentDialog(supplierId) {
+  const supplier = supplierById(supplierId);
+  const dialog = qs("#supplierPaymentDialog");
+  const form = qs("#supplierPaymentForm");
+  if (!supplier || !dialog || !form) return;
+  form.reset();
+  qs("#supplierPaymentAmountError").textContent = "";
+  qs("#supplierPaymentTitle").textContent = `${t("suppliers.paymentTitle")} — ${supplier.name || ""}`;
+  qs("#supplierPaymentBalance").textContent =
+    t("suppliers.paymentOwedNow", { amount: money(safeNumber(supplier.balanceOwed)) });
+  form.elements.supplierId.value = supplier.id;
+  dialog.showModal();
+}
+
+// Everything bought from a supplier and everything paid to them. Spec 5.4.
+//
+// The purchases behind it are bounded by ACCOUNTS_HISTORY_LIMIT, so the
+// statement says so at the foot rather than implying the rows are the whole
+// relationship. The stored balance is the authority, NOT the sum of the rows --
+// which is why the summary block is built from balanceOwed and not from
+// bought minus paid.
+function buildSupplierStatementHtml(supplierId, payments = []) {
+  const supplier = supplierById(supplierId);
+  if (!supplier) return "";
+
+  const nameKey = String(supplier.name || "").trim().toLowerCase();
+  // Linked purchases, plus the ones that only carry a typed name -- a supplier
+  // created today should still show what was bought from them before they were
+  // a record.
+  const purchases = (state.purchases || []).filter((purchase) =>
+    purchase.supplierId === supplierId
+    || (!purchase.supplierId && String(purchase.supplierName || "").trim().toLowerCase() === nameKey));
+
+  const rows = purchases
+    .map((purchase) => ({
+      at: purchasedAt(purchase),
+      what: purchase.productName || "",
+      qty: safeNumber(purchase.quantity),
+      amount: safeNumber(purchase.totalPaid)
+    }))
+    .sort((a, b) => (b.at?.getTime() || 0) - (a.at?.getTime() || 0));
+
+  const paid_ = [...payments].sort((a, b) => (b.at?.getTime() || 0) - (a.at?.getTime() || 0));
+
+  const bought = rows.reduce((sum, row) => sum + row.amount, 0);
+  const paid = paid_.reduce((sum, payment) => sum + safeNumber(payment.amount), 0);
+
+  // What was handed over AT DELIVERY. It lives on the delivery header, not in
+  // the payments book, so without this line the statement does not reconcile:
+  // opening + bought - paid would disagree with the balance by exactly the
+  // amount paid on the day, and a statement that visibly fails to add up is
+  // worse than no statement at all.
+  const paidOnDelivery = (state.deliveries || [])
+    .filter((delivery) => delivery.supplierId === supplierId
+      || (!delivery.supplierId && String(delivery.supplierName || "").trim().toLowerCase() === nameKey))
+    .reduce((sum, delivery) => {
+      const status = deliveryPaymentStatus(delivery);
+      return sum + safeNumber(status.paid);
+    }, 0);
+
+  const purchaseRows = rows.length
+    ? rows.map((row) => `<tr>
+        <td>${row.at ? row.at.toLocaleDateString() : "-"}</td>
+        <td>${esc(row.what)}</td>
+        <td>${row.qty}</td>
+        <td>${money(row.amount)}</td>
+      </tr>`).join("")
+    : `<tr><td colspan="4" class="empty-state">${t("suppliers.statementNoPurchases")}</td></tr>`;
+
+  const paymentRows = paid_.length
+    ? paid_.map((payment) => `<tr>
+        <td>${payment.at ? payment.at.toLocaleDateString() : "-"}</td>
+        <td>${t(`pos.${payment.method || "cash"}`)}</td>
+        <td>${esc(payment.reference || "-")}</td>
+        <td>${money(safeNumber(payment.amount))}</td>
+      </tr>`).join("")
+    : `<tr><td colspan="4" class="empty-state">${t("suppliers.statementNoPayments")}</td></tr>`;
+
+  return `
+    <p class="muted">${t("suppliers.statementIntro", { name: esc(supplier.name || "") })}</p>
+    <table class="statement">
+      <tbody>
+        <tr><td>${t("suppliers.statementOpening")}</td><td class="statement-figures">${money(safeNumber(supplier.openingBalance))}</td></tr>
+        <tr><td>${t("suppliers.statementBought")}</td><td class="statement-figures">${money(bought)}</td></tr>
+        <tr><td>${t("suppliers.statementPaidOnDelivery")}</td><td class="statement-figures">${money(paidOnDelivery)}</td></tr>
+        <tr><td>${t("suppliers.statementPaid")}</td><td class="statement-figures">${money(paid)}</td></tr>
+        <tr class="statement-total"><td>${t("suppliers.statementOwed")}</td><td class="statement-figures">${money(safeNumber(supplier.balanceOwed))}</td></tr>
+      </tbody>
+    </table>
+    <h3>${t("suppliers.statementPurchasesTitle")}</h3>
+    <div class="table-scroll"><table>
+      <thead><tr>
+        <th>${t("movement.colDate")}</th><th>${t("suppliers.statementColWhat")}</th>
+        <th>${t("movement.colQty")}</th><th>${t("movement.colTotalPaid")}</th>
+      </tr></thead>
+      <tbody>${purchaseRows}</tbody>
+    </table></div>
+    <h3>${t("suppliers.statementPaymentsTitle")}</h3>
+    <div class="table-scroll"><table>
+      <thead><tr>
+        <th>${t("movement.colDate")}</th><th>${t("suppliers.paymentMethodLabel")}</th>
+        <th>${t("suppliers.paymentReferenceLabel")}</th><th>${t("suppliers.paymentAmountLabel")}</th>
+      </tr></thead>
+      <tbody>${paymentRows}</tbody>
+    </table></div>
+    <p class="muted">${t("suppliers.statementBoundedNote")}</p>
+  `;
+}
+
+// Payments are fetched for THIS supplier when the statement is opened, rather
+// than kept in a live collection-group subscription. A collection group across
+// every supplier's payments would need its own composite index and a wider read
+// rule, to keep a list warm that is looked at rarely.
+async function openSupplierStatement(supplierId) {
+  const supplier = supplierById(supplierId);
+  const dialog = qs("#supplierStatementDialog");
+  if (!supplier || !dialog) return;
+  qs("#supplierStatementTitle").textContent = `${t("suppliers.statementTitle")} — ${supplier.name || ""}`;
+  // Opened first, with what is already known. The fetch below can be slow on a
+  // bad connection and a dialog that appears only after it looks broken.
+  qs("#supplierStatementContent").innerHTML = buildSupplierStatementHtml(supplierId, []);
+  dialog.showModal();
+
+  let payments = [];
+  try {
+    const { collection, getDocs, orderBy, query, limit } = state.firebaseApi.firestore;
+    const ref = collection(state.db, "users", state.businessOwnerUid, "suppliers", supplierId, "payments");
+    const snap = await getDocs(query(ref, orderBy("createdAt", "desc"), limit(ACCOUNTS_HISTORY_LIMIT)));
+    payments = snap.docs.map((docSnap) => {
+      const data = docSnap.data();
+      return { id: docSnap.id, ...data, at: purchasedAt(data) };
+    });
+  } catch (error) {
+    console.warn("Could not load supplier payments.", error);
+  }
+  // Still open? A slow fetch that lands after the user has closed the dialog
+  // must not repaint it.
+  if (dialog.open) {
+    qs("#supplierStatementContent").innerHTML = buildSupplierStatementHtml(supplierId, payments);
+  }
+}
+
+// --- Purchase returns. Spec 5.5. -------------------------------------------
+
+// How much of a purchase has already gone back, so a 100-unit purchase cannot
+// have 60 returned twice. Counted from the returns themselves rather than
+// stamped onto the purchase, because the purchase is a record of what was
+// bought and paid and is never rewritten.
+function purchaseReturnedQty(purchaseId) {
+  return (state.purchaseReturns || [])
+    .filter((entry) => entry.purchaseId === purchaseId)
+    .reduce((sum, entry) => sum + safeNumber(entry.quantity), 0);
+}
+
+function purchaseReturnableQty(purchase) {
+  if (!purchase) return 0;
+  return Math.max(safeNumber(purchase.quantity) - purchaseReturnedQty(purchase.id), 0);
+}
+
+// Sending goods back to a supplier: stock leaves, and what is owed for those
+// goods leaves with it.
+//
+// A transaction, and for two separate reasons: the shelf count is read and
+// written (two returns at once would otherwise both subtract from the same
+// starting figure), and the supplier balance is too.
+async function recordPurchaseReturn(input) {
+  const purchase = (state.purchases || []).find((item) => item.id === input.purchaseId);
+  if (!purchase) return showToast(t("toast.couldNotSavePurchaseReturn"));
+  if (!state.db || !state.user || !state.businessOwnerUid) return showToast(t("toast.signInToAddStore"));
+
+  const errorEl = qs("#purchaseReturnQtyError");
+  if (errorEl) errorEl.textContent = "";
+
+  const returnable = purchaseReturnableQty(purchase);
+  const quantity = clampNonNegativeNumber(input.quantity, MAX_COUNT);
+  if (quantity === null || quantity <= 0) {
+    if (errorEl) errorEl.textContent = t("purchaseReturn.qtyInvalid");
+    return;
+  }
+  if (quantity > returnable) {
+    if (errorEl) errorEl.textContent = t("purchaseReturn.qtyTooMany", { max: String(returnable) });
+    return;
+  }
+
+  // Valued at what this purchase actually paid per unit, not at today's
+  // weighted average. The supplier credits back what they charged, and the
+  // average has since absorbed other deliveries at other prices.
+  const unitCost = safeNumber(purchase.quantity) > 0
+    ? safeNumber(purchase.totalPaid) / safeNumber(purchase.quantity)
+    : 0;
+  const amount = Math.round(unitCost * quantity);
+
+  try {
+    const { doc, collection, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
+    const root = ["users", state.businessOwnerUid];
+    const productRef = doc(state.db, ...root, "products", purchase.productId);
+    const supplierId = purchase.supplierId || supplierLinkFor(purchase.supplierName).supplierId || "";
+    const supplierRef = supplierId ? doc(state.db, ...root, "suppliers", supplierId) : null;
+
+    await runTransaction(state.db, async (transaction) => {
+      // Every read before any write -- Firestore refuses a get() after the
+      // first write in a transaction.
+      const productSnap = await transaction.get(productRef);
+      const supplierSnap = supplierRef ? await transaction.get(supplierRef) : null;
+
+      if (!productSnap.exists()) throw new Error(t("txerror.itemGone", { name: purchase.productName || "" }));
+      const before = safeNumber(productSnap.data().quantity);
+      // You cannot send back stock that is not on the shelf. It may have been
+      // sold since; the shop has to reconcile that rather than go negative.
+      if (before < quantity) throw new Error(t("purchaseReturn.notEnoughStock"));
+
+      transaction.update(productRef, {
+        quantity: before - quantity,
+        updatedAt: serverTimestamp(),
+        movementReason: "supplier-return"
+      });
+
+      recordStockMovement(transaction, {
+        productId: purchase.productId,
+        productName: purchase.productName || "",
+        storeId: purchase.storeId,
+        reason: "supplier-return",
+        delta: -quantity,
+        quantityBefore: before
+      });
+
+      transaction.set(doc(collection(state.db, ...root, "purchaseReturns")), {
+        storeId: purchase.storeId,
+        purchaseId: purchase.id,
+        productId: purchase.productId,
+        productName: purchase.productName || "",
+        quantity,
+        amount,
+        ...(supplierId ? { supplierId } : {}),
+        ...(purchase.supplierName ? { supplierName: String(purchase.supplierName).slice(0, 120) } : {}),
+        ...(input.reason ? { reason: String(input.reason).trim().slice(0, 200) } : {}),
+        recordedByUid: state.user?.uid || null,
+        createdAt: serverTimestamp()
+      });
+
+      // Only what is still owed can be cancelled by a return. Goods already
+      // paid for come back as cash or a credit note from the supplier, which is
+      // a record this app does not keep -- so the balance floors at zero rather
+      // than going negative and inventing a debt the supplier owes us.
+      if (supplierRef && supplierSnap?.exists()) {
+        const owed = safeNumber(supplierSnap.data().balanceOwed);
+        const relieved = Math.min(amount, owed);
+        if (relieved > 0) {
+          transaction.update(supplierRef, {
+            balanceOwed: owed - relieved,
+            updatedAt: serverTimestamp()
+          });
+        }
+      }
+    });
+
+    qs("#purchaseReturnDialog")?.close();
+    showToast(t("toast.purchaseReturnRecorded", {
+      qty: String(quantity), name: purchase.productName || ""
+    }));
+  } catch (error) {
+    console.warn("[recordPurchaseReturn]", error);
+    showToast(error?.message || t("toast.couldNotSavePurchaseReturn"));
+  }
+}
+
+function openPurchaseReturnDialog(purchaseId) {
+  const purchase = (state.purchases || []).find((item) => item.id === purchaseId);
+  const dialog = qs("#purchaseReturnDialog");
+  const form = qs("#purchaseReturnForm");
+  if (!purchase || !dialog || !form) return;
+  const returnable = purchaseReturnableQty(purchase);
+  form.reset();
+  qs("#purchaseReturnQtyError").textContent = "";
+  qs("#purchaseReturnTitle").textContent =
+    `${t("purchaseReturn.title")} — ${purchase.productName || ""}`;
+  qs("#purchaseReturnSummary").textContent = t("purchaseReturn.summary", {
+    qty: String(safeNumber(purchase.quantity)),
+    supplier: purchaseSupplierLabel(purchase) || t("purchaseReturn.noSupplier"),
+    max: String(returnable)
+  });
+  form.elements.purchaseId.value = purchase.id;
+  form.elements.quantity.max = String(returnable);
+  form.elements.quantity.value = String(returnable);
+  dialog.showModal();
+}
+
+// --- Stock adjustments. Spec 4.4. ------------------------------------------
+
+// A closed set, because this is the field an owner filters on when asking where
+// stock went. Free text cannot be counted: "Damaged", "damaged" and "broke it"
+// are three answers to one question.
+//
+// 'opening' is here rather than in a separate module because an opening balance
+// IS an adjustment from zero -- spec 4.2 lists Opening Stock as its own increase
+// class, and this keeps it in the same ledger as everything else that moves the
+// shelf, which is what makes the running balance add up.
+const STOCK_ADJUSTMENT_REASONS = [
+  "count", "damaged", "expired", "lost", "theft", "correction", "opening", "other"
+];
+
+function stockAdjustmentReasonLabel(reason) {
+  return STOCK_ADJUSTMENT_REASONS.includes(reason)
+    ? t(`adjust.reason.${reason}`)
+    : t("adjust.reason.other");
+}
+
+// Correcting what the shelf says. Spec 4.4.
+//
+// The form asks for the NEW quantity and derives the delta, rather than asking
+// for a delta: a shop counting a shelf knows what is on it, not how far it has
+// drifted. Deriving the difference here is also what lets the ledger record both
+// figures honestly.
+async function recordStockAdjustment(input) {
+  const product = (state.products || []).find((item) => item.id === input.productId);
+  if (!product) return showToast(t("toast.couldNotSaveAdjustment"));
+  if (!state.db || !state.user || !state.businessOwnerUid) return showToast(t("toast.signInToAddStore"));
+
+  const errorEl = qs("#adjustQtyError");
+  if (errorEl) errorEl.textContent = "";
+
+  const newQuantity = clampNonNegativeNumber(input.newQuantity, MAX_COUNT);
+  if (newQuantity === null) {
+    if (errorEl) errorEl.textContent = t("adjust.qtyInvalid");
+    return;
+  }
+  const reason = STOCK_ADJUSTMENT_REASONS.includes(input.reason) ? input.reason : "other";
+
+  try {
+    const { doc, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
+    const root = ["users", state.businessOwnerUid];
+    const productRef = doc(state.db, ...root, "products", product.id);
+
+    await runTransaction(state.db, async (transaction) => {
+      const snap = await transaction.get(productRef);
+      if (!snap.exists()) throw new Error(t("txerror.itemGone", { name: product.name || "" }));
+
+      // Recomputed against what the shelf ACTUALLY holds inside the
+      // transaction, not against the number the dialog opened with. Somebody
+      // else may have sold from this product while the form sat open, and
+      // writing the dialog's delta would undo their sale.
+      const before = safeNumber(snap.data().quantity);
+      const delta = newQuantity - before;
+      if (delta === 0) throw new Error(t("adjust.noChange"));
+
+      transaction.update(productRef, {
+        quantity: newQuantity,
+        updatedAt: serverTimestamp(),
+        movementReason: "adjustment"
+      });
+
+      recordStockMovement(transaction, {
+        productId: product.id,
+        productName: product.name || "",
+        storeId: productStoreId(product),
+        reason: "adjustment",
+        adjustmentReason: reason,
+        delta,
+        quantityBefore: before,
+        ...(input.note ? { note: String(input.note).trim().slice(0, 200) } : {})
+      });
+    });
+
+    qs("#stockAdjustDialog")?.close();
+    showToast(t("toast.adjustmentRecorded", { name: product.name || "" }));
+  } catch (error) {
+    console.warn("[recordStockAdjustment]", error);
+    showToast(error?.message || t("toast.couldNotSaveAdjustment"));
+  }
+}
+
+function openStockAdjustDialog(productId) {
+  const product = (state.products || []).find((item) => item.id === productId);
+  const dialog = qs("#stockAdjustDialog");
+  const form = qs("#stockAdjustForm");
+  if (!product || !dialog || !form) return;
+  form.reset();
+  qs("#adjustQtyError").textContent = "";
+  qs("#stockAdjustTitle").textContent = `${t("adjust.title")} — ${product.name || ""}`;
+  form.elements.productId.value = product.id;
+  form.elements.currentQuantity.value = String(safeNumber(product.quantity));
+  form.elements.newQuantity.value = String(safeNumber(product.quantity));
+  renderAdjustDelta();
+  dialog.showModal();
+}
+
+// The difference, shown live. Spec 4.4 asks for current, adjustment and new
+// quantity all on the form; two of the three are typed and the third has to
+// follow, or the screen is quietly lying about one of them.
+function renderAdjustDelta() {
+  const form = qs("#stockAdjustForm");
+  const out = qs("#adjustDelta");
+  if (!form || !out) return;
+  const before = safeNumber(form.elements.currentQuantity?.value);
+  const after = safeNumber(form.elements.newQuantity?.value);
+  const delta = after - before;
+  out.textContent = delta === 0
+    ? t("adjust.deltaNone")
+    : t(delta > 0 ? "adjust.deltaUp" : "adjust.deltaDown", { units: String(Math.abs(delta)) });
+}
+
+// --- Phase 4 reports. Spec §9. ---------------------------------------------
+//
+// Grouped the way §9 groups them, and built ONLY where real transaction data
+// stands behind the figure. The four Financial reports (Balance Sheet, Trial
+// Balance, General Ledger, Cash Flow) need a double-entry ledger, which is held
+// (DESIGN-suppliers-purchases.md §2.1) -- so they are NAMED AS UNAVAILABLE
+// rather than rendered from something that merely resembles them. A report that
+// shows a plausible figure it cannot support is worse than an absent one; this
+// project has shipped that defect once already, when revenue was drawn as
+// profit.
+
+// What was bought in the range, netted of what went back. Spec §9 Purchase
+// Summary.
+//
+// NOT summarisePurchases(): that name was already taken by the month totals on
+// the Purchases screen. Two function declarations of one name do not collide
+// loudly in JavaScript -- the later one simply wins -- so the first symptom was
+// this report quietly reading a different function's shape.
+function summarisePurchaseTotals(purchases, returns) {
+  let goods = 0;
+  let landed = 0;
+  let units = 0;
+  for (const purchase of purchases) {
+    goods += safeNumber(purchase.goodsCost ?? purchase.totalPaid);
+    landed += safeNumber(purchase.landedCost);
+    units += safeNumber(purchase.quantity);
+  }
+  let returnedValue = 0;
+  let returnedUnits = 0;
+  for (const entry of returns) {
+    returnedValue += safeNumber(entry.amount);
+    returnedUnits += safeNumber(entry.quantity);
+  }
+  const gross = goods + landed;
+  return {
+    goods, landed, gross, units,
+    returnedValue, returnedUnits,
+    // "Net purchases" is the figure the P&L needs, and the one the spec's §10
+    // statement subtracts closing inventory from.
+    net: gross - returnedValue,
+    count: purchases.length
+  };
+}
+
+// Spec §9 Purchases by Product.
+function summarisePurchasesByProduct(purchases, returns) {
+  const byProduct = new Map();
+  const add = (id, name, patch) => {
+    const row = byProduct.get(id) || { productId: id, name, units: 0, spend: 0, returnedUnits: 0, returnedValue: 0 };
+    row.units += patch.units || 0;
+    row.spend += patch.spend || 0;
+    row.returnedUnits += patch.returnedUnits || 0;
+    row.returnedValue += patch.returnedValue || 0;
+    if (!row.name && name) row.name = name;
+    byProduct.set(id, row);
+  };
+  for (const purchase of purchases) {
+    add(purchase.productId, purchase.productName || "", {
+      units: safeNumber(purchase.quantity), spend: safeNumber(purchase.totalPaid)
+    });
+  }
+  for (const entry of returns) {
+    add(entry.productId, entry.productName || "", {
+      returnedUnits: safeNumber(entry.quantity), returnedValue: safeNumber(entry.amount)
+    });
+  }
+  const rows = [...byProduct.values()]
+    .map((row) => ({ ...row, netSpend: row.spend - row.returnedValue, netUnits: row.units - row.returnedUnits }))
+    .sort((a, b) => b.netSpend - a.netSpend);
+  return { rows, totalNet: rows.reduce((sum, row) => sum + row.netSpend, 0) };
+}
+
+// Spec §9 Sales by Customer. Walk-in sales carry no customer and are grouped as
+// such rather than dropped -- a report that silently omits most of the day's
+// takings is worse than one that says "walk-in".
+function summariseSalesByCustomer(sales) {
+  const byCustomer = new Map();
+  for (const sale of sales) {
+    if (sale.voided) continue;
+    const key = sale.customerId || String(sale.customerName || "").trim().toLowerCase() || "__walkin";
+    const name = sale.customerName || "";
+    const row = byCustomer.get(key) || { key, name, orders: 0, revenue: 0, isWalkIn: key === "__walkin" };
+    row.orders += 1;
+    row.revenue += saleNetTotal(sale);
+    if (!row.name && name) row.name = name;
+    byCustomer.set(key, row);
+  }
+  const rows = [...byCustomer.values()].sort((a, b) => b.revenue - a.revenue);
+  return { rows, total: rows.reduce((sum, row) => sum + row.revenue, 0) };
+}
+
+// Spec §9 Sales Returns. Refunds already net through every money surface; this
+// report is the list of them, which nothing showed before.
+function summariseSalesReturns(sales) {
+  const rows = [];
+  for (const sale of sales) {
+    for (const ret of sale.returns || []) {
+      const units = (ret.items || []).reduce((sum, item) => sum + safeNumber(item.qty), 0);
+      // The return carries its OWN timestamp -- goods come back days after they
+      // were sold, and bucketing a refund on the sale's date puts it in the
+      // wrong month.
+      const at = ret.createdAt ? new Date(ret.createdAt) : saleTimestamp(sale);
+      rows.push({
+        at: at && !Number.isNaN(at.getTime()) ? at : saleTimestamp(sale),
+        orderNumber: sale.orderNumber || sale.id || "",
+        customerName: sale.customerName || "",
+        staffName: ret.staffName || "",
+        units,
+        amount: safeNumber(ret.refundAmount)
+      });
+    }
+  }
+  rows.sort((a, b) => (b.at?.getTime() || 0) - (a.at?.getTime() || 0));
+  return {
+    rows,
+    totalUnits: rows.reduce((sum, row) => sum + row.units, 0),
+    totalAmount: rows.reduce((sum, row) => sum + row.amount, 0)
+  };
+}
+
+// Spec §9 Stock Summary: what is on the shelf, per product, right now.
+function summariseStockSummary(products) {
+  const rows = products
+    .map((product) => ({
+      id: product.id,
+      name: productDisplayLabel(product),
+      category: product.category || "",
+      quantity: safeNumber(product.quantity),
+      reorderLevel: safeNumber(product.reorderLevel),
+      low: safeNumber(product.reorderLevel) > 0 && safeNumber(product.quantity) <= safeNumber(product.reorderLevel)
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return {
+    rows,
+    totalUnits: rows.reduce((sum, row) => sum + row.quantity, 0),
+    lowCount: rows.filter((row) => row.low).length,
+    outCount: rows.filter((row) => row.quantity <= 0).length
+  };
+}
+
+// Spec §9 Stock Adjustments. Grouped by reason, because the question this
+// answers is "where is stock going", and one line per correction does not
+// answer it.
+function summariseStockAdjustments(movements) {
+  const byReason = new Map();
+  let up = 0;
+  let down = 0;
+  for (const entry of movements) {
+    if (entry.reason !== "adjustment") continue;
+    const reason = entry.adjustmentReason || "other";
+    const delta = safeNumber(entry.delta);
+    const row = byReason.get(reason) || { reason, count: 0, up: 0, down: 0 };
+    row.count += 1;
+    if (delta >= 0) { row.up += delta; up += delta; } else { row.down += Math.abs(delta); down += Math.abs(delta); }
+    byReason.set(reason, row);
+  }
+  const rows = [...byReason.values()].sort((a, b) => (b.up + b.down) - (a.up + a.down));
+  return { rows, up, down, net: up - down };
+}
+
+// Spec §9 Supplier Balances: what the business owes, per supplier.
+function summariseSupplierBalances(suppliers) {
+  const rows = suppliers
+    .map((supplier) => ({
+      id: supplier.id,
+      name: supplier.name || "",
+      owed: safeNumber(supplier.balanceOwed),
+      active: supplier.active !== false
+    }))
+    .filter((row) => row.owed > 0)
+    .sort((a, b) => b.owed - a.owed);
+  return { rows, total: rows.reduce((sum, row) => sum + row.owed, 0) };
+}
+
+// Spec §9 Expenses by Category, and by month. Both fall out of one pass.
+function summariseExpensesByCategory(expenses) {
+  const byCategory = new Map();
+  const byMonth = new Map();
+  let total = 0;
+  for (const expense of expenses) {
+    const amount = safeNumber(expense.amount);
+    total += amount;
+    const category = expense.category || "other";
+    const row = byCategory.get(category) || { category, count: 0, amount: 0, nature: expenseNature(expense) };
+    row.count += 1;
+    row.amount += amount;
+    byCategory.set(category, row);
+
+    const at = expenseSpentAt(expense);
+    if (at) {
+      const key = localMonthKey(at);
+      byMonth.set(key, safeNumber(byMonth.get(key)) + amount);
+    }
+  }
+  return {
+    categories: [...byCategory.values()].sort((a, b) => b.amount - a.amount),
+    months: [...byMonth.entries()].map(([month, amount]) => ({ month, amount })).sort((a, b) => a.month.localeCompare(b.month)),
+    total
+  };
+}
+
+// Everything spec §9 asks for that real transaction data can answer, painted in
+// one pass. Owner-and-manager, matching the panels that were already here --
+// except the ones that show cost, which stay owner-only.
+function renderSpecReports() {
+  const canSee = isManagerOrOwnerRole();
+  const costVisible = isOwnerRole();
+
+  const setPanel = (id, hidden) => {
+    const panel = qs(id);
+    if (panel) panel.hidden = hidden;
+  };
+  const fill = (id, html) => {
+    const el = qs(id);
+    if (el) el.innerHTML = html;
+  };
+  const empty = (cols, key) => `<tr><td colspan="${cols}" class="empty-state">${t(key)}</td></tr>`;
+
+  // Cost lives behind the owner gate, exactly as /purchases does in the rules.
+  for (const id of ["#purchaseSummaryPanel", "#purchasesByProductPanel",
+                    "#purchaseReturnsPanel", "#supplierBalancesPanel",
+                    "#stockAdjustmentsPanel"]) {
+    setPanel(id, !costVisible);
+  }
+  for (const id of ["#salesByCustomerPanel", "#salesReturnsPanel",
+                    "#stockSummaryPanel", "#expensesByCategoryPanel"]) {
+    setPanel(id, !canSee);
+  }
+
+  if (!canSee) {
+    // EMPTIED, not merely hidden: a demoted manager's figures would otherwise
+    // sit in the DOM behind a CSS rule. The same reason renderDeliveries()
+    // gives.
+    for (const id of ["#salesByCustomerTable", "#salesReturnsTable", "#stockSummaryTable",
+                      "#expensesByCategoryTable", "#purchaseSummaryTotals", "#purchasesByProductTable",
+                      "#purchaseReturnsTable", "#supplierBalancesTable", "#stockAdjustmentsTable"]) {
+      fill(id, "");
+    }
+    return;
+  }
+
+  const sales = filteredSales();
+
+  // --- Sales group ---------------------------------------------------------
+  const byCustomer = summariseSalesByCustomer(sales);
+  fill("#salesByCustomerTable", byCustomer.rows.length
+    ? byCustomer.rows.map((row) => `<tr>
+        <td>${esc(row.isWalkIn ? t("reports.walkIn") : row.name || t("reports.walkIn"))}</td>
+        <td>${row.orders}</td>
+        <td><strong>${money(row.revenue)}</strong></td>
+      </tr>`).join("")
+    : empty(3, "reports.noSalesInRange"));
+
+  const salesReturns = summariseSalesReturns(sales);
+  fill("#salesReturnsTable", salesReturns.rows.length
+    ? salesReturns.rows.map((row) => `<tr>
+        <td>${row.at ? row.at.toLocaleDateString() : "-"}</td>
+        <td>#${esc(row.orderNumber)}</td>
+        <td>${esc(row.staffName || "-")}</td>
+        <td>${row.units}</td>
+        <td>${money(row.amount)}</td>
+      </tr>`).join("")
+    : empty(5, "reports.noReturnsInRange"));
+
+  // --- Inventory group -----------------------------------------------------
+  const stock = summariseStockSummary(storeProducts());
+  fill("#stockSummaryTable", stock.rows.length
+    ? stock.rows.map((row) => `<tr>
+        <td>${esc(row.name)}</td>
+        <td>${esc(row.category || "-")}</td>
+        <td>${row.quantity}</td>
+        <td>${row.reorderLevel || "-"}</td>
+        <td>${row.quantity <= 0
+          ? `<span class="status">${t("reports.stockOut")}</span>`
+          : row.low ? `<span class="status">${t("reports.stockLow")}</span>`
+                    : `<span class="status healthy">${t("reports.stockOk")}</span>`}</td>
+      </tr>`).join("")
+    : empty(5, "reports.noProducts"));
+
+  // --- Expense group -------------------------------------------------------
+  const expenses = summariseExpensesByCategory(storeExpenses());
+  fill("#expensesByCategoryTable", expenses.categories.length
+    ? expenses.categories.map((row) => `<tr>
+        <td>${esc(expenseCategoryLabel(row.category))}</td>
+        <td>${t(row.nature === "direct" ? "reports.natureDirect" : "reports.natureIndirect")}</td>
+        <td>${row.count}</td>
+        <td><strong>${money(row.amount)}</strong></td>
+      </tr>`).join("")
+    : empty(4, "reports.noExpenses"));
+
+  if (!costVisible) return;
+
+  // --- Purchase group (owner only: every figure here is a cost) ------------
+  const purchases = storePurchases();
+  const returns = state.purchaseReturns || [];
+  const summary = summarisePurchaseTotals(purchases, returns);
+  fill("#purchaseSummaryTotals", [
+    controlTile(t("reports.purchaseGross"), money(summary.gross), "",
+      t("reports.purchaseGrossNote", { count: String(summary.count), units: String(summary.units) })),
+    controlTile(t("reports.purchaseReturned"), money(summary.returnedValue), "",
+      summary.returnedUnits ? t("reports.purchaseReturnedNote", { units: String(summary.returnedUnits) }) : t("reports.purchaseReturnedNone")),
+    controlTile(t("reports.purchaseNet"), money(summary.net), "", t("reports.purchaseNetNote"))
+  ].join(""));
+
+  const byProduct = summarisePurchasesByProduct(purchases, returns);
+  fill("#purchasesByProductTable", byProduct.rows.length
+    ? byProduct.rows.map((row) => `<tr>
+        <td>${esc(row.name || "-")}</td>
+        <td>${row.netUnits}</td>
+        <td>${row.returnedUnits || "-"}</td>
+        <td><strong>${money(row.netSpend)}</strong></td>
+      </tr>`).join("")
+    : empty(4, "reports.noPurchases"));
+
+  fill("#purchaseReturnsTable", returns.length
+    ? [...returns]
+        .sort((a, b) => (purchasedAt(b)?.getTime() || 0) - (purchasedAt(a)?.getTime() || 0))
+        .map((row) => `<tr>
+          <td>${purchasedAt(row) ? purchasedAt(row).toLocaleDateString() : "-"}</td>
+          <td>${esc(row.productName || "-")}</td>
+          <td>${esc(row.supplierName || "-")}</td>
+          <td>${safeNumber(row.quantity)}</td>
+          <td>${money(safeNumber(row.amount))}</td>
+          <td>${esc(row.reason || "-")}</td>
+        </tr>`).join("")
+    : empty(6, "reports.noPurchaseReturns"));
+
+  const balances = summariseSupplierBalances(state.suppliers || []);
+  fill("#supplierBalancesTable", balances.rows.length
+    ? balances.rows.map((row) => `<tr>
+        <td>${esc(row.name)}</td>
+        <td><strong>${money(row.owed)}</strong></td>
+      </tr>`).join("")
+      + `<tr class="statement-total"><td>${t("reports.supplierBalancesTotal")}</td><td><strong>${money(balances.total)}</strong></td></tr>`
+    : empty(2, "reports.noSupplierBalances"));
+
+  // Adjustments are read from the ledger, which is owner-read only. Fetched
+  // rather than subscribed for the same reason the product ledger is: it grows
+  // without bound and is looked at occasionally.
+  renderStockAdjustmentsReport();
+}
+
+// Kept separate because it is async -- the panel paints its last known figures
+// while the fetch runs rather than flashing empty.
+async function renderStockAdjustmentsReport() {
+  const table = qs("#stockAdjustmentsTable");
+  if (!table || !isOwnerRole() || !state.db || !state.businessOwnerUid) return;
+  let movements = [];
+  try {
+    const { collection, getDocs, orderBy, query, limit } = state.firebaseApi.firestore;
+    const ref = collection(state.db, "users", state.businessOwnerUid, "stockMovements");
+    const snap = await getDocs(query(ref, orderBy("createdAt", "desc"), limit(ACCOUNTS_HISTORY_LIMIT)));
+    movements = snap.docs.map((docSnap) => docSnap.data());
+  } catch (error) {
+    console.warn("Could not load stock adjustments.", error);
+    return;
+  }
+  const summary = summariseStockAdjustments(movements);
+  table.innerHTML = summary.rows.length
+    ? summary.rows.map((row) => `<tr>
+        <td>${esc(stockAdjustmentReasonLabel(row.reason))}</td>
+        <td>${row.count}</td>
+        <td>${row.up || ""}</td>
+        <td>${row.down || ""}</td>
+      </tr>`).join("")
+      + `<tr class="statement-total"><td>${t("reports.adjustmentsNet")}</td><td></td><td>${summary.up}</td><td>${summary.down}</td></tr>`
+    : `<tr><td colspan="4" class="empty-state">${t("reports.noAdjustments")}</td></tr>`;
+}
+
 async function saveExpense(input) {
   const existing = input.id ? state.expenses.find((item) => item.id === input.id) : null;
 
@@ -6634,10 +7934,11 @@ function allocateLandedCosts({ lines, additionalTotal, basis, manualAmounts } = 
 //
 // Receiving a line writes FIVE documents inside the transaction: the product
 // itself, its cost, its cost history, the purchase, and the stock movement.
-// Firestore caps a transaction at 500 writes, and the delivery header and its
-// audit entry take two more:
+// Firestore caps a transaction at 500 writes. The delivery header and its audit
+// entry take two more, and a delivery bought on credit takes a THIRD to move the
+// supplier's balance (phase 2):
 //
-//     80 x 5 + 2 = 402 writes, against a hard ceiling of 500.
+//     80 x 5 + 3 = 403 writes, against a hard ceiling of 500.
 //
 // Phase 2 set this at 100 in firestore.rules, having counted four writes a line
 // and forgotten recordStockMovement(). 100 lines is 502 -- one over the cap, and
@@ -6787,6 +8088,23 @@ async function receiveDelivery(input = {}) {
   const { doc, collection, runTransaction, serverTimestamp, Timestamp } = state.firebaseApi.firestore;
   const root = ["users", state.businessOwnerUid];
   const deliveryRef = doc(collection(state.db, ...root, "deliveries"));
+
+  // Payment terms. Spec 5.1-5.3. Absent amountPaid means PAID IN FULL, which is
+  // what recording a delivery meant before terms existed -- the reading that
+  // claims no debt nobody entered.
+  const totalCost = safeNumber(prep.header.totalCost);
+  const amountPaid = input.amountPaid === undefined || input.amountPaid === null || input.amountPaid === ""
+    ? totalCost
+    : Math.min(Math.max(safeNumber(input.amountPaid), 0), totalCost);
+  const amountDue = Math.max(totalCost - amountPaid, 0);
+
+  // Only a delivery linked to a supplier RECORD can move a balance. One with a
+  // typed name has nowhere to put the debt, and inventing a supplier here would
+  // create records nobody asked for.
+  const supplierLink = supplierLinkFor(input.supplierName);
+  const supplierRef = supplierLink.supplierId
+    ? doc(state.db, ...root, "suppliers", supplierLink.supplierId)
+    : null;
   const refs = prep.lines.map((line) => ({
     product: doc(state.db, ...root, "products", line.productId),
     cost: doc(state.db, ...root, "productCosts", line.productId)
@@ -6796,6 +8114,10 @@ async function receiveDelivery(input = {}) {
     const attempt = runTransaction(state.db, async (transaction) => {
       const productSnaps = await Promise.all(refs.map((r) => transaction.get(r.product)));
       const costSnaps = await Promise.all(refs.map((r) => transaction.get(r.cost)));
+      // Read in the READ phase with the rest. Firestore refuses a get() after
+      // the first write in a transaction, so deferring this to where the
+      // balance is written would fail every credit delivery.
+      const supplierSnap = supplierRef ? await transaction.get(supplierRef) : null;
 
       // Every existence check before any write, so a delivery naming a product
       // that has since been deleted refuses whole rather than half-applying.
@@ -6859,6 +8181,7 @@ async function receiveDelivery(input = {}) {
           landedCost: line.landedCost,
           deliveryId: deliveryRef.id,
           ...(input.supplierName ? { supplierName: String(input.supplierName).slice(0, 120) } : {}),
+          ...supplierLinkFor(input.supplierName),
           ...(input.supplierTin ? { supplierTin: String(input.supplierTin).slice(0, 20) } : {}),
           recordedByUid: state.user?.uid || null,
           createdAt: serverTimestamp()
@@ -6889,9 +8212,27 @@ async function receiveDelivery(input = {}) {
         ...(input.supplierName ? { supplierName: String(input.supplierName).slice(0, 120) } : {}),
         ...(input.supplierTin ? { supplierTin: String(input.supplierTin).slice(0, 20) } : {}),
         ...(input.note ? { note: String(input.note).slice(0, 200) } : {}),
+        ...supplierLink,
+        amountPaid,
+        ...(input.paymentMethod ? { paymentMethod: String(input.paymentMethod) } : {}),
         recordedByUid: state.user?.uid || null,
         createdAt: serverTimestamp()
       });
+
+      // What is still owed goes onto the supplier's balance. Stored rather than
+      // added up from delivery history at read time, because that history is
+      // bounded by ACCOUNTS_HISTORY_LIMIT and a client adding up the deliveries
+      // it happens to hold would understate the debt -- see the rules comment
+      // on /suppliers/payments.
+      if (supplierRef && amountDue > 0) {
+        if (!supplierSnap || !supplierSnap.exists()) {
+          throw new Error(t("txerror.supplierGone"));
+        }
+        transaction.update(supplierRef, {
+          balanceOwed: safeNumber(supplierSnap.data().balanceOwed) + amountDue,
+          updatedAt: serverTimestamp()
+        });
+      }
 
       // ONE entry for the delivery, not one per line. Every write in a
       // transaction pays its own rules evaluation, and a per-line entry would be
@@ -7096,6 +8437,23 @@ async function subscribeToDeliveries() {
   }
 }
 
+// Paid / Partially paid / On credit, DERIVED from the money rather than stored.
+// A status somebody can set by hand is a status that disagrees with the figures.
+//
+// A delivery written before payment terms existed carries no amountPaid, and
+// absent reads as PAID IN FULL -- the reading that claims no debt nobody
+// entered. Spec 5.1.
+function deliveryPaymentStatus(delivery) {
+  const total = safeNumber(delivery?.totalCost);
+  const paid = delivery?.amountPaid === undefined || delivery?.amountPaid === null
+    ? total
+    : safeNumber(delivery.amountPaid);
+  const due = Math.max(total - paid, 0);
+  if (due <= 0) return { key: "deliveries.statusPaid", due: 0, paid, total };
+  if (paid > 0) return { key: "deliveries.statusPartial", due, paid, total };
+  return { key: "deliveries.statusCredit", due, paid, total };
+}
+
 function summariseDeliveries(deliveries, monthKey) {
   let total = 0;
   let landed = 0;
@@ -7158,7 +8516,7 @@ function renderDeliveries() {
     .sort((a, b) => (deliveryReceivedAt(b)?.getTime() || 0) - (deliveryReceivedAt(a)?.getTime() || 0));
 
   if (!rows.length) {
-    table.innerHTML = `<tr><td colspan="9" class="muted">${
+    table.innerHTML = `<tr><td colspan="10" class="muted">${
       state.currentStoreId ? t("deliveries.empty") : t("deliveries.emptyNoStore")
     }</td></tr>`;
     return;
@@ -7175,6 +8533,12 @@ function renderDeliveries() {
       <td>${money(safeNumber(delivery.additionalTotal))}</td>
       <td>${money(safeNumber(delivery.totalCost))}</td>
       <td>${esc(deliveryBasisLabel(delivery.allocationBasis))}</td>
+      <td>${(() => {
+        const pay = deliveryPaymentStatus(delivery);
+        return pay.due > 0
+          ? `<span class="status">${t(pay.key)}</span> <span class="muted">${money(pay.due)}</span>`
+          : `<span class="status healthy">${t(pay.key)}</span>`;
+      })()}</td>
       <td>${canDelete
         ? `<button class="ghost-button compact danger" type="button" data-delete-delivery="${esc(delivery.id)}">${t("deliveries.deleteButton")}</button>`
         : "-"}</td>
@@ -7391,6 +8755,12 @@ async function submitDelivery() {
       supplierTin: String(form.elements.supplierTin?.value || "").trim(),
       reference: String(form.elements.reference?.value || "").trim(),
       note: String(form.elements.note?.value || "").trim(),
+      // Blank stays blank rather than becoming 0. receiveDelivery() reads an
+      // empty amountPaid as PAID IN FULL; sending 0 would mean the opposite --
+      // the whole delivery on credit -- and silently indebt anyone who ignored
+      // the box.
+      amountPaid: String(form.elements.amountPaid?.value || "").trim(),
+      paymentMethod: String(form.elements.paymentMethod?.value || "").trim(),
       lines: deliveryDraftLines(),
       costs: state.deliveryDraft.costs,
       basis: state.deliveryDraft.basis,
@@ -7990,6 +9360,10 @@ function summariseProfit({ sales, costIndex, expenses, monthKey, coverageFromMs,
     allCostKnown: goods.allCostKnown,
     grossProfit,
     grossMarginPct: revenue > 0 ? Math.round((grossProfit / revenue) * 100) : 0,
+    // Spec 10 prints both margins. Guarded on revenue rather than computed
+    // blindly: with no sales this is 0/0, and a dashboard reading "NaN%" is how
+    // an owner stops trusting the whole statement.
+    netMarginPct: revenue > 0 ? Math.round((netProfit / revenue) * 100) : 0,
     expenses: spending.total,
     expenseCount: spending.count,
     // The two lines the docx section 9 statement puts under gross profit.
@@ -8441,6 +9815,15 @@ function renderCostReports() {
   }
 }
 
+// A percentage only when there is a real one to show. summariseProfit() always
+// supplies both margins, but this renders onto a money screen and an absent
+// field would print "undefined%" beside a correct figure -- which is how a
+// reader stops trusting the number next to it. Demonstrated by a test fixture
+// that omitted the field.
+function withMargin(amount, pct) {
+  return Number.isFinite(pct) ? `${amount} · ${pct}%` : amount;
+}
+
 function renderProfit() {
   const view = qs("#profit");
   const grid = qs("#profitGrid");
@@ -8543,7 +9926,7 @@ function renderProfit() {
               total: String(p.costedLines + p.uncostedLines)
             }) },
     { label: t("profit.stGross"), total: true,
-      value: p.anyCostKnown ? `${money(p.grossProfit)} · ${p.grossMarginPct}%` : unknown,
+      value: p.anyCostKnown ? withMargin(money(p.grossProfit), p.grossMarginPct) : unknown,
       tone: p.anyCostKnown && p.grossProfit <= 0 && p.revenue > 0 ? "danger" : "",
       note: p.anyCostKnown ? t("profit.grossNote") : "" },
     { label: t("profit.stDirect"), value: deduct(p.directExpenses),
@@ -8556,7 +9939,10 @@ function renderProfit() {
     // unknown. A forgotten expense makes this look BETTER, which is the
     // direction that gets acted on.
     { label: t("profit.stNet"), total: true, bottom: true,
-      value: p.anyCostKnown ? money(p.netProfit) : unknown,
+      // Shown with its margin, the way the gross line above it is, because spec
+      // 10 prints both -- and a percentage is what makes two months comparable
+      // when takings differ.
+      value: p.anyCostKnown ? withMargin(money(p.netProfit), p.netMarginPct) : unknown,
       tone: p.anyCostKnown && p.netProfit <= 0 ? "warn" : "",
       note: p.anyCostKnown ? t("profit.netNote") : t("profit.netNoCost") }
   ];
@@ -8646,7 +10032,12 @@ function renderPurchases() {
       <td class="${receipted ? "" : "cell-warn"}">${esc(receipted
         ? (purchase.receiptNumber || t("purchases.receiptYes"))
         : t("purchases.receiptNo"))}</td>
-      <td>${canDelete ? `<button class="ghost-button compact" type="button" data-delete-purchase="${esc(purchase.id)}">${esc(t("purchases.delete"))}</button>` : ""}</td>
+      <td class="table-actions">
+        ${purchaseReturnableQty(purchase) > 0
+          ? `<button class="link-button" type="button" data-return-purchase="${esc(purchase.id)}">${esc(t("purchaseReturn.action"))}</button>`
+          : `<span class="muted">${esc(t("purchaseReturn.allReturned"))}</span>`}
+        ${canDelete ? `<button class="ghost-button compact" type="button" data-delete-purchase="${esc(purchase.id)}">${esc(t("purchases.delete"))}</button>` : ""}
+      </td>
     </tr>`;
   }).join("");
 }
@@ -8721,6 +10112,106 @@ async function subscribeToCustomers() {
   } catch (error) {
     console.warn(error);
   }
+}
+
+// Suppliers. DESIGN-suppliers-purchases.md 4.
+//
+// Ordered by name rather than createdAt, unlike /customers: a supplier list is
+// something you scan for a name you already know, not a feed of who was added
+// when. That also means it needs no composite index -- name is the only
+// ordering, and the storeId filter is an equality.
+async function subscribeToSuppliers() {
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
+  if (state.unsubscribeSuppliers) state.unsubscribeSuppliers();
+  try {
+    const { collection, onSnapshot, orderBy, query, where } = state.firebaseApi.firestore;
+    const suppliersRef = collection(state.db, "users", state.businessOwnerUid, "suppliers");
+    const queryStoreIds = await resolveQueryStoreIds();
+    if (queryStoreIds !== null && queryStoreIds.length === 0) {
+      state.suppliers = [];
+      scheduleRenderAll();
+      return;
+    }
+    const suppliersQuery = queryStoreIds === null
+      ? query(suppliersRef, orderBy("name", "asc"))
+      : query(suppliersRef, where("storeId", "in", queryStoreIds), orderBy("name", "asc"));
+    state.unsubscribeSuppliers = onSnapshot(suppliersQuery, (snapshot) => {
+      state.suppliers = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      scheduleRenderAll();
+    });
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
+// Goods sent back to suppliers. Manager-and-owner, like /purchases itself: the
+// rules have no cashier branch, and subscribing anyway would put a
+// permission-denied in every cashier's console on every sign-in.
+async function subscribeToPurchaseReturns() {
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
+  if (state.unsubscribePurchaseReturns) state.unsubscribePurchaseReturns();
+  if (!isManagerOrOwnerRole()) {
+    state.purchaseReturns = [];
+    return;
+  }
+  try {
+    const { collection, onSnapshot, orderBy, query, where, limit } = state.firebaseApi.firestore;
+    const ref = collection(state.db, "users", state.businessOwnerUid, "purchaseReturns");
+    const queryStoreIds = await resolveQueryStoreIds();
+    if (queryStoreIds !== null && queryStoreIds.length === 0) {
+      state.purchaseReturns = [];
+      scheduleRenderAll();
+      return;
+    }
+    const returnsQuery = queryStoreIds === null
+      ? query(ref, orderBy("createdAt", "desc"), limit(ACCOUNTS_HISTORY_LIMIT))
+      : query(ref, where("storeId", "in", queryStoreIds),
+              orderBy("createdAt", "desc"), limit(ACCOUNTS_HISTORY_LIMIT));
+    state.unsubscribePurchaseReturns = onSnapshot(returnsQuery, (snapshot) => {
+      state.purchaseReturns = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      scheduleRenderAll();
+    }, (error) => {
+      console.warn("[purchaseReturns listener]", error.code || error);
+    });
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
+// Active suppliers, for the pickers. An inactive supplier stays in reports and
+// on the purchases it is already attached to -- it is only kept out of lists
+// where someone is choosing who to buy from next.
+function activeSuppliers() {
+  return (state.suppliers || []).filter((supplier) => supplier.active !== false);
+}
+
+// Links a purchase to a supplier RECORD when the typed name matches one.
+//
+// A match, deliberately, rather than a required picker. The delivery, restock
+// and product forms have always taken free text; eight shops are mid-flow in
+// them, and a device that has been offline may not hold the supplier list yet.
+// An unmatched name still writes supplierName exactly as it always did, so
+// nothing that works today stops working -- DESIGN-suppliers-purchases.md 4.3.
+function supplierLinkFor(name) {
+  const wanted = String(name || "").trim().toLowerCase();
+  if (!wanted) return {};
+  const match = (state.suppliers || []).find(
+    (supplier) => String(supplier.name || "").trim().toLowerCase() === wanted);
+  return match ? { supplierId: match.id } : {};
+}
+
+function supplierById(supplierId) {
+  if (!supplierId) return null;
+  return (state.suppliers || []).find((supplier) => supplier.id === supplierId) || null;
+}
+
+// The name to show for a purchase. supplierId wins when the purchase was
+// recorded against a real supplier record, because the record can be renamed
+// and the purchase should follow; supplierName is what every purchase written
+// before this design has, and is the only thing those will ever have.
+function purchaseSupplierLabel(purchase) {
+  const linked = supplierById(purchase?.supplierId);
+  return linked?.name || purchase?.supplierName || "";
 }
 
 async function subscribeToTransfers() {
@@ -9119,7 +10610,38 @@ function productPurchaseEntries(productId) {
     .sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
 }
 
-function buildProductMovementHtml(productId) {
+// One line per thing that moved this product, oldest first, with the shelf
+// count carried down the page. Spec 4.3.
+//
+// Oldest first is the whole point: a running balance read top to bottom only
+// makes sense forwards, and every other list in this app is newest first
+// precisely because it is NOT cumulative.
+//
+// The balance column is the LEDGER's own quantityAfter, not a total this
+// function adds up. An entry written offline carries no chain (L-9), and
+// inventing a balance for it would be a guess wearing the authority of a
+// measurement -- so those rows say so instead.
+function buildStockLedgerRows(movements) {
+  const ordered = [...movements].sort((a, b) => (a.at?.getTime() || 0) - (b.at?.getTime() || 0));
+  return ordered.map((entry) => {
+    const delta = safeNumber(entry.delta);
+    const label = entry.reason === "adjustment" && entry.adjustmentReason
+      ? `${t("movement.reason.adjustment")} \u2014 ${stockAdjustmentReasonLabel(entry.adjustmentReason)}`
+      : t(`movement.reason.${entry.reason}`);
+    const balance = entry.offline || entry.quantityAfter === undefined || entry.quantityAfter === null
+      ? `<span class="muted">${t("movement.balanceUnknown")}</span>`
+      : String(safeNumber(entry.quantityAfter));
+    return `<tr>
+      <td>${entry.at ? entry.at.toLocaleString() : "-"}</td>
+      <td>${esc(label)}</td>
+      <td>${delta > 0 ? delta : ""}</td>
+      <td>${delta < 0 ? Math.abs(delta) : ""}</td>
+      <td>${balance}</td>
+    </tr>`;
+  }).join("");
+}
+
+function buildProductMovementHtml(productId, movements = null) {
   const product = state.products.find((item) => item.id === productId);
   const productName = product ? esc(productDisplayLabel(product)) : "";
   const sales = productSalesEntries(productId);
@@ -9198,6 +10720,19 @@ function buildProductMovementHtml(productId) {
       </thead>
       <tbody>${transferRows || `<tr><td colspan="5" class="empty-state">${t("movement.noTransfers")}</td></tr>`}</tbody>
     </table>
+    ${movements === null ? "" : `<h3>${t("movement.ledgerSectionTitle")}</h3>
+    <p class="muted">${t("movement.ledgerSubtitle")}</p>
+    <div class="table-scroll"><table>
+      <thead><tr>
+        <th>${t("movement.colDate")}</th>
+        <th>${t("movement.colWhat")}</th>
+        <th>${t("movement.colIn")}</th>
+        <th>${t("movement.colOut")}</th>
+        <th>${t("movement.colBalance")}</th>
+      </tr></thead>
+      <tbody>${buildStockLedgerRows(movements)
+        || `<tr><td colspan="5" class="empty-state">${t("movement.noLedger")}</td></tr>`}</tbody>
+    </table></div>`}
     ${showPurchases ? `<h3>${t("movement.purchasesSectionTitle")}</h3>
     <p class="muted">${t("movement.purchasesSubtitle")}</p>
     <table>
@@ -9222,10 +10757,43 @@ function renderProductMovementDialog(productId) {
   qs("#productMovementContent").innerHTML = buildProductMovementHtml(productId);
 }
 
-function openProductMovementDialog(productId) {
+// The ledger is fetched for THIS product when the dialog opens rather than kept
+// in a live subscription: /stockMovements is owner-read only and grows without
+// bound, so keeping every product's history warm would be a large payload for a
+// panel that is opened occasionally.
+async function loadProductStockLedger(productId) {
+  if (!state.db || !state.businessOwnerUid || !isOwnerRole()) return null;
+  try {
+    const { collection, getDocs, orderBy, query, where, limit } = state.firebaseApi.firestore;
+    const ref = collection(state.db, "users", state.businessOwnerUid, "stockMovements");
+    const snap = await getDocs(query(ref,
+      where("productId", "==", productId),
+      orderBy("createdAt", "desc"),
+      limit(200)));
+    return snap.docs.map((docSnap) => {
+      const data = docSnap.data();
+      return { id: docSnap.id, ...data, at: purchasedAt(data) };
+    });
+  } catch (error) {
+    console.warn("Could not load the stock ledger for this product.", error);
+    return null;
+  }
+}
+
+async function openProductMovementDialog(productId) {
   state.productMovementProductId = productId;
+  // Opened first, with everything already in memory. The ledger fetch below can
+  // be slow on a bad connection, and a dialog that appears only after it looks
+  // like a broken button.
   renderProductMovementDialog(productId);
   qs("#productMovementDialog").showModal();
+
+  const movements = await loadProductStockLedger(productId);
+  // Still the same product? A slow fetch that lands after the user has closed
+  // the dialog, or opened a different product, must not repaint over them.
+  if (movements && state.productMovementProductId === productId && qs("#productMovementDialog")?.open) {
+    qs("#productMovementContent").innerHTML = buildProductMovementHtml(productId, movements);
+  }
 }
 
 function buildPurchaseOrderGroups() {
@@ -9399,6 +10967,17 @@ function openProductDialog(product = null) {
   // saveProduct: without this, editing a price wrote back a stale count and
   // put sold goods back on the shelf.
   state.productFormOpeningQuantity = product ? safeNumber(product.quantity) : null;
+
+  // Spec 4.2. On an EXISTING product the shelf count is read-only: it is
+  // derived from movements, and Adjust is the path that records who changed it
+  // and why. On a new one it stays editable, because that number is the
+  // opening stock and there is no ledger to derive it from yet.
+  const quantityInput = form.elements.quantity;
+  const lockNote = qs("#productQuantityLockNote");
+  if (quantityInput) {
+    quantityInput.readOnly = Boolean(product);
+    if (lockNote) lockNote.hidden = !product;
+  }
   renderProductCostFields(Boolean(product));
   qs("#productDialog").showModal();
 }
@@ -9621,6 +11200,7 @@ async function saveProduct(product, costCapture = null) {
             hasFiscalReceipt: costCapture.hasFiscalReceipt,
             ...(costCapture.receiptNumber ? { receiptNumber: costCapture.receiptNumber } : {}),
             ...(costCapture.supplierName ? { supplierName: costCapture.supplierName } : {}),
+            ...supplierLinkFor(costCapture.supplierName),
             ...(costCapture.receiptDate ? { receiptDate: Timestamp.fromDate(costCapture.receiptDate) } : {}),
             ...(costCapture.vatAmount ? { vatAmount: costCapture.vatAmount } : {}),
             recordedByUid: state.user.uid,
@@ -11135,7 +12715,7 @@ function safeNumber(value) {
 function summariseSales(sales) {
   const s = {
     count: 0, gross: 0, net: 0, items: 0, discounts: 0,
-    cash: 0, mobile: 0, card: 0, credit: 0,
+    cash: 0, mobile: 0, card: 0, bank: 0, credit: 0,
     voidCount: 0, voidValue: 0, refundCount: 0, refundValue: 0,
     creditOutstanding: 0, drawerCash: 0
   };
@@ -11400,6 +12980,11 @@ function recordStockMovement(transaction, fields) {
   if (fields.productName) entry.productName = String(fields.productName).slice(0, 120);
   if (fields.saleId) entry.saleId = String(fields.saleId).slice(0, 120);
   if (fields.transferId) entry.transferId = String(fields.transferId).slice(0, 120);
+  // Why the shelf was corrected, and any words the person added. Spec 4.4.
+  // Both optional and both validated by the rules, so a typo here is refused
+  // rather than stored as an uncountable category.
+  if (fields.adjustmentReason) entry.adjustmentReason = String(fields.adjustmentReason);
+  if (fields.note) entry.note = String(fields.note).slice(0, 200);
   transaction.set(ref, entry);
 }
 
@@ -12972,6 +14557,8 @@ async function initFirebase() {
         subscribeToStockLedger();
         subscribeToMonthlyReports();
         subscribeToCustomers();
+        subscribeToSuppliers();
+        subscribeToPurchaseReturns();
         subscribeToTransfers();
         subscribeToServices();
         subscribeToExpenses();
@@ -13001,6 +14588,10 @@ async function initFirebase() {
         state.unsubscribeMonthlyReports = null;
         if (state.unsubscribeCustomers) state.unsubscribeCustomers();
         state.unsubscribeCustomers = null;
+        if (state.unsubscribeSuppliers) state.unsubscribeSuppliers();
+        state.unsubscribeSuppliers = null;
+        if (state.unsubscribePurchaseReturns) state.unsubscribePurchaseReturns();
+        state.unsubscribePurchaseReturns = null;
         if (state.unsubscribeTransfers) state.unsubscribeTransfers();
         state.unsubscribeTransfers = null;
         if (state.unsubscribeServices) state.unsubscribeServices();
@@ -14267,23 +15858,65 @@ function validateAuthForm() {
   return validEmail && validPassword && validConfirm && validConsent;
 }
 
+// Errors that must NOT be distinguished from success, because telling them
+// apart is exactly what lets someone test whether an address has an account
+// here. Everything else is a genuine failure the person needs to know about.
+const PASSWORD_RESET_SILENT_CODES = new Set([
+  "auth/user-not-found",
+  "auth/invalid-recipient-email",
+  "auth/email-not-found"
+]);
+
 async function handleForgotPassword() {
   if (!state.auth) return showToast(t("toast.firebaseNotConnected"));
   if (!validateAuthEmail()) return;
   const email = qs("#authEmail").value.trim();
   const button = qs("#authForgotPasswordButton");
+
+  // Said before firing rather than after failing. Offline this request cannot
+  // possibly succeed, and the old code answered "a link has been sent" -- so
+  // the shop waited on an email that was never sent, on the one screen where
+  // they are already locked out and have no other way in.
+  if (isOfflineNow()) return showToast(t("toast.passwordResetOffline"));
+
   button.disabled = true;
   try {
-    await state.firebaseApi.auth.sendPasswordResetEmail(state.auth, email);
-  } catch (error) {
-    console.warn(error);
-    // Deliberately do not reveal whether the account exists (prevents
-    // account enumeration) — only surface genuine client-side problems.
-    if (error.code === "auth/too-many-requests") {
-      showToast(t("toast.authTooManyRequests"));
-      button.disabled = false;
-      return;
+    // Where the link lands after the password is changed. Without this the
+    // reset finishes on Firebase's own page -- English only, no branding, and
+    // no way back -- which for a shopkeeper on a phone is a dead end at the
+    // exact moment they are trying to get back in.
+    //
+    // The continue URL must be an AUTHORISED DOMAIN on the Firebase project. If
+    // it is not, sendPasswordResetEmail rejects the whole request, so a domain
+    // nobody remembered to authorise would break password reset outright. Hence
+    // the retry below: the link is a courtesy, getting the email sent is not.
+    const actionCodeSettings = { url: `${location.origin}/app.html`, handleCodeInApp: false };
+    try {
+      await state.firebaseApi.auth.sendPasswordResetEmail(state.auth, email, actionCodeSettings);
+    } catch (error) {
+      if (error?.code === "auth/unauthorized-continue-uri" || error?.code === "auth/invalid-continue-uri") {
+        console.warn("Continue URL not authorised for this project; sending without one.", error);
+        await state.firebaseApi.auth.sendPasswordResetEmail(state.auth, email);
+      } else {
+        throw error;
+      }
     }
+  } catch (error) {
+    console.warn("[handleForgotPassword]", error);
+    button.disabled = false;
+
+    // A real failure is REPORTED, not dressed up as success. The old code
+    // caught everything and still said "a link has been sent", so a blocked
+    // App Check token, a dead uplink or a misconfigured project all looked
+    // exactly like a delivered email -- the same misleading-success failure the
+    // sign-in screen had, on the screen where being stuck is worst.
+    if (error?.code === "auth/too-many-requests") return showToast(t("toast.authTooManyRequests"));
+    if (error?.code === "auth/invalid-email") return setFieldError("authEmailError", t("auth.errorEmailInvalid"));
+    if (error?.code === "auth/network-request-failed") return showToast(t("toast.passwordResetOffline"));
+    // Whether this address has an account is not disclosed -- that distinction
+    // is the enumeration hole.
+    if (PASSWORD_RESET_SILENT_CODES.has(error?.code)) return showToast(t("toast.passwordResetSent"));
+    return showToast(t("toast.passwordResetFailed"));
   }
   showToast(t("toast.passwordResetSent"));
   button.disabled = false;
@@ -14444,6 +16077,51 @@ function canOpenView(viewId) {
   return isManagerOrOwnerRole() || CASHIER_ALLOWED_VIEWS.includes(viewId);
 }
 
+// The Accounts group opens and closes. Spec-side it is one button over three
+// money screens; the care here is that it must never hide the screen the user
+// is actually on.
+const ACCOUNTS_GROUP_KEY = "savia.accountsGroupOpen";
+
+function setAccountsGroupOpen(open, remember = true) {
+  const toggle = qs("#accountsGroupToggle");
+  const items = qs("#accountsGroupItems");
+  if (!toggle || !items) return;
+  items.hidden = !open;
+  toggle.setAttribute("aria-expanded", open ? "true" : "false");
+  toggle.classList.toggle("open", open);
+  if (!remember) return;
+  // Per device, and never allowed to throw: private windows and blocked site
+  // data make localStorage itself raise, and a nav that cannot open because a
+  // preference could not be saved would be absurd.
+  try { localStorage.setItem(ACCOUNTS_GROUP_KEY, open ? "1" : "0"); } catch (error) { /* ignore */ }
+}
+
+function accountsGroupHoldsActiveView() {
+  const items = qs("#accountsGroupItems");
+  const active = qs(".view.active");
+  if (!items || !active) return false;
+  return Array.from(items.querySelectorAll(".nav-item")).some((item) => item.dataset.view === active.id);
+}
+
+// Called after every view change and every role resolution.
+function syncAccountsGroup() {
+  const items = qs("#accountsGroupItems");
+  if (!items) return;
+  // Open regardless of the saved preference when one of its own screens is
+  // showing. Arriving at Purchases from the command palette, from a redirect,
+  // or from a deep link would otherwise leave the current screen invisible
+  // inside a collapsed menu -- which reads as the nav having lost the item.
+  if (accountsGroupHoldsActiveView()) return setAccountsGroupOpen(true, false);
+  let remembered = null;
+  try { remembered = localStorage.getItem(ACCOUNTS_GROUP_KEY); } catch (error) { /* ignore */ }
+  // OPEN when nothing has been chosen yet. Eight shops already use Purchases,
+  // Expenses and the Profit Report daily; shipping this collapsed would make
+  // all three look deleted on the morning the update lands, and the first
+  // report would be that the app had lost them. Only an explicit "0" -- someone
+  // who has actually closed it -- keeps it shut.
+  setAccountsGroupOpen(remembered !== "0", false);
+}
+
 function applyRoleViewVisibility() {
   qsa(".nav-item").forEach((item) => {
     item.hidden = !canOpenView(item.dataset.view);
@@ -14452,6 +16130,10 @@ function applyRoleViewVisibility() {
   // reach it -- and a heading left standing over nothing reads as a menu that
   // failed to load. It follows its group: visible only while at least one view
   // under it can be opened.
+  // The Accounts toggle is a control, not a label, so it does not carry a
+  // data-view and the loop above never reaches it. It follows its group: shown
+  // only while at least one screen under it can be opened, because a button
+  // that opens an empty menu is worse than no button.
   qsa(".nav-group").forEach((group) => {
     // Scoped to the group's own children. Walking nextElementSibling from a
     // bare label ran to the end of the nav and treated Reports and the AI
@@ -14459,6 +16141,7 @@ function applyRoleViewVisibility() {
     const anyVisible = Array.from(group.querySelectorAll(".nav-item")).some((item) => !item.hidden);
     group.hidden = !anyVisible;
   });
+  syncAccountsGroup();
   // Only redirect once the role has actually resolved. While it's still null
   // the nav stays hidden (fail closed, harmless), but redirecting here would
   // strand an owner on the POS tab after their real role arrives.
@@ -14474,6 +16157,10 @@ function openView(viewId) {
   qsa(".view").forEach((view) => view.classList.toggle("active", view.id === viewId));
   qsa(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === viewId));
   qs(".sidebar").classList.remove("open");
+  // Keep the Accounts menu honest about what is on screen. Reached from the
+  // command palette and from the role redirect as well as from a nav click, so
+  // it belongs here rather than on the toggle's own handler.
+  syncAccountsGroup();
   if (viewId === "reports" || viewId === "ai") warmUpAiProxy();
 }
 
@@ -14752,8 +16439,53 @@ function bindEvents() {
   });
   qs("#purchasesTable")?.addEventListener("click", (event) => {
     const remove = event.target.closest("[data-delete-purchase]");
-    if (remove) deletePurchase(remove.dataset.deletePurchase);
+    if (remove) return deletePurchase(remove.dataset.deletePurchase);
+    const ret = event.target.closest("[data-return-purchase]");
+    if (ret) openPurchaseReturnDialog(ret.dataset.returnPurchase);
   });
+  qs("#addSupplierButton")?.addEventListener("click", () => openSupplierDialog(""));
+  qs("#closeSupplierDialog")?.addEventListener("click", () => qs("#supplierDialog").close());
+  qs("#cancelSupplierDialog")?.addEventListener("click", () => qs("#supplierDialog").close());
+  qs("#supplierForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveSupplier(Object.fromEntries(new FormData(event.currentTarget).entries()));
+  });
+  qs("#suppliersTable")?.addEventListener("click", (event) => {
+    const edit = event.target.closest("[data-edit-supplier]");
+    if (edit) return openSupplierDialog(edit.dataset.editSupplier);
+    const pay = event.target.closest("[data-supplier-pay]");
+    if (pay) return openSupplierPaymentDialog(pay.dataset.supplierPay);
+    const statement = event.target.closest("[data-supplier-statement]");
+    if (statement) openSupplierStatement(statement.dataset.supplierStatement);
+  });
+  qs("#accountsGroupToggle")?.addEventListener("click", () => {
+    const items = qs("#accountsGroupItems");
+    setAccountsGroupOpen(Boolean(items?.hidden));
+  });
+  qs("#openProfitFromReports")?.addEventListener("click", () => openView("profit"));
+  qs("#closeStockAdjustDialog")?.addEventListener("click", () => qs("#stockAdjustDialog").close());
+  qs("#cancelStockAdjustDialog")?.addEventListener("click", () => qs("#stockAdjustDialog").close());
+  qs("#stockAdjustForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    recordStockAdjustment(Object.fromEntries(new FormData(event.currentTarget).entries()));
+  });
+  qs("#stockAdjustForm")?.addEventListener("input", (event) => {
+    if (event.target?.name === "newQuantity") renderAdjustDelta();
+  });
+  qs("#closePurchaseReturnDialog")?.addEventListener("click", () => qs("#purchaseReturnDialog").close());
+  qs("#cancelPurchaseReturnDialog")?.addEventListener("click", () => qs("#purchaseReturnDialog").close());
+  qs("#purchaseReturnForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    recordPurchaseReturn(Object.fromEntries(new FormData(event.currentTarget).entries()));
+  });
+  qs("#closeSupplierPaymentDialog")?.addEventListener("click", () => qs("#supplierPaymentDialog").close());
+  qs("#cancelSupplierPaymentDialog")?.addEventListener("click", () => qs("#supplierPaymentDialog").close());
+  qs("#supplierPaymentForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    recordSupplierPayment(Object.fromEntries(new FormData(event.currentTarget).entries()));
+  });
+  qs("#closeSupplierStatementDialog")?.addEventListener("click", () => qs("#supplierStatementDialog").close());
+  qs("#doneSupplierStatementDialog")?.addEventListener("click", () => qs("#supplierStatementDialog").close());
   qs("#vatMonthInput")?.addEventListener("change", () => renderVatRecord());
   qs("#openVatRecordLink")?.addEventListener("click", () => openView("vat"));
   qs("#profitMonthInput")?.addEventListener("change", (event) => {
@@ -15105,6 +16837,12 @@ function bindEvents() {
     if (editButton) {
       const product = state.products.find((item) => item.id === editButton.dataset.editProduct);
       if (product) openProductDialog(product);
+      return;
+    }
+
+    const adjustButton = event.target.closest("[data-adjust-product]");
+    if (adjustButton) {
+      openStockAdjustDialog(adjustButton.dataset.adjustProduct);
       return;
     }
 
@@ -15833,6 +17571,13 @@ function bindEvents() {
     product.barcode = product.barcode || "";
     product.description = product.description || "";
     product.warehouse = product.warehouse || "";
+    // Spec 4.1. A <select> hands back the STRING "true"/"false"; the rules
+    // require a real boolean, so without this every save is refused.
+    product.active = String(product.active) !== "false";
+    product.unit = String(product.unit || "").trim().slice(0, 20);
+    // Omitted rather than written empty, so an untouched unit does not clear one
+    // set from another device on a merge write.
+    if (!product.unit) delete product.unit;
     product.shelf = product.shelf || "";
     product.expiryDate = product.expiryDate || "";
     // Opening-stock cost. Only on a create, only for someone allowed to record

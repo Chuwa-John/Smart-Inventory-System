@@ -918,14 +918,22 @@ console.log("\n=== Phase E: the surface, and who may see it ===");
   // of revenue as profit, which is the defect DESIGN-purchases.md 2 found live.
   check("cost of goods shows nothing until a cost is known",
     /p\.anyCostKnown \? deduct\(p\.cogs\) : unknown/.test(render), true);
+  // The CONDITION, not the formatting beside it. Both margins now render
+  // through withMargin(), which drops the percentage rather than printing
+  // "undefined%" when it is absent; what this test is about is that gross is
+  // not shown at all until there is a cost to work from.
   check("gross shows nothing until a cost is known",
-    /p\.anyCostKnown \? `\$\{money\(p\.grossProfit\)\}/.test(render), true);
+    /p\.anyCostKnown \? [^:]*p\.grossProfit[^:]*: unknown/.test(render), true);
   // Asserted as the CONDITION, not the fallback character. app.js is mixed
   // between the em-dash and its \u2014 escape and both render the same thing;
   // what matters is that net profit is not shown at all until there is a cost
   // to work from, because gross would otherwise read as the whole of revenue.
+  // Anchored on the CONDITION alone, not on how the value beside it is
+  // formatted. Net profit now prints its margin next to it (spec 10), which is
+  // a presentation change; what this test is about is that the figure is not
+  // shown at all until there is a cost to work from.
   check("net shows nothing until a cost is known",
-    /p\.anyCostKnown \? money\(p\.netProfit\) :/.test(render), true);
+    /p\.anyCostKnown \? [^:]*p\.netProfit[^:]*: unknown/.test(render), true);
   check("renderAll repaints it", /renderProfit\(\);/.test(body("function renderAll(")), true);
 
   for (const key of ["nav.profit", "profit.gross", "profit.net", "profit.grossNoCost",

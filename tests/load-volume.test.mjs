@@ -245,9 +245,17 @@ console.log("\n=== composite indexes the client needs are declared ===");
     check(`${group} (${fields}) has a declared index`, has,
       `app.js issues this pairing; without the index it fails in production and passes here`);
   }
-  check("the stock ledger query needs no composite index",
-    !/stockMovements[\s\S]{0,200}where\(/.test(app),
-    "orderBy alone is served by the automatic single-field index");
+  // The per-product stock ledger (spec 4.3) filters by productId and orders by
+  // createdAt, which orderBy alone no longer serves. The rule this enforces is
+  // unchanged -- a where() paired with an orderBy needs a DECLARED composite
+  // index or it fails with failed-precondition in production and passes here,
+  // against an emulator that builds indexes on demand.
+  const ledgerFiltersByProduct = /stockMovements[\s\S]{0,400}where\("productId"/.test(app);
+  const ledgerIndexDeclared = declared.some((d) => d.startsWith("stockMovements:")
+    && d.includes("productId") && d.includes("createdAt"));
+  check("any filtered stock ledger query has its composite index declared",
+    !ledgerFiltersByProduct || ledgerIndexDeclared,
+    "app.js filters stockMovements by productId; without the index this fails only in production");
 }
 
 await testEnv.cleanup();

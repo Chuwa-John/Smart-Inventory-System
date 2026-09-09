@@ -28,7 +28,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260908a" />
+    <link rel="stylesheet" href="./styles.css?v=20260909a" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#0b0d10" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -48,7 +48,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260908a"></script>
+    <script type="module" src="./boot.js?v=20260909a"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -89,35 +89,41 @@
                businessType is per store: one owner may run a salon and a duka
                and the tab has to follow which branch they are looking at. -->
           <button class="nav-item" data-view="services" id="servicesNavItem" hidden><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="6.5" cy="6.5" r="2.4"/><circle cx="6.5" cy="17.5" r="2.4"/><path d="M8.6 8.1 20 19.5M20 4.5 8.6 15.9"/></svg><span id="servicesNavLabel">Services</span></button>
-          <!-- Accounts. Owner and manager only; canOpenView() is the real
-               gate and neither view is in CASHIER_ALLOWED_VIEWS. A labelled
-               group rather than a dropdown: two items do not earn the
-               open/close machinery, and the grouping is what the owner asked
-               for. DESIGN-purchases.md 13b. -->
-          <div class="nav-group">
-            <p class="nav-group-label" data-i18n="nav.accounts">Accounts</p>
-            <!-- Deliveries sits above Purchases because it FEEDS it: a delivery
-                 writes the purchase lines the Purchase Book lists. The docx puts
-                 Receive Stock under Inventory, which is a description of the
-                 flow rather than of the nav -- and Inventory is a screen about
-                 what is on the shelf, while this one is about what was paid.
-                 Same manager-and-owner gate as Purchases: a delivery header
-                 states what a shipment cost. DESIGN-landed-costs.md 13. -->
-            <button class="nav-item" data-view="deliveries"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 5.5h10.5V16H3z"/><path d="M13.5 9h4.1L21 12.2V16h-7.5z"/><circle cx="7" cy="18.4" r="1.7"/><circle cx="17.4" cy="18.4" r="1.7"/></svg><span data-i18n="nav.deliveries">Deliveries</span></button>
-            <button class="nav-item" data-view="purchases"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5.5 2.8h13v18.4l-2.6-1.5-2.4 1.5-2.5-1.5-2.4 1.5-3.1-1.5z"/><path d="M9 8.4h6M9 12.4h6"/></svg><span data-i18n="nav.purchases">Purchases</span></button>
-            <button class="nav-item" data-view="expenses"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7.6A2.1 2.1 0 0 1 5.1 5.5h12.4a1 1 0 0 1 1 1v2"/><path d="M3 7.6v9.3a2.1 2.1 0 0 0 2.1 2.1h13.4a1 1 0 0 0 1-1v-3.1"/><path d="M21 10.4v4.2h-4.1a2.1 2.1 0 0 1 0-4.2z"/></svg><span data-i18n="nav.expenses">Expenses</span></button>
-            <!-- Owner-strict. canOpenView() returns isOwnerRole() for this one
-                 alone: profit exposes buying prices by inference, and a manager
-                 already sees revenue, shift variance and staff performance
-                 without it. Decided by the owner 2026-08-21. -->
-            <button class="nav-item" data-view="profit"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.2 17.2 9 11.4l3.8 3.8L20.6 7.4"/><path d="M15 7.4h5.6V13"/></svg><span data-i18n="nav.profit">Profit Report</span></button>
-            <!-- Manager and owner, unlike Profit. A VAT record states what was
-                 charged and what may be reclaimed; it does not expose a buying
-                 price against a selling price, so it does not carry the
-                 inference Profit does. Hidden entirely for a business that is
-                 not VAT registered -- renderVatNav(). -->
-            <button class="nav-item" data-view="vat" hidden><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 5 5 19"/><circle cx="7.6" cy="7.6" r="2.4"/><circle cx="16.4" cy="16.4" r="2.4"/></svg><span data-i18n="nav.vat">VAT</span></button>
+          <!-- Deliveries sits OUTSIDE the Accounts group, above it, because it
+               feeds it: a delivery writes the purchase lines the Purchase Book
+               lists. It is a stock-flow screen that happens to record money,
+               where the three under Accounts are money screens. Same
+               manager-and-owner gate. DESIGN-landed-costs.md 13. -->
+          <button class="nav-item" data-view="deliveries"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 5.5h10.5V16H3z"/><path d="M13.5 9h4.1L21 12.2V16h-7.5z"/><circle cx="7" cy="18.4" r="1.7"/><circle cx="17.4" cy="18.4" r="1.7"/></svg><span data-i18n="nav.deliveries">Deliveries</span></button>
+          <!-- Accounts. Now a real disclosure control rather than a label:
+               the owner asked for one button that opens the three money screens
+               under it. It was previously a <p>, which is why nothing happened
+               when anyone clicked it.
+                 - A <button> with aria-expanded and aria-controls, so it is
+                   reachable by keyboard and announced as what it is.
+                 - It opens itself when one of its own views is active, so
+                   arriving from the command palette or a redirect never leaves
+                   the current screen hidden inside a closed menu.
+                 - Its open/closed state is remembered per device.
+               Role gating is unchanged: canOpenView() is still the real gate and
+               the group hides entirely when none of the three can be opened. -->
+          <div class="nav-group" id="accountsGroup">
+            <button class="nav-group-toggle" id="accountsGroupToggle" type="button"
+                    aria-expanded="false" aria-controls="accountsGroupItems">
+              <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7.5h18M3 12h18M3 16.5h18"/></svg>
+              <span data-i18n="nav.accounts">Accounts</span>
+              <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 10l4 4 4-4"/></svg>
+            </button>
+            <div class="nav-group-items" id="accountsGroupItems" hidden>
+              <button class="nav-item" data-view="purchases"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5.5 2.8h13v18.4l-2.6-1.5-2.4 1.5-2.5-1.5-2.4 1.5-3.1-1.5z"/><path d="M9 8.4h6M9 12.4h6"/></svg><span data-i18n="nav.purchases">Purchases</span></button>
+              <button class="nav-item" data-view="expenses"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7.6A2.1 2.1 0 0 1 5.1 5.5h12.4a1 1 0 0 1 1 1v2"/><path d="M3 7.6v9.3a2.1 2.1 0 0 0 2.1 2.1h13.4a1 1 0 0 0 1-1v-3.1"/><path d="M21 10.4v4.2h-4.1a2.1 2.1 0 0 1 0-4.2z"/></svg><span data-i18n="nav.expenses">Expenses</span></button>
+              <button class="nav-item" data-view="profit"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.2 17.2 9 11.4l3.8 3.8L20.6 7.4"/><path d="M15 7.4h5.6V13"/></svg><span data-i18n="nav.profit">Profit Report</span></button>
+            </div>
           </div>
+          <!-- VAT is tax, not day-to-day money, and is hidden entirely for a
+               business that is not registered -- renderVatNav(). Top level, so
+               a registered shop is not made to open a menu to reach it. -->
+          <button class="nav-item" data-view="vat" hidden><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 5 5 19"/><circle cx="7.6" cy="7.6" r="2.4"/><circle cx="16.4" cy="16.4" r="2.4"/></svg><span data-i18n="nav.vat">VAT</span></button>
           <button class="nav-item" data-view="reports"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.2 20.8h17.6"/><path d="M7.4 20.8V10.6M12 20.8V4.2M16.6 20.8v-6.6"/></svg><span data-i18n="nav.reports">Reports</span></button>
           <button class="nav-item" data-view="ai"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M11.4 3.2 13.1 8l4.8 1.7-4.8 1.7-1.7 4.8-1.7-4.8L4.9 9.7 9.7 8z"/><path d="M18.3 15.1l.63 1.72 1.72.63-1.72.63-.63 1.72-.63-1.72-1.72-.63 1.72-.63z"/></svg><span data-i18n="nav.ai">AI Advisor</span></button>
           <button class="nav-item" data-view="settings"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.4v3.1M12 18.5v3.1M21.6 12h-3.1M5.5 12H2.4M18.8 5.2l-2.2 2.2M7.4 16.6l-2.2 2.2M18.8 18.8l-2.2-2.2M7.4 7.4 5.2 5.2"/></svg><span data-i18n="nav.settings">Settings</span></button>
@@ -558,6 +564,7 @@
                     <th data-i18n="deliveries.thLanded">Landed</th>
                     <th data-i18n="deliveries.thTotal">Total cost</th>
                     <th data-i18n="deliveries.thBasis">Spread by</th>
+                    <th data-i18n="deliveries.thPayment">Payment</th>
                     <th data-i18n="deliveries.thActions">Actions</th>
                   </tr>
                 </thead>
@@ -601,6 +608,36 @@
                   </tr>
                 </thead>
                 <tbody id="purchasesTable"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <!-- Suppliers. Spec 5.4. Lives inside Purchases rather than in its own
+               nav item: you reach a supplier because you are buying from them or
+               chasing what you owe them, never on its own. -->
+          <article class="panel" id="suppliersPanel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="suppliers.eyebrow">Who you buy from</p>
+                <h2 data-i18n="suppliers.title">Suppliers</h2>
+              </div>
+              <button class="ghost-button compact" id="addSupplierButton" type="button" data-i18n="suppliers.addButton">+ Supplier</button>
+            </div>
+            <p class="muted" data-i18n="suppliers.intro">A supplier recorded here can be picked when you buy, so purchases group under one name instead of however it was typed that day.</p>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="suppliers.thName">Supplier</th>
+                    <th data-i18n="suppliers.thPhone">Phone</th>
+                    <th data-i18n="suppliers.thTin">TIN</th>
+                    <th data-i18n="suppliers.thPurchases">Bought from them</th>
+                    <th data-i18n="suppliers.thOwed">You owe them</th>
+                    <th data-i18n="suppliers.thStatus">Status</th>
+                    <th data-i18n="suppliers.thActions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="suppliersTable"></tbody>
               </table>
             </div>
           </article>
@@ -749,6 +786,7 @@
               <div class="payment-grid" id="paymentGrid">
                 <button class="ghost-button payment-option active" data-payment="cash" type="button" data-i18n="pos.cash">Cash</button>
                 <button class="ghost-button payment-option" data-payment="mobile" type="button" data-i18n="pos.mobile">Mobile Money</button>
+                <button class="ghost-button payment-option" data-payment="bank" type="button" data-i18n="pos.bank">Bank</button>
                 <button class="ghost-button payment-option" data-payment="card" type="button" data-i18n="pos.card">Card</button>
                 <button class="ghost-button payment-option" data-payment="credit" type="button" data-i18n="pos.credit">Credit</button>
               </div>
@@ -762,6 +800,7 @@
                   <select id="creditAmountPaidMethod">
                     <option value="cash" data-i18n="pos.cash">Cash</option>
                     <option value="mobile" data-i18n="pos.mobile">Mobile Money</option>
+                    <option value="bank" data-i18n="pos.bank">Bank</option>
                     <option value="card" data-i18n="pos.card">Card</option>
                   </select>
                 </label>
@@ -779,6 +818,26 @@
               <h1 data-i18n="reports.title">Reports</h1>
             </div>
           </div>
+
+          <!-- Spec 9 asks for five Financial reports. Four of them -- Balance
+               Sheet, Trial Balance, General Ledger, Cash Flow -- are statements
+               OF a double-entry ledger, and this system does not keep one yet
+               (DESIGN-suppliers-purchases.md 2.1). They are named here rather
+               than rendered from something that merely resembles them: a report
+               that shows a plausible figure it cannot support is worse than an
+               absent one, and this project has shipped that defect once. -->
+          <article class="panel" id="ledgerPendingPanel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.groupFinancial">Financial</p>
+                <h2 data-i18n="reports.ledgerPendingTitle">Balance Sheet, Trial Balance, Cash Flow &amp; General Ledger</h2>
+              </div>
+            </div>
+            <p class="muted" data-i18n="reports.ledgerPendingBody">These four are statements of a double-entry ledger, which this system does not keep yet. Profit &amp; Loss is available now, on its own tab, because it is built from the transactions themselves.</p>
+            <div class="button-row">
+              <button class="ghost-button compact" id="openProfitFromReports" type="button" data-i18n="reports.openProfit">Open Profit &amp; Loss</button>
+            </div>
+          </article>
 
           <article class="panel">
             <div class="panel-head">
@@ -852,6 +911,7 @@
                     <th data-i18n="pos.cash">Cash</th>
                     <th data-i18n="pos.mobile">Mobile Money</th>
                     <th data-i18n="pos.card">Card</th>
+                    <th data-i18n="pos.bank">Bank</th>
                     <th data-i18n="reports.collectedColumn">Collected</th>
                     <th data-i18n="reports.netSalesColumn">Net sales</th>
                     <th data-i18n="reports.ordersColumn">Orders</th>
@@ -1027,6 +1087,168 @@
           </article>
 
           <div class="report-grid" id="reportGrid"></div>
+
+          <!-- ===== Spec 9: Sales ===== -->
+          <article class="panel" id="salesByCustomerPanel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.groupSales">Sales</p>
+                <h2 data-i18n="reports.byCustomerTitle">Sales by Customer</h2>
+              </div>
+            </div>
+            <p class="muted" data-i18n="reports.byCustomerIntro">Uses the range chosen above. Sales with no customer recorded are grouped as walk-in rather than left out.</p>
+            <div class="table-scroll"><table>
+              <thead><tr>
+                <th data-i18n="reports.thCustomer">Customer</th>
+                <th data-i18n="reports.thOrders">Orders</th>
+                <th data-i18n="reports.thRevenue">Revenue</th>
+              </tr></thead>
+              <tbody id="salesByCustomerTable"></tbody>
+            </table></div>
+          </article>
+
+          <article class="panel" id="salesReturnsPanel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.groupSales">Sales</p>
+                <h2 data-i18n="reports.salesReturnsTitle">Sales Returns</h2>
+              </div>
+            </div>
+            <div class="table-scroll"><table>
+              <thead><tr>
+                <th data-i18n="movement.colDate">Date</th>
+                <th data-i18n="reports.thOrder">Order</th>
+                <th data-i18n="movement.colStaff">Staff</th>
+                <th data-i18n="movement.colQty">Units</th>
+                <th data-i18n="reports.thRefunded">Refunded</th>
+              </tr></thead>
+              <tbody id="salesReturnsTable"></tbody>
+            </table></div>
+          </article>
+
+          <!-- ===== Spec 9: Purchases (owner only -- every figure is a cost) ===== -->
+          <article class="panel" id="purchaseSummaryPanel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.groupPurchases">Purchases</p>
+                <h2 data-i18n="reports.purchaseSummaryTitle">Purchase Summary</h2>
+              </div>
+            </div>
+            <div class="kpi-grid" id="purchaseSummaryTotals"></div>
+          </article>
+
+          <article class="panel" id="purchasesByProductPanel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.groupPurchases">Purchases</p>
+                <h2 data-i18n="reports.byProductPurchaseTitle">Purchases by Product</h2>
+              </div>
+            </div>
+            <div class="table-scroll"><table>
+              <thead><tr>
+                <th data-i18n="movement.colProduct">Product</th>
+                <th data-i18n="reports.thNetUnits">Units (net)</th>
+                <th data-i18n="reports.thReturned">Returned</th>
+                <th data-i18n="reports.thNetSpend">Spent (net)</th>
+              </tr></thead>
+              <tbody id="purchasesByProductTable"></tbody>
+            </table></div>
+          </article>
+
+          <article class="panel" id="purchaseReturnsPanel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.groupPurchases">Purchases</p>
+                <h2 data-i18n="reports.purchaseReturnsTitle">Purchase Returns</h2>
+              </div>
+            </div>
+            <div class="table-scroll"><table>
+              <thead><tr>
+                <th data-i18n="movement.colDate">Date</th>
+                <th data-i18n="movement.colProduct">Product</th>
+                <th data-i18n="movement.colSupplier">Supplier</th>
+                <th data-i18n="movement.colQty">Units</th>
+                <th data-i18n="reports.thValue">Value</th>
+                <th data-i18n="reports.thWhy">Why</th>
+              </tr></thead>
+              <tbody id="purchaseReturnsTable"></tbody>
+            </table></div>
+          </article>
+
+          <article class="panel" id="supplierBalancesPanel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.groupPurchases">Purchases</p>
+                <h2 data-i18n="reports.supplierBalancesTitle">Supplier Balances</h2>
+              </div>
+            </div>
+            <p class="muted" data-i18n="reports.supplierBalancesIntro">What the business still owes. Only suppliers with something outstanding are listed.</p>
+            <div class="table-scroll"><table>
+              <thead><tr>
+                <th data-i18n="suppliers.thName">Supplier</th>
+                <th data-i18n="suppliers.thOwed">You owe them</th>
+              </tr></thead>
+              <tbody id="supplierBalancesTable"></tbody>
+            </table></div>
+          </article>
+
+          <!-- ===== Spec 9: Inventory ===== -->
+          <article class="panel" id="stockSummaryPanel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.groupInventory">Inventory</p>
+                <h2 data-i18n="reports.stockSummaryTitle">Stock Summary</h2>
+              </div>
+            </div>
+            <div class="table-scroll"><table>
+              <thead><tr>
+                <th data-i18n="movement.colProduct">Product</th>
+                <th data-i18n="reports.thCategory">Category</th>
+                <th data-i18n="reports.thOnShelf">On the shelf</th>
+                <th data-i18n="reports.thMinimum">Minimum</th>
+                <th data-i18n="reports.thState">State</th>
+              </tr></thead>
+              <tbody id="stockSummaryTable"></tbody>
+            </table></div>
+          </article>
+
+          <article class="panel" id="stockAdjustmentsPanel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.groupInventory">Inventory</p>
+                <h2 data-i18n="reports.adjustmentsTitle">Stock Adjustments</h2>
+              </div>
+            </div>
+            <p class="muted" data-i18n="reports.adjustmentsIntro">Where stock went when it was not sold. Grouped by the reason given at the time.</p>
+            <div class="table-scroll"><table>
+              <thead><tr>
+                <th data-i18n="adjust.reasonLabel">Why</th>
+                <th data-i18n="reports.thTimes">Times</th>
+                <th data-i18n="movement.colIn">In</th>
+                <th data-i18n="movement.colOut">Out</th>
+              </tr></thead>
+              <tbody id="stockAdjustmentsTable"></tbody>
+            </table></div>
+          </article>
+
+          <!-- ===== Spec 9: Expenses ===== -->
+          <article class="panel" id="expensesByCategoryPanel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.groupExpenses">Expenses</p>
+                <h2 data-i18n="reports.byCategoryTitle">Expenses by Category</h2>
+              </div>
+            </div>
+            <div class="table-scroll"><table>
+              <thead><tr>
+                <th data-i18n="reports.thCategory">Category</th>
+                <th data-i18n="reports.thNature">Direct or indirect</th>
+                <th data-i18n="reports.thTimes">Times</th>
+                <th data-i18n="reports.thAmount">Amount</th>
+              </tr></thead>
+              <tbody id="expensesByCategoryTable"></tbody>
+            </table></div>
+          </article>
         </section>
 
         <section class="view" id="ai">
@@ -1203,8 +1425,32 @@
               <button class="ghost-button compact" type="button" id="scanProductBarcodeButton" data-i18n="product.scanButton">Scan</button>
             </span>
           </label>
-          <label><span data-i18n="product.quantityLabel">Quantity</span><input name="quantity" type="number" min="0" required max="1000000" /></label>
+          <!-- Spec 4.2: current stock is DERIVED from movements, not typed over.
+               Open when adding a product (that number is opening stock); locked
+               when editing one, with Adjust as the way to correct it, so every
+               change to a shelf leaves a ledger entry saying who and why. -->
+          <label><span data-i18n="product.quantityLabel">Quantity</span>
+            <input name="quantity" type="number" min="0" required max="1000000" />
+            <span class="muted" id="productQuantityLockNote" hidden data-i18n="product.quantityLocked">Use Adjust on the inventory row to correct the shelf count, so the change is recorded with a reason.</span>
+          </label>
           <label><span data-i18n="product.priceLabel">Selling price (TZS)</span> <input name="sellingPrice" type="number" min="0" step="1" required max="1000000000" /></label>
+          <!-- Spec 4.1. The unit is what a quantity MEANS -- 12 of something is
+               a different fact if it is 12 pieces, 12 crates or 12 kg -- and it
+               shows up wherever a count is printed. -->
+          <label><span data-i18n="product.unitLabel">Unit</span>
+            <input name="unit" maxlength="20" autocomplete="off" list="productUnitOptions" data-i18n-placeholder="product.unitPlaceholder" placeholder="e.g. piece, crate, kg" />
+          </label>
+          <label><span data-i18n="product.skuLabel">SKU (optional)</span>
+            <input name="sku" maxlength="40" autocomplete="off" />
+          </label>
+          <!-- Discontinued lines stay in reports and on the purchases already
+               made, but stop being offered at the till. -->
+          <label><span data-i18n="product.activeLabel">Status</span>
+            <select name="active">
+              <option value="true" data-i18n="product.activeYes">Active</option>
+              <option value="false" data-i18n="product.activeNo">Inactive &mdash; stop selling it</option>
+            </select>
+          </label>
           <label><span data-i18n="product.priceTypeLabel">Price type</span>
             <select name="priceType">
               <option value="fixed" data-i18n="product.priceFixed">Fixed price</option>
@@ -1323,6 +1569,184 @@
       </div>
     </dialog>
 
+    <!-- Spec 5.4. Phone is optional here, unlike a customer, whose phone IS
+         their identity in the credit book. A supplier is identified by name on
+         an invoice. -->
+    <!-- Paying a supplier down. Spec 5.4. A payment is a book entry: recorded,
+         never edited, corrected by a further entry -- the same rule the customer
+         credit book and expenses carry. -->
+    <dialog id="supplierPaymentDialog">
+      <div class="dialog-head">
+        <h2 id="supplierPaymentTitle" data-i18n="suppliers.paymentTitle">Record Payment</h2>
+        <button class="icon-button" type="button" id="closeSupplierPaymentDialog" aria-label="Close">&times;</button>
+      </div>
+      <form id="supplierPaymentForm" novalidate>
+        <input type="hidden" name="supplierId" />
+        <p class="muted" id="supplierPaymentBalance"></p>
+        <div class="form-grid">
+          <label><span data-i18n="suppliers.paymentAmountLabel">Amount</span>
+            <input name="amount" type="number" min="1" step="1" required autocomplete="off" />
+            <span class="field-error" id="supplierPaymentAmountError"></span>
+          </label>
+          <label><span data-i18n="suppliers.paymentMethodLabel">Paid by</span>
+            <select name="method">
+              <option value="cash" data-i18n="pos.cash">Cash</option>
+              <option value="bank" data-i18n="pos.bank">Bank</option>
+              <option value="mobile" data-i18n="pos.mobile">Mobile money</option>
+            </select>
+          </label>
+          <label class="full"><span data-i18n="suppliers.paymentReferenceLabel">Reference (optional)</span>
+            <input name="reference" maxlength="60" autocomplete="off" />
+          </label>
+          <label class="full"><span data-i18n="suppliers.paymentNoteLabel">Note (optional)</span>
+            <input name="note" maxlength="200" autocomplete="off" />
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button class="ghost-button" type="button" id="cancelSupplierPaymentDialog" data-i18n="product.cancel">Cancel</button>
+          <button class="primary-button" type="submit" data-i18n="suppliers.paymentSaveButton">Record Payment</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- What was bought, what was paid, and what is left. Spec 5.4. -->
+    <dialog id="supplierStatementDialog" class="wide-dialog">
+      <div class="dialog-head">
+        <h2 id="supplierStatementTitle" data-i18n="suppliers.statementTitle">Supplier Statement</h2>
+        <button class="icon-button" type="button" id="closeSupplierStatementDialog" aria-label="Close">&times;</button>
+      </div>
+      <div id="supplierStatementContent"></div>
+      <div class="dialog-actions">
+        <button class="primary-button" type="button" id="doneSupplierStatementDialog" data-i18n="movement.close">Close</button>
+      </div>
+    </dialog>
+
+    <!-- Sending goods back to a supplier. Spec 5.5. The value is worked out
+         from what THIS purchase paid per unit, not from today's weighted
+         average: the supplier credits back what they charged, and the average
+         has since absorbed other deliveries at other prices. -->
+    <dialog id="purchaseReturnDialog">
+      <div class="dialog-head">
+        <h2 id="purchaseReturnTitle" data-i18n="purchaseReturn.title">Return to Supplier</h2>
+        <button class="icon-button" type="button" id="closePurchaseReturnDialog" aria-label="Close">&times;</button>
+      </div>
+      <form id="purchaseReturnForm" novalidate>
+        <input type="hidden" name="purchaseId" />
+        <p class="muted" id="purchaseReturnSummary"></p>
+        <div class="form-grid">
+          <label><span data-i18n="purchaseReturn.qtyLabel">Units going back</span>
+            <input name="quantity" type="number" min="1" step="1" required autocomplete="off" />
+            <span class="field-error" id="purchaseReturnQtyError"></span>
+          </label>
+          <label class="full"><span data-i18n="purchaseReturn.reasonLabel">Why (optional)</span>
+            <input name="reason" maxlength="200" autocomplete="off" data-i18n-placeholder="purchaseReturn.reasonPlaceholder" placeholder="e.g. damaged in transit" />
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button class="ghost-button" type="button" id="cancelPurchaseReturnDialog" data-i18n="product.cancel">Cancel</button>
+          <button class="primary-button" type="submit" data-i18n="purchaseReturn.saveButton">Record Return</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Correcting what the shelf says. Spec 4.4.
+         The form asks for the NEW quantity and shows the difference, rather than
+         asking for the difference: a shop counting a shelf knows what is on it,
+         not how far it has drifted. -->
+    <dialog id="stockAdjustDialog">
+      <div class="dialog-head">
+        <h2 id="stockAdjustTitle" data-i18n="adjust.title">Adjust Stock</h2>
+        <button class="icon-button" type="button" id="closeStockAdjustDialog" aria-label="Close">&times;</button>
+      </div>
+      <form id="stockAdjustForm" novalidate>
+        <input type="hidden" name="productId" />
+        <div class="form-grid">
+          <label><span data-i18n="adjust.currentLabel">Currently on the shelf</span>
+            <input name="currentQuantity" type="number" readonly />
+          </label>
+          <label><span data-i18n="adjust.newLabel">Counted / corrected to</span>
+            <input name="newQuantity" type="number" min="0" step="1" required autocomplete="off" />
+            <span class="field-error" id="adjustQtyError"></span>
+          </label>
+          <label class="full"><span data-i18n="adjust.reasonLabel">Why</span>
+            <select name="reason">
+              <option value="count" data-i18n="adjust.reason.count">Physical stock count</option>
+              <option value="damaged" data-i18n="adjust.reason.damaged">Damaged</option>
+              <option value="expired" data-i18n="adjust.reason.expired">Expired</option>
+              <option value="lost" data-i18n="adjust.reason.lost">Lost</option>
+              <option value="theft" data-i18n="adjust.reason.theft">Theft</option>
+              <option value="correction" data-i18n="adjust.reason.correction">Correction</option>
+              <option value="opening" data-i18n="adjust.reason.opening">Opening stock</option>
+              <option value="other" data-i18n="adjust.reason.other">Other</option>
+            </select>
+          </label>
+          <label class="full"><span data-i18n="adjust.noteLabel">Note (optional)</span>
+            <input name="note" maxlength="200" autocomplete="off" />
+          </label>
+        </div>
+        <p class="muted" id="adjustDelta"></p>
+        <div class="dialog-actions">
+          <button class="ghost-button" type="button" id="cancelStockAdjustDialog" data-i18n="product.cancel">Cancel</button>
+          <button class="primary-button" type="submit" data-i18n="adjust.saveButton">Record Adjustment</button>
+        </div>
+      </form>
+    </dialog>
+
+    <datalist id="productUnitOptions">
+      <option value="piece"></option><option value="box"></option><option value="crate"></option>
+      <option value="kg"></option><option value="litre"></option><option value="packet"></option>
+      <option value="bag"></option><option value="bottle"></option><option value="metre"></option>
+    </datalist>
+
+    <datalist id="supplierNameOptions"></datalist>
+
+    <dialog id="supplierDialog">
+      <div class="dialog-head">
+        <h2 id="supplierDialogTitle" data-i18n="suppliers.dialogTitle">Add Supplier</h2>
+        <button class="icon-button" type="button" id="closeSupplierDialog" aria-label="Close">&times;</button>
+      </div>
+      <form id="supplierForm" novalidate>
+        <input type="hidden" name="id" />
+        <div class="form-grid">
+          <label><span data-i18n="suppliers.nameLabel">Supplier name</span>
+            <input name="name" type="text" required maxlength="80" autocomplete="organization" placeholder="e.g. Twiga Cement" data-i18n-placeholder="suppliers.namePlaceholder" />
+            <span class="field-error" id="supplierNameError"></span>
+          </label>
+          <label><span data-i18n="suppliers.phoneLabel">Phone</span>
+            <input name="phone" type="tel" maxlength="20" autocomplete="tel" />
+          </label>
+          <label><span data-i18n="suppliers.emailLabel">Email</span>
+            <input name="email" type="email" maxlength="120" autocomplete="email" />
+          </label>
+          <label><span data-i18n="suppliers.tinLabel">TIN</span>
+            <input name="tin" type="text" maxlength="40" autocomplete="off" />
+          </label>
+          <label class="full"><span data-i18n="suppliers.addressLabel">Address</span>
+            <input name="address" type="text" maxlength="200" autocomplete="street-address" />
+          </label>
+          <!-- What was already owed to them on the day this business started
+               using the app. Recorded once, at onboarding, and never derived
+               from purchases -- there are no purchase records for the years
+               before us. Spec 5.4. -->
+          <label><span data-i18n="suppliers.openingBalanceLabel">Already owed to them</span>
+            <input name="openingBalance" type="number" min="0" step="1" autocomplete="off" placeholder="0" />
+            <span class="muted" data-i18n="suppliers.openingBalanceHint">Leave at 0 unless you already owed them before you started using SaviaSmart.</span>
+            <span class="field-error" id="supplierOpeningBalanceError"></span>
+          </label>
+          <label><span data-i18n="suppliers.statusLabel">Status</span>
+            <select name="active">
+              <option value="true" data-i18n="suppliers.statusActive">Active</option>
+              <option value="false" data-i18n="suppliers.statusInactive">Inactive &mdash; stop offering them</option>
+            </select>
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button class="ghost-button" type="button" id="cancelSupplierDialog" data-i18n="product.cancel">Cancel</button>
+          <button class="primary-button" type="submit" data-i18n="suppliers.saveButton">Save Supplier</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="expenseDialog">
       <div class="dialog-head">
         <h2 id="expenseDialogTitle" data-i18n="expenses.dialogTitle">Record Expense</h2>
@@ -1389,7 +1813,7 @@
       <form id="deliveryForm" novalidate>
         <div class="form-grid">
           <label><span data-i18n="deliveries.supplierLabel">Supplier (optional)</span>
-            <input name="supplierName" maxlength="120" autocomplete="off" />
+            <input name="supplierName" maxlength="120" autocomplete="off" list="supplierNameOptions" />
           </label>
           <label><span data-i18n="deliveries.supplierTinLabel">Supplier TIN (optional)</span>
             <input name="supplierTin" maxlength="20" autocomplete="off" />
@@ -1406,6 +1830,24 @@
           </label>
           <label><span data-i18n="deliveries.noteLabel">Note (optional)</span>
             <input name="note" maxlength="200" autocomplete="off" />
+          </label>
+          <!-- Payment terms. Spec 5.1-5.3. Left blank this means paid in full,
+               which is what recording a delivery meant before terms existed --
+               so nobody who ignores these two boxes acquires a debt they did not
+               enter. Amount due and the Paid / Partially paid / Credit status
+               are DERIVED below, never typed: a status somebody can set by hand
+               is a status that disagrees with the money. -->
+          <label><span data-i18n="deliveries.amountPaidLabel">Amount paid now (optional)</span>
+            <input name="amountPaid" type="number" min="0" step="1" autocomplete="off" data-i18n-placeholder="deliveries.amountPaidPlaceholder" placeholder="Blank = paid in full" />
+            <span class="field-error" id="deliveryAmountPaidError"></span>
+          </label>
+          <label><span data-i18n="deliveries.paymentMethodLabel">Paid by</span>
+            <select name="paymentMethod">
+              <option value="cash" data-i18n="pos.cash">Cash</option>
+              <option value="bank" data-i18n="pos.bank">Bank</option>
+              <option value="mobile" data-i18n="pos.mobile">Mobile money</option>
+              <option value="credit" data-i18n="pos.credit">Credit</option>
+            </select>
           </label>
         </div>
 
@@ -1840,6 +2282,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260908a"></script>
+    <script type="module" src="./app.js?v=20260909a"></script>
   </body>
 </html>

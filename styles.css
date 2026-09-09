@@ -288,6 +288,58 @@ td small,
   display: none;
 }
 
+/* The Accounts group is now a disclosure control, not a heading. It is styled
+   as a nav item rather than as a label so that it reads as something you can
+   press -- the old <p> looked exactly like the dead heading it was, which is
+   why nobody discovered the screens under it. */
+.nav-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  margin: var(--space-3) 0 2px;
+  padding: 10px var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: left;
+  cursor: pointer;
+}
+.nav-group-toggle:hover,
+.nav-group-toggle:focus-visible {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.nav-group-toggle .nav-chevron {
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 140ms ease;
+}
+.nav-group-toggle.open .nav-chevron {
+  transform: rotate(180deg);
+}
+/* The items sit slightly in from their toggle, so the menu reads as belonging
+   to it rather than as three more top-level entries. */
+.nav-group-items {
+  display: flex;
+  flex-direction: column;
+  padding-left: var(--space-2);
+}
+.nav-group-items[hidden] {
+  display: none;
+}
+
 .nav-item {
   position: relative;
   border: 0;
