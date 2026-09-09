@@ -439,3 +439,52 @@ address with no account gets the neutral message and a real request (200); the
 button re-enables either way.
 
 **Suite: 3,832 assertions across 73 suites, all green.**
+
+---
+
+## 13. The seed script — 2026-09-09
+
+`proxy/seed-demo-tenant.mjs`. Spec §16 asks for a populated prototype; this
+project owed one twice over, the second time after a hand-built local dataset
+was destroyed by killing the emulator that held it
+(`DESIGN-landed-costs.md` §18.6).
+
+```
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 \
+  node proxy/seed-demo-tenant.mjs --uid <ownerUid> [--reset]
+```
+
+### 13.1 It cannot reach production
+
+This writes sales, stock and balances; against the live project it would corrupt
+eight real businesses. So it refuses unless `FIRESTORE_EMULATOR_HOST` is set
+**and** that host answers the way a Firestore emulator does. The Admin SDK only
+speaks to the emulator when that variable is set, so a production run is not a
+matter of care — it is unreachable. Both refusals verified, along with a host
+that is not listening and a host that answers but is not an emulator.
+
+The probe uses `node:http` with `agent: false` rather than `fetch()`. A safety
+gate must halt immediately, and `fetch()` leaves its connection in a keep-alive
+pool, which made that immediate `process.exit()` trip a libuv assertion on
+Windows — so a correct refusal was followed by what looked like a crash, which
+is exactly how somebody talks themselves into working around the guard.
+
+### 13.2 The data reconciles, which is the point
+
+A fixture with incoherent numbers is worse than none: every report reads wrong
+and the next person spends a day chasing a defect that only exists in the seed.
+So nothing is typed that can be derived. The script walks a 40-day timeline,
+chains every stock movement, recomputes the weighted average at each stock-in
+the way `nextUnitCost()` does, and derives every balance from the documents it
+just wrote. It refuses to seed at all if any shelf would go negative.
+
+Verified by reading the tenant back: for all five products
+`quantity == sum(deltas) == last quantityAfter` with an unbroken chain; all three
+supplier balances match what the deliveries, payments and returns imply
+(XYZ at 1,884,836 to the shilling); and cost history lands before the sales that
+consume it, so COGS resolves instead of reporting revenue as profit.
+
+Names are spec §16's: Water/Soda/Juice 500ml, Rice 25kg, Sugar 1kg; ABC Traders,
+XYZ Distributors, Sunrise Suppliers; Customer A and B plus walk-in sales. It
+prints the shelf, the balances and the totals on completion, so the invariants
+can be read rather than trusted.
