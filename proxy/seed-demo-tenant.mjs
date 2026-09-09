@@ -3,6 +3,12 @@
 //
 //   node proxy/seed-demo-tenant.mjs --uid <ownerUid> [--reset]
 //
+// CLOSE THE APP TAB BEFORE USING --reset. The app creates a default branch when
+// it finds none, so wiping the stores out from under a live tab makes it create
+// one a second later and you end up with two branches of the same name. The
+// store below is adopted rather than created when one already exists, which
+// covers the ordinary case, but nothing can win a race against a reactive tab.
+//
 // WHY THIS EXISTS
 //
 // Twice now a local dataset built by hand has been lost -- once when the
@@ -146,7 +152,9 @@ const at = (daysAgo, hour = 10) => new Date(now - daysAgo * DAY + hour * 3600000
 const ts = (d) => Timestamp.fromDate(d);
 const money = (n) => Math.round(n);
 
-const STORE_ID = "seedMainBranch";
+// Resolved after any --reset, below. Adopting the tenant's existing branch
+// keeps the seed from adding a second one beside it.
+let STORE_ID = "seedMainBranch";
 
 // Spec §16's names.
 const SUPPLIERS = [
@@ -193,6 +201,16 @@ const DELIVERIES = [
     paid: 0, method: "credit",
     lines: [
       { product: "seedJuice", qty: 50, goodsCost: 96000 }
+    ] },
+  // Deliberately inside the CURRENT month. The Deliveries screen opens on this
+  // month, so without one here it greets you empty on a freshly seeded tenant
+  // and looks like the seed failed. It also gives ABC Traders a balance, so the
+  // supplier list shows both states rather than only debtors.
+  { id: "seedDel4", supplier: "seedSupABC", ref: "ABC-1102", daysAgo: 3, freight: 6000,
+    paid: 60000, method: "mobile",
+    lines: [
+      { product: "seedSoda", qty: 24, goodsCost: 40000 },
+      { product: "seedWater", qty: 30, goodsCost: 57000 }
     ] }
 ];
 
@@ -397,7 +415,12 @@ async function seed() {
     return null;
   };
 
-  put(root.collection("stores").doc(STORE_ID), { name: "Main Branch", createdAt: ts(at(45)) });
+  // Only when we are creating it. An adopted branch keeps the name its owner
+  // gave it -- renaming somebody's branch to "Main Branch" is not this script's
+  // business.
+  if (STORE_ID === "seedMainBranch") {
+    put(root.collection("stores").doc(STORE_ID), { name: "Main Branch", createdAt: ts(at(45)) });
+  }
 
   for (const s of SUPPLIERS) {
     put(root.collection("suppliers").doc(s.id), {
@@ -544,6 +567,17 @@ if (RESET) {
   console.log("");
 }
 
+// Adopt whatever branch the tenant already has. Creating our own beside it is
+// what produced two branches called "Main Branch" -- one seeded, one the app
+// made for itself when --reset briefly left it with none.
+{
+  const existing = await root.collection("stores").get();
+  if (existing.size > 0) {
+    STORE_ID = existing.docs[0].id;
+    console.log(`  adopting existing branch ${STORE_ID} ("${existing.docs[0].data().name}")\n`);
+  }
+}
+
 const written = await seed();
 
 // ---------------------------------------------------------------- the report
@@ -570,4 +604,16 @@ console.log("\n  owed by customers");
 for (const c of CUSTOMERS) {
   console.log(`    ${c.name.padEnd(20)} ${money(customerOwed.get(c.id)).toLocaleString("en-US").padStart(10)}`);
 }
-console.log(`\n  Sign in as this uid on http://localhost:5173/app.html and pick "Main Branch".\n`);
+const branches = await root.collection("stores").get();
+if (branches.size > 1) {
+  console.log("\n  NOTE: this tenant has " + branches.size + " branches:");
+  for (const b of branches.docs) {
+    const owned = b.id === STORE_ID ? "  <- seeded into this one" : "  (empty)";
+    console.log(`    ${b.id.padEnd(24)} ${JSON.stringify(b.data().name)}${owned}`);
+  }
+  console.log("  The app makes itself a branch when it finds none, so --reset with the");
+  console.log("  app open leaves a spare. Delete the empty one from Settings, or re-run");
+  console.log("  --reset with the tab closed.");
+}
+
+console.log(`\n  Sign in as this uid on http://localhost:5173/app.html and pick the seeded branch.\n`);
