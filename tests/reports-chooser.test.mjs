@@ -55,6 +55,50 @@ console.log("=== every report is tagged, and every tag is grouped ===");
   check("no two panels claim the same key", keys.length, new Set(keys).size);
 }
 
+console.log("\n=== every entry says what it is, in both languages ===");
+{
+  // A column of bare titles made the reader open three reports to find the one
+  // they meant. Each entry carries a one-line hint; a report without one shows
+  // a title alone, which is the state this replaced.
+  const keys = tagged.map((a) => a.match(/data-report="([A-Za-z]+)"/)?.[1]).filter(Boolean);
+  const missing = keys.filter((k) => !src.includes(`"reports.hint.${k}":`));
+  check("every report has a hint", missing, []);
+  // Profit is offered but is not a panel, so it is checked by name.
+  check("...including Profit", src.includes('"reports.hint.profit":'), true);
+  const untranslated = [...keys, "profit"].filter(
+    (k) => (src.match(new RegExp(`"reports\\.hint\\.${k}":`, "g")) || []).length !== 2);
+  check("...and each hint exists in en and sw", untranslated, []);
+  // Read through t(), so a hint is translated rather than baked into the DOM.
+  const fn = src.slice(src.indexOf("function reportHint"), src.indexOf("function renderReportsIndex"));
+  check("hints go through the dictionary", /t\("reports\.hint\." \+ key\)/.test(fn), true);
+  // t() returns the key itself when there is no entry, and printing
+  // "reports.hint.salesByStaff" under a report would be worse than printing
+  // nothing.
+  check("a missing hint shows nothing, not its own key",
+    /=== "reports\.hint\." \+ key \? "" : text/.test(fn), true);
+}
+
+console.log("\n=== the cards are styled by tokens this stylesheet defines ===");
+{
+  const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+  const start = css.indexOf("/* The reports chooser.");
+  check("the chooser block exists", start !== -1, true);
+  const block = css.slice(start);
+  const used = [...new Set([...block.matchAll(/var\((--[a-z0-9-]+)/g)].map((m) => m[1]))];
+  const defined = new Set([...css.matchAll(/^\s*(--[a-z0-9-]+)\s*:/gm)].map((m) => m[1]));
+  // The first version reached for a "surface-2" and a plain "border", neither
+  // of which this file declares. Both silently fell back to nothing, so every
+  // card rendered with no background and no outline -- eighteen reports as bare
+  // text. A custom property that does not exist fails in complete silence,
+  // which is why this is asserted rather than eyeballed.
+  check("every token it uses is declared", used.filter((t) => !defined.has(t)), []);
+  check("...and it uses some", used.length > 5, true);
+  // Both themes come from the same tokens, so neither can be styled without the
+  // other. A literal colour here would work in one theme and fail in the other.
+  check("no hard-coded hex colours in the chooser",
+    /#[0-9a-fA-F]{3,6}\b/.test(block.split("/* The reports chooser.")[1]?.split("*/")[1] || block), false);
+}
+
 console.log("\n=== the menu is built from the panels, not from a second list ===");
 {
   const fn = src.slice(src.indexOf("function renderReportsIndex"), src.indexOf("function applyReportSelection"));

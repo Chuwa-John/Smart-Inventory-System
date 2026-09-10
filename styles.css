@@ -2465,44 +2465,6 @@ table.statement-figures td.danger { color: var(--red); }
 }
 
 
-/* The reports chooser. Grouped so the menu is scanned, not read: an owner
-   looking for what they earned goes to Money without reading Stock. */
-.report-group + .report-group {
-  margin-top: var(--space-4);
-}
-.report-group-label {
-  margin: 0 0 var(--space-2);
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.report-group-items {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: var(--space-2);
-}
-/* Full-width targets on a phone, where this menu is mostly used and a thumb is
-   the pointer. */
-.report-choice {
-  display: block;
-  width: 100%;
-  min-height: 44px;
-  padding: 10px var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  color: var(--text);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.report-choice:hover,
-.report-choice:focus-visible {
-  border-color: var(--green);
-  color: var(--text);
-}
 
 
 /* The invite link, shown so it can be read, selected or typed out when the
@@ -2516,4 +2478,136 @@ table.statement-figures td.danger { color: var(--red); }
   width: 100%;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.8rem;
+}
+
+/* The reports chooser.
+   The first version reached for two custom properties this file never
+   defines (a "surface-2" and a plain "border"). Both fell back to nothing, so
+   every card rendered with no background and no outline -- eighteen reports as
+   bare text floating in a panel. Only tokens declared above are used here. */
+
+.reports-index-list {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.report-group-label {
+  margin: 0 0 var(--space-3);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* A hairline running out from the label ties the group's cards to their
+   heading without drawing a box around them. */
+.report-group-label::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.report-group-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+
+/* One card per report: icon, name, and a line saying what it answers. The
+   name alone made the reader open three reports to find the one they meant. */
+.report-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 64px;
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel-soft);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+.report-choice:hover,
+.report-choice:focus-visible {
+  border-color: var(--accent);
+  background: var(--panel-hover);
+}
+/* Movement only where the device says it is welcome. */
+@media (prefers-reduced-motion: no-preference) {
+  .report-choice:hover { transform: translateY(-1px); }
+}
+.report-choice:active { transform: none; }
+
+.report-choice-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-quiet);
+  color: var(--accent);
+}
+.report-choice-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.report-choice-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.report-choice-name {
+  font-weight: 600;
+  color: var(--text);
+  /* Long report names wrap rather than overflow their card. */
+  overflow-wrap: anywhere;
+}
+.report-choice-hint {
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.report-choice-go {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+.report-choice-go svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.report-choice:hover .report-choice-go,
+.report-choice:focus-visible .report-choice-go {
+  opacity: 1;
+  transform: translateX(2px);
+}
+/* A pointer is not guaranteed: on a phone the chevron is the only thing
+   saying these cards go somewhere, so it stays put. */
+@media (hover: none) {
+  .report-choice-go { opacity: 0.55; }
 }

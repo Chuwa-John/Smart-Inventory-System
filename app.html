@@ -28,7 +28,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260910m" />
+    <link rel="stylesheet" href="./styles.css?v=20260910n" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#0b0d10" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -48,7 +48,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260910m"></script>
+    <script type="module" src="./boot.js?v=20260910n"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -883,7 +883,7 @@
                 <h2 data-i18n="reports.chooseTitle">What do you want to see?</h2>
               </div>
             </div>
-            <div id="reportsIndexList"></div>
+            <div id="reportsIndexList" class="reports-index-list"></div>
           </article>
 
           <!-- Shown only while a report is open. -->
@@ -1138,7 +1138,19 @@
             <div class="report-grid" id="monthlyReportsList"></div>
           </article>
 
-          <div class="report-grid" id="reportGrid"></div>
+          <!-- The export cards. They sat below the chooser and stayed on
+               screen whatever was selected, so "one report at a time" was not
+               true of this screen. Wrapped in a tagged panel, they are now one
+               entry in the menu like everything else. -->
+          <article class="panel" id="exportsPanel" data-report="exports" data-report-group="ai">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.exportsEyebrow">Downloads</p>
+                <h2 data-i18n="reports.exportsTitle">Export your records</h2>
+              </div>
+            </div>
+            <div class="report-grid" id="reportGrid"></div>
+          </article>
 
           <!-- ===== Spec 9: Sales ===== -->
           <article class="panel" id="salesByCustomerPanel" data-report="salesByCustomer" data-report-group="sales">
@@ -2384,6 +2396,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260910m"></script>
+    <script type="module" src="./app.js?v=20260910n"></script>
   </body>
 </html>

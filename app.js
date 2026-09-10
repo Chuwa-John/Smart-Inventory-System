@@ -345,6 +345,28 @@ const DICTIONARY = {
     "reports.groupFinancial": "Financial", "reports.groupSales": "Sales",
     "reports.groupPurchases": "Purchases", "reports.groupInventory": "Inventory",
     "reports.groupExpenses": "Expenses",
+    "reports.hint.profit": "Revenue, what the goods cost, and what you kept",
+    "reports.hint.salesPayments": "What came in, and how it was paid",
+    "reports.hint.customerCredit": "Who owes you, and how much",
+    "reports.hint.expensesByCategory": "What the shop spent, grouped by kind",
+    "reports.hint.salesByProduct": "Which products sold, and for how much",
+    "reports.hint.salesByStaff": "Who sold what, and what they took",
+    "reports.hint.orderLookup": "Find one staff member's orders",
+    "reports.hint.salesByCustomer": "Which customers buy the most",
+    "reports.hint.salesReturns": "What customers brought back",
+    "reports.hint.stockValuation": "What the shelves hold, and what it cost",
+    "reports.hint.stockSummary": "What is on the shelves right now",
+    "reports.hint.stockAdjustments": "Where stock went when it was not sold",
+    "reports.hint.offlineSales": "Sold during an outage — shelves worth recounting",
+    "reports.hint.purchaseSummary": "What you bought, less what went back",
+    "reports.hint.purchasesByProduct": "What you spent, product by product",
+    "reports.hint.purchaseReturns": "What you sent back to suppliers",
+    "reports.hint.supplierBalances": "What you still owe each supplier",
+    "reports.hint.monthlyReports": "A written summary of the month",
+    "reports.hint.exports": "Download your records as CSV, PDF or Excel",
+    "reports.hint.vatReport": "What you charged, and what you can claim back",
+    "reports.exportsEyebrow": "Downloads",
+    "reports.exportsTitle": "Export your records",
     "reports.chooseEyebrow": "Choose a report",
     "reports.chooseTitle": "What do you want to see?",
     "reports.chooseEmpty": "There are no reports you can open yet.",
@@ -1627,6 +1649,28 @@ const DICTIONARY = {
     "reports.groupFinancial": "Fedha", "reports.groupSales": "Mauzo",
     "reports.groupPurchases": "Manunuzi", "reports.groupInventory": "Hisa",
     "reports.groupExpenses": "Matumizi",
+    "reports.hint.profit": "Mapato, gharama ya bidhaa, na ulichobakiza",
+    "reports.hint.salesPayments": "Kilichoingia, na kililipwaje",
+    "reports.hint.customerCredit": "Nani anakudai, na kiasi gani",
+    "reports.hint.expensesByCategory": "Duka lilitumia nini, kwa makundi",
+    "reports.hint.salesByProduct": "Bidhaa zipi ziliuzwa, na kwa kiasi gani",
+    "reports.hint.salesByStaff": "Nani aliuza nini, na alichukua kiasi gani",
+    "reports.hint.orderLookup": "Tafuta oda za mfanyakazi mmoja",
+    "reports.hint.salesByCustomer": "Wateja gani wananunua zaidi",
+    "reports.hint.salesReturns": "Wateja walirudisha nini",
+    "reports.hint.stockValuation": "Rafuni zina nini, na iligharimu kiasi gani",
+    "reports.hint.stockSummary": "Kilichopo rafuni kwa sasa",
+    "reports.hint.stockAdjustments": "Hisa ilikwenda wapi bila kuuzwa",
+    "reports.hint.offlineSales": "Iliuzwa wakati wa hitilafu — rafuni za kuhesabu upya",
+    "reports.hint.purchaseSummary": "Ulichonunua, ukiondoa kilichorudishwa",
+    "reports.hint.purchasesByProduct": "Ulichotumia, bidhaa kwa bidhaa",
+    "reports.hint.purchaseReturns": "Ulichorudisha kwa wasambazaji",
+    "reports.hint.supplierBalances": "Unachodaiwa na kila msambazaji",
+    "reports.hint.monthlyReports": "Muhtasari ulioandikwa wa mwezi",
+    "reports.hint.exports": "Pakua kumbukumbu zako kama CSV, PDF au Excel",
+    "reports.hint.vatReport": "Ulichotoza, na unachoweza kudai kurudishiwa",
+    "reports.exportsEyebrow": "Vipakuliwa",
+    "reports.exportsTitle": "Pakua kumbukumbu zako",
     "reports.chooseEyebrow": "Chagua ripoti",
     "reports.chooseTitle": "Unataka kuona nini?",
     "reports.chooseEmpty": "Bado hakuna ripoti unayoweza kufungua.",
@@ -7534,6 +7578,28 @@ function setReportRoleVisibility(panel, hiddenByRole) {
   panel.hidden = hiddenByRole;
 }
 
+// One icon per GROUP rather than per report: eighteen invented glyphs would be
+// eighteen things to guess at, while five say "money / sales / stock / buying /
+// ask" at a glance and repeat down the column so the eye can find the section
+// it wants without reading.
+const REPORT_GROUP_ICONS = {
+  money: '<path d="M3 7.6A2.1 2.1 0 0 1 5.1 5.5h12.4a1 1 0 0 1 1 1v2"/><path d="M3 7.6v9.3a2.1 2.1 0 0 0 2.1 2.1h13.4a1 1 0 0 0 1-1v-3.1"/><path d="M21 10.4v4.2h-4.1a2.1 2.1 0 0 1 0-4.2z"/>',
+  sales: '<circle cx="9.5" cy="19.5" r="1.5"/><circle cx="18" cy="19.5" r="1.5"/><path d="M2.5 3.5H5l2.3 11.6a1.8 1.8 0 0 0 1.77 1.4h8.3a1.8 1.8 0 0 0 1.76-1.44L21 7.3H5.8"/>',
+  stock: '<path d="M21 8.2v7.6a1.8 1.8 0 0 1-.92 1.57l-7.2 3.9a1.8 1.8 0 0 1-1.76 0l-7.2-3.9A1.8 1.8 0 0 1 3 15.8V8.2a1.8 1.8 0 0 1 .92-1.57l7.2-3.9a1.8 1.8 0 0 1 1.76 0l7.2 3.9A1.8 1.8 0 0 1 21 8.2z"/><path d="M3.4 7.2 12 12l8.6-4.8"/><path d="M12 21.4V12"/>',
+  buying: '<path d="M5.5 2.8h13v18.4l-2.6-1.5-2.4 1.5-2.5-1.5-2.4 1.5-3.1-1.5z"/><path d="M9 8.4h6M9 12.4h6"/>',
+  ai: '<path d="M11.4 3.2 13.1 8l4.8 1.7-4.8 1.7-1.7 4.8-1.7-4.8L4.9 9.7 9.7 8z"/><path d="M18.3 15.1l.63 1.72 1.72.63-1.72.63-.63 1.72-.63-1.72-1.72-.63 1.72-.63z"/>'
+};
+
+// A one-line answer to "what is this report". The menu's whole job is choosing,
+// and a column of bare titles makes the reader open three to find the one they
+// meant. Keyed by report so the strings live in the dictionary and translate
+// with everything else; a report with no hint simply shows none.
+function reportHint(key) {
+  const text = t("reports.hint." + key);
+  // t() returns the key itself when there is no entry.
+  return text === "reports.hint." + key ? "" : text;
+}
+
 function reportPanels() {
   return qsa("#reports [data-report]");
 }
@@ -7576,12 +7642,23 @@ function renderReportsIndex() {
   for (const group of REPORT_GROUP_ORDER) {
     const entries = groups.get(group);
     if (!entries || !entries.length) continue;
-    parts.push(`<div class="report-group">
+    const icon = REPORT_GROUP_ICONS[group] || "";
+    parts.push(`<section class="report-group">
       <p class="report-group-label">${esc(t("reports.group." + group))}</p>
       <div class="report-group-items">${entries
-        .map((entry) => `<button class="report-choice" type="button" data-report-open="${esc(entry.key)}">${esc(entry.label)}</button>`)
+        .map((entry) => {
+          const hint = reportHint(entry.key === REPORT_PROFIT_KEY ? "profit" : entry.key);
+          return `<button class="report-choice" type="button" data-report-open="${esc(entry.key)}">
+            <span class="report-choice-icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false">${icon}</svg></span>
+            <span class="report-choice-text">
+              <span class="report-choice-name">${esc(entry.label)}</span>
+              ${hint ? `<span class="report-choice-hint">${esc(hint)}</span>` : ""}
+            </span>
+            <span class="report-choice-go" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M9 5.5 15.5 12 9 18.5"/></svg></span>
+          </button>`;
+        })
         .join("")}</div>
-    </div>`);
+    </section>`);
   }
   list.innerHTML = parts.join("") || `<p class="muted">${esc(t("reports.chooseEmpty"))}</p>`;
 }
