@@ -206,6 +206,36 @@ console.log("\n=== it stays the owner's alone ===");
   check("the backup button is owner-gated", /"downloadBackupButton"/.test(src));
 }
 
+console.log("\n=== the prompt to back up must not lie about why ===");
+{
+  // It read: "If this phone is lost, so is your business record." That is not
+  // true and it is not a small slip -- records live in Firestore, so a lost
+  // phone loses nothing at all. Sign in on another handset and everything is
+  // there. Reported by the owner, who spotted the contradiction: he was signed
+  // in on a new device looking at his own data while being told that data
+  // depended on a phone.
+  //
+  // Scaring somebody into a good habit with a false reason is still telling
+  // them something untrue about their own business, and this app refuses to do
+  // that everywhere else -- it blanks a margin it cannot compute rather than
+  // printing a confident zero.
+  const never = (src.match(/"backup\.never": "([^"]*)"/g) || []);
+  check("the message exists in both languages", never.length === 2, `found ${never.length}`);
+  for (const line of never) {
+    check("...and does not claim a lost phone loses the records",
+      !/phone is lost, so is|ikipotea, kumbukumbu ya biashara yako inapotea/.test(line), line.slice(0, 80));
+  }
+
+  // The real reason, which is the one this plan actually has: there is no
+  // point-in-time recovery and no server-side backup, so a deletion is
+  // permanent. That is what a downloaded copy protects against.
+  const en = (src.match(/"backup\.never": "([^"]*)"/) || [])[1] || "";
+  check("it says the records survive a lost phone",
+    /lost phone loses nothing|kept online/i.test(en), en.slice(0, 90));
+  check("...and gives the reason that is true: a deletion cannot be undone",
+    /deletion cannot be undone/i.test(en), en.slice(0, 90));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) { console.log(failed.map((f) => "  FAILED: " + f.name).join("\n")); process.exit(1); }
