@@ -292,6 +292,29 @@ td small,
    as a nav item rather than as a label so that it reads as something you can
    press -- the old <p> looked exactly like the dead heading it was, which is
    why nobody discovered the screens under it. */
+/* The password-reset confirmation. Deliberately NOT a toast: it has to still
+   be on screen when somebody comes back from their inbox, and it carries the
+   address the link went to, which a fading message never showed. */
+.auth-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--green);
+  border-left: 4px solid var(--green);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--green) 10%, transparent);
+}
+.auth-notice p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+.auth-notice[hidden] {
+  display: none;
+}
+
 .nav-group-toggle {
   display: flex;
   align-items: center;

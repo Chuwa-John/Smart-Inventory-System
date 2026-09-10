@@ -42,7 +42,7 @@ function extract(name) {
 
 // The real handler, over stubs that record what it did.
 function run({ throws = null, offline = false, email = "shop@example.com", authReady = true } = {}) {
-  const log = { toasts: [], fieldErrors: [], sent: [], disabled: [] };
+  const log = { toasts: [], fieldErrors: [], sent: [], disabled: [], noticed: [] };
   const sendPasswordResetEmail = async (_auth, addr, settings) => {
     log.sent.push({ addr, settings: settings || null });
     if (throws && log.sent.length === 1) throw throws;
@@ -57,7 +57,7 @@ function run({ throws = null, offline = false, email = "shop@example.com", authR
 
   const handler = new Function(
     "state", "qs", "showToast", "t", "validateAuthEmail", "isOfflineNow",
-    "setFieldError", "console", "PASSWORD_RESET_SILENT_CODES", "__button", `
+    "setFieldError", "console", "PASSWORD_RESET_SILENT_CODES", "showResetSentNotice", "__button", `
     ${extract("handleForgotPassword")}
     return handleForgotPassword;
   `)(
@@ -70,6 +70,7 @@ function run({ throws = null, offline = false, email = "shop@example.com", authR
     (field, msg) => log.fieldErrors.push({ field, msg }),
     { warn() {} },
     silent,
+    (addr) => log.noticed.push(addr),
     button
   );
   function __buttonProxy(b) { return b; }
@@ -147,6 +148,57 @@ console.log("\n=== the link comes back to the app ===");
   check("...the retry carries no settings", un.log.sent[1].settings, null);
   check("...and the person is still told it was sent",
     un.log.toasts, ["toast.passwordResetSent"]);
+}
+
+console.log("\n=== the confirmation outlives the toast ===");
+{
+  // A toast lasts 2,600ms. This one asks somebody to LEAVE the app, open their
+  // inbox and come back -- so a message that has already faded has not told
+  // them anything. Reported as "how will users know it was sent?".
+  const { handler, log } = run({ email: "shop@example.com" });
+  await handler();
+  check("a successful send raises the standing notice", log.noticed, ["shop@example.com"]);
+  // Named with the address, because mistyping it is the commonest reason a
+  // reset "never arrives" -- and a fading toast never showed it.
+  check("...carrying the address it went to", log.noticed[0], "shop@example.com");
+
+  // It must NOT appear when nothing was sent, or it becomes a lie that stays on
+  // screen instead of one that fades.
+  const off = run({ offline: true });
+  await off.handler();
+  check("offline raises no notice", off.log.noticed, []);
+
+  const failed = run({ throws: { code: "auth/internal-error", alwaysThrows: true } });
+  await failed.handler();
+  check("a real failure raises no notice", failed.log.noticed, []);
+
+  // But an address with no account must still see it, or the notice becomes the
+  // enumeration oracle the toast was carefully written not to be.
+  const unknown = run({ throws: { code: "auth/user-not-found", alwaysThrows: true } });
+  await unknown.handler();
+  check("an unknown address sees the same notice", unknown.log.noticed.length, 1);
+}
+
+console.log("\n=== what the standing notice says ===");
+{
+  check("it is in the markup", html.includes('id="authResetSent"'), true);
+  check("it starts hidden", /id="authResetSent" hidden/.test(html), true);
+  // Firebase's default sender is an unauthenticated firebaseapp.com subdomain
+  // and Gmail routes it to spam. Saying so is the difference between a working
+  // reset and a shop that concludes the feature is broken.
+  check("it names the spam folder", html.includes('data-i18n="auth.resetSentSpam"'), true);
+  check("it can be dismissed", html.includes('id="authResetSentDismiss"'), true);
+  // A stale "check your email" sitting over a later failed sign-in is its own
+  // confusion.
+  check("it clears when the address is edited",
+    /qs\("#authEmail"\)\?\.addEventListener\("input", hideResetSentNotice\)/.test(src), true);
+  check("...and when the form switches mode",
+    /qs\("#authModeButton"\)\?\.addEventListener\("click", hideResetSentNotice\)/.test(src), true);
+  for (const key of ["auth.resetSentTitle", "auth.resetSentBody", "auth.resetSentSpam",
+                     "auth.resetSentDismiss", "toast.passwordResetNeedsEmail"]) {
+    const n = (src.match(new RegExp(`"${key.replace(/\./g, "\\.")}":`, "g")) || []).length;
+    check(`${key} is in en and sw`, n, 2);
+  }
 }
 
 console.log("\n=== pressing it with an empty box is not silence ===");

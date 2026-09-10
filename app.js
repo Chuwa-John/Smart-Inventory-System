@@ -963,6 +963,10 @@ const DICTIONARY = {
     "auth.accessRemoved": "Your access to this business was removed. Ask the owner if you think this is a mistake.",
     "auth.copy": "Create an account or sign in to manage your own inventory, stock levels, sales, and AI recommendations.",
     "auth.ownerName": "Your name",
+    "auth.resetSentTitle": "Check your email",
+    "auth.resetSentBody": "We have sent a link to {email}. Open it to choose a new password.",
+    "auth.resetSentSpam": "If it is not there in a few minutes, look in your spam or promotions folder.",
+    "auth.resetSentDismiss": "Back to sign in",
     "auth.businessName": "Business name", "auth.email": "Email", "auth.password": "Password", "auth.forgotPassword": "Forgot password?",
     "auth.confirmPassword": "Confirm password",
     "auth.consentPrefix": "I agree to the", "auth.consentTerms": "Terms & Conditions",
@@ -2225,6 +2229,10 @@ const DICTIONARY = {
     "auth.accessRemoved": "Ufikiaji wako kwa biashara hii umeondolewa. Muulize mmiliki kama unadhani ni makosa.",
     "auth.copy": "Fungua akaunti au ingia ili kusimamia hisa yako, viwango vya bidhaa, mauzo, na mapendekezo ya AI.",
     "auth.ownerName": "Jina lako",
+    "auth.resetSentTitle": "Angalia barua pepe yako",
+    "auth.resetSentBody": "Tumetuma kiungo kwa {email}. Kifungue ili uchague nenosiri jipya.",
+    "auth.resetSentSpam": "Kama halipo ndani ya dakika chache, angalia kwenye folda ya taka (spam) au matangazo.",
+    "auth.resetSentDismiss": "Rudi kuingia",
     "auth.businessName": "Jina la biashara", "auth.email": "Barua pepe", "auth.password": "Nenosiri", "auth.forgotPassword": "Umesahau nenosiri?",
     "auth.confirmPassword": "Thibitisha nenosiri",
     "auth.consentPrefix": "Nakubali", "auth.consentTerms": "Sheria na Masharti",
@@ -16027,11 +16035,40 @@ async function handleForgotPassword() {
     if (error?.code === "auth/network-request-failed") return showToast(t("toast.passwordResetOffline"));
     // Whether this address has an account is not disclosed -- that distinction
     // is the enumeration hole.
-    if (PASSWORD_RESET_SILENT_CODES.has(error?.code)) return showToast(t("toast.passwordResetSent"));
+    // Indistinguishable from success, and that has to include the STANDING
+    // NOTICE as well as the toast. Showing the panel only for addresses that
+    // exist would turn it into the enumeration oracle the neutral wording was
+    // written to avoid -- press the button, watch for the panel, learn whether
+    // that address banks here. Caught by its own test.
+    if (PASSWORD_RESET_SILENT_CODES.has(error?.code)) {
+      showToast(t("toast.passwordResetSent"));
+      showResetSentNotice(email);
+      return;
+    }
     return showToast(t("toast.passwordResetFailed"));
   }
+  // The toast stays for continuity, but the panel is what actually tells them:
+  // it survives the trip to the inbox, names the address, and points at the
+  // spam folder, which is where Firebase's default sender usually lands.
   showToast(t("toast.passwordResetSent"));
+  showResetSentNotice(email);
   button.disabled = false;
+}
+
+// Shown until dismissed. Named with the address so somebody who mistyped it can
+// see that they did -- the commonest reason a reset "never arrives".
+function showResetSentNotice(email) {
+  const notice = qs("#authResetSent");
+  const body = qs("#authResetSentBody");
+  if (!notice || !body) return;
+  body.textContent = t("auth.resetSentBody", { email });
+  notice.hidden = false;
+  notice.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function hideResetSentNotice() {
+  const notice = qs("#authResetSent");
+  if (notice) notice.hidden = true;
 }
 
 // The verification link is opened somewhere else -- a second tab, or the phone
@@ -16753,6 +16790,9 @@ function bindEvents() {
   qs("#authConfirmPassword").addEventListener("input", validateAuthConfirmPassword);
   qs("#authConsent").addEventListener("change", validateAuthConsent);
   qs("#authModeButton").addEventListener("click", () => setAuthMode(state.authMode === "signup" ? "signin" : "signup"));
+  qs("#authResetSentDismiss")?.addEventListener("click", hideResetSentNotice);
+  qs("#authEmail")?.addEventListener("input", hideResetSentNotice);
+  qs("#authModeButton")?.addEventListener("click", hideResetSentNotice);
   qs("#authForgotPasswordButton").addEventListener("click", handleForgotPassword);
   qs("#signOutButton").addEventListener("click", async () => {
     if (!state.auth) return;

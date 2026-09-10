@@ -28,7 +28,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260910c" />
+    <link rel="stylesheet" href="./styles.css?v=20260910d" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#0b0d10" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -48,7 +48,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260910c"></script>
+    <script type="module" src="./boot.js?v=20260910d"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -2251,6 +2251,20 @@
         </div>
         </div>
 
+        <!-- Stays until it is dismissed. A reset link asks somebody to LEAVE
+             the app and go to their inbox, so the confirmation has to survive
+             that journey -- the 2.6-second toast used for "sale completed" was
+             gone before a second-language reader had finished it, and the
+             address it went to was never shown at all. It also names the spam
+             folder, because Firebase's default sender is an unauthenticated
+             firebaseapp.com subdomain and that is where these land. -->
+        <div class="auth-notice" id="authResetSent" hidden>
+          <strong data-i18n="auth.resetSentTitle">Check your email</strong>
+          <p id="authResetSentBody"></p>
+          <p class="muted" data-i18n="auth.resetSentSpam">If it is not there in a few minutes, look in your spam or promotions folder.</p>
+          <button class="ghost-button compact" type="button" id="authResetSentDismiss" data-i18n="auth.resetSentDismiss">Back to sign in</button>
+        </div>
+
         <div class="auth-fields">
         <label id="authOwnerNameRow"><span data-i18n="auth.ownerName">Your name</span><input id="ownerName" name="ownerName" autocomplete="name" maxlength="80" /></label>
         <label id="authBusinessNameRow"><span data-i18n="auth.businessName">Business name</span><input id="businessName" name="businessName" autocomplete="organization" maxlength="120" /></label>
@@ -2283,6 +2297,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260910c"></script>
+    <script type="module" src="./app.js?v=20260910d"></script>
   </body>
 </html>
