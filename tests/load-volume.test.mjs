@@ -230,15 +230,65 @@ console.log("\n=== composite indexes the client needs are declared ===");
     `${entry.collectionGroup}:${(entry.fields || []).map((f) => f.fieldPath).join(",")}`);
   const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 
-  // Every query pairing a where() with an orderBy() on a different field needs
-  // one. These are the pairings app.js issues today.
-  const needed = [
-    ["sales", "storeId,createdAt"],
-    ["transfers", "sourceStoreId,createdAt"],
-    ["transfers", "destinationStoreId,createdAt"],
-    ["shifts", "storeId,openedAt"],
-    ["auditLogs", "action,createdAt"]
+  // DERIVED from app.js, not listed here.
+  //
+  // This was a hand-written list of five pairings, and it stayed at five while
+  // the code grew past it. The suppliers query -- where("storeId","in",...)
+  // with orderBy("name") -- shipped on 2026-09-09 without an index and without
+  // failing this test, because nobody remembered to add a sixth line. It broke
+  // every STAFF session in production for a fortnight and no owner saw it: an
+  // owner with roaming access takes the un-filtered branch of that same query,
+  // which needs no composite index. It was found by a staff member signing in.
+  //
+  // So the list is now read out of the source. A new filtered+ordered query
+  // fails this check the moment it is written, whether or not anyone thinks to
+  // come here.
+  // Each identifier is resolved to its NEAREST PRECEDING assignment, not to a
+  // flat name->collection map. app.js names most of these `ref` inside their
+  // own function, so a flat map keeps only the last one and files every query
+  // under whichever collection happened to be assigned last -- which invented
+  // a stockMovements/effectiveFrom pairing that is really productCostHistory,
+  // and would have hidden a genuinely missing index behind a wrong name.
+  const assignments = [...app.matchAll(/const (\w+) = collection\(\s*state\.db,[^)]*?"([A-Za-z]+)"\s*\)/g)]
+    .map((m) => ({ at: m.index, name: m[1], group: m[2] }));
+  const resolve = (name, at) => {
+    let found = null;
+    for (const a of assignments) {
+      if (a.name !== name || a.at > at) continue;
+      if (!found || a.at > found.at) found = a;
+    }
+    return found?.group || null;
+  };
+
+  const derived = [];
+  for (const m of app.matchAll(/query\(\s*(\w+)\s*,([\s\S]{0,300}?)\)\s*;/g)) {
+    const group = resolve(m[1], m.index);
+    if (!group) continue;
+    const where = [...m[2].matchAll(/where\("([A-Za-z]+)"/g)].map((w) => w[1]);
+    const order = [...m[2].matchAll(/orderBy\("([A-Za-z]+)"/g)].map((o) => o[1]);
+    if (!where.length || !order.length) continue;
+    // An orderBy on the SAME field as the filter is served by the single-field
+    // index Firestore builds automatically.
+    const fields = [...new Set([...where, ...order])];
+    if (fields.length < 2) continue;
+    derived.push(`${group}:${fields.join(",")}`);
+  }
+
+  // The derivation is a floor, not a ceiling: it only sees queries written in
+  // the shape it matches. These five are known pairings it does not reach, and
+  // they stay listed so a regex that stops matching cannot silently drop them.
+  const known = [
+    "sales:storeId,createdAt",
+    "transfers:sourceStoreId,createdAt",
+    "transfers:destinationStoreId,createdAt",
+    "shifts:storeId,openedAt",
+    "auditLogs:action,createdAt"
   ];
+  const needed = [...new Set([...derived, ...known])].sort()
+    .map((entry) => entry.split(/:(.*)/).slice(0, 2));
+
+  check("the derivation actually matched something", derived.length > 0, true,
+    "if this is zero the scan stopped matching and only the hand-written five are checked");
   for (const [group, fields] of needed) {
     const has = declared.some((d) => d.startsWith(`${group}:`) &&
       fields.split(",").every((f) => d.includes(f)));
