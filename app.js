@@ -5982,8 +5982,25 @@ async function downloadAccountBackup() {
     //
     // errorLog is deliberately absent: it is diagnostic, not business data, and
     // restoring last month's faults would help nobody.
+    // EVERY tenant collection except errorLog. This list has now drifted twice:
+    // members and shifts were missing once, and by 2026-09-10 it had fallen nine
+    // behind -- every collection added since. A business restored from that
+    // backup came back with no purchases, no expenses, no supplier balances and,
+    // worst of all, no productCosts: COGS is resolved from that collection, so
+    // the Profit Report would have had nothing to work from and every margin in
+    // the business would have read as unknown.
+    //
+    // tests/backup-completeness.test.mjs now derives the collections from
+    // firestore.rules and fails when one is missing here, so the next addition
+    // cannot drift the same way.
+    //
+    // errorLog is deliberately absent: it is diagnostic, not business data, and
+    // restoring last month's faults would help nobody.
     const rootCollections = ["products", "sales", "stores", "staff", "members", "shifts",
-                             "customers", "transfers", "auditLogs", "monthlyReports"];
+                             "customers", "transfers", "auditLogs", "monthlyReports",
+                             "purchases", "expenses", "deliveries", "suppliers",
+                             "purchaseReturns", "productCosts", "productCostHistory",
+                             "stockMovements", "services"];
     const [profileSnap, ...collectionSnaps] = await Promise.all([
       getDoc(doc(state.db, "users", state.user.uid)),
       ...rootCollections.map((name) => getDocs(collection(state.db, "users", state.user.uid, name)))
@@ -5999,14 +6016,28 @@ async function downloadAccountBackup() {
       })
     );
 
+    // Supplier payments live under each supplier, exactly as customer payments
+    // live under each customer. Without them a restored business knows what it
+    // owes but not a shilling of what it has already paid.
+    const supplierPayments = await Promise.all(
+      (collections.suppliers || []).map(async (supplier) => {
+        const payments = await getDocs(collection(state.db, "users", state.user.uid, "suppliers", supplier.id, "payments"));
+        return [supplier.id, payments.docs.map((docSnap) => ({ id: docSnap.id, data: backupSerializable(docSnap.data()) }))];
+      })
+    );
+
     const backup = {
-      schemaVersion: 2,
+      // Bumped: a version 2 file has none of the cost, purchase or supplier
+      // collections, so anything restoring one has to know it is incomplete
+      // rather than assume those collections were simply empty.
+      schemaVersion: 3,
       application: "SaviaSmart ERP",
       exportedAt: new Date().toISOString(),
       accountUid: state.user.uid,
       profile: profileSnap.exists() ? backupSerializable(profileSnap.data()) : null,
       collections,
-      customerPayments: Object.fromEntries(customerPayments)
+      customerPayments: Object.fromEntries(customerPayments),
+      supplierPayments: Object.fromEntries(supplierPayments)
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
