@@ -17,6 +17,7 @@
 import { readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+const html = readFileSync(new URL("../app.html", import.meta.url), "utf8");
 
 const results = [];
 function check(name, pass, detail = "") {
@@ -114,6 +115,44 @@ console.log("\n=== the keys that were just un-shadowed stay separate ===");
   const short = blocks.en.match(/"movement\.noSales":\s*"([^"]*)"/)?.[1] || "";
   check("...and the label did not inherit the sentence",
     short === "No sales recorded", `got "${short}"`);
+}
+
+
+
+console.log("\n=== nothing is written twice by two different authors ===");
+{
+  // translateStaticDom() re-applies data-i18n to EVERY element carrying it. An
+  // element that is both marked up with a key AND written at runtime therefore
+  // has two authors, and whichever runs last wins -- and translateStaticDom()
+  // runs after renderAll() on a language change and on a store switch, so the
+  // runtime value is the one that loses.
+  //
+  // Reported from the live site: the sidebar told a signed-in owner "Sign in to
+  // sync inventory". Seven dialog titles had the same fault, each reverting
+  // from "Return to Supplier — Mama Ntilie" to the generic "Return to
+  // Supplier". None of it is visible until something triggers a re-translation,
+  // which is why it survived this long and why it is asserted here.
+  const staticKeys = new Map();
+  for (const m of html.matchAll(/id="([^"]+)"[^>]*data-i18n="([^"]+)"/g)) staticKeys.set(m[1], m[2]);
+  for (const m of html.matchAll(/data-i18n="([^"]+)"[^>]*id="([^"]+)"/g)) staticKeys.set(m[2], m[1]);
+  const writtenAtRuntime = new Set(
+    [...src.matchAll(/qs\("#([A-Za-z0-9_]+)"\)\??\.textContent\s*=/g)].map((m) => m[1]));
+  const clashing = [...staticKeys.keys()].filter((id) => writtenAtRuntime.has(id));
+  check("no element is both statically translated and written directly",
+    clashing.length === 0, clashing.join(", "));
+
+  // The way out is setDynamicText(), which either re-points data-i18n at the
+  // key it actually used -- so the translator agrees with the runtime -- or
+  // removes the marker when the text is composed and cannot be re-derived from
+  // a key.
+  check("the helper exists", /function setDynamicText\(/.test(src));
+  const helper = src.slice(src.indexOf("function setDynamicText("));
+  const body = helper.slice(0, helper.indexOf("\n}"));
+  check("...it re-points the key when given one", /el\.dataset\.i18n = i18nKey/.test(body));
+  check("...and removes the marker when not", /delete el\.dataset\.i18n/.test(body));
+  // The sidebar line specifically, since that is the one a shop reported.
+  check("the sidebar hint is key-based, so it stays translatable",
+    /setDynamicText\("#connectionHint", t\(hintKey\), hintKey\)/.test(src));
 }
 
 const failed = results.filter((r) => !r.pass);

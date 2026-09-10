@@ -398,7 +398,7 @@ console.log("\n=== Phase E: the screen says the right word ===");
     /t\("services\.dialogEditTitle", \{ label \}\)/.test(noComments) &&
     /t\("services\.dialogAddTitle", \{ label \}\)/.test(noComments));
   check("a bar's column header says Item, a salon's says Service",
-    /qs\("#servicesThName"\)\.textContent = label === t\("services\.menuTitle"\)/.test(noComments),
+    /setDynamicText\("#servicesThName", label === t\("services\.menuTitle"\)/.test(noComments),
     "a bar prices dishes, not services");
   for (const key of ["services.eyebrow", "services.intro", "services.addButton", "services.emptyState",
                      "services.statusActive", "services.statusWithdrawn", "services.withdrawButton",

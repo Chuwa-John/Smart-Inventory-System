@@ -196,6 +196,58 @@ console.log("\n=== both languages ===");
   }
 }
 
+
+
+console.log("\n=== window.prompt is gone too ===");
+{
+  // Same failure as confirm(): a browser may decline to show a native dialog
+  // and hand back null, which every caller reads as "cancelled". Ten buttons
+  // did nothing at all -- among them the till's price override and the override
+  // PASSWORD, the control standing between a cashier and discounting stock to
+  // nothing. Found by clicking every button in the app and reading the console.
+  // Counted over code lines only: the comment above askText explains what it
+  // replaced and names window.prompt() in prose, which is not a call site.
+  const promptCalls = src.split("\n")
+    .filter((line) => !line.trim().startsWith("//") && /window\.prompt\(/.test(line));
+  check("no call site uses window.prompt", promptCalls, []);
+  check("askText exists", /function askText\(/.test(src), true);
+  check("every prompt goes through it", (src.match(/await askText\(/g) || []).length, 10);
+
+  const fn = extract("askText");
+  // A password typed into a native prompt is displayed in clear text, on a
+  // screen, at a counter. This one masks it.
+  check("a password prompt is masked",
+    /options\.type === "password" \? "password" : "text"/.test(fn), true);
+  check("...and the override password asks for that",
+    /askText\(t\("dialog\.overridePasswordPrompt"\), \{ type: "password" \}\)/.test(src), true);
+  // Never leave a typed password in the DOM for whatever asks next.
+  check("the box is cleared when it closes", /if \(input\) input\.value = "";/.test(fn), true);
+  // Cancel, the cross and Escape all resolve null, so `if (raw === null) return`
+  // keeps reading as it did.
+  check("cancel resolves null", /const onCancel = \(\) => finish\(null\);/.test(fn), true);
+  check("Escape resolves null via the close event",
+    /dialog\.addEventListener\("close", onClose\)/.test(fn), true);
+  check("a missing dialog resolves null, not a value",
+    /if \(!dialog\) return Promise\.resolve\(null\);/.test(fn), true);
+}
+
+console.log("\n=== cancelling a price override must not zero the line ===");
+{
+  // Number(null) is 0, and 0 clears both the finite and non-negative checks --
+  // so backing out of a price override handed the customer the item for
+  // nothing, with the override password already entered, which made it look
+  // authorised. The same was true of window.prompt before it.
+  const handler = src.slice(src.indexOf('const editPriceButton = event.target.closest("[data-edit-price]")'));
+  const body = handler.slice(0, handler.indexOf("\n    const paymentButton"));
+  check("cancelling returns before the price is touched",
+    /if \(rawPrice === null \|\| String\(rawPrice\)\.trim\(\) === ""\) return;/.test(body), true);
+  const guardAt = body.indexOf("rawPrice === null");
+  const assignAt = body.indexOf("cartItem.sellingPrice = newPrice");
+  check("...and the guard comes first", guardAt !== -1 && guardAt < assignAt, true);
+  check("the raw value is checked before Number() sees it",
+    body.indexOf("rawPrice === null") < body.indexOf("Number(rawPrice)"), true);
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) { console.log(failed.map((f) => "  FAILED: " + f.name).join("\n")); process.exit(1); }

@@ -1628,6 +1628,8 @@ const DICTIONARY = {
     "staff.colRole": "Role",
     "staff.colStores": "Stores",
     "staff.colActions": "Actions",
+    "prompt.title": "Enter a value",
+    "prompt.accept": "OK",
     "confirm.title": "Are you sure?",
     "confirm.cancel": "Cancel",
     "confirm.accept": "Yes, continue",
@@ -2934,6 +2936,8 @@ const DICTIONARY = {
     "staff.colRole": "Wadhifa",
     "staff.colStores": "Maduka",
     "staff.colActions": "Vitendo",
+    "prompt.title": "Weka thamani",
+    "prompt.accept": "Sawa",
     "confirm.title": "Una uhakika?",
     "confirm.cancel": "Ghairi",
     "confirm.accept": "Ndiyo, endelea",
@@ -2955,6 +2959,31 @@ function t(key, vars) {
 }
 
 const CURRENCY_SUFFIX_LABEL_KEYS = new Set(["product.priceLabel", "payment.amountLabel", "pos.discountFixed"]);
+
+// Text that translateStaticDom() must not overwrite.
+//
+// That function re-applies data-i18n to EVERY element carrying it, so an
+// element that is both marked up with a key and written at runtime has two
+// authors, and whichever runs last wins. Since translateStaticDom() runs after
+// renderAll() on a language change and on a store switch, the runtime value
+// lost -- the sidebar told a signed-in owner "Sign in to sync inventory", and
+// every dialog title carrying a product or supplier name reverted to its
+// generic form.
+//
+// Reported from the live site as the sidebar line. Eight elements had it.
+//
+// Pass a key when the text IS a key, and it stays translatable: the translator
+// re-applies the same key and agrees with the runtime. Pass none when the text
+// is composed -- a title with a name in it cannot be re-derived from a key --
+// and the marker is removed so the translator leaves it alone. Such an element
+// is rewritten by whatever opens it, so it picks up a language change then.
+function setDynamicText(selector, text, i18nKey = null) {
+  const el = qs(selector);
+  if (!el) return;
+  if (i18nKey) el.dataset.i18n = i18nKey;
+  else delete el.dataset.i18n;
+  el.textContent = text;
+}
 
 function translateStaticDom() {
   document.documentElement.lang = state.language;
@@ -3013,7 +3042,7 @@ function setLanguage(nextLanguage) {
 const OVERRIDE_VERIFY_TIMEOUT_MS = 8000;
 
 async function verifyOverridePassword() {
-  const input = window.prompt(t("dialog.overridePasswordPrompt"));
+  const input = await askText(t("dialog.overridePasswordPrompt"), { type: "password" });
   if (input === null) return false;
   try {
     const token = await state.user.getIdToken();
@@ -3821,9 +3850,9 @@ function renderServices() {
   const navLabel = qs("#servicesNavLabel") || nav;
   navLabel.textContent = label;
   qs("#servicesTitle").textContent = label;
-  qs("#servicesThName").textContent = label === t("services.menuTitle")
+  setDynamicText("#servicesThName", label === t("services.menuTitle")
     ? t("services.thItem")
-    : t("services.thName");
+    : t("services.thName"));
 
   const rows = storeServicesForEditing();
   qs("#servicesTable").innerHTML = rows
@@ -6795,7 +6824,7 @@ function openSupplierDialog(supplierId) {
   form.reset();
   qs("#supplierNameError").textContent = "";
   qs("#supplierOpeningBalanceError").textContent = "";
-  qs("#supplierDialogTitle").textContent = t(supplier ? "suppliers.dialogTitleEdit" : "suppliers.dialogTitle");
+  setDynamicText("#supplierDialogTitle", t(supplier ? "suppliers.dialogTitleEdit" : "suppliers.dialogTitle"), supplier ? "suppliers.dialogTitleEdit" : "suppliers.dialogTitle");
   form.elements.id.value = supplier?.id || "";
   form.elements.name.value = supplier?.name || "";
   form.elements.phone.value = supplier?.phone || "";
@@ -6944,7 +6973,7 @@ function openSupplierPaymentDialog(supplierId) {
   if (!supplier || !dialog || !form) return;
   form.reset();
   qs("#supplierPaymentAmountError").textContent = "";
-  qs("#supplierPaymentTitle").textContent = `${t("suppliers.paymentTitle")} — ${supplier.name || ""}`;
+  setDynamicText("#supplierPaymentTitle", `${t("suppliers.paymentTitle")} — ${supplier.name || ""}`);
   qs("#supplierPaymentBalance").textContent =
     t("suppliers.paymentOwedNow", { amount: money(safeNumber(supplier.balanceOwed)) });
   form.elements.supplierId.value = supplier.id;
@@ -7054,7 +7083,7 @@ async function openSupplierStatement(supplierId) {
   const supplier = supplierById(supplierId);
   const dialog = qs("#supplierStatementDialog");
   if (!supplier || !dialog) return;
-  qs("#supplierStatementTitle").textContent = `${t("suppliers.statementTitle")} — ${supplier.name || ""}`;
+  setDynamicText("#supplierStatementTitle", `${t("suppliers.statementTitle")} — ${supplier.name || ""}`);
   // Opened first, with what is already known. The fetch below can be slow on a
   // bad connection and a dialog that appears only after it looks broken.
   qs("#supplierStatementContent").innerHTML = buildSupplierStatementHtml(supplierId, []);
@@ -7211,8 +7240,7 @@ function openPurchaseReturnDialog(purchaseId) {
   const returnable = purchaseReturnableQty(purchase);
   form.reset();
   qs("#purchaseReturnQtyError").textContent = "";
-  qs("#purchaseReturnTitle").textContent =
-    `${t("purchaseReturn.title")} — ${purchase.productName || ""}`;
+  setDynamicText("#purchaseReturnTitle", `${t("purchaseReturn.title")} — ${purchase.productName || ""}`);
   qs("#purchaseReturnSummary").textContent = t("purchaseReturn.summary", {
     qty: String(safeNumber(purchase.quantity)),
     supplier: purchaseSupplierLabel(purchase) || t("purchaseReturn.noSupplier"),
@@ -7315,7 +7343,7 @@ function openStockAdjustDialog(productId) {
   if (!product || !dialog || !form) return;
   form.reset();
   qs("#adjustQtyError").textContent = "";
-  qs("#stockAdjustTitle").textContent = `${t("adjust.title")} — ${product.name || ""}`;
+  setDynamicText("#stockAdjustTitle", `${t("adjust.title")} — ${product.name || ""}`);
   form.elements.productId.value = product.id;
   form.elements.currentQuantity.value = String(safeNumber(product.quantity));
   form.elements.newQuantity.value = String(safeNumber(product.quantity));
@@ -10828,10 +10856,9 @@ async function setCustomerCreditLimit(customerId) {
   const customer = state.customers.find((item) => item.id === customerId);
   if (!customer) return;
 
-  const raw = window.prompt(
+  const raw = await askText(
     t("dialog.creditLimitPrompt", { name: customer.name || customer.phone || "", currency: currentCurrencyCode() }),
-    customer.creditLimit != null ? String(customer.creditLimit) : ""
-  );
+    { defaultValue: customer.creditLimit != null ? String(customer.creditLimit) : "", numeric: true });
   if (raw === null) return;
 
   const trimmed = raw.trim();
@@ -11173,7 +11200,7 @@ function buildProductMovementHtml(productId, movements = null) {
 
 function renderProductMovementDialog(productId) {
   const product = state.products.find((item) => item.id === productId);
-  qs("#productMovementDialogTitle").textContent = product ? `${t("movement.title")} \u2014 ${productDisplayLabel(product)}` : t("movement.title");
+  setDynamicText("#productMovementDialogTitle", product ? `${t("movement.title")} \u2014 ${productDisplayLabel(product)}` : t("movement.title"));
   qs("#productMovementContent").innerHTML = buildProductMovementHtml(productId);
 }
 
@@ -11303,11 +11330,11 @@ function buildPurchaseOrderTextLines(group) {
   return lines;
 }
 
-function sendPurchaseOrderWhatsApp(groupIndex) {
+async function sendPurchaseOrderWhatsApp(groupIndex) {
   const group = currentPoGroupQuantities(groupIndex);
   if (!group || !group.items.length) return showToast(t("toast.poAllQuantitiesZero"));
 
-  const rawPhone = window.prompt(t("dialog.customerPhonePrompt"));
+  const rawPhone = await askText(t("dialog.customerPhonePrompt"));
   if (rawPhone === null) return;
   const normalized = normalizeTzPhoneForWhatsApp(rawPhone);
   if (!normalized) return showToast(t("toast.invalidPhoneNumber"));
@@ -12594,13 +12621,13 @@ function normalizeTzPhoneForWhatsApp(rawPhone) {
   return null;
 }
 
-function shareReceiptWhatsApp() {
+async function shareReceiptWhatsApp() {
   const sale = state.lastReceiptSale;
   if (!sale) return;
 
   let rawPhone = sale.customerPhone;
   if (!rawPhone) {
-    rawPhone = window.prompt(t("dialog.customerPhonePrompt"));
+    rawPhone = await askText(t("dialog.customerPhonePrompt"));
     if (rawPhone === null) return;
   }
 
@@ -14971,7 +14998,7 @@ async function initFirebase() {
     state.firebaseReady = true;
     qs(".status-dot").classList.add("connected");
     qs("#connectionLabel").textContent = t("connection.firebaseConnected");
-    qs("#connectionHint").textContent = t("connection.createAccountToBegin");
+    setDynamicText("#connectionHint", t("connection.createAccountToBegin"), "connection.createAccountToBegin");
 
     authApi.onAuthStateChanged(state.auth, async (user) => {
       state.user = user;
@@ -15403,13 +15430,13 @@ async function subscribeToStores() {
   }
 }
 
- function promptBusinessTypeSelection(currentKey) {
+ async function promptBusinessTypeSelection(currentKey) {
   const list = BUSINESS_TYPE_OPTIONS
     .map((option, index) => `${index + 1}. ${state.language === "sw" ? option.sw : option.en}`)
     .join("\n");
   const promptText = t("dialog.businessTypePrompt", { list });
   const defaultValue = currentKey ? String(BUSINESS_TYPE_OPTIONS.findIndex((o) => o.key === currentKey) + 1) : "";
-  const raw = window.prompt(promptText, defaultValue);
+  const raw = await askText(promptText, { defaultValue });
   if (raw === null) return null;
   const index = Number(raw.trim()) - 1;
   if (!Number.isInteger(index) || index < 0 || index >= BUSINESS_TYPE_OPTIONS.length) return null;
@@ -15514,7 +15541,7 @@ async function setStoreCurrency() {
   if (!state.currentStoreId || state.currentStoreId === "all") return showToast(t("toast.selectSpecificStore"));
   const store = state.stores.find((item) => item.id === state.currentStoreId);
   if (!store) return;
-  const raw = window.prompt(t("dialog.currencyCodePrompt"), store.currencyCode || "TZS");
+  const raw = await askText(t("dialog.currencyCodePrompt"), { defaultValue: store.currencyCode || "TZS" });
   if (raw === null) return;
   const code = raw.trim().toUpperCase();
   if (!/^[A-Z]{3}$/.test(code)) return showToast(t("toast.currencyInvalid"));
@@ -15549,7 +15576,7 @@ async function setStoreBusinessType() {
   if (!state.currentStoreId || state.currentStoreId === "all") return showToast(t("toast.selectSpecificStore"));
   const store = state.stores.find((item) => item.id === state.currentStoreId);
   if (!store) return;
-  const nextType = promptBusinessTypeSelection(store.businessType);
+  const nextType = await promptBusinessTypeSelection(store.businessType);
   if (!nextType) return;
   if (!state.db || !state.user) return showToast(t("toast.signInToAddStore"));
   try {
@@ -15562,10 +15589,10 @@ async function setStoreBusinessType() {
   }
 }
 async function createStore() {
-  const name = window.prompt(t("dialog.newStoreNamePrompt"));
+  const name = await askText(t("dialog.newStoreNamePrompt"));
   if (!name || !name.trim()) return;
   if (!state.db || !state.user) return showToast(t("toast.signInToAddStore"));
-  const businessType = promptBusinessTypeSelection() || "general";
+  const businessType = (await promptBusinessTypeSelection()) || "general";
   try {
     const { collection, doc, serverTimestamp, setDoc } = state.firebaseApi.firestore;
     const storeRef = doc(collection(state.db, "users", state.user.uid, "stores"));
@@ -15581,7 +15608,7 @@ async function renameStore() {
   if (!state.currentStoreId || state.currentStoreId === "all") return showToast(t("toast.selectSpecificStore"));
   const store = state.stores.find((item) => item.id === state.currentStoreId);
   if (!store) return;
-  const name = window.prompt(t("dialog.renameStorePrompt"), store.name || "");
+  const name = await askText(t("dialog.renameStorePrompt"), { defaultValue: store.name || "" });
   if (!name || !name.trim()) return;
   if (!state.db || !state.user) return showToast(t("toast.signInToAddStore"));
   try {
@@ -15600,7 +15627,7 @@ async function renameStore() {
 async function changeOwnerName() {
   if (!state.db || !state.user) return showToast(t("toast.firebaseNotConnected"));
   const current = state.cachedProfile?.ownerName || "";
-  const entered = window.prompt(t("dialog.ownerNamePrompt"), current);
+  const entered = await askText(t("dialog.ownerNamePrompt"), { defaultValue: current });
   if (entered === null) return;
   const name = entered.trim().slice(0, 80);
   if (!name) return;
@@ -15777,6 +15804,73 @@ async function revokeStaffMember(memberId) {
 // close cross, Escape, and the dialog being closed by anything else all
 // resolve false, so the caller's `if (!ok) return;` keeps reading the same way
 // it did with confirm().
+// The app's own text prompt, replacing window.prompt().
+//
+// Same reason as askConfirm beside it: a browser may decline to show a native
+// dialog and hand back null, and every caller here reads null as "cancelled".
+// Ten buttons therefore did nothing at all, silently -- among them the till's
+// price override and the override PASSWORD, which is the control standing
+// between a cashier and discounting stock to nothing.
+//
+// It also fixes something window.prompt cannot do: a password typed into a
+// native prompt is displayed in clear text on the screen, in a shop, at a
+// counter. options.type === "password" masks it here.
+//
+// Resolves the entered string, or null for cancel, the close cross, Escape,
+// and a dialog closed by anything else -- so `if (raw === null) return;` keeps
+// reading exactly as it did.
+function askText(message, options = {}) {
+  const dialog = qs("#promptDialog");
+  // No dialog means no way to ask. Null is "cancelled", which is the safe
+  // reading -- the alternative is proceeding with a value nobody typed.
+  if (!dialog) return Promise.resolve(null);
+
+  const form = qs("#promptDialogForm");
+  const input = qs("#promptDialogInput");
+  const messageEl = qs("#promptDialogMessage");
+  const titleEl = qs("#promptDialogTitle");
+  if (messageEl) messageEl.textContent = message;
+  if (titleEl) titleEl.textContent = options.title || t("prompt.title");
+  if (input) {
+    input.type = options.type === "password" ? "password" : "text";
+    input.value = options.defaultValue === undefined || options.defaultValue === null
+      ? ""
+      : String(options.defaultValue);
+    input.inputMode = options.numeric ? "decimal" : "text";
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      form?.removeEventListener("submit", onSubmit);
+      qs("#promptDialogCancel")?.removeEventListener("click", onCancel);
+      qs("#promptDialogClose")?.removeEventListener("click", onCancel);
+      dialog.removeEventListener("close", onClose);
+      // Never leave a typed password sitting in the DOM for the next caller.
+      if (input) input.value = "";
+      if (dialog.open) dialog.close();
+      resolve(value);
+    };
+    const onSubmit = (event) => { event.preventDefault(); finish(input ? input.value : ""); };
+    const onCancel = () => finish(null);
+    // Escape closes a <dialog> without firing any control, and only the
+    // browser's own close event reports it. Without this the caller would await
+    // a submit that can no longer happen -- the dead button again, by another
+    // route.
+    const onClose = () => finish(null);
+
+    form?.addEventListener("submit", onSubmit);
+    qs("#promptDialogCancel")?.addEventListener("click", onCancel);
+    qs("#promptDialogClose")?.addEventListener("click", onCancel);
+    dialog.addEventListener("close", onClose);
+    dialog.showModal();
+    input?.focus();
+    input?.select?.();
+  });
+}
+
 function askConfirm(message, options = {}) {
   const dialog = qs("#confirmDialog");
   // If the markup is somehow missing, refuse rather than silently proceeding
@@ -16296,7 +16390,11 @@ function updateAuthUi() {
   qs("#authGate").classList.toggle("hidden", signedIn);
   qs("#accountChip").hidden = !signedIn;
   qs("#userEmail").textContent = state.user?.email || t("connection.signedInFallback");
-  qs("#connectionHint").textContent = signedIn ? t("connection.inventorySyncing") : t("sidebar.connectionHintSignedOut");
+  // Key-based, so the translator re-applies the RIGHT one instead of the one
+  // baked into the markup. This is the line that told a signed-in owner to
+  // sign in.
+  const hintKey = signedIn ? "connection.inventorySyncing" : "sidebar.connectionHintSignedOut";
+  setDynamicText("#connectionHint", t(hintKey), hintKey);
   qs("#verifyBanner").hidden = !signedIn || Boolean(state.user?.emailVerified);
   // Staff invites/roster are owner-only actions -- the members collection
   // read is owner-only in firestore.rules (a collection-level query can't
@@ -17412,7 +17510,16 @@ function bindEvents() {
       if (!cartItem) return;
       const authorized = await verifyOverridePassword();
       if (!authorized) return;
-      const newPrice = Number(window.prompt(t("dialog.editPricePrompt", { name: cartItem.name, currency: currentCurrencyCode() }), cartItem.sellingPrice));
+      const rawPrice = await askText(
+        t("dialog.editPricePrompt", { name: cartItem.name, currency: currentCurrencyCode() }),
+        { defaultValue: cartItem.sellingPrice, numeric: true });
+      // Cancelling must not change the price. Number(null) is 0, and 0 clears
+      // both checks below, so backing out of a price override handed the
+      // customer the item for nothing -- and the override password had already
+      // been entered by then, so it looked authorised. An empty box is the same
+      // thing typed rather than clicked.
+      if (rawPrice === null || String(rawPrice).trim() === "") return;
+      const newPrice = Number(rawPrice);
       if (!Number.isFinite(newPrice) || newPrice < 0) return showToast(t("toast.invalidPrice"));
       pushCartHistory();
       cartItem.sellingPrice = newPrice;

@@ -28,7 +28,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260910s" />
+    <link rel="stylesheet" href="./styles.css?v=20260910u" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#0b0d10" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -48,7 +48,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260910s"></script>
+    <script type="module" src="./boot.js?v=20260910u"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -1730,6 +1730,32 @@
 
          Failing safe is right; failing silently is not. This cannot be
          suppressed, it is translated, and it says what will happen. -->
+    <!-- The app's own text prompt, replacing window.prompt() on 2026-09-10.
+         Same reason as the confirmation beside it: a browser may decline to
+         show a native dialog and hand back null, which every caller here reads
+         as "cancelled". Ten buttons did nothing at all in that case -- the
+         till's price override and the override PASSWORD among them. Found by
+         clicking every button in the app and reading the console.
+
+         It also fixes something window.prompt could never do: a password typed
+         into a native prompt is shown in clear text on screen. This one masks
+         it. -->
+    <dialog id="promptDialog">
+      <div class="dialog-head">
+        <h2 id="promptDialogTitle" data-i18n="prompt.title">Enter a value</h2>
+        <button class="icon-button" type="button" id="promptDialogClose" aria-label="Close">&times;</button>
+      </div>
+      <form id="promptDialogForm" novalidate>
+        <label><span id="promptDialogMessage"></span>
+          <input id="promptDialogInput" type="text" autocomplete="off" maxlength="200" />
+        </label>
+        <div class="button-row end">
+          <button class="ghost-button" type="button" id="promptDialogCancel" data-i18n="confirm.cancel">Cancel</button>
+          <button class="primary-button" type="submit" id="promptDialogAccept" data-i18n="prompt.accept">OK</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="confirmDialog">
       <div class="dialog-head">
         <h2 id="confirmDialogTitle" data-i18n="confirm.title">Are you sure?</h2>
@@ -2396,6 +2422,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260910s"></script>
+    <script type="module" src="./app.js?v=20260910u"></script>
   </body>
 </html>
