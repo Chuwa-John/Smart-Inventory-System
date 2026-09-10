@@ -23,6 +23,7 @@ import { readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const rules = readFileSync(new URL("../firestore.rules", import.meta.url), "utf8");
+const html = readFileSync(new URL("../app.html", import.meta.url), "utf8");
 
 const results = [];
 function check(name, pass, detail = "") {
@@ -136,6 +137,67 @@ console.log("\n=== the file says what it is ===");
   // own rather than through rootCollections.
   check("the profile document is exported too",
     /profile: profileSnap\.exists\(\) \? backupSerializable\(profileSnap\.data\(\)\) : null/.test(src));
+}
+
+console.log("\n=== a backup leaves a record that it happened ===");
+{
+  const backup = backupBody();
+  // Until 2026-09-10 nothing recorded whether a tenant had EVER taken a backup.
+  // On a plan with no server-side backups and one hour of version retention,
+  // that was the single most important fact about a shop and it was unknowable:
+  // you could not tell a shop their last backup was months old, spot one that
+  // had never taken any, or say after a loss whether a file existed at all.
+  check("the download is audited", /action: "BACKUP_DOWNLOADED"/.test(backup),
+    "otherwise nothing anywhere records that a backup happened");
+  check("...and the profile is stamped", /lastBackupAt: serverTimestamp\(\)/.test(backup),
+    "the stamp is what Settings and a support query read without trawling the log");
+  check("the rules accept that action", /'BACKUP_DOWNLOADED'/.test(rules));
+
+  // Order matters. A stamp written before the file exists marks a backup that a
+  // failed export never produced, and the shop is then told it is covered when
+  // it is not.
+  // BOTH anchors verified present before comparing. indexOf returns -1 for a
+  // missing needle and -1 is less than any real index, so deleting the download
+  // entirely made the ordering assertion PASS. This project has shipped that
+  // exact false green once before; a negative control caught it again here.
+  const clickAt = backup.indexOf("link.click()");
+  const stampAt = backup.indexOf("BACKUP_DOWNLOADED");
+  check("the record is written AFTER the file is handed over",
+    clickAt !== -1 && stampAt !== -1 && clickAt < stampAt,
+    `link.click() at ${clickAt}, the record at ${stampAt}`);
+  // And failing to record must not fail a download that already succeeded.
+  check("a failed stamp does not fail the backup", /catch \(stampError\)/.test(backup));
+  // The count makes the entry worth reading rather than a bare timestamp.
+  check("the entry says how much was exported", /itemCount: documentCount/.test(backup));
+}
+
+console.log("\n=== Settings says when it last happened ===");
+{
+  const start = src.indexOf("function renderLastBackup(");
+  let i = src.indexOf("{", src.indexOf(")", start));
+  let depth = 0;
+  for (; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") { depth--; if (depth === 0) break; }
+  }
+  const render = src.slice(start, i + 1);
+
+  check("there is a line to render into", html.includes('id="lastBackupLine"'));
+  // Never and stale are different conversations: one needs a phone call, the
+  // other a reminder.
+  check("never is called out separately from stale",
+    /backup\.never/.test(render) && /backup\.stale/.test(render));
+  check("...and a healthy backup reads plainly", /backup\.last/.test(render));
+  check("both bad states are visually marked", /cell-warn/.test(render));
+  // Cost figures and business health -- not a cashier's business.
+  check("it is owner-only", /isOwnerRole\(\)/.test(render) && /line\.hidden = true/.test(render));
+  check("it is repainted with the account panel", /renderLastBackup\(\);/.test(src));
+
+  // A sign-in must not drop the stamp, or a backed-up business reports as
+  // never backed up.
+  check("the stamp survives a fresh sign-in", /stored\?\.lastBackupAt/.test(src));
+  check("...and is cached where the renderer reads it",
+    /businessName, ownerName, lastBackupAt \}/.test(src));
 }
 
 console.log("\n=== it stays the owner's alone ===");

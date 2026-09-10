@@ -120,8 +120,12 @@ console.log("\n=== the name survives a reload, and cannot be blanked ===");
     /\.\.\.\(ownerName \? \{ ownerName \} : \{\}\)/.test(b), true);
   check("the business name gets the same no-blank guard",
     /stored\?\.businessName/.test(b), true);
+  // Anchored on the CLAIM -- that ownerName reaches the cache every reader
+  // consults -- not on the exact field list. The cache legitimately gained
+  // lastBackupAt later, and a test pinned to the literal failed for a reason
+  // that had nothing to do with owner names.
   check("the cache carries it, because that is what every reader consults",
-    /state\.cachedProfile = \{ email: user\.email \|\| "", businessName, ownerName \}/.test(b), true);
+    /state\.cachedProfile = \{[^}]*ownerName[^}]*\}/.test(b), true);
   // The early return skips the whole function. If it did not know about
   // ownerName it would skip the very write that saves one.
   check("the unchanged-check knows about it", /cached\.ownerName === ownerName/.test(b), true);

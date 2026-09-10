@@ -979,7 +979,13 @@ service cloud.firestore {
          'EXPENSE_UPDATED', 'EXPENSE_DELETED', 'PURCHASE_DELETED', 'DELIVERY_DELETED',
          'PRODUCT_CREATED', 'PRODUCT_EDITED', 'PRODUCT_DELETED', 'STORE_CURRENCY_CHANGED', 'STORE_ARCHIVED',
          'ACCOUNT_DELETION_REQUESTED', 'ACCOUNT_DELETION_CANCELLED', 'ACCOUNT_ACCESS_DURING_GRACE',
-         'VAT_REGISTRATION_ENABLED', 'VAT_REGISTRATION_DISABLED']);
+         'VAT_REGISTRATION_ENABLED', 'VAT_REGISTRATION_DISABLED',
+         // Taking a backup is the only recovery path this system has on its
+         // current plan -- there are no server-side backups and the version
+         // retention window is one hour. Whether one was ever taken was
+         // therefore the single most important thing about a tenant that
+         // nothing recorded.
+         'BACKUP_DOWNLOADED']);
     }
 
     // The union of every field the 12 auditLogs write sites in app.js emit.

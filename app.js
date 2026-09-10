@@ -337,6 +337,9 @@ const DICTIONARY = {
     "settings.title": "Settings",
     "settings.accountTitle": "Account",
     "settings.signedInAs": "Signed in as",
+    "backup.last": "Last backup: {date}.",
+    "backup.stale": "Last backup: {date} — {days} days ago. Take a fresh one.",
+    "backup.never": "You have never taken a backup. If this phone is lost, so is your business record.",
     "reports.groupFinancial": "Financial", "reports.groupSales": "Sales",
     "reports.groupPurchases": "Purchases", "reports.groupInventory": "Inventory",
     "reports.groupExpenses": "Expenses",
@@ -1595,6 +1598,9 @@ const DICTIONARY = {
     "settings.title": "Mipangilio",
     "settings.accountTitle": "Akaunti",
     "settings.signedInAs": "Umeingia kama",
+    "backup.last": "Nakala ya mwisho: {date}.",
+    "backup.stale": "Nakala ya mwisho: {date} — siku {days} zilizopita. Chukua mpya.",
+    "backup.never": "Hujawahi kuchukua nakala. Simu hii ikipotea, kumbukumbu ya biashara yako inapotea nayo.",
     "reports.groupFinancial": "Fedha", "reports.groupSales": "Mauzo",
     "reports.groupPurchases": "Manunuzi", "reports.groupInventory": "Hisa",
     "reports.groupExpenses": "Matumizi",
@@ -5965,6 +5971,35 @@ function backupSerializable(value) {
   return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, backupSerializable(entry)]));
 }
 
+// A backup older than this is treated as stale. A month is a judgement, not a
+// standard: it is short enough that a shop losing everything loses weeks rather
+// than a year, and long enough that the warning does not become wallpaper.
+const BACKUP_STALE_AFTER_DAYS = 30;
+
+// What Settings says about the one recovery path this plan has. NEVER is called
+// out separately from OLD, because they are different conversations: a shop
+// with no backup at all needs a phone call, a shop with a stale one needs a
+// reminder.
+function renderLastBackup() {
+  const line = qs("#lastBackupLine");
+  if (!line) return;
+  if (!isOwnerRole()) { line.hidden = true; return; }
+  line.hidden = false;
+
+  const at = state.cachedProfile?.lastBackupAt;
+  const taken = at instanceof Date ? at : (at?.toDate?.() || null);
+  if (!taken || Number.isNaN(taken.getTime())) {
+    line.textContent = t("backup.never");
+    line.className = "muted cell-warn";
+    return;
+  }
+  const days = Math.floor((Date.now() - taken.getTime()) / 86400000);
+  line.className = days > BACKUP_STALE_AFTER_DAYS ? "muted cell-warn" : "muted";
+  line.textContent = days > BACKUP_STALE_AFTER_DAYS
+    ? t("backup.stale", { date: taken.toLocaleDateString(), days: String(days) })
+    : t("backup.last", { date: taken.toLocaleDateString() });
+}
+
 async function downloadAccountBackup() {
   if (!state.db || !state.user) return showToast(t("toast.firebaseNotConnected"));
   const button = qs("#downloadBackupButton");
@@ -6047,6 +6082,32 @@ async function downloadAccountBackup() {
     link.click();
     URL.revokeObjectURL(url);
     showToast(t("toast.backupDownloaded"));
+
+    // Recorded only AFTER the file has been handed to the browser. Stamping it
+    // earlier would mark a backup that a failed export never produced, and a
+    // shop would then be told it was covered when it was not -- which is worse
+    // than no record at all.
+    //
+    // Two writes on purpose. The audit entry is the trail; the stamp on the
+    // profile is what Settings and any support query can read without trawling
+    // the log. Neither is allowed to fail the download that has already
+    // succeeded, so both are caught separately.
+    try {
+      const { serverTimestamp, setDoc: setProfile } = state.firebaseApi.firestore;
+      const documentCount = Object.values(collections).reduce((sum, list) => sum + list.length, 0);
+      await Promise.all([
+        setProfile(doc(state.db, "users", state.user.uid),
+          { lastBackupAt: serverTimestamp() }, { merge: true }),
+        setProfile(doc(collection(state.db, "users", state.user.uid, "auditLogs")),
+          { action: "BACKUP_DOWNLOADED", uid: state.user.uid,
+            itemCount: documentCount, createdAt: serverTimestamp() })
+      ]);
+      state.cachedProfile = { ...(state.cachedProfile || {}), lastBackupAt: new Date() };
+      updateAuthUi();
+    } catch (stampError) {
+      // The backup itself is on the owner's device and is what matters.
+      console.warn("Backup taken, but the record of it could not be written.", stampError);
+    }
   } catch (error) {
     console.warn("Account backup failed:", error);
     showToast(t("toast.backupFailed"));
@@ -15687,6 +15748,11 @@ async function ensureUserProfile(user) {
       state.pendingBusinessName || user.displayName || stored?.businessName || ""
     );
 
+    // Read back rather than recomputed: nothing in this function sets it, so
+    // without this a sign-in would drop the stamp and Settings would report a
+    // backed-up business as never backed up.
+    const lastBackupAt = stored?.lastBackupAt?.toDate?.() || stored?.lastBackupAt || null;
+
     const unchanged = cached
       && cached.email === (user.email || "")
       && cached.businessName === businessName
@@ -15708,7 +15774,7 @@ async function ensureUserProfile(user) {
       updatedAt: serverTimestamp(),
       ...consentPayload
     }, { merge: true });
-    state.cachedProfile = { email: user.email || "", businessName, ownerName };
+    state.cachedProfile = { email: user.email || "", businessName, ownerName, lastBackupAt };
     state.pendingConsent = null;
   } catch (error) {
     console.warn(error);
@@ -15745,6 +15811,7 @@ function updateAuthUi() {
   // record, not theirs to edit here.
   const changeNameButton = qs("#changeOwnerNameButton");
   if (changeNameButton) changeNameButton.hidden = !isOwner;
+  renderLastBackup();
   const settingsStaffPanel = qs("#settingsStaffPanel");
   if (settingsStaffPanel) settingsStaffPanel.hidden = !isOwner;
   const rosterButton = qs("#staffRosterButton");
