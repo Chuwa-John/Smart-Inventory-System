@@ -9310,7 +9310,7 @@ async function subscribeToProductCosts() {
   try {
     const { collection, onSnapshot, query, where } = state.firebaseApi.firestore;
     const costsRef = collection(state.db, "users", state.businessOwnerUid, "productCosts");
-    const queryStoreIds = await resolveQueryStoreIds();
+    const queryStoreIds = await catalogueStoreIds();
     if (queryStoreIds !== null && queryStoreIds.length === 0) {
       state.productCosts = [];
       scheduleRenderAll();
@@ -15044,6 +15044,38 @@ async function initFirebase() {
   }
 }
 
+// Which stores the CATALOGUE subscription should cover.
+//
+// resolveQueryStoreIds() answers "what is this person allowed to read", which
+// for an owner or a roaming manager is everything. That is the right answer for
+// permission and the wrong one for the catalogue: `products` and `productCosts`
+// are the only two live subscriptions that grow with the size of the business,
+// and an owner was loading every branch on every cold start even while looking
+// at one branch. Measured at 2,000 SKUs across 3 branches that is 12,000
+// documents -- 24% of a day's Spark read quota spent by one person opening the
+// app once, and the same 12,000 objects parsed and held in a browser on a cheap
+// Android. At the 10,000-SKU catalogue this is being sold into, one cold start
+// exceeds the whole daily quota.
+//
+// So the catalogue follows the BRANCH SWITCHER. Nothing on screen changes:
+// storeProducts() already shows only the selected branch, so a scoped
+// subscription holds exactly what was already being displayed. "All branches"
+// still loads everything, because that is the reporting view and is where an
+// owner goes when they need to see across branches.
+//
+// Permission is untouched. This only ever NARROWS what resolveQueryStoreIds()
+// already permitted, and firestore.rules is unchanged.
+async function catalogueStoreIds() {
+  const allowed = await resolveQueryStoreIds();
+  const selected = state.currentStoreId;
+  // Not scoped yet, or deliberately looking across branches.
+  if (!selected || selected === "all") return allowed;
+  // Staff already carry a narrow scope. Narrowing it to a branch they cannot
+  // read would hand back an empty catalogue rather than a smaller one.
+  if (allowed !== null && !allowed.includes(selected)) return allowed;
+  return [selected];
+}
+
 async function subscribeToProducts() {
   if (!state.db || !state.user || !state.businessOwnerUid) return;
   if (state.unsubscribeProducts) state.unsubscribeProducts();
@@ -15052,7 +15084,7 @@ async function subscribeToProducts() {
   try {
     const { collection, onSnapshot, query, where } = state.firebaseApi.firestore;
     const productsRef = collection(state.db, "users", state.businessOwnerUid, "products");
-    const queryStoreIds = await resolveQueryStoreIds();
+    const queryStoreIds = await catalogueStoreIds();
     // null = owner, unfiltered access is correct. Empty array = staff with
     // no resolvable store access -- subscribe to nothing rather than send
     // an invalid empty `in` filter (Firestore rejects in:[] outright).
@@ -15193,9 +15225,16 @@ async function applyStoresSnapshot(nextStores, { canCreateDefault }) {
     await ensureDefaultStore();
     return;
   }
+  const previousStoreId = state.currentStoreId;
   if (!state.currentStoreId || (state.currentStoreId !== "all" && !state.stores.some((store) => store.id === state.currentStoreId))) {
     state.currentStoreId = activeStores()[0]?.id || state.stores[0]?.id || "";
   }
+  // The branch is settled HERE on a cold start, not by the switcher: products
+  // subscribe before the stores snapshot arrives, so at that moment there is no
+  // selected branch and catalogueStoreIds() can only fall back to everything.
+  // Without this the scoping would work when someone changed branch and never
+  // on the load that actually costs the reads.
+  if (state.currentStoreId && state.currentStoreId !== previousStoreId) resubscribeCatalogue();
   renderStoreSwitcher();
   scheduleRenderAll();
   translateStaticDom();
@@ -15532,6 +15571,20 @@ function switchStore(storeId) {
   renderStoreSwitcher();
   renderAll();
   translateStaticDom();
+  // The catalogue is scoped to the selected branch, so changing branch changes
+  // what has to be loaded. Re-subscribed rather than re-filtered: the products
+  // for the branch just chosen may never have been fetched at all.
+  resubscribeCatalogue();
+}
+
+// Products and their costs, re-fetched for the branch now selected. Deliberately
+// separate from resubscribeRoleGatedCollections(), which exists for a different
+// event -- a role changing underneath someone -- and clears collections this
+// must not touch.
+function resubscribeCatalogue() {
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
+  subscribeToProducts();
+  subscribeToProductCosts();
 }
 
 function renderStoreSwitcher() {
