@@ -149,6 +149,27 @@ console.log("\n=== the link comes back to the app ===");
     un.log.toasts, ["toast.passwordResetSent"]);
 }
 
+console.log("\n=== pressing it with an empty box is not silence ===");
+{
+  const b = extract("handleForgotPassword").replace(/\/\/[^\n]*/g, "");
+  // Reported from the live site as a dead button. It was not dead: it wrote
+  // "This field is required." into a span under the EMAIL BOX -- a different
+  // element from the link that was pressed, and off-screen on a phone. A
+  // control that answers somewhere the eye is not has not answered.
+  check("an empty address gets a message, not just a field mark",
+    /toast\.passwordResetNeedsEmail/.test(b), true);
+  check("...and the cursor is put where the answer says to type",
+    /emailInput\?\.focus\(\)/.test(b), true);
+  check("...and that field is brought into view", /scrollIntoView/.test(b), true);
+  // The field mark stays: it is what shows WHICH box is wrong.
+  check("the field is still marked as well", /validateAuthEmail\(\)/.test(b), true);
+  // And it must still refuse to send.
+  const refuseAt = b.indexOf("toast.passwordResetNeedsEmail");
+  const sendAt = b.indexOf("sendPasswordResetEmail");
+  check("nothing is sent without an address",
+    refuseAt !== -1 && sendAt !== -1 && refuseAt < sendAt, true);
+}
+
 console.log("\n=== the button ===");
 {
   check("it exists on the sign-in form", html.includes('id="authForgotPasswordButton"'), true);

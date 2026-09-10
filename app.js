@@ -1212,6 +1212,7 @@ const DICTIONARY = {
     "toast.authOperationNotAllowed": "Enable Email/Password sign-in in Firebase Auth.",
     "toast.passwordResetSent": "If an account exists for that email, a password reset link has been sent.",
     "toast.passwordResetOffline": "You are offline, so the reset email cannot be sent. Reconnect and try again.",
+    "toast.passwordResetNeedsEmail": "Type your email address in the box above first, then tap Forgot password.",
     "toast.passwordResetFailed": "The reset email could not be sent. Check your connection and try again.",
     "toast.verificationEmailSent": "Verification email sent. Please check your inbox.",
     "toast.verificationEmailFailed": "Could not send the verification email. Please try again shortly.",
@@ -2473,6 +2474,7 @@ const DICTIONARY = {
     "toast.authOperationNotAllowed": "Wezesha kuingia kwa Barua pepe/Nenosiri kwenye Firebase Auth.",
     "toast.passwordResetSent": "Kama akaunti ipo kwa barua pepe hiyo, kiungo cha kubadilisha nenosiri kimetumwa.",
     "toast.passwordResetOffline": "Hauko mtandaoni, hivyo barua pepe ya kubadilisha nenosiri haiwezi kutumwa. Unganisha kisha ujaribu tena.",
+    "toast.passwordResetNeedsEmail": "Andika barua pepe yako kwenye kisanduku hapo juu kwanza, kisha gusa Umesahau nenosiri.",
     "toast.passwordResetFailed": "Barua pepe ya kubadilisha nenosiri haikuweza kutumwa. Angalia muunganisho wako kisha ujaribu tena.",
     "toast.verificationEmailSent": "Barua pepe ya uthibitisho imetumwa. Tafadhali angalia kikasha chako.",
     "toast.verificationEmailFailed": "Imeshindwa kutuma barua pepe ya uthibitisho. Tafadhali jaribu tena baadaye.",
@@ -15967,7 +15969,19 @@ const PASSWORD_RESET_SILENT_CODES = new Set([
 
 async function handleForgotPassword() {
   if (!state.auth) return showToast(t("toast.firebaseNotConnected"));
-  if (!validateAuthEmail()) return;
+  // A field error ALONE is not enough here. It lands under the email box --
+  // a different element from the link that was pressed, and often off-screen
+  // on a phone -- so pressing "Forgot password?" with the box empty looked
+  // exactly like a dead button. Reported as precisely that.
+  //
+  // The field error still marks the box; this says the same thing where the
+  // eye already is, and puts the cursor in the field so the next tap types.
+  if (!validateAuthEmail()) {
+    const emailInput = qs("#authEmail");
+    emailInput?.focus();
+    emailInput?.scrollIntoView({ block: "center", behavior: "smooth" });
+    return showToast(t("toast.passwordResetNeedsEmail"));
+  }
   const email = qs("#authEmail").value.trim();
   const button = qs("#authForgotPasswordButton");
 
