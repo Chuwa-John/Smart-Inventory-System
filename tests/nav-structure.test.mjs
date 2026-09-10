@@ -34,10 +34,13 @@ const items = [...nav.matchAll(/<button class="nav-item[^"]*"[^>]*>[\s\S]*?<\/bu
 console.log("=== the order the owner asked for ===");
 {
   const views = [...nav.matchAll(/data-view="([a-z]+)"/g)].map((m) => m[1]);
+  // Profit is absent on purpose: it is opened from the Reports chooser, not
+  // from the sidebar. VAT is still in the markup but switched off by
+  // VAT_VIEW_ENABLED, so it is never shown.
   check("flat, in order",
     views,
     ["dashboard", "inventory", "purchases", "pos", "services", "expenses",
-     "reports", "ai", "vat", "profit", "settings"]);
+     "reports", "ai", "vat", "settings"]);
   // Deliveries were folded into Purchases: two destinations answered one
   // question -- "stock arrived, here is what it cost".
   check("deliveries is no longer its own destination", views.includes("deliveries"), false);
@@ -93,10 +96,12 @@ console.log("\n=== who sees the dormant shelf ===");
 
 console.log("\n=== Profit & Loss is not parked behind it ===");
 {
+  // It has NO nav item -- it is reached from the Reports chooser, which is
+  // where the owner asked for it on 2026-09-10.
   const profit = items.find((b) => b.includes('data-view="profit"'));
-  check("it has its own tab", Boolean(profit), true);
-  check("...labelled as the report it is", /data-i18n="nav\.profit"/.test(profit || ""), true);
-  check("...and it is enabled", /\sdisabled/.test(profit || ""), false);
+  check("it has no nav item of its own", Boolean(profit), false);
+  check("...but the view still exists", /<section class="view" id="profit">/.test(html), true);
+  check("...and it can be got back out of", /id="profitBackButton"/.test(html), true);
   // Owner-strict, decided 2026-08-21: it exposes buying prices by inference.
   check("still owner-strict", /if \(viewId === "profit"\) return isOwnerRole\(\)/.test(src), true);
   // The four statements this system cannot yet produce are NAMED rather than

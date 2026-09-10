@@ -12,6 +12,8 @@ const APP_VERSION = (() => {
 })();
 
 const state = {
+  // Which report the Reports screen is showing; null means the chooser.
+  selectedReport: null,
   products: [],
   // Sellable things with a price and no shelf, for bar/restaurant and salon
   // stores (DESIGN-services.md). Kept apart from products deliberately: a
@@ -343,6 +345,15 @@ const DICTIONARY = {
     "reports.groupFinancial": "Financial", "reports.groupSales": "Sales",
     "reports.groupPurchases": "Purchases", "reports.groupInventory": "Inventory",
     "reports.groupExpenses": "Expenses",
+    "reports.chooseEyebrow": "Choose a report",
+    "reports.chooseTitle": "What do you want to see?",
+    "reports.chooseEmpty": "There are no reports you can open yet.",
+    "reports.backToAll": "← All reports",
+    "reports.group.money": "Money",
+    "reports.group.sales": "Sales",
+    "reports.group.stock": "Stock",
+    "reports.group.buying": "Buying",
+    "reports.group.ai": "Ask SaviaSmart",
     "reports.ledgerPendingTitle": "Balance Sheet, Trial Balance, Cash Flow & General Ledger",
     "reports.ledgerPendingBody": "These four are statements of a double-entry ledger, which this system does not keep yet. They will appear under Accounts, which is why that tab is there but not yet open. Profit & Loss is available now, on its own tab, because it is built from the transactions themselves.",
     "reports.openProfit": "Open Profit & Loss",
@@ -1611,6 +1622,15 @@ const DICTIONARY = {
     "reports.groupFinancial": "Fedha", "reports.groupSales": "Mauzo",
     "reports.groupPurchases": "Manunuzi", "reports.groupInventory": "Hisa",
     "reports.groupExpenses": "Matumizi",
+    "reports.chooseEyebrow": "Chagua ripoti",
+    "reports.chooseTitle": "Unataka kuona nini?",
+    "reports.chooseEmpty": "Bado hakuna ripoti unayoweza kufungua.",
+    "reports.backToAll": "← Ripoti zote",
+    "reports.group.money": "Fedha",
+    "reports.group.sales": "Mauzo",
+    "reports.group.stock": "Hisa",
+    "reports.group.buying": "Manunuzi",
+    "reports.group.ai": "Uliza SaviaSmart",
     "reports.ledgerPendingTitle": "Mizania, Salio la Majaribio, Mtiririko wa Fedha na Leja Kuu",
     "reports.ledgerPendingBody": "Hizi nne ni taarifa za leja ya kuingiza mara mbili, ambayo mfumo huu bado hauitunzi. Zitaonekana chini ya Hesabu, ndiyo maana kichupo hicho kipo lakini bado hakijafunguliwa. Faida na Hasara inapatikana sasa, kwenye kichupo chake, kwa sababu inajengwa kutoka kwenye miamala yenyewe.",
     "reports.openProfit": "Fungua Faida na Hasara",
@@ -4821,6 +4841,8 @@ function renderPaymentReports() {
   renderCustomerAccounts();
   renderSuppliers();
   renderSpecReports();
+  // Last, so it narrows a decision the role gate has already made.
+  applyReportSelection();
 }
 
 // Sales rung up during an outage, grouped by the product whose count they made
@@ -7454,6 +7476,119 @@ function summariseExpensesByCategory(expenses) {
 // Everything spec §9 asks for that real transaction data can answer, painted in
 // one pass. Owner-and-manager, matching the panels that were already here --
 // except the ones that show cost, which stay owner-only.
+// ---------------------------------------------------------------------------
+// The reports chooser.
+//
+// Reports used to be eighteen panels on one scrolling page, every one of them
+// rendered on every open. That was the slowest screen in the app and the
+// hardest to find anything on, on handsets that can least afford either.
+//
+// Now Reports opens on a menu and shows ONE report. The menu is built from the
+// panels themselves at runtime rather than from a list typed here, so the two
+// can never disagree: a report cannot appear in the menu while being hidden by
+// role, and cannot sit on the page with no way to reach it. Adding a report
+// means tagging its panel with data-report and data-report-group -- there is no
+// second place to remember.
+//
+// Role gating is UNCHANGED. renderSpecReports() still sets `hidden` per role,
+// and the menu is built from whatever survives that. This layer only ever hides
+// further; it never reveals a panel a role was refused.
+const REPORT_GROUP_ORDER = ["money", "sales", "stock", "buying", "ai"];
+
+// Profit & Loss is offered here but is NOT one of these panels: it keeps its
+// own view so that canOpenView("profit") remains the single owner-strict gate
+// on it. Folding its markup into Reports would have dissolved that gate into a
+// role check on a menu entry -- a weaker thing in the one place that can least
+// afford one, since profit exposes buying prices by inference.
+const REPORT_PROFIT_KEY = "__profit";
+
+function reportPanels() {
+  return qsa("#reports [data-report]");
+}
+
+// A report earns a place in the menu when its panel is not hidden by role AND
+// it has something to say. The second half matters for exactly one report:
+// "Sold While Offline" is empty except in the days after an outage, and a
+// permanent menu entry for a permanently empty screen is noise. When an outage
+// HAS happened it is the report the owner most needs, so it appears then.
+function reportHasContent(panel) {
+  if (panel.dataset.report !== "offlineSales") return true;
+  const body = qs("#offlineSalesReport");
+  return Boolean(body && body.textContent.trim());
+}
+
+function renderReportsIndex() {
+  const list = qs("#reportsIndexList");
+  if (!list) return;
+  const groups = new Map();
+  for (const panel of reportPanels()) {
+    if (panel.dataset.reportHiddenByRole === "1") continue;
+    if (!reportHasContent(panel)) continue;
+    const group = panel.dataset.reportGroup || "money";
+    if (!groups.has(group)) groups.set(group, []);
+    groups.get(group).push({
+      key: panel.dataset.report,
+      label: panel.querySelector("h2")?.textContent?.trim() || panel.dataset.report
+    });
+  }
+  // Profit sits at the top of Money: it is the report an owner opens Reports to
+  // read, and the only one that answers "did I make money".
+  if (canOpenView("profit")) {
+    if (!groups.has("money")) groups.set("money", []);
+    groups.get("money").unshift({ key: REPORT_PROFIT_KEY, label: t("nav.profit") });
+  }
+  const parts = [];
+  for (const group of REPORT_GROUP_ORDER) {
+    const entries = groups.get(group);
+    if (!entries || !entries.length) continue;
+    parts.push(`<div class="report-group">
+      <p class="report-group-label">${esc(t("reports.group." + group))}</p>
+      <div class="report-group-items">${entries
+        .map((entry) => `<button class="report-choice" type="button" data-report-open="${esc(entry.key)}">${esc(entry.label)}</button>`)
+        .join("")}</div>
+    </div>`);
+  }
+  list.innerHTML = parts.join("") || `<p class="muted">${esc(t("reports.chooseEmpty"))}</p>`;
+}
+
+// Applied AFTER every report has rendered and set its own role visibility, so
+// the role decision is recorded first and this only narrows it.
+function applyReportSelection() {
+  const selected = state.selectedReport || null;
+  for (const panel of reportPanels()) {
+    // Remember what the role decided, once, so re-selecting cannot resurrect a
+    // panel the role was refused.
+    if (panel.dataset.reportHiddenByRole === undefined || !selected) {
+      panel.dataset.reportHiddenByRole = panel.hidden ? "1" : "0";
+    }
+    const refusedByRole = panel.dataset.reportHiddenByRole === "1";
+    panel.hidden = refusedByRole || panel.dataset.report !== selected;
+  }
+  const index = qs("#reportsIndex");
+  const back = qs("#reportsBackRow");
+  if (index) index.hidden = Boolean(selected);
+  if (back) back.hidden = !selected;
+  if (!selected) renderReportsIndex();
+}
+
+function openReport(key) {
+  if (key === REPORT_PROFIT_KEY) {
+    // Straight through the same choke point every other route uses.
+    openView("profit");
+    return;
+  }
+  const panel = qs(`#reports [data-report="${CSS.escape(key)}"]`);
+  if (!panel || panel.dataset.reportHiddenByRole === "1") return;
+  state.selectedReport = key;
+  applyReportSelection();
+  qs("#reports")?.scrollIntoView({ block: "start" });
+}
+
+function closeReport() {
+  state.selectedReport = null;
+  applyReportSelection();
+}
+
 function renderSpecReports() {
   const canSee = isManagerOrOwnerRole();
   const costVisible = isOwnerRole();
@@ -16249,6 +16384,8 @@ function warmUpAiProxy() {
 // hidden when these buttons lived in the topbar.
 const CASHIER_ALLOWED_VIEWS = ["pos", "settings"];
 
+const VAT_VIEW_ENABLED = false;
+
 function canOpenView(viewId) {
   // The services screen is gated by business type as well as by role. The nav
   // item is hidden for a duka, but openView() is also reached from the command
@@ -16262,7 +16399,14 @@ function canOpenView(viewId) {
   // Manager and owner, unlike Profit: a VAT record states what was charged and
   // what may be reclaimed, and carries no buying-price-against-selling-price
   // inference. Refused outright for a business that is not registered.
-  if (viewId === "vat") return isManagerOrOwnerRole() && vatSettings().registered;
+  // VAT is switched OFF at the owner's request on 2026-09-10, ahead of the
+  // fiscalisation work rather than because anything is wrong with it. The
+  // registration gate is kept beneath the flag rather than deleted, so turning
+  // it back on is this one constant and nothing else. Everything the VAT screen
+  // reads -- the per-product rates, the recorded output and input tax -- keeps
+  // being written by the sale path meanwhile, so no history is lost while it is
+  // dark, and a shop that switches it on later sees a complete record.
+  if (viewId === "vat") return VAT_VIEW_ENABLED && isManagerOrOwnerRole() && vatSettings().registered;
   return isManagerOrOwnerRole() || CASHIER_ALLOWED_VIEWS.includes(viewId);
 }
 
@@ -16297,11 +16441,19 @@ function openView(viewId) {
   // route through here too, so this is the single choke point.
   if (!canOpenView(viewId)) return;
   qsa(".view").forEach((view) => view.classList.toggle("active", view.id === viewId));
-  qsa(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === viewId));
+  // Profit is opened from the Reports chooser and has no nav item, so Reports
+  // stays lit while it is on screen -- otherwise the sidebar shows nothing
+  // selected and the screen reads as having fallen out of the app.
+  const navView = viewId === "profit" ? "reports" : viewId;
+  qsa(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === navView));
   qs(".sidebar").classList.remove("open");
   // Keep the Accounts menu honest about what is on screen. Reached from the
   // command palette and from the role redirect as well as from a nav click, so
   // it belongs here rather than on the toggle's own handler.
+  if (viewId === "reports") {
+    state.selectedReport = null;
+    applyReportSelection();
+  }
   if (viewId === "reports" || viewId === "ai") warmUpAiProxy();
 }
 
@@ -16498,6 +16650,14 @@ function bindEvents() {
     state.salesRangeTo = event.target.value;
     renderPaymentReports();
   });
+  // Delegated, because the menu is rebuilt whenever roles or content change and
+  // per-button listeners would be re-attached to elements that no longer exist.
+  qs("#reportsIndexList")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-report-open]");
+    if (button) openReport(button.dataset.reportOpen);
+  });
+  qs("#reportsBackButton")?.addEventListener("click", closeReport);
+  qs("#profitBackButton")?.addEventListener("click", () => openView("reports"));
   qs("#exportPaymentCsvButton").addEventListener("click", exportPaymentReportCsv);
   qs("#exportPaymentPdfButton").addEventListener("click", exportPaymentReportPdf);
   const monthlyReportMonthInput = qs("#monthlyReportMonth");

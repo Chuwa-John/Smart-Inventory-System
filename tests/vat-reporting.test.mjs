@@ -217,7 +217,8 @@ console.log("\n=== the renderer is actually reached ===");
 
 console.log("\n=== the panel is hidden from a shop with no return to file ===");
 {
-  check("the VAT panel starts hidden", /id="vatReportPanel" hidden/.test(appHtml));
+  check("the VAT panel starts hidden",
+    /<article[^>]*id="vatReportPanel"[^>]*\shidden[\s>]/.test(appHtml));
   const render = extractFn("renderVatReport");
   check("...and is shown only when registered", /panel\.hidden = !vatSettings\(\)\.registered/.test(render));
   check("...and does no work when hidden", /if \(panel\.hidden\) return;/.test(render));

@@ -28,7 +28,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260910g" />
+    <link rel="stylesheet" href="./styles.css?v=20260910h" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#0b0d10" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -48,7 +48,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260910g"></script>
+    <script type="module" src="./boot.js?v=20260910h"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -110,10 +110,11 @@
                statements this system cannot yet produce, named rather than
                faked. Owner-strict: canOpenView() returns isOwnerRole() for it,
                because profit exposes buying prices by inference. -->
-          <!-- Profit & Loss keeps its own tab. It is built from the
-               transactions themselves, so it works today, and it must not be
-               parked behind Accounts while Accounts is dormant. -->
-          <button class="nav-item" data-view="profit"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.2 17.2 9 11.4l3.8 3.8L20.6 7.4"/><path d="M15 7.4h5.6V13"/></svg><span data-i18n="nav.profit">Profit Report</span></button>
+          <!-- Profit & Loss has NO nav item. It is opened from the Reports
+               chooser, which is where the owner asked for it, and it keeps its
+               own view so canOpenView("profit") stays the single owner-strict
+               gate on it -- profit exposes buying prices by inference, and that
+               gate is worth more than a tab. -->
           <!-- Accounts is DELIBERATELY DORMANT. It is the shelf the double-entry
                books will sit on -- Balance Sheet, Trial Balance, Cash Flow,
                General Ledger -- and those wait on the s.35(7) data-residency
@@ -430,6 +431,11 @@
         </section>
 
         <section class="view" id="profit">
+          <!-- Reached only from the Reports chooser, so it needs the way back
+               that a nav item would otherwise have been. -->
+          <div class="button-row">
+            <button class="ghost-button compact" id="profitBackButton" type="button" data-i18n="reports.backToAll">&larr; All reports</button>
+          </div>
           <div class="page-title">
             <div>
               <p class="eyebrow" data-i18n="profit.eyebrow">What the shop kept</p>
@@ -853,7 +859,39 @@
           </div>
 
 
-          <article class="panel">
+          <!-- The chooser. Eighteen reports on one scrolling page was a screen
+               nobody could find anything on, and every one of them rendered on
+               every open -- on the cheap Android handsets these shops use, that
+               is the slowest screen in the app for the least reason.
+
+               So Reports opens on this menu and shows ONE report at a time. The
+               entries are built at runtime from the panels themselves, not
+               typed out here, so a report can never appear in the menu while
+               being hidden by role, or exist on the page with no way to reach
+               it. Role gating is unchanged: renderSpecReports() still sets
+               `hidden` per role, and the menu is built from what survives that.
+
+               Profit & Loss is in this menu but is NOT one of these panels: it
+               keeps its own view, so canOpenView("profit") stays the single
+               owner-strict gate on it. Moving its markup here would have
+               dissolved that gate into a role check on a menu entry, which is
+               a weaker thing in exactly the place that can least afford one. -->
+          <article class="panel" id="reportsIndex">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.chooseEyebrow">Choose a report</p>
+                <h2 data-i18n="reports.chooseTitle">What do you want to see?</h2>
+              </div>
+            </div>
+            <div id="reportsIndexList"></div>
+          </article>
+
+          <!-- Shown only while a report is open. -->
+          <div class="button-row" id="reportsBackRow" hidden>
+            <button class="ghost-button compact" id="reportsBackButton" type="button" data-i18n="reports.backToAll">&larr; All reports</button>
+          </div>
+
+          <article class="panel" id="salesPaymentsPanel" data-report="salesPayments" data-report-group="money">
             <div class="panel-head">
               <div>
                 <p class="eyebrow" data-i18n="reports.financialEyebrow">Financial tracking</p>
@@ -887,7 +925,7 @@
                reason; this one a manager may act on. It reads the SAME range
                selector as the payment panel above, so the two always describe
                the same period. -->
-          <article class="panel">
+          <article class="panel" id="salesByProductPanel" data-report="salesByProduct" data-report-group="sales">
             <div class="panel-head">
               <div>
                 <p class="eyebrow" data-i18n="reports.financialEyebrow">Financial tracking</p>
@@ -908,7 +946,7 @@
             <p class="muted" id="salesByProductNote"></p>
           </article>
 
-          <article class="panel">
+          <article class="panel" id="salesByStaffPanel" data-report="salesByStaff" data-report-group="sales">
             <div class="panel-head">
               <div>
                 <p class="eyebrow" data-i18n="reports.financialEyebrow">Financial tracking</p>
@@ -941,7 +979,7 @@
                outage and nothing told the owner which products are no longer
                trustworthy. Grouped by product because that is the unit the
                owner acts on -- they go and count that shelf. -->
-          <article class="panel">
+          <article class="panel" id="offlineSalesPanel" data-report="offlineSales" data-report-group="stock">
             <div class="panel-head">
               <div>
                 <p class="eyebrow" data-i18n="offlineReport.eyebrow">Sold during an outage</p>
@@ -960,7 +998,7 @@
                the Direct and Indirect Expense Reports. Manager and owner -- the
                same gate /purchases and /productCosts already carry, so none of
                these widens a disclosure. -->
-          <article class="panel" id="costReportsPanel" hidden>
+          <article class="panel" id="costReportsPanel" data-report="stockValuation" data-report-group="stock" hidden>
             <div class="panel-head">
               <div>
                 <p class="eyebrow" data-i18n="reports.costEyebrow">Cost and supply</p>
@@ -1014,7 +1052,7 @@
               </table>
             </div>
           </article>
-          <article class="panel" id="vatReportPanel" hidden>
+          <article class="panel" id="vatReportPanel" data-report="vatReport" data-report-group="money" hidden>
             <div class="panel-head">
               <div>
                 <p class="eyebrow" data-i18n="report.vatTitle">VAT summary</p>
@@ -1030,7 +1068,7 @@
             <div class="payment-summary" id="vatReportSummary"></div>
           </article>
 
-          <article class="panel">
+          <article class="panel" id="customerCreditPanel" data-report="customerCredit" data-report-group="money">
             <div class="panel-head">
               <div>
                 <p class="eyebrow" data-i18n="customers.sectionEyebrow">Accounts receivable</p>
@@ -1056,7 +1094,7 @@
           </article>
 
 
-          <article class="panel">
+          <article class="panel" id="orderLookupPanel" data-report="orderLookup" data-report-group="sales">
             <div class="panel-head">
               <div>
                 <p class="eyebrow" data-i18n="reports.financialEyebrow">Financial tracking</p>
@@ -1086,7 +1124,7 @@
           </article>
 
 
-          <article class="panel">
+          <article class="panel" id="monthlyReportsPanel" data-report="monthlyReports" data-report-group="ai">
             <div class="panel-head">
               <div>
                 <p class="eyebrow" data-i18n="monthlyReport.sectionEyebrow">AI-generated</p>
@@ -1103,7 +1141,7 @@
           <div class="report-grid" id="reportGrid"></div>
 
           <!-- ===== Spec 9: Sales ===== -->
-          <article class="panel" id="salesByCustomerPanel">
+          <article class="panel" id="salesByCustomerPanel" data-report="salesByCustomer" data-report-group="sales">
             <div class="panel-head">
               <div>
                 <p class="eyebrow" data-i18n="reports.groupSales">Sales</p>
@@ -1121,7 +1159,7 @@
             </table></div>
           </article>
 
-          <article class="panel" id="salesReturnsPanel">
+          <article class="panel" id="salesReturnsPanel" data-report="salesReturns" data-report-group="sales">
             <div class="panel-head">
               <div>
                 <p class="eyebrow" data-i18n="reports.groupSales">Sales</p>
@@ -1141,7 +1179,7 @@
           </article>
 
           <!-- ===== Spec 9: Purchases (owner only -- every figure is a cost) ===== -->
-          <article class="panel" id="purchaseSummaryPanel">
+          <article class="panel" id="purchaseSummaryPanel" data-report="purchaseSummary" data-report-group="buying">
             <div class="panel-head">
               <div>
                 <p class="eyebrow" data-i18n="reports.groupPurchases">Purchases</p>
@@ -1151,7 +1189,7 @@
             <div class="kpi-grid" id="purchaseSummaryTotals"></div>
           </article>
 
-          <article class="panel" id="purchasesByProductPanel">
+          <article class="panel" id="purchasesByProductPanel" data-report="purchasesByProduct" data-report-group="buying">
             <div class="panel-head">
               <div>
                 <p class="eyebrow" data-i18n="reports.groupPurchases">Purchases</p>
@@ -1169,7 +1207,7 @@
             </table></div>
           </article>
 
-          <article class="panel" id="purchaseReturnsPanel">
+          <article class="panel" id="purchaseReturnsPanel" data-report="purchaseReturns" data-report-group="buying">
             <div class="panel-head">
               <div>
                 <p class="eyebrow" data-i18n="reports.groupPurchases">Purchases</p>
@@ -1189,7 +1227,7 @@
             </table></div>
           </article>
 
-          <article class="panel" id="supplierBalancesPanel">
+          <article class="panel" id="supplierBalancesPanel" data-report="supplierBalances" data-report-group="buying">
             <div class="panel-head">
               <div>
                 <p class="eyebrow" data-i18n="reports.groupPurchases">Purchases</p>
@@ -1207,7 +1245,7 @@
           </article>
 
           <!-- ===== Spec 9: Inventory ===== -->
-          <article class="panel" id="stockSummaryPanel">
+          <article class="panel" id="stockSummaryPanel" data-report="stockSummary" data-report-group="stock">
             <div class="panel-head">
               <div>
                 <p class="eyebrow" data-i18n="reports.groupInventory">Inventory</p>
@@ -1226,7 +1264,7 @@
             </table></div>
           </article>
 
-          <article class="panel" id="stockAdjustmentsPanel">
+          <article class="panel" id="stockAdjustmentsPanel" data-report="stockAdjustments" data-report-group="stock">
             <div class="panel-head">
               <div>
                 <p class="eyebrow" data-i18n="reports.groupInventory">Inventory</p>
@@ -1246,7 +1284,7 @@
           </article>
 
           <!-- ===== Spec 9: Expenses ===== -->
-          <article class="panel" id="expensesByCategoryPanel">
+          <article class="panel" id="expensesByCategoryPanel" data-report="expensesByCategory" data-report-group="money">
             <div class="panel-head">
               <div>
                 <p class="eyebrow" data-i18n="reports.groupExpenses">Expenses</p>
@@ -2311,6 +2349,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260910g"></script>
+    <script type="module" src="./app.js?v=20260910h"></script>
   </body>
 </html>
