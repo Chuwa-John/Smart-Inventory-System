@@ -28,7 +28,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260910k" />
+    <link rel="stylesheet" href="./styles.css?v=20260910m" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#0b0d10" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -48,7 +48,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260910k"></script>
+    <script type="module" src="./boot.js?v=20260910m"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -2268,6 +2268,17 @@
       </div>
       <div id="inviteStaffResultSection" hidden>
         <p class="muted" id="inviteStaffResultText"></p>
+        <!-- The link, on screen, selectable.
+             Copy Link and WhatsApp were the ONLY ways to get it, and both hand
+             the job to something the browser may refuse: clipboard writes need
+             a focused document and can fail with NotAllowedError, and WhatsApp
+             may not be installed. When that happened the owner was left with a
+             "could not copy" toast and no way to reach the link at all -- an
+             invitation that exists on the server and cannot be delivered.
+             Shown as text, it can always be read out, selected or typed. -->
+        <label class="invite-link-label"><span data-i18n="staff.inviteLinkLabel">Invite link</span>
+          <input id="inviteLinkText" type="text" readonly autocomplete="off" onfocus="this.select()" />
+        </label>
         <div class="button-row end">
           <button class="ghost-button compact" type="button" id="copyInviteLinkButton" data-i18n="staff.copyLinkButton">Copy Link</button>
           <button class="primary-button compact" type="button" id="sendInviteWhatsAppButton" data-i18n="staff.sendWhatsAppButton">Send via WhatsApp</button>
@@ -2373,6 +2384,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260910k"></script>
+    <script type="module" src="./app.js?v=20260910m"></script>
   </body>
 </html>

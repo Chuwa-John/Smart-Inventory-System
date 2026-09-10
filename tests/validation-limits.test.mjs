@@ -36,7 +36,16 @@ for (const tag of html.match(/<(?:input|textarea)\b[^>]*>/g) || []) {
   if (!key) continue;
   const type = (tag.match(/type="([^"]*)"/) || [, "text"])[1];
   const max = tag.match(/maxlength="(\d+)"/);
-  fields.set(key, { type, maxlength: max ? Number(max[1]) : null });
+  fields.set(key, {
+    type,
+    maxlength: max ? Number(max[1]) : null,
+    // A readonly input cannot be typed into, so it cannot carry an over-long
+    // typed value. The ones here are OUTPUTS -- the invite link is rendered
+    // into a readonly box so it can be selected when the clipboard refuses --
+    // and a maxlength on one would truncate what it displays rather than bound
+    // what anyone can enter.
+    readonly: /(^|\s)readonly(\s|=|$)/.test(tag)
+  });
 }
 
 // Pulls a real function out of app.js by brace-matching, so the test exercises
@@ -252,7 +261,7 @@ console.log("\n=== no free-text field escapes a bound ===");
   const exempt = new Set(["commandInput", "deleteAccountConfirmText", "id"]);
   const boundedByType = new Set(["number", "date", "month", "checkbox", "radio", "hidden", "file", "password", "search"]);
   const unbounded = [...fields]
-    .filter(([id, f]) => !exempt.has(id) && !boundedByType.has(f.type) && f.maxlength === null)
+    .filter(([id, f]) => !exempt.has(id) && !boundedByType.has(f.type) && !f.readonly && f.maxlength === null)
     .map(([id]) => id);
   check("every persisted free-text field carries a maxlength", unbounded.length === 0,
     `unbounded: ${unbounded.join(", ")}`);

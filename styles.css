@@ -2503,3 +2503,17 @@ table.statement-figures td.danger { color: var(--red); }
   border-color: var(--green);
   color: var(--text);
 }
+
+
+/* The invite link, shown so it can be read, selected or typed out when the
+   clipboard refuses. Monospace and full width because it is a long token that
+   somebody may have to check character by character over a phone call. */
+.invite-link-label {
+  display: block;
+  margin: var(--space-3) 0;
+}
+.invite-link-label input {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+}

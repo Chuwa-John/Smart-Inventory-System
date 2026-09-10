@@ -1604,6 +1604,8 @@ const DICTIONARY = {
     "confirm.title": "Are you sure?",
     "confirm.cancel": "Cancel",
     "confirm.accept": "Yes, continue",
+    "staff.inviteLinkLabel": "Invite link",
+    "staff.copyFailedUseLink": "Could not copy automatically. The link is shown above — copy it from there.",
     "staff.revokeButton": "Revoke",
     "staff.rosterEmpty": "No staff members have accepted an invite yet.",
     "staff.allStoresLabel": "All stores",
@@ -2884,6 +2886,8 @@ const DICTIONARY = {
     "confirm.title": "Una uhakika?",
     "confirm.cancel": "Ghairi",
     "confirm.accept": "Ndiyo, endelea",
+    "staff.inviteLinkLabel": "Kiungo cha mwaliko",
+    "staff.copyFailedUseLink": "Imeshindwa kunakili yenyewe. Kiungo kimeonyeshwa hapo juu — kinakili kutoka hapo.",
     "staff.revokeButton": "Ondoa",
     "staff.rosterEmpty": "Hakuna mfanyakazi aliyekubali mwaliko bado.",
     "staff.allStoresLabel": "Maduka yote",
@@ -15653,6 +15657,11 @@ async function sendStaffInvite() {
     qs("#inviteStaffFormSection").hidden = true;
     qs("#inviteStaffResultSection").hidden = false;
     qs("#inviteStaffResultText").textContent = t("staff.inviteResultText", { email, role: roleLabel });
+    // Shown, not only copyable: the clipboard can refuse and WhatsApp may not
+    // be installed, and without this the owner would have no route to a link
+    // the server has already issued.
+    const linkField = qs("#inviteLinkText");
+    if (linkField) linkField.value = buildStaffInviteAcceptUrl(payload.linkToken);
   } catch (error) {
     console.warn(error);
     setFieldError("inviteStaffError", t("staff.inviteNetworkError"));
@@ -15671,9 +15680,17 @@ async function sendStaffInvite() {
 // the business name and role -- that channel linkifies the URL correctly.
 function copyInviteLink() {
   const acceptUrl = buildStaffInviteAcceptUrl(state.pendingInviteLinkToken);
-  navigator.clipboard.writeText(acceptUrl)
+  // A rejected clipboard write is common and not the owner's fault -- it needs
+  // a focused document, and fails with NotAllowedError otherwise. Saying only
+  // "could not copy" left them stuck; the link is on screen, so say so and put
+  // the cursor in it ready to be copied by hand.
+  navigator.clipboard?.writeText(acceptUrl)
     .then(() => showToast(t("staff.linkCopied")))
-    .catch(() => showToast(t("staff.copyFailed")));
+    .catch(() => {
+      showToast(t("staff.copyFailedUseLink"));
+      const field = qs("#inviteLinkText");
+      if (field) { field.focus(); field.select?.(); }
+    });
 }
 
 // No destination phone number is known at invite time -- wa.me/?text=...
