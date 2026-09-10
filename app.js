@@ -4695,7 +4695,7 @@ function computeVatReport() {
 function renderVatReport() {
   const panel = qs("#vatReportPanel");
   if (!panel) return;
-  panel.hidden = !vatSettings().registered;
+  setReportRoleVisibility(panel, !vatSettings().registered);
   if (panel.hidden) return;
 
   const r = computeVatReport();
@@ -4897,6 +4897,11 @@ function renderOfflineSalesReport() {
 
   const { rows, total, saleCount } = computeOfflineSalesReport();
   if (totalLabel) totalLabel.textContent = rows.length ? money(total) : "";
+  // Stated, not inferred. The Reports chooser lists this one only when an
+  // outage actually put something in it, and the empty state is a sentence --
+  // so "does it have text" answered yes on a permanently empty report.
+  const panel = qs("#offlineSalesPanel");
+  if (panel) panel.dataset.reportEmpty = rows.length ? "0" : "1";
 
   if (!rows.length) {
     container.innerHTML = `<p class="muted">${t("offlineReport.none")}</p>`;
@@ -7502,6 +7507,23 @@ const REPORT_GROUP_ORDER = ["money", "sales", "stock", "buying", "ai"];
 // afford one, since profit exposes buying prices by inference.
 const REPORT_PROFIT_KEY = "__profit";
 
+// The one place a report's ROLE visibility is recorded.
+//
+// It has to be recorded rather than read back off `hidden`, because the chooser
+// also writes `hidden` -- so reading it would mean reading this function's own
+// previous output. That is exactly the bug this replaced: the first pass
+// recorded the roles correctly and then hid every unselected panel, and the
+// second pass read those hidden panels back as "refused by role", so the menu
+// emptied itself down to the one entry that is not a panel.
+//
+// Only the three renderers that actually decide role visibility call this. A
+// panel none of them touches is one no role is refused, and defaults to shown.
+function setReportRoleVisibility(panel, hiddenByRole) {
+  if (!panel) return;
+  panel.dataset.reportHiddenByRole = hiddenByRole ? "1" : "0";
+  panel.hidden = hiddenByRole;
+}
+
 function reportPanels() {
   return qsa("#reports [data-report]");
 }
@@ -7512,9 +7534,12 @@ function reportPanels() {
 // permanent menu entry for a permanently empty screen is noise. When an outage
 // HAS happened it is the report the owner most needs, so it appears then.
 function reportHasContent(panel) {
-  if (panel.dataset.report !== "offlineSales") return true;
-  const body = qs("#offlineSalesReport");
-  return Boolean(body && body.textContent.trim());
+  // A report opts out of the menu by stamping data-report-empty="1" when it
+  // rendered nothing. Only "Sold While Offline" does today: it is empty except
+  // in the days after an outage, and a permanent entry for a permanently empty
+  // screen is noise -- while after an outage it is the report the owner most
+  // needs, so it appears exactly then.
+  return panel.dataset.reportEmpty !== "1";
 }
 
 function renderReportsIndex() {
@@ -7556,11 +7581,8 @@ function renderReportsIndex() {
 function applyReportSelection() {
   const selected = state.selectedReport || null;
   for (const panel of reportPanels()) {
-    // Remember what the role decided, once, so re-selecting cannot resurrect a
-    // panel the role was refused.
-    if (panel.dataset.reportHiddenByRole === undefined || !selected) {
-      panel.dataset.reportHiddenByRole = panel.hidden ? "1" : "0";
-    }
+    // Read only. The verdict is written by setReportRoleVisibility(), and a
+    // panel no role gate touches defaults to shown.
     const refusedByRole = panel.dataset.reportHiddenByRole === "1";
     panel.hidden = refusedByRole || panel.dataset.report !== selected;
   }
@@ -7594,8 +7616,7 @@ function renderSpecReports() {
   const costVisible = isOwnerRole();
 
   const setPanel = (id, hidden) => {
-    const panel = qs(id);
-    if (panel) panel.hidden = hidden;
+    setReportRoleVisibility(qs(id), hidden);
   };
   const fill = (id, html) => {
     const el = qs(id);
@@ -9989,7 +10010,7 @@ function summariseExpensesByNature(expenses, monthKey) {
 function renderCostReports() {
   const panel = qs("#costReportsPanel");
   if (!panel) return;
-  panel.hidden = !isManagerOrOwnerRole();
+  setReportRoleVisibility(panel, !isManagerOrOwnerRole());
   if (panel.hidden) {
     // Emptied as well as hidden, for the reason every other money surface in
     // this file is: a demoted manager must not keep buying prices in the DOM.

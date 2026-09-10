@@ -117,10 +117,40 @@ console.log("\n=== Profit is offered here but keeps its own gate ===");
 console.log("\n=== Sold While Offline appears only when it has something to say ===");
 {
   const fn = src.slice(src.indexOf("function reportHasContent"), src.indexOf("function renderReportsIndex"));
-  check("only that one report is conditional",
-    /dataset\.report !== "offlineSales"\) return true/.test(fn), true);
-  check("...and the condition is whether it rendered anything",
-    /#offlineSalesReport/.test(fn), true);
+  // Read from a flag the RENDERER sets, not guessed from the panel's text.
+  // Guessing counted the empty state -- "No sales were recorded offline in this
+  // period." -- as content, so a permanently empty report was listed every day.
+  check("emptiness is read from a flag", /dataset\.reportEmpty !== "1"/.test(fn), true);
+  check("...and nothing sniffs the rendered text", /textContent/.test(fn), false);
+  // The renderer must actually set it, or the flag is never anything but
+  // undefined and the report is listed forever -- the bug, unfixed.
+  const renderer = src.slice(src.indexOf("function renderOfflineSalesReport"));
+  const rendererBody = renderer.slice(0, renderer.indexOf("\n}"));
+  check("the renderer states it",
+    /reportEmpty = rows\.length \? "0" : "1"/.test(rendererBody), true);
+}
+
+console.log("\n=== the role verdict is recorded, never read back off hidden ===");
+{
+  // The bug this replaced: applyReportSelection() inferred the role verdict
+  // from panel.hidden, then hid every unselected panel -- so its next run read
+  // its own output back as "refused by role", and the menu emptied itself down
+  // to the one entry that is not a panel. Found by opening the screen.
+  const apply = src.slice(src.indexOf("function applyReportSelection"), src.indexOf("function openReport"));
+  check("the chooser never writes the verdict",
+    /dataset\.reportHiddenByRole =[^=]/.test(apply), false);
+  check("...it only reads it", /dataset\.reportHiddenByRole === "1"/.test(apply), true);
+  const setter = src.slice(src.indexOf("function setReportRoleVisibility"), src.indexOf("function reportPanels"));
+  check("one function records it",
+    /dataset\.reportHiddenByRole = hiddenByRole \? "1" : "0"/.test(setter), true);
+  // Every gate that decides role visibility must go through it, or a panel it
+  // hides is one the chooser believes is allowed.
+  check("the spec reports go through it",
+    /setReportRoleVisibility\(qs\(id\), hidden\)/.test(src), true);
+  check("the VAT panel goes through it",
+    /setReportRoleVisibility\(panel, !vatSettings\(\)\.registered\)/.test(src), true);
+  check("stock valuation goes through it",
+    /setReportRoleVisibility\(panel, !isManagerOrOwnerRole\(\)\)/.test(src), true);
 }
 
 console.log("\n=== opening Reports lands on the menu ===");

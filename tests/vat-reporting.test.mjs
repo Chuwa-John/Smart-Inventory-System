@@ -220,7 +220,11 @@ console.log("\n=== the panel is hidden from a shop with no return to file ===");
   check("the VAT panel starts hidden",
     /<article[^>]*id="vatReportPanel"[^>]*\shidden[\s>]/.test(appHtml));
   const render = extractFn("renderVatReport");
-  check("...and is shown only when registered", /panel\.hidden = !vatSettings\(\)\.registered/.test(render));
+  // The claim is that registration decides it, not which statement carries the
+  // decision: it is routed through setReportRoleVisibility() so the Reports
+  // chooser can read the verdict instead of inferring it from `hidden`.
+  check("...and is shown only when registered",
+    /(panel\.hidden = |setReportRoleVisibility\(panel, )!vatSettings\(\)\.registered/.test(render));
   check("...and does no work when hidden", /if \(panel\.hidden\) return;/.test(render));
   check("the report pass actually runs it", /renderVatReport\(\);/.test(extractFn("renderPaymentReports")));
 }
