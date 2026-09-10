@@ -59,7 +59,10 @@ console.log("=== the gate asks before it charges ===");
       money: (v) => String(v),
       showToast: () => {},
       verifyOverridePassword: async () => { verified += 1; return true; },
-      window: { confirm: () => { confirmed += 1; return true; } }
+      // The warning is now the app's own dialog, not window.confirm(): a
+      // browser could decline to show a native one and return false without
+      // asking anybody, which turned this ceiling into a silent refusal.
+      askConfirm: async () => { confirmed += 1; return true; }
     };
     // extractFn slices from `function <name>(`, which drops the `async` keyword
     // sitting in front of it — the body awaits, so it has to go back on.
@@ -108,7 +111,7 @@ console.log("=== the gate asks before it charges ===");
 
   // Order matters: showing the numbers first is what stops the password
   // becoming a reflex.
-  const confirmAt = gate.indexOf("window.confirm");
+  const confirmAt = gate.indexOf("askConfirm");
   const verifyAt = gate.indexOf("verifyOverridePassword");
   check("the numbers are shown before the password is asked for",
     confirmAt !== -1 && verifyAt !== -1 && confirmAt < verifyAt,

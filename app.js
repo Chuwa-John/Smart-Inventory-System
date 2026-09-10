@@ -1601,6 +1601,9 @@ const DICTIONARY = {
     "staff.colRole": "Role",
     "staff.colStores": "Stores",
     "staff.colActions": "Actions",
+    "confirm.title": "Are you sure?",
+    "confirm.cancel": "Cancel",
+    "confirm.accept": "Yes, continue",
     "staff.revokeButton": "Revoke",
     "staff.rosterEmpty": "No staff members have accepted an invite yet.",
     "staff.allStoresLabel": "All stores",
@@ -2878,6 +2881,9 @@ const DICTIONARY = {
     "staff.colRole": "Wadhifa",
     "staff.colStores": "Maduka",
     "staff.colActions": "Vitendo",
+    "confirm.title": "Una uhakika?",
+    "confirm.cancel": "Ghairi",
+    "confirm.accept": "Ndiyo, endelea",
     "staff.revokeButton": "Ondoa",
     "staff.rosterEmpty": "Hakuna mfanyakazi aliyekubali mwaliko bado.",
     "staff.allStoresLabel": "Maduka yote",
@@ -3912,7 +3918,7 @@ async function toggleServiceActive(serviceId) {
   if (!state.db || !state.user || !state.businessOwnerUid) return;
 
   const nextActive = service.active === false;
-  if (!nextActive && !window.confirm(t("services.withdrawConfirm", { name: service.name || "" }))) return;
+  if (!nextActive && !await askConfirm(t("services.withdrawConfirm", { name: service.name || "" }))) return;
 
   try {
     const { doc, serverTimestamp, setDoc } = state.firebaseApi.firestore;
@@ -7901,7 +7907,7 @@ async function deleteExpense(expenseId) {
   if (!isOwnerRole()) return;
   const expense = state.expenses.find((item) => item.id === expenseId);
   if (!expense) return;
-  if (!window.confirm(t("expenses.confirmDelete"))) return;
+  if (!await askConfirm(t("expenses.confirmDelete"))) return;
   try {
     const { collection, doc, writeBatch } = state.firebaseApi.firestore;
     // Deletable by design -- a mis-keyed expense is a human error and the shop
@@ -9085,7 +9091,7 @@ async function confirmDeleteDelivery(deliveryId) {
   // average this delivery already fed is a cached derivation and nothing
   // recomputes it -- DESIGN-purchases.md 12 -- so a shop that deletes expecting
   // its cost to revert would be wrong, and would find out much later.
-  if (!window.confirm(t("deliveries.deleteConfirm", {
+  if (!await askConfirm(t("deliveries.deleteConfirm", {
     count: String(lineCount),
     line: t(lineCount === 1 ? "deliveries.lineSingular" : "deliveries.linePlural")
   }))) return;
@@ -9333,7 +9339,7 @@ async function deletePurchase(purchaseId) {
   if (!isOwnerRole()) return;
   const purchase = state.purchases.find((item) => item.id === purchaseId);
   if (!purchase) return;
-  if (!window.confirm(t("purchases.confirmDelete", {
+  if (!await askConfirm(t("purchases.confirmDelete", {
     name: purchase.productName || "",
     value: money(safeNumber(purchase.totalPaid))
   }))) return;
@@ -10792,7 +10798,7 @@ async function checkCreditLimitBeforeSale(customerName, phoneKey, newBalanceDue)
 
   // Show the numbers first. Asking for a password before saying why is how
   // people learn to type it without reading.
-  const acknowledged = window.confirm(t("dialog.creditLimitExceededConfirm", {
+  const acknowledged = await askConfirm(t("dialog.creditLimitExceededConfirm", {
     name: existing.name || customerName || phoneKey,
     currentBalance: money(currentBalance),
     newBalanceDue: money(newBalanceDue),
@@ -12489,7 +12495,7 @@ async function downloadReceiptPdf() {
 async function deleteProduct(productId) {
   const product = state.products.find((item) => item.id === productId);
   if (!product) return;
-  if (!window.confirm(t("dialog.deleteConfirm", { name: product.name }))) return;
+  if (!await askConfirm(t("dialog.deleteConfirm", { name: product.name }))) return;
 
   state.products = state.products.filter((item) => item.id !== productId);
   state.cart = state.cart.filter((item) => item.id !== productId);
@@ -12615,7 +12621,7 @@ function renderDeletionBanner() {
 
 async function cancelAccountDeletion() {
   if (!state.user) return;
-  if (!window.confirm(t("deleteAccount.restoreConfirm"))) return;
+  if (!await askConfirm(t("deleteAccount.restoreConfirm"))) return;
   try {
     const token = await state.user.getIdToken(/* forceRefresh */ true);
     const response = await fetch(aiConfig.cancelDeletionUrl, {
@@ -12647,7 +12653,7 @@ async function cancelAccountDeletion() {
 
 async function undoLastSale() {
   if (!state.lastSale) return showToast(t("toast.noRecentSale"));
-  if (!window.confirm(t("dialog.undoSaleConfirm"))) return;
+  if (!await askConfirm(t("dialog.undoSaleConfirm"))) return;
 
   const sale = state.lastSale;
   if (sale.mode === "firestore" && state.db && state.user && state.businessOwnerUid) {
@@ -15410,7 +15416,7 @@ async function archiveStore() {
   const store = state.stores.find((item) => item.id === state.currentStoreId);
   if (!store) return;
   if (activeStores().length <= 1) return showToast(t("toast.cannotArchiveLastStore"));
-  if (!window.confirm(t("dialog.archiveStoreConfirm", { name: store.name || "" }))) return;
+  if (!await askConfirm(t("dialog.archiveStoreConfirm", { name: store.name || "" }))) return;
   if (!state.db || !state.user) return showToast(t("toast.signInToAddStore"));
   try {
     const { doc, collection, setDoc, serverTimestamp } = state.firebaseApi.firestore;
@@ -15523,7 +15529,7 @@ function renderStaffRoster() {
 async function revokeStaffMember(memberId) {
   const member = state.members.find((item) => item.id === memberId);
   if (!member) return;
-  if (!window.confirm(t("staff.revokeConfirm", { email: member.email || "" }))) return;
+  if (!await askConfirm(t("staff.revokeConfirm", { email: member.email || "" }))) return;
   try {
     const { doc, deleteDoc } = state.firebaseApi.firestore;
     await deleteDoc(doc(state.db, "users", state.user.uid, "members", memberId));
@@ -15532,6 +15538,68 @@ async function revokeStaffMember(memberId) {
     console.warn(error);
     showToast(t("staff.revokeFailed"));
   }
+}
+
+// The app's own confirmation, replacing window.confirm().
+//
+// A browser may decline to show a native dialog and return false without
+// asking anybody. Chrome offers "Prevent this page from creating additional
+// dialogs" after a few in quick succession, and a shopkeeper on a busy till
+// who ticks it turns every Delete, Revoke, Undo and Archive in this app into a
+// button that does nothing at all -- silently, until they restart the browser.
+// Failing safe is right; failing silently is not, and this app has treated
+// that shape as a defect everywhere else it appeared.
+//
+// Resolves true only if the person pressed the confirm button. Cancel, the
+// close cross, Escape, and the dialog being closed by anything else all
+// resolve false, so the caller's `if (!ok) return;` keeps reading the same way
+// it did with confirm().
+function askConfirm(message, options = {}) {
+  const dialog = qs("#confirmDialog");
+  // If the markup is somehow missing, refuse rather than silently proceeding
+  // with a destructive action nobody agreed to.
+  if (!dialog) return Promise.resolve(false);
+
+  const messageEl = qs("#confirmDialogMessage");
+  const acceptButton = qs("#confirmDialogAccept");
+  const titleEl = qs("#confirmDialogTitle");
+  if (messageEl) messageEl.textContent = message;
+  if (titleEl) titleEl.textContent = options.title || t("confirm.title");
+  if (acceptButton) {
+    acceptButton.textContent = options.confirmLabel || t("confirm.accept");
+    // Destructive by default: everything routed here today removes something.
+    acceptButton.classList.toggle("danger", options.danger !== false);
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      // Listeners are removed before resolving, so a dialog reused a moment
+      // later cannot resolve the promise of the question before it.
+      acceptButton?.removeEventListener("click", onAccept);
+      qs("#confirmDialogCancel")?.removeEventListener("click", onCancel);
+      qs("#confirmDialogClose")?.removeEventListener("click", onCancel);
+      dialog.removeEventListener("close", onClose);
+      if (dialog.open) dialog.close();
+      resolve(value);
+    };
+    const onAccept = () => finish(true);
+    const onCancel = () => finish(false);
+    // Escape closes a <dialog> without firing any button, and the browser's
+    // own close event is the only thing that reports it.
+    const onClose = () => finish(false);
+
+    acceptButton?.addEventListener("click", onAccept);
+    qs("#confirmDialogCancel")?.addEventListener("click", onCancel);
+    qs("#confirmDialogClose")?.addEventListener("click", onCancel);
+    dialog.addEventListener("close", onClose);
+    dialog.showModal();
+    // Focus the safe choice, not the destructive one: a stray Enter should not
+    // delete a product.
+    qs("#confirmDialogCancel")?.focus();
+  });
 }
 
 function openInviteStaffDialog() {
@@ -17324,7 +17392,7 @@ function bindEvents() {
         (sale) => !sale.voided && sale.staffId === seller.id && String(sale.orderNumber || "") === orderNumberRaw
       );
       if (duplicate) {
-        const proceed = window.confirm(t("dialog.duplicateOrderConfirm", { orderNumber: orderNumberRaw, name: seller.name }));
+        const proceed = await askConfirm(t("dialog.duplicateOrderConfirm", { orderNumber: orderNumberRaw, name: seller.name }));
         if (!proceed) return;
       }
     }

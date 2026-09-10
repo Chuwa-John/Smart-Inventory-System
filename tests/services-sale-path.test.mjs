@@ -417,7 +417,7 @@ console.log("\n=== Phase E: a service is withdrawn, never deleted ===");
     /\{ active: nextActive, updatedAt: serverTimestamp\(\) \}/.test(body) && !/deleteDoc/.test(body),
     "sales reference it by name and price; deleting leaves that history describing something gone");
   check("withdrawing asks first, restoring does not",
-    /if \(!nextActive && !window\.confirm/.test(body),
+    /if \(!nextActive && !await askConfirm/.test(body),
     "putting something back on the till needs no confirmation");
 
   // The editing screen must show withdrawn items or they could never return.

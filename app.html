@@ -28,7 +28,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260910j" />
+    <link rel="stylesheet" href="./styles.css?v=20260910k" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#0b0d10" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -48,7 +48,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260910j"></script>
+    <script type="module" src="./boot.js?v=20260910k"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -1706,6 +1706,30 @@
          The form asks for the NEW quantity and shows the difference, rather than
          asking for the difference: a shop counting a shelf knows what is on it,
          not how far it has drifted. -->
+    <!-- The app's own confirmation, replacing window.confirm() on 2026-09-10.
+         A browser may refuse to show a native dialog -- Chrome offers "Prevent
+         this page from creating additional dialogs" after a few in quick
+         succession, and once it is ticked confirm() returns false without
+         asking anyone. Every destructive action in this app was gated on that
+         return value, so from that moment Delete, Revoke, Undo and Archive all
+         did nothing at all, silently, with no way for the shopkeeper to know
+         why. Found when the Revoke button "did not work" and the console
+         showed seventeen suppressed prompts.
+
+         Failing safe is right; failing silently is not. This cannot be
+         suppressed, it is translated, and it says what will happen. -->
+    <dialog id="confirmDialog">
+      <div class="dialog-head">
+        <h2 id="confirmDialogTitle" data-i18n="confirm.title">Are you sure?</h2>
+        <button class="icon-button" type="button" id="confirmDialogClose" aria-label="Close">&times;</button>
+      </div>
+      <p class="muted" id="confirmDialogMessage"></p>
+      <div class="button-row end">
+        <button class="ghost-button" type="button" id="confirmDialogCancel" data-i18n="confirm.cancel">Cancel</button>
+        <button class="primary-button" type="button" id="confirmDialogAccept" data-i18n="confirm.accept">Yes, continue</button>
+      </div>
+    </dialog>
+
     <dialog id="stockAdjustDialog">
       <div class="dialog-head">
         <h2 id="stockAdjustTitle" data-i18n="adjust.title">Adjust Stock</h2>
@@ -2349,6 +2373,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260910j"></script>
+    <script type="module" src="./app.js?v=20260910k"></script>
   </body>
 </html>
