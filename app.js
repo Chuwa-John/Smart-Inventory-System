@@ -1116,7 +1116,7 @@ const DICTIONARY = {
     "kpi.totalProducts": "Total Products", "kpi.totalProductsDelta": "Your account",
     "kpi.totalQuantity": "Total Quantity", "kpi.totalQuantityDelta": "Units in stock",
     "kpi.categories": "Categories", "kpi.categoriesDelta": "Product groups",
-    "kpi.suppliers": "Suppliers", "kpi.suppliersDelta": "From your products",
+    "kpi.suppliers": "Suppliers", "kpi.suppliersDelta": "Who you buy from",
     "kpi.lowStock": "Low Stock Items", "kpi.lowStockDelta": "Reorder now",
     "kpi.outStock": "Out of Stock Items", "kpi.outStockDelta": "Urgent",
     "alert.belowMinimum": "Below minimum stock. Current stock: {quantity}.",
@@ -2384,7 +2384,7 @@ const DICTIONARY = {
     "kpi.totalProducts": "Jumla ya Bidhaa", "kpi.totalProductsDelta": "Akaunti yako",
     "kpi.totalQuantity": "Jumla ya Kiasi", "kpi.totalQuantityDelta": "Vitengo vilivyopo",
     "kpi.categories": "Aina za Bidhaa", "kpi.categoriesDelta": "Makundi ya bidhaa",
-    "kpi.suppliers": "Wasambazaji", "kpi.suppliersDelta": "Kutoka bidhaa zako",
+    "kpi.suppliers": "Wasambazaji", "kpi.suppliersDelta": "Unaonunua kutoka kwao",
     "kpi.lowStock": "Bidhaa zenye Hisa Chache", "kpi.lowStockDelta": "Agiza upya sasa",
     "kpi.outStock": "Bidhaa Zilizoisha", "kpi.outStockDelta": "Haraka",
     "alert.belowMinimum": "Hisa iko chini ya kiwango cha chini. Hisa ya sasa: {quantity}.",
@@ -3071,7 +3071,27 @@ function calculateMetrics() {
   const lowStock = products.filter((item) => stockStatus(item) === "low").length;
   const out = products.filter((item) => stockStatus(item) === "out").length;
   const categories = new Set(products.map((item) => item.category).filter(Boolean)).size;
-  const suppliers = new Set(products.map((item) => item.supplier).filter(Boolean)).size;
+  // Counted from BOTH places a supplier can exist, because there are two and
+  // the tile only ever knew about one. Before the suppliers collection existed
+  // a supplier was a name typed on a product; now most are real records with a
+  // TIN and a balance. Reading only the product field made the dashboard say
+  // "Suppliers 0" on the same screen as "You owe suppliers TZS 2,018,836" --
+  // found by walking the app on 2026-09-10.
+  //
+  // The union rather than a swap: the eight shops already live have typed names
+  // and no supplier records, and swapping would have taken their count to zero.
+  // Matched on the trimmed, lowercased name so a record and a typed name for
+  // the same supplier count once.
+  const supplierNames = new Set();
+  for (const item of products) {
+    const name = String(item.supplier || "").trim();
+    if (name) supplierNames.add(name.toLowerCase());
+  }
+  for (const supplier of activeSuppliers()) {
+    const name = String(supplier.name || "").trim();
+    if (name) supplierNames.add(name.toLowerCase());
+  }
+  const suppliers = supplierNames.size;
 
   return {
     totalQuantity,
