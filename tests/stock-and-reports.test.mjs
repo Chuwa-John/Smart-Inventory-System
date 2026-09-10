@@ -261,8 +261,15 @@ console.log("\n=== the reports that CANNOT be built are named, not faked ===");
   for (const absent of ["balanceSheetTable", "trialBalanceTable", "cashFlowTable", "generalLedgerTable"]) {
     check(`there is no fake ${absent}`, html.includes(absent), false);
   }
-  // P&L is real and reachable, because it is built from transactions.
-  check("Profit & Loss is offered instead", html.includes('id="openProfitFromReports"'), true);
+  // P&L is real and reachable, because it is built from transactions. Since the
+  // nav was flattened on 2026-09-10 the two sit on the SAME screen -- Accounts
+  // opens the Profit view, and the unavailable statements are disclosed beneath
+  // the statement that does work -- so no cross-screen button is needed.
+  const profitView = html.slice(html.indexOf('<section class="view" id="profit"'));
+  const profitOnly = profitView.slice(0, profitView.indexOf("</section>"));
+  check("the disclosure sits with the statement that does work",
+    profitOnly.includes('id="ledgerPendingPanel"'), true);
+  check("...and the nav reaches it", html.includes('data-i18n="nav.accounts"'), true);
 
   // Reports are grouped the way §9 groups them.
   for (const group of ["reports.groupFinancial", "reports.groupSales", "reports.groupPurchases",

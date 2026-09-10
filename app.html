@@ -28,7 +28,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260910d" />
+    <link rel="stylesheet" href="./styles.css?v=20260910f" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#0b0d10" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -48,7 +48,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260910d"></script>
+    <script type="module" src="./boot.js?v=20260910f"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -81,51 +81,50 @@
         </div>
 
         <nav class="nav-list">
+          <!-- Flat and in the order the owner asked for on 2026-09-10. The
+               Accounts group that briefly held Purchases, Expenses and Profit is
+               gone: with Deliveries folded into Purchases there are few enough
+               top-level items that a menu costs a tap and buys nothing.
+
+               Two items are conditional and so are absent from that list:
+               Services (only for a business type that sells them) and VAT (only
+               for a registered one). Both keep their own gating. -->
           <button class="nav-item active" data-view="dashboard"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.6"/></svg><span data-i18n="nav.dashboard">Dashboard</span></button>
           <button class="nav-item" data-view="inventory"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 8.2v7.6a1.8 1.8 0 0 1-.92 1.57l-7.2 3.9a1.8 1.8 0 0 1-1.76 0l-7.2-3.9A1.8 1.8 0 0 1 3 15.8V8.2a1.8 1.8 0 0 1 .92-1.57l7.2-3.9a1.8 1.8 0 0 1 1.76 0l7.2 3.9A1.8 1.8 0 0 1 21 8.2z"/><path d="M3.4 7.2 12 12l8.6-4.8"/><path d="M12 21.4V12"/></svg><span data-i18n="nav.inventory">Inventory</span></button>
+          <!-- Purchases now owns receiving a delivery as well. They were two
+               destinations answering one question -- "stock arrived, here is
+               what it cost" -- and a shop had to know which of them to open. -->
+          <button class="nav-item" data-view="purchases"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5.5 2.8h13v18.4l-2.6-1.5-2.4 1.5-2.5-1.5-2.4 1.5-3.1-1.5z"/><path d="M9 8.4h6M9 12.4h6"/></svg><span data-i18n="nav.purchases">Purchases</span></button>
           <button class="nav-item" data-view="pos"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="9.5" cy="19.5" r="1.5"/><circle cx="18" cy="19.5" r="1.5"/><path d="M2.5 3.5H5l2.3 11.6a1.8 1.8 0 0 0 1.77 1.4h8.3a1.8 1.8 0 0 0 1.76-1.44L21 7.3H5.8"/></svg><span data-i18n="nav.pos">Point of Sale</span></button>
-          <!-- Bar/restaurant and salon only (DESIGN-services.md §5). Hidden
-               by default and re-evaluated on every store switch, because
-               businessType is per store: one owner may run a salon and a duka
-               and the tab has to follow which branch they are looking at. -->
+          <!-- Sold by a salon or a bar; hidden for a duka. renderServices()
+               sets the label from the business type. -->
           <button class="nav-item" data-view="services" id="servicesNavItem" hidden><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="6.5" cy="6.5" r="2.4"/><circle cx="6.5" cy="17.5" r="2.4"/><path d="M8.6 8.1 20 19.5M20 4.5 8.6 15.9"/></svg><span id="servicesNavLabel">Services</span></button>
-          <!-- Deliveries sits OUTSIDE the Accounts group, above it, because it
-               feeds it: a delivery writes the purchase lines the Purchase Book
-               lists. It is a stock-flow screen that happens to record money,
-               where the three under Accounts are money screens. Same
-               manager-and-owner gate. DESIGN-landed-costs.md 13. -->
-          <button class="nav-item" data-view="deliveries"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 5.5h10.5V16H3z"/><path d="M13.5 9h4.1L21 12.2V16h-7.5z"/><circle cx="7" cy="18.4" r="1.7"/><circle cx="17.4" cy="18.4" r="1.7"/></svg><span data-i18n="nav.deliveries">Deliveries</span></button>
-          <!-- Accounts. Now a real disclosure control rather than a label:
-               the owner asked for one button that opens the three money screens
-               under it. It was previously a <p>, which is why nothing happened
-               when anyone clicked it.
-                 - A <button> with aria-expanded and aria-controls, so it is
-                   reachable by keyboard and announced as what it is.
-                 - It opens itself when one of its own views is active, so
-                   arriving from the command palette or a redirect never leaves
-                   the current screen hidden inside a closed menu.
-                 - Its open/closed state is remembered per device.
-               Role gating is unchanged: canOpenView() is still the real gate and
-               the group hides entirely when none of the three can be opened. -->
-          <div class="nav-group" id="accountsGroup">
-            <button class="nav-group-toggle" id="accountsGroupToggle" type="button"
-                    aria-expanded="false" aria-controls="accountsGroupItems">
-              <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7.5h18M3 12h18M3 16.5h18"/></svg>
-              <span data-i18n="nav.accounts">Accounts</span>
-              <svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 10l4 4 4-4"/></svg>
-            </button>
-            <div class="nav-group-items" id="accountsGroupItems" hidden>
-              <button class="nav-item" data-view="purchases"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5.5 2.8h13v18.4l-2.6-1.5-2.4 1.5-2.5-1.5-2.4 1.5-3.1-1.5z"/><path d="M9 8.4h6M9 12.4h6"/></svg><span data-i18n="nav.purchases">Purchases</span></button>
-              <button class="nav-item" data-view="expenses"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7.6A2.1 2.1 0 0 1 5.1 5.5h12.4a1 1 0 0 1 1 1v2"/><path d="M3 7.6v9.3a2.1 2.1 0 0 0 2.1 2.1h13.4a1 1 0 0 0 1-1v-3.1"/><path d="M21 10.4v4.2h-4.1a2.1 2.1 0 0 1 0-4.2z"/></svg><span data-i18n="nav.expenses">Expenses</span></button>
-              <button class="nav-item" data-view="profit"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.2 17.2 9 11.4l3.8 3.8L20.6 7.4"/><path d="M15 7.4h5.6V13"/></svg><span data-i18n="nav.profit">Profit Report</span></button>
-            </div>
-          </div>
-          <!-- VAT is tax, not day-to-day money, and is hidden entirely for a
-               business that is not registered -- renderVatNav(). Top level, so
-               a registered shop is not made to open a menu to reach it. -->
-          <button class="nav-item" data-view="vat" hidden><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 5 5 19"/><circle cx="7.6" cy="7.6" r="2.4"/><circle cx="16.4" cy="16.4" r="2.4"/></svg><span data-i18n="nav.vat">VAT</span></button>
+          <button class="nav-item" data-view="expenses"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7.6A2.1 2.1 0 0 1 5.1 5.5h12.4a1 1 0 0 1 1 1v2"/><path d="M3 7.6v9.3a2.1 2.1 0 0 0 2.1 2.1h13.4a1 1 0 0 0 1-1v-3.1"/><path d="M21 10.4v4.2h-4.1a2.1 2.1 0 0 1 0-4.2z"/></svg><span data-i18n="nav.expenses">Expenses</span></button>
           <button class="nav-item" data-view="reports"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.2 20.8h17.6"/><path d="M7.4 20.8V10.6M12 20.8V4.2M16.6 20.8v-6.6"/></svg><span data-i18n="nav.reports">Reports</span></button>
           <button class="nav-item" data-view="ai"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M11.4 3.2 13.1 8l4.8 1.7-4.8 1.7-1.7 4.8-1.7-4.8L4.9 9.7 9.7 8z"/><path d="M18.3 15.1l.63 1.72 1.72.63-1.72.63-.63 1.72-.63-1.72-1.72-.63 1.72-.63z"/></svg><span data-i18n="nav.ai">AI Advisor</span></button>
+          <!-- Hidden entirely unless the business is VAT registered --
+               renderVatNav(). Sits beside Accounts because it is the other
+               screen an accountant asks for. -->
+          <button class="nav-item" data-view="vat" hidden><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 5 5 19"/><circle cx="7.6" cy="7.6" r="2.4"/><circle cx="16.4" cy="16.4" r="2.4"/></svg><span data-i18n="nav.vat">VAT</span></button>
+          <!-- Opens the Profit & Loss view, which also carries the four ledger
+               statements this system cannot yet produce, named rather than
+               faked. Owner-strict: canOpenView() returns isOwnerRole() for it,
+               because profit exposes buying prices by inference. -->
+          <!-- Profit & Loss keeps its own tab. It is built from the
+               transactions themselves, so it works today, and it must not be
+               parked behind Accounts while Accounts is dormant. -->
+          <button class="nav-item" data-view="profit"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.2 17.2 9 11.4l3.8 3.8L20.6 7.4"/><path d="M15 7.4h5.6V13"/></svg><span data-i18n="nav.profit">Profit Report</span></button>
+          <!-- Accounts is DELIBERATELY DORMANT. It is the shelf the double-entry
+               books will sit on -- Balance Sheet, Trial Balance, Cash Flow,
+               General Ledger -- and those wait on the s.35(7) data-residency
+               research, because where the ledger is kept is part of what a
+               ledger has to satisfy.
+
+               It is shown rather than hidden so the owner can see what is
+               coming, and disabled rather than wired to an empty screen: it
+               carries no data-view at all, so openView() can never be reached
+               with a view id that does not exist. -->
+          <button class="nav-item nav-item-dormant" data-nav-placeholder="accounts" type="button" disabled aria-disabled="true"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.2 5.1a15 15 0 0 1 8.8 2v13a15 15 0 0 0-8.8-2z"/><path d="M20.8 5.1a15 15 0 0 0-8.8 2v13a15 15 0 0 1 8.8-2z"/></svg><span data-i18n="nav.accounts">Accounts</span><span class="nav-soon" data-i18n="nav.soon">Soon</span></button>
           <button class="nav-item" data-view="settings"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.4v3.1M12 18.5v3.1M21.6 12h-3.1M5.5 12H2.4M18.8 5.2l-2.2 2.2M7.4 16.6l-2.2 2.2M18.8 18.8l-2.2-2.2M7.4 7.4 5.2 5.2"/></svg><span data-i18n="nav.settings">Settings</span></button>
         </nav>
 
@@ -370,6 +369,8 @@
             </div>
           </div>
 
+          <p class="muted" data-i18n="inventory.intro">What is on your shelves. Add the stock you already had here &mdash; new stock you buy is recorded under Purchases, where what you paid and the delivery costs are captured together.</p>
+
           <div class="filters">
             <select id="categoryFilter" aria-label="Category filter"></select>
             <select id="stockFilter" aria-label="Stock status filter">
@@ -482,6 +483,23 @@
             </div>
             <p class="muted" id="profitProductNote"></p>
           </article>
+
+          <!-- Spec 9 asks for five Financial reports. Four of them -- Balance
+               Sheet, Trial Balance, General Ledger, Cash Flow -- are statements
+               OF a double-entry ledger, and this system does not keep one yet
+               (DESIGN-suppliers-purchases.md 2.1). They are named here rather
+               than rendered from something that merely resembles them: a report
+               that shows a plausible figure it cannot support is worse than an
+               absent one, and this project has shipped that defect once. -->
+          <article class="panel" id="ledgerPendingPanel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="reports.groupFinancial">Financial</p>
+                <h2 data-i18n="reports.ledgerPendingTitle">Balance Sheet, Trial Balance, Cash Flow &amp; General Ledger</h2>
+              </div>
+            </div>
+            <p class="muted" data-i18n="reports.ledgerPendingBody">These four are statements of a double-entry ledger, which this system does not keep yet. They will appear under Accounts, which is why that tab is there but not yet open. Profit &amp; Loss is available now, on its own tab, because it is built from the transactions themselves.</p>
+          </article>
         </section>
 
         <section class="view" id="vat">
@@ -517,6 +535,7 @@
             </tr></thead><tbody id="vatExpiringBody"></tbody></table></div>
           </div>
 
+
           <div class="card" id="vatBlockedCard" hidden>
             <h2 data-i18n="vatRecord.blockedTitle">Spending you cannot reclaim this month</h2>
             <p class="muted" data-i18n="vatRecord.blockedHint">Shown so you can see why the claim is smaller than the spending, and what to ask for next time.</p>
@@ -531,48 +550,6 @@
 
         <!-- The goods received note. DESIGN-landed-costs.md phase 4, and the
              docx sections 5 and 6. -->
-        <section class="view" id="deliveries">
-          <div class="page-title">
-            <div>
-              <p class="eyebrow" data-i18n="deliveries.eyebrow">Goods received</p>
-              <h1 data-i18n="deliveries.title">Deliveries</h1>
-            </div>
-            <button class="primary-button" id="openDeliveryDialog" type="button" data-i18n="deliveries.receiveButton">Receive delivery</button>
-          </div>
-
-          <p class="muted" data-i18n="deliveries.intro">One delivery, many products, and the costs of getting it here.</p>
-
-          <div class="kpi-grid" id="deliveryTotals"></div>
-
-          <article class="panel">
-            <div class="panel-head">
-              <h2 data-i18n="deliveries.listTitle">Recorded</h2>
-              <label style="flex-direction:row;align-items:center;gap:6px;color:inherit">
-                <span data-i18n="deliveries.monthLabel">Month</span>
-                <input id="deliveryMonthInput" type="month" autocomplete="off" />
-              </label>
-            </div>
-            <div class="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th data-i18n="deliveries.thDate">Received</th>
-                    <th data-i18n="deliveries.thReference">Reference</th>
-                    <th data-i18n="deliveries.thSupplier">Supplier</th>
-                    <th data-i18n="deliveries.thLines">Products</th>
-                    <th data-i18n="deliveries.thGoods">Goods</th>
-                    <th data-i18n="deliveries.thLanded">Landed</th>
-                    <th data-i18n="deliveries.thTotal">Total cost</th>
-                    <th data-i18n="deliveries.thBasis">Spread by</th>
-                    <th data-i18n="deliveries.thPayment">Payment</th>
-                    <th data-i18n="deliveries.thActions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="deliveriesTable"></tbody>
-              </table>
-            </div>
-          </article>
-        </section>
 
         <section class="view" id="purchases">
           <div class="page-title">
@@ -610,6 +587,59 @@
                 <tbody id="purchasesTable"></tbody>
               </table>
             </div>
+          </article>
+
+          <!-- Deliveries, folded in from their own tab on 2026-09-10. They
+               were two destinations answering one question -- "stock arrived,
+               here is what it cost" -- and a shop had to know which one to open
+               to record a shipment. Everything here is MOVED, not rebuilt: the
+               ids are unchanged, so renderDeliveries(), the delivery dialog and
+               every test keep working untouched.
+
+               It sits above the purchase lines because it is where a purchase
+               now BEGINS: receive the delivery, and the lines below are what it
+               wrote. -->
+          <article class="panel" id="deliveriesPanel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="deliveries.eyebrow">Stock received</p>
+                <h2 data-i18n="deliveries.title">Deliveries</h2>
+              </div>
+              <button class="primary-button" id="openDeliveryDialog" type="button" data-i18n="deliveries.receiveButton">Receive delivery</button>
+            </div>
+            <p class="muted" data-i18n="deliveries.intro">One delivery, many products, and the costs of getting it here.</p>
+
+
+          <div class="kpi-grid" id="deliveryTotals"></div>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h2 data-i18n="deliveries.listTitle">Recorded</h2>
+              <label style="flex-direction:row;align-items:center;gap:6px;color:inherit">
+                <span data-i18n="deliveries.monthLabel">Month</span>
+                <input id="deliveryMonthInput" type="month" autocomplete="off" />
+              </label>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="deliveries.thDate">Received</th>
+                    <th data-i18n="deliveries.thReference">Reference</th>
+                    <th data-i18n="deliveries.thSupplier">Supplier</th>
+                    <th data-i18n="deliveries.thLines">Products</th>
+                    <th data-i18n="deliveries.thGoods">Goods</th>
+                    <th data-i18n="deliveries.thLanded">Landed</th>
+                    <th data-i18n="deliveries.thTotal">Total cost</th>
+                    <th data-i18n="deliveries.thBasis">Spread by</th>
+                    <th data-i18n="deliveries.thPayment">Payment</th>
+                    <th data-i18n="deliveries.thActions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="deliveriesTable"></tbody>
+              </table>
+            </div>
+          </article>
           </article>
 
           <!-- Suppliers. Spec 5.4. Lives inside Purchases rather than in its own
@@ -819,25 +849,6 @@
             </div>
           </div>
 
-          <!-- Spec 9 asks for five Financial reports. Four of them -- Balance
-               Sheet, Trial Balance, General Ledger, Cash Flow -- are statements
-               OF a double-entry ledger, and this system does not keep one yet
-               (DESIGN-suppliers-purchases.md 2.1). They are named here rather
-               than rendered from something that merely resembles them: a report
-               that shows a plausible figure it cannot support is worse than an
-               absent one, and this project has shipped that defect once. -->
-          <article class="panel" id="ledgerPendingPanel">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow" data-i18n="reports.groupFinancial">Financial</p>
-                <h2 data-i18n="reports.ledgerPendingTitle">Balance Sheet, Trial Balance, Cash Flow &amp; General Ledger</h2>
-              </div>
-            </div>
-            <p class="muted" data-i18n="reports.ledgerPendingBody">These four are statements of a double-entry ledger, which this system does not keep yet. Profit &amp; Loss is available now, on its own tab, because it is built from the transactions themselves.</p>
-            <div class="button-row">
-              <button class="ghost-button compact" id="openProfitFromReports" type="button" data-i18n="reports.openProfit">Open Profit &amp; Loss</button>
-            </div>
-          </article>
 
           <article class="panel">
             <div class="panel-head">
@@ -2297,6 +2308,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260910d"></script>
+    <script type="module" src="./app.js?v=20260910f"></script>
   </body>
 </html>

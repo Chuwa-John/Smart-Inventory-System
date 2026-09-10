@@ -344,7 +344,7 @@ const DICTIONARY = {
     "reports.groupPurchases": "Purchases", "reports.groupInventory": "Inventory",
     "reports.groupExpenses": "Expenses",
     "reports.ledgerPendingTitle": "Balance Sheet, Trial Balance, Cash Flow & General Ledger",
-    "reports.ledgerPendingBody": "These four are statements of a double-entry ledger, which this system does not keep yet. Profit & Loss is available now, on its own tab, because it is built from the transactions themselves.",
+    "reports.ledgerPendingBody": "These four are statements of a double-entry ledger, which this system does not keep yet. They will appear under Accounts, which is why that tab is there but not yet open. Profit & Loss is available now, on its own tab, because it is built from the transactions themselves.",
     "reports.openProfit": "Open Profit & Loss",
     "reports.byCustomerTitle": "Sales by Customer",
     "reports.byCustomerIntro": "Uses the range chosen above. Sales with no customer recorded are grouped as walk-in rather than left out.",
@@ -503,6 +503,7 @@ const DICTIONARY = {
     "dashboard.alertsEyebrow": "Smart alerts", "dashboard.needsAttention": "Needs attention",
     "dashboard.popupAlerts": "Popup alerts", "dashboard.movementTitle": "Movement classes",
     "dashboard.aiEngineEyebrow": "AI reorder engine", "dashboard.recommendationsTitle": "Purchase recommendations",
+    "inventory.intro": "What is on your shelves. Add the stock you already had here \u2014 new stock you buy is recorded under Purchases, where what you paid and the delivery costs are captured together.",
     "inventory.eyebrow": "Stock control", "inventory.title": "Inventory Management",
     "inventory.exportCsv": "Export CSV", "inventory.addProduct": "Add Product",
     "inventory.stockAll": "All stock states", "inventory.stockLow": "Low stock",
@@ -554,6 +555,7 @@ const DICTIONARY = {
     "control.revenueToday": "Revenue today",
     "control.revenueMonth": "Revenue month to date",
     "nav.accounts": "Accounts",
+    "nav.soon": "Soon",
     "nav.vat": "VAT",
     "report.vatRecordLink": "Open the full VAT record in Accounts",
     "vatRecord.eyebrow": "What you owe, and what you can claim back",
@@ -1610,7 +1612,7 @@ const DICTIONARY = {
     "reports.groupPurchases": "Manunuzi", "reports.groupInventory": "Hisa",
     "reports.groupExpenses": "Matumizi",
     "reports.ledgerPendingTitle": "Mizania, Salio la Majaribio, Mtiririko wa Fedha na Leja Kuu",
-    "reports.ledgerPendingBody": "Hizi nne ni taarifa za leja ya kuingiza mara mbili, ambayo mfumo huu bado hauitunzi. Faida na Hasara inapatikana sasa, kwenye kichupo chake, kwa sababu inajengwa kutoka kwenye miamala yenyewe.",
+    "reports.ledgerPendingBody": "Hizi nne ni taarifa za leja ya kuingiza mara mbili, ambayo mfumo huu bado hauitunzi. Zitaonekana chini ya Hesabu, ndiyo maana kichupo hicho kipo lakini bado hakijafunguliwa. Faida na Hasara inapatikana sasa, kwenye kichupo chake, kwa sababu inajengwa kutoka kwenye miamala yenyewe.",
     "reports.openProfit": "Fungua Faida na Hasara",
     "reports.byCustomerTitle": "Mauzo kwa Mteja",
     "reports.byCustomerIntro": "Inatumia kipindi kilichochaguliwa hapo juu. Mauzo yasiyo na mteja yamewekwa pamoja kama ya kupita, badala ya kuachwa nje.",
@@ -1769,6 +1771,7 @@ const DICTIONARY = {
     "dashboard.alertsEyebrow": "Arifa muhimu", "dashboard.needsAttention": "Yanayohitaji uangalizi",
     "dashboard.popupAlerts": "Arifa za dirisha ibukizi", "dashboard.movementTitle": "Mwendo wa bidhaa",
     "dashboard.aiEngineEyebrow": "Injini ya kuagiza upya ya AI", "dashboard.recommendationsTitle": "Mapendekezo ya ununuzi",
+    "inventory.intro": "Kilichopo rafuni zako. Ongeza hisa uliyokuwa nayo tayari hapa \u2014 hisa mpya unayonunua inarekodiwa chini ya Manunuzi, ambako ulicholipa na gharama za usafirishaji vinachukuliwa pamoja.",
     "inventory.eyebrow": "Udhibiti wa hisa", "inventory.title": "Usimamizi wa Hisa",
     "inventory.exportCsv": "Hamisha CSV", "inventory.addProduct": "Ongeza Bidhaa",
     "inventory.stockAll": "Hali zote za hisa", "inventory.stockLow": "Hisa chache",
@@ -1820,6 +1823,7 @@ const DICTIONARY = {
     "control.revenueToday": "Mapato leo",
     "control.revenueMonth": "Mapato mwezi hadi leo",
     "nav.accounts": "Hesabu",
+    "nav.soon": "Inakuja",
     "nav.vat": "VAT",
     "report.vatRecordLink": "Fungua kumbukumbu kamili ya VAT katika Accounts",
     "vatRecord.eyebrow": "Unachodaiwa, na unachoweza kudai kurudishiwa",
@@ -11094,10 +11098,26 @@ function openProductDialog(product = null) {
 // manager. Belt and braces, because the day that changes this should not
 // quietly start offering cost to a till.
 function renderProductCostFields(isEdit) {
+  // ALWAYS hidden since 2026-09-10. Inventory records what is on the shelf --
+  // typically stock that was already there when the shop started using this --
+  // and cost now belongs to Purchases, where a delivery states what was paid
+  // and freight is spread across the lines. Two places to enter a cost meant
+  // two answers to "what did this cost", and the weighted average had to
+  // reconcile both.
+  //
+  // The fields and their write path are HIDDEN rather than deleted: an owner
+  // may want opening-stock cost back, and hiding is reversible in one line
+  // where removing the capture path is not. They are cleared below, so nothing
+  // stale is ever submitted from them.
+  //
+  // The consequence is real and is the honest one: opening stock carries no
+  // cost, so its margin reads as unknown until that product is bought again
+  // through Purchases. The Profit Report already refuses to treat an unknown
+  // cost as zero -- it blanks the row rather than reporting revenue as profit.
   const fields = qs("#productCostFields");
-  if (fields) fields.hidden = isEdit || !canRecordCost();
+  if (fields) fields.hidden = true;
   const receiptFields = qs("#productReceiptFields");
-  if (receiptFields) receiptFields.hidden = isEdit || !canRecordCost() || !vatSettings().registered;
+  if (receiptFields) receiptFields.hidden = true;
   const hasReceipt = qs("#productHasReceiptInput");
   if (hasReceipt) hasReceipt.checked = false;
   for (const id of ["#productTotalPaidInput", "#productReceiptInput", "#productReceiptDateInput",
@@ -16226,71 +16246,24 @@ function canOpenView(viewId) {
   return isManagerOrOwnerRole() || CASHIER_ALLOWED_VIEWS.includes(viewId);
 }
 
-// The Accounts group opens and closes. Spec-side it is one button over three
-// money screens; the care here is that it must never hide the screen the user
-// is actually on.
-const ACCOUNTS_GROUP_KEY = "savia.accountsGroupOpen";
-
-function setAccountsGroupOpen(open, remember = true) {
-  const toggle = qs("#accountsGroupToggle");
-  const items = qs("#accountsGroupItems");
-  if (!toggle || !items) return;
-  items.hidden = !open;
-  toggle.setAttribute("aria-expanded", open ? "true" : "false");
-  toggle.classList.toggle("open", open);
-  if (!remember) return;
-  // Per device, and never allowed to throw: private windows and blocked site
-  // data make localStorage itself raise, and a nav that cannot open because a
-  // preference could not be saved would be absurd.
-  try { localStorage.setItem(ACCOUNTS_GROUP_KEY, open ? "1" : "0"); } catch (error) { /* ignore */ }
-}
-
-function accountsGroupHoldsActiveView() {
-  const items = qs("#accountsGroupItems");
-  const active = qs(".view.active");
-  if (!items || !active) return false;
-  return Array.from(items.querySelectorAll(".nav-item")).some((item) => item.dataset.view === active.id);
-}
-
-// Called after every view change and every role resolution.
-function syncAccountsGroup() {
-  const items = qs("#accountsGroupItems");
-  if (!items) return;
-  // Open regardless of the saved preference when one of its own screens is
-  // showing. Arriving at Purchases from the command palette, from a redirect,
-  // or from a deep link would otherwise leave the current screen invisible
-  // inside a collapsed menu -- which reads as the nav having lost the item.
-  if (accountsGroupHoldsActiveView()) return setAccountsGroupOpen(true, false);
-  let remembered = null;
-  try { remembered = localStorage.getItem(ACCOUNTS_GROUP_KEY); } catch (error) { /* ignore */ }
-  // OPEN when nothing has been chosen yet. Eight shops already use Purchases,
-  // Expenses and the Profit Report daily; shipping this collapsed would make
-  // all three look deleted on the morning the update lands, and the first
-  // report would be that the app had lost them. Only an explicit "0" -- someone
-  // who has actually closed it -- keeps it shut.
-  setAccountsGroupOpen(remembered !== "0", false);
-}
+// Which screens a role may open. The nav is only the visible half of this;
+// openView() asks the same question, because the command palette and any
+// stale handler route through it too.
 
 function applyRoleViewVisibility() {
   qsa(".nav-item").forEach((item) => {
+    // A dormant item -- today only Accounts -- names a section that is coming
+    // but has no screen behind it yet. It carries no data-view, so asking
+    // canOpenView() about it would be asking about `undefined`, which falls
+    // through to the manager check and would put an empty shelf in front of
+    // staff. Owner only: it is a statement about where this is going, and
+    // that is the owner's business.
+    if (item.dataset.navPlaceholder) {
+      item.hidden = !isOwnerRole();
+      return;
+    }
     item.hidden = !canOpenView(item.dataset.view);
   });
-  // The Accounts heading is a label, not a control, so the loop above does not
-  // reach it -- and a heading left standing over nothing reads as a menu that
-  // failed to load. It follows its group: visible only while at least one view
-  // under it can be opened.
-  // The Accounts toggle is a control, not a label, so it does not carry a
-  // data-view and the loop above never reaches it. It follows its group: shown
-  // only while at least one screen under it can be opened, because a button
-  // that opens an empty menu is worse than no button.
-  qsa(".nav-group").forEach((group) => {
-    // Scoped to the group's own children. Walking nextElementSibling from a
-    // bare label ran to the end of the nav and treated Reports and the AI
-    // Advisor as part of Accounts.
-    const anyVisible = Array.from(group.querySelectorAll(".nav-item")).some((item) => !item.hidden);
-    group.hidden = !anyVisible;
-  });
-  syncAccountsGroup();
   // Only redirect once the role has actually resolved. While it's still null
   // the nav stays hidden (fail closed, harmless), but redirecting here would
   // strand an owner on the POS tab after their real role arrives.
@@ -16309,7 +16282,6 @@ function openView(viewId) {
   // Keep the Accounts menu honest about what is on screen. Reached from the
   // command palette and from the role redirect as well as from a nav click, so
   // it belongs here rather than on the toggle's own handler.
-  syncAccountsGroup();
   if (viewId === "reports" || viewId === "ai") warmUpAiProxy();
 }
 
@@ -16607,11 +16579,6 @@ function bindEvents() {
     const statement = event.target.closest("[data-supplier-statement]");
     if (statement) openSupplierStatement(statement.dataset.supplierStatement);
   });
-  qs("#accountsGroupToggle")?.addEventListener("click", () => {
-    const items = qs("#accountsGroupItems");
-    setAccountsGroupOpen(Boolean(items?.hidden));
-  });
-  qs("#openProfitFromReports")?.addEventListener("click", () => openView("profit"));
   qs("#closeStockAdjustDialog")?.addEventListener("click", () => qs("#stockAdjustDialog").close());
   qs("#cancelStockAdjustDialog")?.addEventListener("click", () => qs("#stockAdjustDialog").close());
   qs("#stockAdjustForm")?.addEventListener("submit", (event) => {

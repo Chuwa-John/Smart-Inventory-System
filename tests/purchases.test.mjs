@@ -428,13 +428,19 @@ console.log("\n=== roles and lifecycle ===");
   check("productCostMap reads the cost collection",
     /state\.productCosts \|\| \[\]/.test(body("function productCostMap(")), true);
 
-  // A real container, so the heading owns exactly its own items. As a bare <p>
-  // in a flat <nav> it captured every following .nav-item -- Reports and the AI
-  // Advisor were filed under Accounts, which nobody decided.
-  check("the Accounts heading follows its own group",
-    /group\.hidden = !anyVisible/.test(noComments), true);
-  check("...and the group is scoped to its own children",
-    /group\.querySelectorAll\("\.nav-item"\)/.test(noComments), true);
+  // Purchases sat inside an Accounts dropdown for a fortnight. It is top-level
+  // again as of 2026-09-10: with Deliveries folded into it there are few enough
+  // entries that a menu cost a tap and bought nothing, and a screen a shop uses
+  // every time stock arrives should not be two clicks deep. The group machinery
+  // that hid and showed it is gone with it -- assertions about that container
+  // used to live here, and were removed rather than rewritten because there is
+  // no container left to make a claim about. nav-structure.test.mjs holds the
+  // whole nav contract now.
+  const navHtml = readFileSync(new URL("../app.html", import.meta.url), "utf8");
+  check("Purchases is a top-level destination",
+    /<button class="nav-item" data-view="purchases">/.test(navHtml), true);
+  check("...and nothing hides it behind a group",
+    /nav-group|accountsGroupToggle/.test(navHtml + src), false);
 }
 
 console.log("\n=== both languages ===");
@@ -996,15 +1002,23 @@ console.log("\n=== Phase E: the surface, and who may see it ===");
   check("the add-product form carries a cost section",
     html.includes('id="productCostFields"') && html.includes('id="productTotalPaidInput"'), true);
 
-  // Create-only. On an edit this must stay hidden: cost is forward-only, so a
-  // box there would either do nothing or append a cost record every time
-  // somebody fixed a typo in the product name.
-  check("the cost section is hidden when EDITING",
-    gate.includes("isEdit || !canRecordCost()"), true);
-  check("...and hidden from anyone who may not record cost",
-    gate.includes("canRecordCost()"), true);
-  check("the receipt block additionally needs VAT registration",
-    gate.includes("vatSettings().registered"), true);
+  // ALWAYS hidden since 2026-09-10, which is strictly stronger than the three
+  // conditions this used to assert (hidden on edit, hidden without permission,
+  // receipt block additionally needing VAT registration) -- all three are
+  // implied by never showing it at all.
+  //
+  // Inventory records what is on the shelf; cost belongs to Purchases, where a
+  // delivery states what was paid and freight is spread across the lines. Two
+  // places to enter a cost meant two answers to "what did this cost", and the
+  // weighted average had to reconcile both.
+  check("the cost section is never shown in Inventory",
+    /const fields = qs\("#productCostFields"\);\s*if \(fields\) fields\.hidden = true;/.test(gate), true);
+  check("...and neither is the receipt block",
+    /const receiptFields = qs\("#productReceiptFields"\);\s*if \(receiptFields\) receiptFields\.hidden = true;/.test(gate), true);
+  // The inputs are still cleared, so nothing stale can be submitted from a
+  // hidden field if the section is ever shown again.
+  check("the hidden inputs are still cleared",
+    /node\.value = "";/.test(gate), true);
 
   // The three documents, in the same shapes the restock transaction writes.
   for (const target of ["productCostHistory", "productCosts", "purchases"]) {
