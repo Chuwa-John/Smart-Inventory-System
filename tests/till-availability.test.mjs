@@ -349,6 +349,11 @@ console.log("\n=== Restock is held to the same rule ===");
       "canRecordCost", "clampNonNegativeNumber", "MAX_MONEY", "safeNumber",
       "nextUnitCost", "productCostKnown", "isOfflineNow", "awaitRestockTransaction",
       "vatSettings",
+      // A restock rewrites a product's weighted-average cost, so it drops the
+      // fetched cost map. Costs are no longer held live -- one document per
+      // product was the same size as the catalogue -- so nothing pushes the new
+      // figure at anyone; the next surface that wants a cost asks for it.
+      "invalidateProductCosts",
       `${source} return confirmRestock;`
     )(
       state, (selector) => elements[selector], (m) => calls.toasts.push(m), (key) => key,
@@ -367,7 +372,9 @@ console.log("\n=== Restock is held to the same rule ===");
       // Registered on purpose: an unregistered stub would skip the VAT capture
       // branch entirely and this suite would stop covering the path it is
       // named after.
-      () => ({ registered: true, vrn: "", tin: "" })
+      () => ({ registered: true, vrn: "", tin: "" }),
+      // Matches the "invalidateProductCosts" parameter added above.
+      () => { calls.costsInvalidated = (calls.costsInvalidated || 0) + 1; }
     );
     return { run, calls, button };
   }

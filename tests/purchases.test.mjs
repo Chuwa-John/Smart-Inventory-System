@@ -397,9 +397,9 @@ console.log("\n=== roles and lifecycle ===");
   // to a cashier. If it ever subscribes for them, the collection's whole reason
   // for existing is gone -- the rules would refuse it, but the attempt puts a
   // permission-denied in every cashier console on every sign-in.
-  check("subscribeToProductCosts refuses a cashier",
-    /if \(!isManagerOrOwnerRole\(\)\) \{\s*state\.productCosts = \[\];\s*return;\s*\}/.test(
-      body("async function subscribeToProductCosts(")), true);
+  check("loadProductCosts refuses a cashier",
+    /if \(!isManagerOrOwnerRole\(\)\) \{\s*state\.productCosts = \[\];/.test(
+      body("async function loadProductCosts(")), true);
   // Presence in the sign-in path, not adjacency to subscribeToPurchases().
   // Written as an adjacency regex first, which broke the moment
   // DESIGN-landed-costs.md phase 4 inserted subscribeToDeliveries() between the
@@ -408,15 +408,33 @@ console.log("\n=== roles and lifecycle ===");
   // siblings is not part of it.
   {
     const signIn = body("async function initFirebase(");
-    check("signing in subscribes to product costs",
-      /subscribeToProductCosts\(\);/.test(signIn), true);
+    // Inverted deliberately on 2026-09-10. Costs are one document per product,
+    // and loading them at sign-in meant every manager and owner paid for the
+    // whole catalogue again to render one dashboard tile. They are fetched when
+    // a cost is asked for; see catalogue-scope.test.mjs.
+    check("signing in does NOT load product costs",
+      /loadProductCosts\(\);/.test(signIn), false);
     check("...and to purchases", /subscribeToPurchases\(\);/.test(signIn), true);
     check("...and to the cost history", /subscribeToProductCostHistory\(\);/.test(signIn), true);
   }
-  check("the cost listener is detached on sign-out",
-    /if \(state\.unsubscribeProductCosts\) state\.unsubscribeProductCosts\(\);/.test(noComments), true);
+  // There is no cost listener to detach any more -- costs are fetched when a
+  // cost is asked for. What must still happen on sign-out is that the figures
+  // AND the loaded flag go: an empty map that still claims to be loaded reads
+  // as a business with no cost prices recorded, which is a statement about the
+  // shop rather than an absence of data.
+  check("the cost map is dropped on sign-out",
+    /invalidateProductCosts\(\);/.test(noComments), true);
+  check("...and nothing pretends to detach a listener that is gone",
+    /unsubscribeProductCosts/.test(noComments), false);
+  // The figures go, and so does the flag that says they were fetched. Kept as
+  // two assertions because clearing one without the other is the failure: an
+  // empty map still marked loaded is the app reporting the shop has no cost
+  // prices, when in fact it has simply forgotten them.
+  const invalidate = body("function invalidateProductCosts(");
   check("...and the costs themselves are cleared",
-    /state\.unsubscribeProductCosts = null;\s*state\.productCosts = \[\];/.test(noComments), true);
+    /state\.productCosts = \[\];/.test(invalidate), true);
+  check("...along with the flag that says they were loaded",
+    /state\.productCostsLoaded = false;/.test(invalidate), true);
 
   // The control panel must read cost from the cost collection, not from the
   // product. Reading it off the product is exactly what made it visible to
@@ -547,8 +565,12 @@ console.log("\n=== a role change re-runs the subscriptions gated on it ===");
   // sequence, and it would have gone red for every future collection too --
   // while a genuinely missing call in the middle would look identical to a
   // harmless insertion. Named individually, a missing one names itself.
+  // Costs are absent from this list on purpose: a promotion drops the cached
+  // map (invalidateProductCosts) so the newly permitted person fetches it when
+  // they next ask for a cost, rather than being handed the whole catalogue's
+  // costs for a screen they may never open.
   for (const fn of ["subscribeToExpenses", "subscribeToPurchases",
-                    "subscribeToProductCosts", "subscribeToProductCostHistory"]) {
+                    "subscribeToProductCostHistory"]) {
     check(`promotion re-subscribes via ${fn}()`,
       new RegExp(`${fn}\\(\\);`).test(resub), true);
   }
@@ -738,7 +760,7 @@ console.log("\n=== Phase D: roles and lifecycle ===");
     /if \(!isManagerOrOwnerRole\(\)\) \{\s*state\.productCostHistory = \[\];\s*return;\s*\}/.test(
       body("async function subscribeToProductCostHistory(")), true);
   check("signing in subscribes to it",
-    /subscribeToProductCosts\(\);\s*subscribeToProductCostHistory\(\);/.test(noComments), true);
+    /subscribeToProductCostHistory\(\);/.test(noComments), true);
   check("it is detached on sign-out",
     /if \(state\.unsubscribeProductCostHistory\) state\.unsubscribeProductCostHistory\(\);/.test(noComments), true);
   check("...and cleared",
@@ -986,7 +1008,7 @@ console.log("\n=== Phase E: the surface, and who may see it ===");
   // Bounding it would silently drop the cost of whichever products fell outside
   // the window, which is worse than holding them all.
   check("productCosts is deliberately NOT bounded",
-    !body("async function subscribeToProductCosts(").includes("limit("), true);
+    !body("async function loadProductCosts(").includes("limit("), true);
 }
 
 // Opening-stock cost on the ADD PRODUCT form. A shop does not start empty:

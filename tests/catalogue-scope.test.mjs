@@ -98,7 +98,9 @@ console.log("\n=== it can only ever narrow ===");
 
 console.log("\n=== both growing subscriptions use it ===");
 {
-  for (const fn of ["subscribeToProducts", "subscribeToProductCosts"]) {
+  // The catalogue itself is still a live subscription -- a till has to know
+  // when a price or a stock count changes. Costs are not; see below.
+  for (const fn of ["subscribeToProducts", "loadProductCosts"]) {
     check(`${fn} scopes to the branch`, /await catalogueStoreIds\(\)/.test(extract(fn)), true);
     check(`...and no longer asks for the whole permitted set`,
       /const queryStoreIds = await resolveQueryStoreIds\(\)/.test(extract(fn)), false);
@@ -123,7 +125,11 @@ console.log("\n=== it narrows on the cold start, not only on a switch ===");
   check("changing branch re-subscribes too", /resubscribeCatalogue\(\)/.test(switcher), true);
   const re = extract("resubscribeCatalogue");
   check("it re-fetches products", /subscribeToProducts\(\)/.test(re), true);
-  check("...and their costs", /subscribeToProductCosts\(\)/.test(re), true);
+  // Costs are not re-fetched here, only dropped: the new branch's costs are
+  // fetched if and when somebody asks for a cost figure. Re-fetching them on
+  // every branch change would reinstate exactly the cost this removed.
+  check("...and drops the cost map rather than refetching it",
+    /invalidateProductCosts\(\)/.test(re), true);
   // Kept apart from the role-change path, which clears collections this must
   // not touch.
   check("it is not the role-change path", /unsubscribeExpenses/.test(re), false);
@@ -138,6 +144,65 @@ console.log("\n=== the rules did not move ===");
     /match \/products\/\{productId\}/.test(rules), true);
   check("nothing here grants a new read",
     /catalogueStoreIds/.test(rules), false);
+}
+
+
+
+console.log("\n=== costs are fetched when asked for, not held all day ===");
+{
+  // One cost document per product means this collection is the same size as
+  // the catalogue. Held live, every manager and owner paid for all of it every
+  // session to render a single dashboard tile.
+  check("the live cost listener is gone", /subscribeToProductCosts/.test(src), false);
+  check("...replaced by a fetch", /async function loadProductCosts/.test(src), true);
+  const load = extract("loadProductCosts");
+  check("it uses getDocs, not onSnapshot",
+    /getDocs\(/.test(load) && !/onSnapshot\(/.test(load), true);
+  check("it is still scoped to the branch", /await catalogueStoreIds\(\)/.test(load), true);
+  check("a till never loads costs at all", /isManagerOrOwnerRole\(\)/.test(load), true);
+  // A failed fetch must not look like a shop with no costs recorded.
+  check("a failure leaves it UNLOADED, not loaded-and-empty",
+    /console\.warn\("\[productCosts\]"[\s\S]{0,120}?productCostsLoaded = false/.test(load), true);
+
+  const ensure = extract("ensureProductCosts");
+  check("asking twice fetches once",
+    /if \(state\.productCostsLoaded \|\| state\.productCostsLoading\) return;/.test(ensure), true);
+}
+
+console.log("\n=== nothing claims 'no costs recorded' while they are merely unfetched ===");
+{
+  // THE trap. An unloaded cost map makes every product look uncosted, which is
+  // indistinguishable from a business that has never recorded a buying price --
+  // and the app says exactly that in words. Reporting its own laziness as the
+  // shop's bookkeeping is the failure this guards.
+  const panel = extract("renderAdminControl");
+  check("the tile checks loaded before judging",
+    /state\.productCostsLoaded\s*\n?\s*&& state\.products\.some/.test(panel), true);
+  check("...and offers to fetch instead", /showStockValueButton/.test(panel), true);
+  check("...saying so while it fetches", /control\.stockValueLoading/.test(panel), true);
+  // Retail value needs no costs, so it stays on the tile either way -- the tile
+  // is still worth reading before anyone asks for cost.
+  check("retail value is shown regardless", /control\.stockAtRetail/.test(panel), true);
+  for (const key of ["control.showStockValue", "control.stockValueLoading"]) {
+    const n = (src.match(new RegExp(`"${key.replace(/\./g, "\.")}":`, "g")) || []).length;
+    check(`${key} is in en and sw`, n, 2);
+  }
+  // The report is the other reader, and opening it IS the request.
+  check("the valuation report asks for costs",
+    /ensureProductCosts\(\);\s*\n\s*const valuation = summariseStockValuation/.test(src), true);
+}
+
+console.log("\n=== a written cost drops the cached map ===");
+{
+  // Without a live listener nothing pushes a new cost at us, so every path that
+  // writes one has to say so or the dashboard keeps reporting the old figure.
+  for (const fn of ["receiveDelivery", "confirmRestock", "saveProduct"]) {
+    check(`${fn} invalidates the cost map`,
+      /invalidateProductCosts\(\)/.test(extract(fn)), true);
+  }
+  const inv = extract("invalidateProductCosts");
+  check("invalidating clears the flag", /productCostsLoaded = false/.test(inv), true);
+  check("...and the stale figures with it", /state\.productCosts = \[\]/.test(inv), true);
 }
 
 const failed = results.filter((r) => !r.pass);

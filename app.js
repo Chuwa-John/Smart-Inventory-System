@@ -14,6 +14,10 @@ const APP_VERSION = (() => {
 const state = {
   // Which report the Reports screen is showing; null means the chooser.
   selectedReport: null,
+  // Product costs are fetched on demand, not subscribed. Loaded is false until
+  // a cost surface has asked for them and the fetch has landed.
+  productCostsLoaded: false,
+  productCostsLoading: false,
   products: [],
   // Sellable things with a price and no shelf, for bar/restaurant and salon
   // stores (DESIGN-services.md). Kept apart from products deliberately: a
@@ -130,7 +134,6 @@ const state = {
   // number in an input is not the same thing as the value the shop means.
   deliveryDraft: null,
   productCosts: [],
-  unsubscribeProductCosts: null,
   productCostHistory: [],
   unsubscribeProductCostHistory: null,
   profitMonthSelection: localMonthKey(new Date()),
@@ -915,6 +918,8 @@ const DICTIONARY = {
     "control.marginNote": "Revenue less cost of goods sold",
     "control.marginIncomplete": "Incomplete — {missing} of {total} sold lines have no cost price",
     "control.marginNoCost": "No cost prices recorded, so margin cannot be worked out",
+    "control.showStockValue": "Show stock value",
+    "control.stockValueLoading": "Loading…",
     "control.stockAtCost": "Stock value at cost",
     "control.stockAtRetail": "At retail {value}",
     "control.stockAtCostUnknown": "No cost prices recorded. At retail {value}",
@@ -2219,6 +2224,8 @@ const DICTIONARY = {
     "control.marginNote": "Mapato ukiondoa gharama ya bidhaa",
     "control.marginIncomplete": "Haijakamilika — safu {missing} kati ya {total} zilizouzwa hazina bei ya gharama",
     "control.marginNoCost": "Hakuna bei za gharama zilizorekodiwa, hivyo faida haiwezi kupigwa hesabu",
+    "control.showStockValue": "Onyesha thamani ya hisa",
+    "control.stockValueLoading": "Inapakia…",
     "control.stockAtCost": "Thamani ya hisa kwa gharama",
     "control.stockAtRetail": "Kwa bei ya rejareja {value}",
     "control.stockAtCostUnknown": "Hakuna bei za gharama zilizorekodiwa. Kwa bei ya rejareja {value}",
@@ -8628,6 +8635,9 @@ async function receiveDelivery(input = {}) {
   }
 
   return { ok: true, error: "", errorIndex: -1, deliveryId: deliveryRef.id };
+  // A delivery rewrites the weighted average for every line it carries, so the
+  // fetched cost map is stale the moment it commits.
+  invalidateProductCosts();
 }
 
 async function awaitDeliveryTransaction(attempt) {
@@ -9300,38 +9310,73 @@ function summarisePurchases(purchases, monthKey) {
 // refused to a cashier. /products cannot be -- the POS needs it -- and Firestore
 // cannot withhold a single field, so a costPrice stored there is readable by
 // every till. DESIGN-purchases.md 10.
-async function subscribeToProductCosts() {
+// Product costs, fetched WHEN A COST IS ASKED FOR rather than held live.
+//
+// There is one cost document per product, so this collection is the same size
+// as the catalogue -- and with a live listener every manager and owner paid for
+// all of it on every session. Measured at 2,000 SKUs across 3 branches that was
+// half of a 12,000-document cold start; at the 10,000-SKU catalogue this is
+// being sold into it is 10,000 documents an owner loaded to render one tile.
+//
+// Only two surfaces ever read it: the Stock Valuation report, and the stock
+// value tile on the owner's dashboard. Both now ask for it, and both say so
+// while it is coming. A till never loads it at all -- a cashier cannot read
+// these documents anyway, which is the whole reason cost lives in its own
+// collection rather than on the product.
+//
+// Fetched, not subscribed: a cost changes when a delivery or a restock is
+// recorded, both of which are actions taken in this app, so the cache is
+// dropped at those points instead of being kept live all day for a figure
+// nobody is looking at.
+async function loadProductCosts() {
   if (!state.db || !state.user || !state.businessOwnerUid) return;
-  if (state.unsubscribeProductCosts) state.unsubscribeProductCosts();
   if (!isManagerOrOwnerRole()) {
     state.productCosts = [];
+    state.productCostsLoaded = false;
     return;
   }
+  if (state.productCostsLoading) return;
+  state.productCostsLoading = true;
   try {
-    const { collection, onSnapshot, query, where } = state.firebaseApi.firestore;
+    const { collection, getDocs, query, where } = state.firebaseApi.firestore;
     const costsRef = collection(state.db, "users", state.businessOwnerUid, "productCosts");
     const queryStoreIds = await catalogueStoreIds();
     if (queryStoreIds !== null && queryStoreIds.length === 0) {
       state.productCosts = [];
+      state.productCostsLoaded = true;
       scheduleRenderAll();
       return;
     }
     const costsQuery = queryStoreIds === null
       ? costsRef
       : query(costsRef, where("storeId", "in", queryStoreIds));
-    state.unsubscribeProductCosts = onSnapshot(
-      costsQuery,
-      (snapshot) => {
-        state.productCosts = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-        scheduleRenderAll();
-      },
-      (error) => {
-        console.warn("[productCosts listener]", error.code || error, "queryStoreIds=", queryStoreIds);
-      }
-    );
+    const snapshot = await getDocs(costsQuery);
+    state.productCosts = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+    state.productCostsLoaded = true;
   } catch (error) {
-    console.warn(error);
+    // Left unloaded rather than marked loaded-and-empty. An empty cost map
+    // reads as "no cost recorded anywhere", which is a claim about the
+    // business; not loaded reads as "not fetched", which is the truth.
+    console.warn("[productCosts]", error.code || error);
+    state.productCostsLoaded = false;
+  } finally {
+    state.productCostsLoading = false;
+    scheduleRenderAll();
   }
+}
+
+// Idempotent, and safe to call from a render. Returns nothing: the answer
+// arrives as a re-render once the fetch lands.
+function ensureProductCosts() {
+  if (state.productCostsLoaded || state.productCostsLoading) return;
+  loadProductCosts();
+}
+
+// Dropped when something changes what a cost IS, so the next surface that
+// wants one fetches it again.
+function invalidateProductCosts() {
+  state.productCostsLoaded = false;
+  state.productCosts = [];
 }
 
 async function subscribeToProductCostHistory() {
@@ -10113,6 +10158,9 @@ function renderCostReports() {
   if (monthInput && monthInput.value !== monthKey) monthInput.value = monthKey;
 
   // --- Stock valuation ---------------------------------------------------
+  // This report is the other reader of the cost map, and the reason it is
+  // fetched rather than held: opening it is a request for costs.
+  ensureProductCosts();
   const valuation = summariseStockValuation(storeProducts(), productCostMap());
   const valuationTotals = qs("#stockValuationTotals");
   if (valuationTotals) {
@@ -11642,6 +11690,10 @@ async function saveProduct(product, costCapture = null) {
 
   renderAll();
   showToast(t("toast.productSaved", { name: product.name }));
+  // A cost was just written, so the fetched map is out of date. Dropped
+  // rather than refetched: nothing may be looking at a cost right now, and
+  // the next surface that wants one will ask.
+  invalidateProductCosts();
 }
 
 function openTransferDialog(productId) {
@@ -12164,6 +12216,10 @@ async function confirmRestock() {
     // a failed delivery cannot leave the next one facing a dead button.
     confirmButton.disabled = false;
   }
+  // A cost was just written, so the fetched map is out of date. Dropped
+  // rather than refetched: nothing may be looking at a cost right now, and
+  // the next surface that wants one will ask.
+  invalidateProductCosts();
 }
 
 function findProductByBarcode(code) {
@@ -14535,7 +14591,11 @@ function renderAdminControl() {
 
   // The same rule for the stock tiles. With no cost prices recorded anywhere,
   // "TZS 0" is a claim that the shelves are worthless, not an absence of data.
-  const anyProductCosted = state.products.some((p) => safeNumber(costById.get(p.id)) > 0);
+  // Only meaningful once the costs have actually been fetched. An unloaded map
+  // makes every product look uncosted, which is indistinguishable from a shop
+  // that has never recorded a buying price.
+  const anyProductCosted = state.productCostsLoaded
+    && state.products.some((p) => safeNumber(costById.get(p.id)) > 0);
   const stockAtCost = state.products.reduce(
     (sum, p) => sum + safeNumber(p.quantity) * safeNumber(costById.get(p.id)), 0);
   const stockAtRetail = state.products.reduce((sum, p) => sum + safeNumber(p.quantity) * safeNumber(p.sellingPrice), 0);
@@ -14564,11 +14624,24 @@ function renderAdminControl() {
             })),
     // Retail value is known either way and stays in the note, so the tile is
     // still worth reading when cost is not.
-    controlTile(t("control.stockAtCost"),
-      anyProductCosted ? money(stockAtCost) : "—", "",
-      anyProductCosted
-        ? t("control.stockAtRetail", { value: money(stockAtRetail) })
-        : t("control.stockAtCostUnknown", { value: money(stockAtRetail) })),
+    // Costs are no longer held live -- one document per product, loaded by
+    // every owner on every session to render this one tile. Until they are
+    // asked for, the tile offers to fetch them and says nothing about cost.
+    // The distinction matters: "no cost prices recorded" is a claim about the
+    // business, and saying it while the figures are merely unfetched would be
+    // the app reporting its own laziness as the shop's bookkeeping.
+    (state.productCostsLoaded
+      ? controlTile(t("control.stockAtCost"),
+          anyProductCosted ? money(stockAtCost) : "—", "",
+          anyProductCosted
+            ? t("control.stockAtRetail", { value: money(stockAtRetail) })
+            : t("control.stockAtCostUnknown", { value: money(stockAtRetail) }))
+      : `<div class="control-tile">
+          <span class="control-tile-label">${esc(t("control.stockAtCost"))}</span>
+          <strong class="control-tile-value">${esc(state.productCostsLoading ? t("control.stockValueLoading") : "—")}</strong>
+          <span class="control-tile-note">${esc(t("control.stockAtRetail", { value: money(stockAtRetail) }))}</span>
+          <button class="ghost-button compact" type="button" id="showStockValueButton"${state.productCostsLoading ? " disabled" : ""}>${esc(t("control.showStockValue"))}</button>
+        </div>`),
     controlTile(t("control.creditOwed"), money(creditOwed), creditOwed > 0 ? "warn" : ""),
     controlTile(t("control.voidsMonth"), `${month.voidCount} · ${money(month.voidValue)}`,
       month.voidCount > 0 ? "warn" : ""),
@@ -14721,7 +14794,6 @@ function stockLedgerDiscrepancies() {
 // directions. Money must not outlive the role that was allowed to see it.
 function resubscribeRoleGatedCollections() {
   for (const key of ["unsubscribeExpenses", "unsubscribePurchases", "unsubscribeDeliveries",
-                     "unsubscribeProductCosts",
                      "unsubscribeProductCostHistory"]) {
     if (state[key]) state[key]();
     state[key] = null;
@@ -14740,7 +14812,7 @@ function resubscribeRoleGatedCollections() {
   subscribeToExpenses();
   subscribeToPurchases();
   subscribeToDeliveries();
-  subscribeToProductCosts();
+  invalidateProductCosts();
   subscribeToProductCostHistory();
 }
 
@@ -14949,7 +15021,7 @@ async function initFirebase() {
         subscribeToExpenses();
         subscribeToPurchases();
         subscribeToDeliveries();
-        subscribeToProductCosts();
+        invalidateProductCosts();
         subscribeToProductCostHistory();
         watchServerConnection();
       } else {
@@ -14991,9 +15063,11 @@ async function initFirebase() {
         if (state.unsubscribeDeliveries) state.unsubscribeDeliveries();
         state.unsubscribeDeliveries = null;
         state.deliveries = [];
-        if (state.unsubscribeProductCosts) state.unsubscribeProductCosts();
-        state.unsubscribeProductCosts = null;
-        state.productCosts = [];
+        // No listener to detach any more -- costs are fetched on demand. The
+        // figures still go, and so does the loaded flag: an empty map that
+        // still says "loaded" reads as a business with no cost prices
+        // recorded, which is a claim rather than an absence.
+        invalidateProductCosts();
         if (state.unsubscribeProductCostHistory) state.unsubscribeProductCostHistory();
         state.unsubscribeProductCostHistory = null;
         state.productCostHistory = [];
@@ -15584,7 +15658,7 @@ function switchStore(storeId) {
 function resubscribeCatalogue() {
   if (!state.db || !state.user || !state.businessOwnerUid) return;
   subscribeToProducts();
-  subscribeToProductCosts();
+  invalidateProductCosts();
 }
 
 function renderStoreSwitcher() {
@@ -16893,6 +16967,12 @@ function bindEvents() {
     if (button) openReport(button.dataset.reportOpen);
   });
   qs("#reportsBackButton")?.addEventListener("click", closeReport);
+  // Delegated: the tile is re-rendered on every dashboard render, so a listener
+  // bound directly to the button would be attached to an element that no longer
+  // exists by the time it is pressed.
+  document.addEventListener("click", (event) => {
+    if (event.target.closest("#showStockValueButton")) ensureProductCosts();
+  });
   qs("#profitBackButton")?.addEventListener("click", () => openView("reports"));
   qs("#exportPaymentCsvButton").addEventListener("click", exportPaymentReportCsv);
   qs("#exportPaymentPdfButton").addEventListener("click", exportPaymentReportPdf);
