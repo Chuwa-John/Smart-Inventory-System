@@ -46,11 +46,13 @@ function extract(name) {
 }
 
 // The real function, over a stubbed permission answer and a chosen branch.
-function scopeFor(allowed, selected) {
+// Three branches by default: scoping only applies to a business that has more
+// than one, so a single-branch default would make every case below vacuous.
+function scopeFor(allowed, selected, stores = [{ id: "branchA" }, { id: "branchB" }, { id: "branchC" }]) {
   return new Function("resolveQueryStoreIds", "state", `
     ${extract("catalogueStoreIds")}
     return catalogueStoreIds;
-  `)(async () => allowed, { currentStoreId: selected })();
+  `)(async () => allowed, { currentStoreId: selected, stores })();
 }
 
 console.log("=== an owner loads one branch, not all of them ===");
@@ -65,6 +67,22 @@ console.log("=== an owner loads one branch, not all of them ===");
   // Before the stores snapshot arrives there is no branch to scope to.
   check("no branch chosen yet loads everything", await scopeFor(null, ""), null);
   check("...and undefined behaves the same", await scopeFor(null, undefined), null);
+}
+
+console.log("\n=== a single-branch shop is never scoped ===");
+{
+  // Nothing to save -- one branch's catalogue IS the catalogue -- and it is
+  // where the hazard lives. productStoreId() falls back to the first store when
+  // a product carries no storeId at all, which says plainly that such products
+  // exist; a where("storeId","==") can never match a document that has no
+  // storeId field. Scoping one of those shops would not shrink its till, it
+  // would EMPTY it, and the products would vanish with nothing said.
+  check("one store: unscoped", await scopeFor(null, "branchA", [{ id: "branchA" }]), null);
+  check("no stores yet: unscoped", await scopeFor(null, "branchA", []), null);
+  // Two or more were created deliberately, and their products were written with
+  // a branch, so the saving lands where it matters and the hazard is left alone.
+  check("two stores: scoped",
+    await scopeFor(null, "branchA", [{ id: "branchA" }, { id: "branchB" }]), ["branchA"]);
 }
 
 console.log("\n=== it can only ever narrow ===");
@@ -188,8 +206,16 @@ console.log("\n=== nothing claims 'no costs recorded' while they are merely unfe
     check(`${key} is in en and sw`, n, 2);
   }
   // The report is the other reader, and opening it IS the request.
-  check("the valuation report asks for costs",
-    /ensureProductCosts\(\);\s*\n\s*const valuation = summariseStockValuation/.test(src), true);
+  // ...but ONLY when it is the report on screen. renderCostReports() runs
+  // inside renderAll(), so an unconditional call here fetches the whole cost
+  // map on every session regardless -- the same cost, moved out of a listener
+  // and into a render, which is how this fix could have quietly achieved
+  // nothing. Found by opening the dashboard and seeing the tile already say
+  // "Loading" before anyone had asked for a cost.
+  check("the valuation report asks for costs when it is open",
+    /if \(state\.selectedReport === "stockValuation"\) ensureProductCosts\(\);/.test(src), true);
+  check("...and not on every render",
+    /\n  ensureProductCosts\(\);\n\s*const valuation/.test(src), false);
 }
 
 console.log("\n=== a written cost drops the cached map ===");

@@ -10158,9 +10158,12 @@ function renderCostReports() {
   if (monthInput && monthInput.value !== monthKey) monthInput.value = monthKey;
 
   // --- Stock valuation ---------------------------------------------------
-  // This report is the other reader of the cost map, and the reason it is
-  // fetched rather than held: opening it is a request for costs.
-  ensureProductCosts();
+  // Only when this report is the one actually on screen. renderCostReports()
+  // runs inside renderAll(), so an unconditional request here fetched the whole
+  // cost map on every session regardless -- the exact cost this change removes,
+  // moved from a listener into a render. Caught by opening the dashboard and
+  // finding the tile already saying "Loading".
+  if (state.selectedReport === "stockValuation") ensureProductCosts();
   const valuation = summariseStockValuation(storeProducts(), productCostMap());
   const valuationTotals = qs("#stockValuationTotals");
   if (valuationTotals) {
@@ -15144,6 +15147,18 @@ async function catalogueStoreIds() {
   const selected = state.currentStoreId;
   // Not scoped yet, or deliberately looking across branches.
   if (!selected || selected === "all") return allowed;
+  // A single-branch business is never scoped, for two reasons that point the
+  // same way. There is nothing to save -- one branch's catalogue IS the
+  // catalogue -- and it is exactly where the risk lives: productStoreId()
+  // falls back to the first store when a product carries no storeId at all,
+  // which says plainly that such products exist, and a where("storeId","==")
+  // can never match a document that has no storeId field. Scoping one of those
+  // shops would not shrink its till, it would EMPTY it.
+  //
+  // A business with several branches created them deliberately, and its
+  // products were written with a branch. The saving lands where it matters and
+  // the hazard is left alone.
+  if ((state.stores || []).length <= 1) return allowed;
   // Staff already carry a narrow scope. Narrowing it to a branch they cannot
   // read would hand back an empty catalogue rather than a smaller one.
   if (allowed !== null && !allowed.includes(selected)) return allowed;
