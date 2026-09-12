@@ -396,8 +396,15 @@ async function verifyFirebaseToken(req, res, next) {
   }
 }
 
+// A build marker, because Render publishes no version of its own in any header.
+// Without it there is no way to tell from outside whether a push has actually
+// reached production -- which matters now that OPERATIONS.md requires the proxy
+// to ship BEFORE hosting, so ticked cashier permissions are not dropped in
+// silence for a newly invited staff member.
+const BUILD_MARKER = "2026-09-12-cashier-permissions";
+
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "savia-ai-proxy" });
+  res.json({ ok: true, service: "savia-ai-proxy", build: BUILD_MARKER });
 });
 
 const OVERRIDE_HASH = process.env.PRICE_OVERRIDE_PASSWORD_HASH;
