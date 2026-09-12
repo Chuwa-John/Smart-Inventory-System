@@ -1036,6 +1036,16 @@ Two things that view must inherit from `reconcileShiftCash()`: it must report
 enough back (L-11), and it must stay off any path that gates a till. A control
 that accuses a cashier because of a subscription limit is worse than no control.
 
+**Narrowed, not closed, on 2026-09-12.** Cashier permissions
+(`DESIGN-permissions.md`) added `takeRepayments`, on by default. A cashier the
+owner has withdrawn it from can no longer DECREASE a balance at all:
+`memberMayMoveBalance()` in `firestore.rules` lets a balance rise -- a credit
+sale is authorised separately, on the sale itself -- and refuses a fall unless
+the permission is held. `tests/rules-permissions.test.mjs` asserts both
+directions. This does nothing for a cashier who holds the permission, which is
+most of them, so the detective fix below is still owed and this entry stays
+open.
+
 **Risk: High** — straightforward insider fraud, and for a duka extending credit
 to regulars the receivable is the highest-value balance in the system.
 

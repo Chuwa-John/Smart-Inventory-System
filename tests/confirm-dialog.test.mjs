@@ -181,7 +181,10 @@ console.log("\n=== every destructive action went through ===");
     check(`${name} asks the app, not the browser`,
       /await askConfirm\(/.test(extract(name)), true);
   }
-  check("all eleven sites converted", (src.match(/await askConfirm\(t\(/g) || []).length, 11);
+  // Twelve since 2026-09-11: cancelling a delivery request a cashier has sent
+  // for approval (DESIGN-permissions.md 4) is the same kind of action and asks
+  // the same way.
+  check("every confirmation site is converted", (src.match(/await askConfirm\(t\(/g) || []).length, 12);
   // Each one still reads the answer as a plain boolean, so the guard clauses
   // did not change shape when the mechanism did.
   check("revoke still refuses on a no",
@@ -211,7 +214,10 @@ console.log("\n=== window.prompt is gone too ===");
     .filter((line) => !line.trim().startsWith("//") && /window\.prompt\(/.test(line));
   check("no call site uses window.prompt", promptCalls, []);
   check("askText exists", /function askText\(/.test(src), true);
-  check("every prompt goes through it", (src.match(/await askText\(/g) || []).length, 10);
+  // Twelve: the two added with cashier permissions are the reason a manager
+  // must give for rejecting a delivery, and the order number a cashier types
+  // to find a sale to return at the till.
+  check("every prompt goes through it", (src.match(/await askText\(/g) || []).length, 12);
 
   const fn = extract("askText");
   // A password typed into a native prompt is displayed in clear text, on a

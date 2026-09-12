@@ -279,8 +279,12 @@ await check("an owner deletes one", true,
 await check("an owner deletes a delivery", true,
   () => write("owner", { action: "PURCHASE_DELETED", purchaseId: "p1", productId: "prod1", name: "Lotion", storeId: STORE_A, amount: 400000, qtyAdded: 200 }));
 
-// Correcting and removing belong to the owner; a manager may only record.
-await check("a manager cannot record an expense correction", false,
+// Removing belongs to the owner. Correcting is the owner's too, with one
+// exception decided on 2026-09-11 (DESIGN-permissions.md 2): staff correct
+// their OWN expense on the day they wrote it, so a manager logs that
+// correction. firestore.rules bounds the correction itself -- own record,
+// within 24 hours -- and rules-permissions.test.mjs asserts that bound.
+await check("a manager logs a correction to their own expense", true,
   () => write("manager", { action: "EXPENSE_UPDATED", expenseId: "e1", storeId: STORE_A, amount: 1 }));
 await check("a manager cannot record an expense deletion", false,
   () => write("manager", { action: "EXPENSE_DELETED", expenseId: "e1", storeId: STORE_A, amount: 1 }));

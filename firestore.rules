@@ -610,6 +610,15 @@ service cloud.firestore {
       return validExpense() && request.resource.data.recordedByUid == request.auth.uid;
     }
 
+    // Staff record the day's spending, not last month's. Seven days rather than
+    // one because an expense typed offline replays whenever the phone next
+    // connects, and a rule that refused it then would discard what the cashier
+    // recorded, silently, long after they moved on. The screen offers today;
+    // this is the ceiling behind it.
+    function staffExpenseDateInWindow() {
+      return request.resource.data.spentAt > request.time - duration.value(7, 'd');
+    }
+
     function validService() {
       let d = request.resource.data;
       return d.name is string && d.name.size() > 0 && d.name.size() <= 120
@@ -784,13 +793,74 @@ service cloud.firestore {
     // One member read for role AND store, instead of isOwnerOrRole() and
     // memberCanAccessStore() each doing their own. Same decision, measurably
     // cheaper on the hottest write in the schema.
-    function memberSellsInStore(ownerUid, storeId) {
+    //
+    // Credit is refused here for a cashier whose owner has withdrawn it
+    // (DESIGN-permissions.md). Safe on this path for one reason worth keeping
+    // true: a credit sale is refused OFFLINE at the till, so no queued sale can
+    // meet this clause at replay time and be discarded after the customer left.
+    // If credit sales are ever queued offline, this clause must move to the UI.
+    // Absent permissions mean ALLOWED -- every member document predating the
+    // map keeps selling on credit exactly as it did.
+    function memberSellsInStore(ownerUid, storeId, paymentMethod) {
       let path = memberDocPath(ownerUid);
       let m = exists(path) ? get(path).data : null;
       return m != null
         && m.status == "active"
         && m.role in ["manager", "cashier"]
-        && (("all" in m.storeIds) || (storeId in m.storeIds));
+        && (("all" in m.storeIds) || (storeId in m.storeIds))
+        && (paymentMethod != "credit"
+            || m.role == "manager"
+            || m.get('permissions', {}).get('sellOnCredit', true) == true);
+    }
+
+    // Cashier permissions -- DESIGN-permissions.md.
+    //
+    // A map of booleans on the member document. An absent map, or an absent
+    // key, means the DEFAULT, so nothing written before the map existed reads
+    // any differently. The permissions only ever widen or narrow a CASHIER: a
+    // manager already holds every one of them, and each helper below lets a
+    // manager through on role rather than consulting the map.
+    //
+    // One member read per helper, for the expression-budget reason recorded on
+    // memberSellsInStore() above.
+    function memberCashierMay(ownerUid, storeId, key) {
+      let path = memberDocPath(ownerUid);
+      let m = exists(path) ? get(path).data : null;
+      return m != null
+        && m.status == "active"
+        && m.role == "cashier"
+        && (("all" in m.storeIds) || (storeId in m.storeIds))
+        && m.get('permissions', {}).get(key, false) == true;
+    }
+
+    // For the audit log, whose branch has already established an active
+    // cashier through memberRole().
+    function memberPermissionOn(ownerUid, key) {
+      return get(memberDocPath(ownerUid)).data.get('permissions', {}).get(key, false) == true;
+    }
+
+    // A customer balance may go UP on a credit sale -- the sale itself is where
+    // credit is authorised, above -- but a DECREASE is a repayment, and a
+    // cashier whose owner has withdrawn repayments may not make one. This
+    // narrows L-10 for such a cashier; it does not close it for a cashier who
+    // holds the permission, who can still zero a debt with no payment behind it.
+    function memberMayMoveBalance(ownerUid, storeId) {
+      let path = memberDocPath(ownerUid);
+      let m = exists(path) ? get(path).data : null;
+      return m != null
+        && m.status == "active"
+        && m.role in ["manager", "cashier"]
+        && (("all" in m.storeIds) || (storeId in m.storeIds))
+        && (m.role == "manager"
+            || request.resource.data.balanceOwed >= resource.data.balanceOwed
+            || m.get('permissions', {}).get('takeRepayments', true) == true);
+    }
+
+    function memberMayTakeRepayment(ownerUid) {
+      let path = memberDocPath(ownerUid);
+      let m = exists(path) ? get(path).data : null;
+      return m != null
+        && (m.role == "manager" || m.get('permissions', {}).get('takeRepayments', true) == true);
     }
 
     function validSale() {
@@ -956,6 +1026,9 @@ service cloud.firestore {
               // who records the spending -- and therefore who records that they
               // recorded it. Correcting and removing stay with the owner below.
               'EXPENSE_RECORDED',
+              // Staff correct their OWN expense on the day they wrote it
+              // (DESIGN-permissions.md 2), so the correction is theirs to log.
+              'EXPENSE_UPDATED',
               // A manager receives deliveries, so a manager records that they
               // did. ONE entry per delivery, not one per line -- the per-product
               // trail is /stockMovements, which the stock ledger reconciles
@@ -976,7 +1049,7 @@ service cloud.firestore {
          // why the removal has to leave a trace: every other money-touching
          // collection in this file refuses deletion outright, and a document
          // that can vanish silently is a note rather than a book.
-         'EXPENSE_UPDATED', 'EXPENSE_DELETED', 'PURCHASE_DELETED', 'DELIVERY_DELETED',
+         'EXPENSE_DELETED', 'PURCHASE_DELETED', 'DELIVERY_DELETED',
          'PRODUCT_CREATED', 'PRODUCT_EDITED', 'PRODUCT_DELETED', 'STORE_CURRENCY_CHANGED', 'STORE_ARCHIVED',
          'ACCOUNT_DELETION_REQUESTED', 'ACCOUNT_DELETION_CANCELLED', 'ACCOUNT_ACCESS_DURING_GRACE',
          'VAT_REGISTRATION_ENABLED', 'VAT_REGISTRATION_DISABLED',
@@ -1005,6 +1078,8 @@ service cloud.firestore {
               // expense amount and a purchase total; `qtyAdded` and `name` are
               // reused for the units and the product on a purchase.
               'category', 'expenseId', 'purchaseId',
+              // What an expense said before a correction, beside `amount`.
+              'previousAmount',
               // Deliveries reuse `amount` for the delivery's total cost and
               // `itemCount` for how many product lines it carried.
               'deliveryId',
@@ -1036,6 +1111,7 @@ service cloud.firestore {
         // it. The client omits these fields rather than nulling them.
         && (!('category' in d) || (d.category is string && d.category.size() <= 40))
         && (!('expenseId' in d) || (d.expenseId is string && d.expenseId.size() <= 120))
+        && (!('previousAmount' in d) || moneyInRange(d.previousAmount))
         && (!('purchaseId' in d) || (d.purchaseId is string && d.purchaseId.size() <= 120))
         && (!('deliveryId' in d) || (d.deliveryId is string && d.deliveryId.size() <= 120))
         && (!('shiftId' in d) || (d.shiftId is string && d.shiftId.size() <= 120))
@@ -1222,16 +1298,131 @@ service cloud.firestore {
         allow delete: if isOwner(userId) && tenantNotFrozen(userId);
       }
 
+      // A cashier's delivery, waiting for a manager or the owner --
+      // DESIGN-permissions.md 4.
+      //
+      // Why a request and not a delivery: receiving stock moves the weighted
+      // average cost, which means reading /productCosts inside the transaction,
+      // and a cashier who can read that knows the margin on everything. So the
+      // cashier states what arrived -- quantities, supplier, reference -- and
+      // the stock and the cost move together when someone allowed to see cost
+      // approves it.
+      //
+      // Never deleted. A request is cancelled, rejected or approved, and each is
+      // a status on the same document.
+      match /deliveryRequests/{requestId} {
+        function validDeliveryRequest() {
+          let d = request.resource.data;
+          return d.keys().hasOnly(['storeId', 'requestedByUid', 'requestedByName', 'status',
+                                   'supplierName', 'reference', 'note', 'invoiceTotal',
+                                   'receivedAt', 'lines', 'createdAt', 'updatedAt',
+                                   'decidedByUid', 'decidedAt', 'deliveryId', 'rejectReason'])
+            && d.storeId is string && d.storeId.size() > 0 && d.storeId.size() <= 120
+            && d.requestedByUid is string && d.requestedByUid.size() > 0
+            && d.requestedByName is string && d.requestedByName.size() > 0 && d.requestedByName.size() <= 80
+            && d.status in ['pending', 'approved', 'rejected', 'cancelled']
+            && d.supplierName is string && d.supplierName.size() <= 60
+            && (!('reference' in d) || (d.reference is string && d.reference.size() <= 60))
+            && (!('note' in d) || (d.note is string && d.note.size() <= 200))
+            && (!('invoiceTotal' in d) || totalInRange(d.invoiceTotal))
+            && d.receivedAt is timestamp && d.receivedAt < request.time + duration.value(2, 'd')
+            // The line cap is the delivery dialog's own, so an approved request
+            // always fits the dialog it is opened in. Per-line content is not
+            // iterated, for the expression-budget reason given at validSaleItems().
+            && d.lines is list && d.lines.size() > 0 && d.lines.size() <= 80
+            && d.createdAt is timestamp;
+        }
+
+        function decisionOnlyChanged() {
+          return request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'decidedByUid', 'decidedAt', 'deliveryId', 'rejectReason', 'updatedAt']);
+        }
+
+        allow read: if isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager"])
+              && (resource == null || memberCanAccessStore(userId, resource.data.storeId)))
+          || (resource.data.requestedByUid == request.auth.uid
+              && memberCashierMay(userId, resource.data.storeId, 'receiveDeliveries'));
+
+        allow create: if tenantNotFrozen(userId) && validDeliveryRequest()
+          && request.resource.data.status == 'pending'
+          && request.resource.data.requestedByUid == request.auth.uid
+          && request.resource.data.createdAt == request.time
+          && !('decidedByUid' in request.resource.data)
+          && !('deliveryId' in request.resource.data)
+          && memberCashierMay(userId, request.resource.data.storeId, 'receiveDeliveries');
+
+        allow update: if tenantNotFrozen(userId) && validDeliveryRequest()
+          // Only a pending request moves. A decided one is history.
+          && resource.data.status == 'pending'
+          && request.resource.data.storeId == resource.data.storeId
+          && request.resource.data.requestedByUid == resource.data.requestedByUid
+          && request.resource.data.createdAt == resource.data.createdAt
+          && (
+            // The person who asked edits or cancels their own.
+            (request.resource.data.status in ['pending', 'cancelled']
+              && resource.data.requestedByUid == request.auth.uid
+              && !('decidedByUid' in request.resource.data)
+              && !('deliveryId' in request.resource.data)
+              && memberCashierMay(userId, resource.data.storeId, 'receiveDeliveries'))
+            // Someone allowed to see cost decides.
+            || ((isOwner(userId)
+                 || (isOwnerOrRole(userId, ["manager"]) && memberCanAccessStore(userId, resource.data.storeId)))
+              && decisionOnlyChanged()
+              && request.resource.data.decidedByUid == request.auth.uid
+              && request.resource.data.decidedAt == request.time
+              && (
+                // Approval is only true together with the delivery it produced:
+                // the delivery must exist after this write and not before it, so
+                // a request cannot be marked approved on its own, nor pointed at
+                // a delivery that was recorded some other day.
+                (request.resource.data.status == 'approved'
+                  && request.resource.data.deliveryId is string
+                  && request.resource.data.deliveryId.size() > 0
+                  && request.resource.data.deliveryId.size() <= 120
+                  && existsAfter(/databases/$(database)/documents/users/$(userId)/deliveries/$(request.resource.data.deliveryId))
+                  && !exists(/databases/$(database)/documents/users/$(userId)/deliveries/$(request.resource.data.deliveryId)))
+                || (request.resource.data.status == 'rejected'
+                  && request.resource.data.rejectReason is string
+                  && request.resource.data.rejectReason.size() > 0
+                  && request.resource.data.rejectReason.size() <= 200)))
+          );
+
+        allow delete: if false;
+      }
+
+      // DESIGN-permissions.md 2. A cashier holding recordExpenses records,
+      // reads and corrects ONLY their own entries -- never the book, never
+      // another person's. The list query in app.js filters on recordedByUid for
+      // exactly this reason; without the filter the rule cannot be proven and
+      // the whole query is refused.
+      //
+      // Correcting is bounded for staff, managers included: their OWN record,
+      // within 24 hours of writing it. An expense that can be rewritten at any
+      // later time is not evidence of anything, and inflating one paid "from the
+      // till" is how missing cash is usually covered. The screen stops at local
+      // midnight; the rules cannot know the shop's time zone, so this is the
+      // looser ceiling behind it. Every correction is audited by saveExpense().
+      // Deletion stays the owner's alone.
       match /expenses/{expenseId} {
         allow read: if isOwner(userId)
           || (isOwnerOrRole(userId, ["manager"])
-              && (resource == null || memberCanAccessStore(userId, resource.data.storeId)));
+              && (resource == null || memberCanAccessStore(userId, resource.data.storeId)))
+          || (resource.data.recordedByUid == request.auth.uid
+              && memberCashierMay(userId, resource.data.storeId, 'recordExpenses'));
         allow create: if tenantNotFrozen(userId) && validExpenseCreate() && (
              isOwner(userId)
           || (isOwnerOrRole(userId, ["manager"])
-              && memberCanAccessStore(userId, request.resource.data.storeId)));
-        allow update: if isOwner(userId) && tenantNotFrozen(userId)
-          && validExpense() && expenseImmutableFieldsUnchanged();
+              && memberCanAccessStore(userId, request.resource.data.storeId))
+          || (memberCashierMay(userId, request.resource.data.storeId, 'recordExpenses')
+              && staffExpenseDateInWindow()));
+        allow update: if tenantNotFrozen(userId) && validExpense() && expenseImmutableFieldsUnchanged() && (
+             isOwner(userId)
+          || (resource.data.recordedByUid == request.auth.uid
+              && request.time < resource.data.createdAt + duration.value(1, 'd')
+              && staffExpenseDateInWindow()
+              && ((isOwnerOrRole(userId, ["manager"]) && memberCanAccessStore(userId, resource.data.storeId))
+                  || memberCashierMay(userId, resource.data.storeId, 'recordExpenses'))));
         allow delete: if isOwner(userId) && tenantNotFrozen(userId);
       }
 
@@ -1356,7 +1547,7 @@ service cloud.firestore {
           || (isOwnerOrRole(userId, ["manager", "cashier"])
               && (resource == null || memberCanAccessStore(userId, resource.data.storeId)));
         allow create: if tenantNotFrozen(userId) && validSale()
-          && (isOwner(userId) || memberSellsInStore(userId, request.resource.data.storeId));
+          && (isOwner(userId) || memberSellsInStore(userId, request.resource.data.storeId, request.resource.data.paymentMethod));
         // Managers may void a full sale or process an itemized return, but
         // only for a store assigned to them -- owner reasoning revisited:
         // the owner isn't always on-site, and a manager already holds the
@@ -1367,7 +1558,13 @@ service cloud.firestore {
         allow update: if tenantNotFrozen(userId) && ((isOwner(userId) && (validVoidUpdate() || validReturnUpdate()))
           || (isOwnerOrRole(userId, ["manager"])
             && memberCanAccessStore(userId, resource.data.storeId)
-            && (validVoidUpdate() || validReturnUpdate())));
+            && (validVoidUpdate() || validReturnUpdate()))
+          // A cashier the owner trusts with returns (DESIGN-permissions.md).
+          // Returns only -- a void has no itemised trail and stays manager-only.
+          // validReturnUpdate() is the same capped, monotonic check a manager
+          // meets, so the permission widens WHO, never HOW MUCH.
+          || (memberCashierMay(userId, resource.data.storeId, 'processReturns')
+            && validReturnUpdate()));
         allow delete: if false;
       }
 
@@ -1404,7 +1601,7 @@ service cloud.firestore {
           || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, request.resource.data.storeId) && validCustomer()));
         allow update: if tenantNotFrozen(userId) && (
              (isOwner(userId) && validCustomer())
-          || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, resource.data.storeId) && validCustomerBalanceUpdate())
+          || (memberMayMoveBalance(userId, resource.data.storeId) && validCustomerBalanceUpdate())
           || (isOwnerOrRole(userId, ["manager"]) && memberCanAccessStore(userId, resource.data.storeId) && validCustomerLimitUpdate()));
         allow delete: if false;
 
@@ -1417,7 +1614,7 @@ service cloud.firestore {
           allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, get(/databases/$(database)/documents/users/$(userId)/customers/$(customerId)).data.storeId));
           allow create: if tenantNotFrozen(userId) && (
                (isOwner(userId) && validPayment())
-            || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, get(/databases/$(database)/documents/users/$(userId)/customers/$(customerId)).data.storeId) && validPayment()));
+            || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberMayTakeRepayment(userId) && memberCanAccessStore(userId, get(/databases/$(database)/documents/users/$(userId)/customers/$(customerId)).data.storeId) && validPayment()));
           allow update, delete: if false;
         }
       }
@@ -1725,7 +1922,12 @@ service cloud.firestore {
         // of actions each may record differs -- see validAuditLog above.
         allow create: if (isOwner(userId) && validAuditLog(ownerAuditActions()))
           || (memberRole(userId) == "manager" && validAuditLog(managerAuditActions()))
-          || (memberRole(userId) == "cashier" && validAuditLog(cashierAuditActions()));
+          || (memberRole(userId) == "cashier" && (validAuditLog(cashierAuditActions())
+               // Actions a cashier may log only while they hold the permission
+               // that lets them perform it -- the false-trail rule above,
+               // applied per permission rather than per role.
+               || (validAuditLog(['EXPENSE_RECORDED', 'EXPENSE_UPDATED']) && memberPermissionOn(userId, 'recordExpenses'))
+               || (validAuditLog(['RETURN_PROCESSED']) && memberPermissionOn(userId, 'processReturns'))));
         allow update, delete: if false;
       }
 

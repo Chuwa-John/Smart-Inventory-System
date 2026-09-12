@@ -39,8 +39,16 @@ console.log("=== the order the owner asked for ===");
   // VAT_VIEW_ENABLED, so it is never shown.
   check("flat, in order",
     views,
-    ["dashboard", "inventory", "purchases", "pos", "services", "expenses",
+    // `arrivals` is a cashier's own delivery requests (DESIGN-permissions.md 4),
+    // sitting where a cashier expects stock to live -- right after Purchases,
+    // which is where the same requests are approved. It is hidden for everyone
+    // else, by canOpenView() rather than by CSS.
+    ["dashboard", "inventory", "purchases", "arrivals", "pos", "services", "expenses",
      "reports", "ai", "vat", "settings"]);
+  check("arrivals is cashier-only, and only with the permission",
+    /if \(viewId === "arrivals"\) return isCashierWith\("receiveDeliveries"\);/.test(src), true);
+  check("...and it ships hidden, so nobody sees it before the role resolves",
+    /data-view="arrivals"[^>]*hidden/.test(html), true);
   // Deliveries were folded into Purchases: two destinations answered one
   // question -- "stock arrived, here is what it cost".
   check("deliveries is no longer its own destination", views.includes("deliveries"), false);

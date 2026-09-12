@@ -95,6 +95,15 @@ const state = {
   pendingInviteRoleLabel: "",
   businessOwnerUid: "",
   currentUserRole: null,
+  // Cashier permissions -- DESIGN-permissions.md. Empty until the member
+  // document is read; hasStaffPermission() falls back to the defaults, never to
+  // "everything granted".
+  currentPermissions: {},
+  deliveryRequests: [],
+  unsubscribeDeliveryRequests: null,
+  deliveryRequestDraft: null,
+  approvingDeliveryRequestId: "",
+  editingMemberId: "",
   // Who the signed-in account IS on a sale. Sales used to be attributed by
   // picking a name out of a list the owner maintained by hand; every staff
   // member now signs in as themselves, so this is resolved from the account
@@ -1635,6 +1644,95 @@ const DICTIONARY = {
     "confirm.accept": "Yes, continue",
     "staff.inviteLinkLabel": "Invite link",
     "staff.copyFailedUseLink": "Could not copy automatically. The link is shown above — copy it from there.",
+    "nav.arrivals": "Deliveries",
+    "permissions.dialogTitle": "What this cashier may do",
+    "permissions.intro": "Ticked means allowed. The three at the bottom are on for every cashier unless you remove them.",
+    "permissions.inviteLabel": "What this cashier may do",
+    "permissions.editButton": "Permissions",
+    "permissions.saveButton": "Save",
+    "permissions.saved": "Permissions saved.",
+    "permissions.saveFailed": "Couldn't save the permissions. Try again.",
+    "permissions.standard": "Standard cashier",
+    "permissions.plusList": "Also: {list}",
+    "permissions.minusList": "Not allowed: {list}",
+    "permissions.recordExpenses": "Record expenses",
+    "permissions.recordExpensesHint": "Records what the shop spends and can correct their own entry the same day. Never sees the expense book or anyone else's entries.",
+    "permissions.receiveDeliveries": "Record deliveries",
+    "permissions.receiveDeliveriesHint": "Counts in stock that arrives and sends it for approval. The stock is added when you or a manager approve it with the costs.",
+    "permissions.processReturns": "Process returns",
+    "permissions.processReturnsHint": "Takes an item back and refunds it, item by item. The discount password is still required.",
+    "permissions.viewStock": "See stock levels",
+    "permissions.viewStockHint": "Opens the Inventory screen to look at quantities. No prices, no changes.",
+    "permissions.viewTodaySales": "See today's takings",
+    "permissions.viewTodaySalesHint": "Shows today's sales total for this branch at the till. No cost and no profit.",
+    "permissions.sellOnCredit": "Sell on credit",
+    "permissions.sellOnCreditHint": "Lets a customer take goods and pay later.",
+    "permissions.takeRepayments": "Take debt repayments",
+    "permissions.takeRepaymentsHint": "Accepts money against what a customer owes.",
+    "permissions.giveDiscounts": "Give discounts",
+    "permissions.giveDiscountsHint": "Changes a price or applies a discount. The discount password is still required.",
+    "expenses.ownIntro": "What you have recorded. You can correct an entry on the day you record it.",
+    "expenses.dateStaffWindow": "You can only record spending from the last 7 days. Ask the owner to record anything older.",
+    "returns.findOrderPrompt": "Enter the order number from the receipt:",
+    "returns.orderNotFound": "No sale found for order {order} on this device.",
+    "pos.returnButton": "Return an item",
+    "pos.todayTitle": "Today at this branch",
+    "pos.todaySales": "Sales today",
+    "pos.todayTakings": "Takings today",
+    "pos.todayNote": "Refunds are already taken off. Voided sales are not counted.",
+    "toast.creditNotAllowed": "You cannot sell on credit. Ask the owner.",
+    "deliveryRequests.eyebrow": "Stock arriving",
+    "deliveryRequests.title": "Deliveries",
+    "deliveryRequests.intro": "Count in what arrived and send it for approval. The stock is added once a manager or the owner approves it with the supplier's costs.",
+    "deliveryRequests.newButton": "Record delivery",
+    "deliveryRequests.listTitle": "What you have sent",
+    "deliveryRequests.empty": "Nothing sent yet. Record a delivery when stock arrives.",
+    "deliveryRequests.thDate": "Received",
+    "deliveryRequests.thSupplier": "Supplier",
+    "deliveryRequests.thReference": "Reference",
+    "deliveryRequests.thProducts": "Products",
+    "deliveryRequests.thStatus": "Status",
+    "deliveryRequests.thActions": "Actions",
+    "deliveryRequests.thRequestedBy": "Counted by",
+    "deliveryRequests.thInvoiceTotal": "Invoice total",
+    "deliveryRequests.status_pending": "Waiting for approval",
+    "deliveryRequests.status_approved": "Approved",
+    "deliveryRequests.status_rejected": "Rejected",
+    "deliveryRequests.status_cancelled": "Cancelled",
+    "deliveryRequests.editButton": "Edit",
+    "deliveryRequests.cancelButton": "Cancel",
+    "deliveryRequests.cancelConfirm": "Cancel this delivery from {supplier}? It will not be approved.",
+    "deliveryRequests.cancelled": "Delivery cancelled.",
+    "deliveryRequests.approveButton": "Approve",
+    "deliveryRequests.rejectButton": "Reject",
+    "deliveryRequests.pendingEyebrow": "From your staff",
+    "deliveryRequests.pendingTitle": "Waiting for approval",
+    "deliveryRequests.dialogTitle": "Record a delivery",
+    "deliveryRequests.dialogTitleEdit": "Edit this delivery",
+    "deliveryRequests.supplierLabel": "Supplier",
+    "deliveryRequests.supplierPlaceholder": "e.g. Festive Ltd",
+    "deliveryRequests.referenceLabel": "Invoice or reference (optional)",
+    "deliveryRequests.dateLabel": "Date received",
+    "deliveryRequests.invoiceTotalLabel": "Invoice total (optional)",
+    "deliveryRequests.noteLabel": "Note (optional)",
+    "deliveryRequests.linesTitle": "What arrived",
+    "deliveryRequests.searchLabel": "Find a product",
+    "deliveryRequests.searchPlaceholder": "Search products",
+    "deliveryRequests.searchNoResults": "No product matches that.",
+    "deliveryRequests.qtyLabel": "Quantity",
+    "deliveryRequests.removeLine": "Remove this product",
+    "deliveryRequests.lineNone": "No products yet. Search above and tap one to add it.",
+    "deliveryRequests.needSupplier": "Enter who delivered it.",
+    "deliveryRequests.needLines": "Add at least one product, with a quantity.",
+    "deliveryRequests.sendButton": "Send for approval",
+    "deliveryRequests.sent": "Sent for approval.",
+    "deliveryRequests.updated": "Delivery updated.",
+    "deliveryRequests.saveFailed": "Couldn't save it. Try again.",
+    "deliveryRequests.alreadyDecided": "Someone has already dealt with this delivery.",
+    "deliveryRequests.rejectPrompt": "Why are you rejecting this delivery from {supplier}?",
+    "deliveryRequests.rejectNeedsReason": "Give a reason, so they know what to fix.",
+    "deliveryRequests.rejected": "Delivery rejected.",
+    "deliveryRequests.switchBranch": "Switch to that branch first, then approve it.",
     "staff.revokeButton": "Revoke",
     "staff.rosterEmpty": "No staff members have accepted an invite yet.",
     "staff.allStoresLabel": "All stores",
@@ -2943,6 +3041,95 @@ const DICTIONARY = {
     "confirm.accept": "Ndiyo, endelea",
     "staff.inviteLinkLabel": "Kiungo cha mwaliko",
     "staff.copyFailedUseLink": "Imeshindwa kunakili yenyewe. Kiungo kimeonyeshwa hapo juu — kinakili kutoka hapo.",
+    "nav.arrivals": "Mizigo",
+    "permissions.dialogTitle": "Mfanya mauzo huyu anaruhusiwa nini",
+    "permissions.intro": "Alama ya tiki maana yake anaruhusiwa. Matatu ya mwisho yapo kwa kila mfanya mauzo mpaka uyaondoe.",
+    "permissions.inviteLabel": "Mfanya mauzo huyu anaruhusiwa nini",
+    "permissions.editButton": "Ruhusa",
+    "permissions.saveButton": "Hifadhi",
+    "permissions.saved": "Ruhusa zimehifadhiwa.",
+    "permissions.saveFailed": "Imeshindwa kuhifadhi ruhusa. Jaribu tena.",
+    "permissions.standard": "Mfanya mauzo wa kawaida",
+    "permissions.plusList": "Pia: {list}",
+    "permissions.minusList": "Haruhusiwi: {list}",
+    "permissions.recordExpenses": "Kuandika matumizi",
+    "permissions.recordExpensesHint": "Anaandika matumizi ya duka na anaweza kurekebisha aliyoandika siku hiyo hiyo. Haoni daftari la matumizi wala la mtu mwingine.",
+    "permissions.receiveDeliveries": "Kuandika mizigo",
+    "permissions.receiveDeliveriesHint": "Anahesabu mzigo uliofika na kuutuma uidhinishwe. Bidhaa zinaingia pale wewe au meneja mnapoidhinisha na gharama zake.",
+    "permissions.processReturns": "Kupokea marejesho",
+    "permissions.processReturnsHint": "Anapokea bidhaa iliyorudishwa na kurejesha pesa, bidhaa kwa bidhaa. Nenosiri la punguzo bado linahitajika.",
+    "permissions.viewStock": "Kuona kiasi cha bidhaa",
+    "permissions.viewStockHint": "Anafungua ukurasa wa Bidhaa kuona idadi tu. Hakuna bei, hakuna mabadiliko.",
+    "permissions.viewTodaySales": "Kuona mauzo ya leo",
+    "permissions.viewTodaySalesHint": "Anaona jumla ya mauzo ya leo ya tawi hili kwenye kaunta. Hakuna gharama wala faida.",
+    "permissions.sellOnCredit": "Kuuza kwa mkopo",
+    "permissions.sellOnCreditHint": "Kumruhusu mteja kuchukua bidhaa na kulipa baadaye.",
+    "permissions.takeRepayments": "Kupokea marejesho ya madeni",
+    "permissions.takeRepaymentsHint": "Kupokea pesa ya deni la mteja.",
+    "permissions.giveDiscounts": "Kutoa punguzo",
+    "permissions.giveDiscountsHint": "Kubadilisha bei au kutoa punguzo. Nenosiri la punguzo bado linahitajika.",
+    "expenses.ownIntro": "Uliyoandika wewe. Unaweza kurekebisha siku ile ile uliyoandika.",
+    "expenses.dateStaffWindow": "Unaweza kuandika matumizi ya siku 7 zilizopita tu. Ya zamani zaidi aandike mmiliki.",
+    "returns.findOrderPrompt": "Weka namba ya oda iliyo kwenye risiti:",
+    "returns.orderNotFound": "Hakuna mauzo ya oda {order} kwenye kifaa hiki.",
+    "pos.returnButton": "Rudisha bidhaa",
+    "pos.todayTitle": "Leo kwenye tawi hili",
+    "pos.todaySales": "Mauzo ya leo",
+    "pos.todayTakings": "Pesa za leo",
+    "pos.todayNote": "Marejesho yameshaondolewa. Mauzo yaliyofutwa hayahesabiwi.",
+    "toast.creditNotAllowed": "Huruhusiwi kuuza kwa mkopo. Muulize mmiliki.",
+    "deliveryRequests.eyebrow": "Mzigo unaoingia",
+    "deliveryRequests.title": "Mizigo",
+    "deliveryRequests.intro": "Hesabu mzigo uliofika kisha utume uidhinishwe. Bidhaa zitaingia pale meneja au mmiliki atakapoidhinisha pamoja na gharama za muuzaji.",
+    "deliveryRequests.newButton": "Andika mzigo",
+    "deliveryRequests.listTitle": "Uliyotuma",
+    "deliveryRequests.empty": "Bado hujatuma chochote. Andika mzigo unapofika.",
+    "deliveryRequests.thDate": "Ulipokelewa",
+    "deliveryRequests.thSupplier": "Muuzaji",
+    "deliveryRequests.thReference": "Kumbukumbu",
+    "deliveryRequests.thProducts": "Bidhaa",
+    "deliveryRequests.thStatus": "Hali",
+    "deliveryRequests.thActions": "Vitendo",
+    "deliveryRequests.thRequestedBy": "Aliyehesabu",
+    "deliveryRequests.thInvoiceTotal": "Jumla ya ankara",
+    "deliveryRequests.status_pending": "Inasubiri idhini",
+    "deliveryRequests.status_approved": "Imeidhinishwa",
+    "deliveryRequests.status_rejected": "Imekataliwa",
+    "deliveryRequests.status_cancelled": "Imefutwa",
+    "deliveryRequests.editButton": "Hariri",
+    "deliveryRequests.cancelButton": "Futa",
+    "deliveryRequests.cancelConfirm": "Futa mzigo huu kutoka {supplier}? Hautaidhinishwa.",
+    "deliveryRequests.cancelled": "Mzigo umefutwa.",
+    "deliveryRequests.approveButton": "Idhinisha",
+    "deliveryRequests.rejectButton": "Kataa",
+    "deliveryRequests.pendingEyebrow": "Kutoka kwa wafanyakazi",
+    "deliveryRequests.pendingTitle": "Inasubiri idhini",
+    "deliveryRequests.dialogTitle": "Andika mzigo",
+    "deliveryRequests.dialogTitleEdit": "Hariri mzigo huu",
+    "deliveryRequests.supplierLabel": "Muuzaji",
+    "deliveryRequests.supplierPlaceholder": "mfano Festive Ltd",
+    "deliveryRequests.referenceLabel": "Ankara au kumbukumbu (si lazima)",
+    "deliveryRequests.dateLabel": "Tarehe ya kupokea",
+    "deliveryRequests.invoiceTotalLabel": "Jumla ya ankara (si lazima)",
+    "deliveryRequests.noteLabel": "Maelezo (si lazima)",
+    "deliveryRequests.linesTitle": "Kilichofika",
+    "deliveryRequests.searchLabel": "Tafuta bidhaa",
+    "deliveryRequests.searchPlaceholder": "Tafuta bidhaa",
+    "deliveryRequests.searchNoResults": "Hakuna bidhaa inayolingana.",
+    "deliveryRequests.qtyLabel": "Idadi",
+    "deliveryRequests.removeLine": "Ondoa bidhaa hii",
+    "deliveryRequests.lineNone": "Bado hakuna bidhaa. Tafuta hapo juu kisha gusa kuiongeza.",
+    "deliveryRequests.needSupplier": "Andika aliyeleta mzigo.",
+    "deliveryRequests.needLines": "Ongeza angalau bidhaa moja na idadi yake.",
+    "deliveryRequests.sendButton": "Tuma iidhinishwe",
+    "deliveryRequests.sent": "Imetumwa kuidhinishwa.",
+    "deliveryRequests.updated": "Mzigo umesasishwa.",
+    "deliveryRequests.saveFailed": "Imeshindwa kuhifadhi. Jaribu tena.",
+    "deliveryRequests.alreadyDecided": "Mtu mwingine ameshaushughulikia mzigo huu.",
+    "deliveryRequests.rejectPrompt": "Kwa nini unakataa mzigo huu kutoka {supplier}?",
+    "deliveryRequests.rejectNeedsReason": "Toa sababu, ili ajue la kurekebisha.",
+    "deliveryRequests.rejected": "Mzigo umekataliwa.",
+    "deliveryRequests.switchBranch": "Nenda kwenye tawi hilo kwanza, kisha idhinisha.",
     "staff.revokeButton": "Ondoa",
     "staff.rosterEmpty": "Hakuna mfanyakazi aliyekubali mwaliko bado.",
     "staff.allStoresLabel": "Maduka yote",
@@ -3694,7 +3881,12 @@ function renderInventory() {
       const status = stockStatus(product);
       const label = status === "out" ? t("inventory.stockOut") : status === "low" ? t("inventory.stockLow") : t("inventory.stockHealthy");
       return `<tr>
-        <td><button class="link-button" type="button" data-view-movement="${product.id}">${esc(productDisplayLabel(product))}</button></td>
+        <td>${isManagerOrOwnerRole()
+          ? `<button class="link-button" type="button" data-view-movement="${product.id}">${esc(productDisplayLabel(product))}</button>`
+          // The movement history reads the stock ledger and the purchase book,
+          // neither of which a cashier may read. A name that opens an empty
+          // dialog is worse than a name.
+          : esc(productDisplayLabel(product))}</td>
         <td>${esc(product.category)}</td>
         <td>${esc(product.brand || "-")}</td>
         <td>${esc(product.supplier || "-")}</td>
@@ -3704,7 +3896,12 @@ function renderInventory() {
         <td class="table-actions">
           ${isOwnerRole() ? `<button class="ghost-button compact" data-edit-product="${product.id}">${t("inventory.edit")}</button>` : ""}
           ${isManagerOrOwnerRole() ? `<button class="ghost-button compact" data-adjust-product="${product.id}">${t("adjust.action")}</button>` : ""}
-          <button class="ghost-button compact" data-restock-product="${product.id}">${t("inventory.restock")}</button>
+          ${isManagerOrOwnerRole()
+            // A cashier with viewStock looks; stock arrives through a delivery
+            // request that a manager or the owner approves
+            // (DESIGN-permissions.md 4), not through this button.
+            ? `<button class="ghost-button compact" data-restock-product="${product.id}">${t("inventory.restock")}</button>`
+            : ""}
           ${activeStores().length > 1 && isManagerOrOwnerRole() ? `<button class="ghost-button compact" data-transfer-product="${product.id}">${t("inventory.transfer")}</button>` : ""}
           ${isOwnerRole() ? `<button class="ghost-button compact danger" data-delete-product="${product.id}">${t("inventory.delete")}</button>` : ""}
         </td>
@@ -4156,6 +4353,9 @@ function revalidateDiscountForCart() {
 }
 
 async function applyDiscount() {
+  // Hidden as well, but this is the choke point -- the controls are static
+  // markup and a stale handler can still reach them.
+  if (!hasStaffPermission("giveDiscounts")) return;
   const type = qs("#discountTypeSelect")?.value || "none";
   if (type === "none") {
     clearDiscountAndRender();
@@ -4214,7 +4414,7 @@ function renderCart() {
         <div class="cart-item-info">
           <strong>${esc(item.name)}</strong>
           <span class="muted">${money(item.sellingPrice)} each
-            ${item.priceType !== "dynamic" ? `<button class="link-button" data-edit-price="${item.id}" type="button">${t("cart.editPrice")}</button>` : ""}
+            ${item.priceType !== "dynamic" && hasStaffPermission("giveDiscounts") ? `<button class="link-button" data-edit-price="${item.id}" type="button">${t("cart.editPrice")}</button>` : ""}
           </span>
         </div>
         <div class="cart-item-controls">
@@ -4263,6 +4463,42 @@ function renderCart() {
     undoSaleButton.hidden = !isManagerOrOwnerRole();
     undoSaleButton.disabled = !state.lastSale;
   }
+}
+
+// Today's takings for the branch this till is on -- the viewTodaySales
+// permission. Sales are already readable by every cashier; this only decides
+// whether the screen adds them up. No cost, no profit, no other branch.
+function renderPosToday() {
+  const panel = qs("#posTodayPanel");
+  const body = qs("#posTodayBody");
+  if (!panel || !body) return;
+  if (!isCashierWith("viewTodaySales")) {
+    body.innerHTML = "";
+    return;
+  }
+  const today = new Date();
+  const scoped = (state.sales || []).filter((sale) => {
+    if (sale.voided) return false;
+    if (state.currentStoreId && state.currentStoreId !== "all" && sale.storeId !== state.currentStoreId) return false;
+    const at = saleTimestamp(sale);
+    return at ? isSameDay(at, today) : false;
+  });
+  const takings = scoped.reduce((sum, sale) => sum + saleNetTotal(sale), 0);
+  const byMethod = new Map();
+  for (const sale of scoped) {
+    const method = sale.paymentMethod || "cash";
+    byMethod.set(method, (byMethod.get(method) || 0) + saleNetTotal(sale));
+  }
+  const methodRows = [...byMethod.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([method, amount]) =>
+      `<div class="pos-today-row"><span>${esc(paymentMethodLabel(method))}</span><strong>${money(amount)}</strong></div>`)
+    .join("");
+  body.innerHTML = `
+    <div class="pos-today-row"><span>${t("pos.todaySales")}</span><strong>${scoped.length}</strong></div>
+    <div class="pos-today-row"><span>${t("pos.todayTakings")}</span><strong>${money(takings)}</strong></div>
+    ${methodRows}
+    <p class="muted">${t("pos.todayNote")}</p>`;
 }
 
 function renderPos() {
@@ -5276,7 +5512,7 @@ function buildStaffOrderCard(sale) {
     }
     <div class="payment-summary-row"><strong>${t("reports.staffOrderLookupTotalLabel")}</strong><strong>${money(sale.total)}</strong></div>
     ${
-      !sale.voided && isManagerOrOwnerRole()
+      !sale.voided && hasStaffPermission("processReturns")
         ? `<div class="button-row end"><button class="ghost-button compact" type="button" data-return-sale="${esc(sale.id)}">${t("returns.processButton")}</button></div>`
         : ""
     }
@@ -5286,6 +5522,9 @@ function buildStaffOrderCard(sale) {
 function openReturnDialog(saleId) {
   const sale = state.sales.find((entry) => entry.id === saleId);
   if (!sale) return;
+  // Managers and owners always; a cashier only where the owner has granted it.
+  // firestore.rules asks the same question of the write.
+  if (!hasStaffPermission("processReturns")) return;
   state.pendingReturnSaleId = saleId;
   const returnableItems = saleReturnableItems(sale);
   qs("#returnOrderLabel").textContent = `#${sale.orderNumber || ""}`;
@@ -5308,6 +5547,25 @@ function openReturnDialog(saleId) {
         ? "returns.noItemsSelected"
         : "returns.servicesNotReturnable")}</p>`;
   qs("#returnDialog").showModal();
+}
+
+// A return at the till, for a cashier who has no Reports screen to find the
+// sale on. The order number is what a customer brings back with them.
+async function openReturnFromTill() {
+  if (!hasStaffPermission("processReturns")) return;
+  const raw = await askText(t("returns.findOrderPrompt"), { numeric: true });
+  if (raw === null) return;
+  const orderNumber = String(raw).trim();
+  if (!orderNumber) return;
+  const match = state.sales
+    .filter((entry) => String(entry.orderNumber || "") === orderNumber
+      && !entry.voided
+      && (!state.currentStoreId || state.currentStoreId === "all" || entry.storeId === state.currentStoreId))
+    .sort((a, b) => (saleTimestamp(b)?.getTime() || 0) - (saleTimestamp(a)?.getTime() || 0))[0];
+  // Bounded by what this device holds, so say that rather than "no such order":
+  // an old sale may simply be past the window this till subscribes to.
+  if (!match) return showToast(t("returns.orderNotFound", { order: orderNumber }));
+  openReturnDialog(match.id);
 }
 
 async function confirmProcessReturn() {
@@ -6184,7 +6442,7 @@ async function downloadAccountBackup() {
     // restoring last month's faults would help nobody.
     const rootCollections = ["products", "sales", "stores", "staff", "members", "shifts",
                              "customers", "transfers", "auditLogs", "monthlyReports",
-                             "purchases", "expenses", "deliveries", "suppliers",
+                             "purchases", "expenses", "deliveries", "deliveryRequests", "suppliers",
                              "purchaseReturns", "productCosts", "productCostHistory",
                              "stockMovements", "services"];
     const [profileSnap, ...collectionSnaps] = await Promise.all([
@@ -6377,7 +6635,9 @@ function renderCustomerAccounts() {
         <td><span class="status ${statusClass}">${daysLabel}</span></td>
         <td>${customer.creditLimit != null ? money(customer.creditLimit) : t("customers.noLimit")}</td>
         <td class="table-actions">
-          <button class="ghost-button compact" type="button" data-record-payment="${customer.id}">${t("customers.recordPayment")}</button>
+          ${hasStaffPermission("takeRepayments")
+            ? `<button class="ghost-button compact" type="button" data-record-payment="${customer.id}">${t("customers.recordPayment")}</button>`
+            : ""}
           <button class="ghost-button compact" type="button" data-remind-customer="${customer.id}">${t("customers.remindButton")}</button>
           ${isManagerOrOwnerRole() ? `<button class="ghost-button compact" type="button" data-set-credit-limit="${customer.id}">${t("customers.setLimitButton")}</button>` : ""}
         </td>
@@ -6554,10 +6814,15 @@ function summariseLandedForMonth(deliveries, monthKey) {
 async function subscribeToExpenses() {
   if (!state.db || !state.user || !state.businessOwnerUid) return;
   if (state.unsubscribeExpenses) state.unsubscribeExpenses();
-  // A cashier is refused this collection by firestore.rules. Subscribing anyway
-  // would put a permission-denied in every cashier's console on every sign-in
-  // and teach everyone to ignore that error.
-  if (!isManagerOrOwnerRole()) {
+  // A cashier with no permission is refused this collection by
+  // firestore.rules. Subscribing anyway would put a permission-denied in every
+  // cashier's console on every sign-in and teach everyone to ignore that error.
+  //
+  // A cashier who MAY record expenses reads their own entries and nothing else,
+  // so the query below carries recordedByUid: the rule cannot be proven without
+  // it, and Firestore refuses the whole query rather than trimming it.
+  const ownEntriesOnly = !isManagerOrOwnerRole();
+  if (ownEntriesOnly && !isCashierWith("recordExpenses")) {
     state.expenses = [];
     return;
   }
@@ -6576,10 +6841,19 @@ async function subscribeToExpenses() {
     // createdAt desc); it is declared in firestore.indexes.json and must be
     // deployed BEFORE this build reaches a staff account, or their Accounts
     // screens fail with failed-precondition rather than merely showing less.
-    const expensesQuery = queryStoreIds === null
-      ? query(expensesRef, orderBy("createdAt", "desc"), limit(ACCOUNTS_HISTORY_LIMIT))
-      : query(expensesRef, where("storeId", "in", queryStoreIds),
-              orderBy("createdAt", "desc"), limit(ACCOUNTS_HISTORY_LIMIT));
+    if (ownEntriesOnly && !queryStoreIds?.length) {
+      state.expenses = [];
+      scheduleRenderAll();
+      return;
+    }
+    const expensesQuery = ownEntriesOnly
+      ? query(expensesRef, where("recordedByUid", "==", state.user.uid),
+              where("storeId", "in", queryStoreIds),
+              orderBy("createdAt", "desc"), limit(ACCOUNTS_HISTORY_LIMIT))
+      : queryStoreIds === null
+        ? query(expensesRef, orderBy("createdAt", "desc"), limit(ACCOUNTS_HISTORY_LIMIT))
+        : query(expensesRef, where("storeId", "in", queryStoreIds),
+                orderBy("createdAt", "desc"), limit(ACCOUNTS_HISTORY_LIMIT));
     state.unsubscribeExpenses = onSnapshot(
       expensesQuery,
       (snapshot) => {
@@ -6681,9 +6955,10 @@ function openExpenseDialog(expenseId) {
   if (!dialog || !form) return;
 
   const existing = expenseId ? state.expenses.find((item) => item.id === expenseId) : null;
-  // Editing is owner-only in firestore.rules. Opening the dialog for a manager
-  // would let them fill it in and then be refused on save.
-  if (existing && !isOwnerRole()) return;
+  // Refused before the form rather than after it. The owner corrects anything;
+  // staff correct their own entry on the day they wrote it, and canEditOwnExpense()
+  // is the same question firestore.rules asks on the write.
+  if (existing && !canEditOwnExpense(existing)) return;
   // Refused before the form rather than after it. A new expense has to name one
   // branch, and discovering that after the amount, category, date and note are
   // typed throws the work away -- every other check in saveExpense() is an
@@ -7954,6 +8229,16 @@ async function saveExpense(input) {
     setExpenseError("#expenseDateError", t("expenses.dateTooOld"));
     return;
   }
+  // Staff record the day's spending, not last month's. firestore.rules bounds a
+  // staff write to seven days -- slack for an entry typed offline and replayed
+  // when the phone next connects, because refusing it then would discard what
+  // they recorded, silently, long after they moved on. This is the readable
+  // half of that rule, so nobody meets it as a permission error.
+  if (!isOwnerRole()
+      && spentAt.getTime() < Date.now() - STAFF_EXPENSE_WINDOW_DAYS * 24 * 60 * 60 * 1000) {
+    setExpenseError("#expenseDateError", t("expenses.dateStaffWindow"));
+    return;
+  }
 
   const category = EXPENSE_CATEGORIES.includes(input.category) ? input.category : "other";
   // Falls back to the category's default rather than to a fixed "indirect", so a
@@ -8001,7 +8286,11 @@ async function saveExpense(input) {
     batch.set(doc(state.db, "users", state.businessOwnerUid, "expenses", id), payload, { merge: true });
     batch.set(doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs")),
       moneyAuditEntry(existing ? "EXPENSE_UPDATED" : "EXPENSE_RECORDED", {
-        expenseId: id, storeId: payload.storeId, amount, category
+        expenseId: id, storeId: payload.storeId, amount, category,
+        // What it said before. A correction the owner cannot compare against
+        // the original is not much of a trail -- and staff correct their own
+        // entries now (DESIGN-permissions.md 2).
+        ...(existing ? { previousAmount: safeNumber(existing.amount) } : {})
       }));
     batch.commit().catch((error) => {
       console.warn(error);
@@ -8065,6 +8354,39 @@ function recorderName(expense) {
   return String(member?.name || "").trim();
 }
 
+// The staff back-dating window, mirroring staffExpenseDateInWindow() in
+// firestore.rules. The two must agree: the rule is the boundary, this is the
+// message, and a screen that allows what the boundary refuses produces a
+// permission error nobody can act on.
+const STAFF_EXPENSE_WINDOW_DAYS = 7;
+
+// createdAt arrives as a Firestore Timestamp, a Date from an offline write, or
+// a string from an export. Normalised once, like saleTimestamp() beside it.
+function expenseCreatedAt(expense) {
+  const raw = expense?.createdAt;
+  if (!raw) return null;
+  if (typeof raw.toDate === "function") return raw.toDate();
+  const date = raw instanceof Date ? raw : new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+// Staff correct their OWN entry, on the day they wrote it --
+// DESIGN-permissions.md 2. The owner corrects anything, any day.
+//
+// firestore.rules allows 24 hours from createdAt, because rules cannot know a
+// shop's time zone. This is the tighter, human half of the same bound: the
+// local day. An entry still queued offline carries no server createdAt yet and
+// is, by definition, today's.
+function canEditOwnExpense(expense) {
+  if (!expense) return false;
+  if (isOwnerRole()) return true;
+  if (!state.user || expense.recordedByUid !== state.user.uid) return false;
+  if (!isManagerOrOwnerRole() && !isCashierWith("recordExpenses")) return false;
+  const written = expenseCreatedAt(expense);
+  if (!written) return true;
+  return localDateInputValue(written) === localDateInputValue(new Date());
+}
+
 function renderExpenses() {
   const view = qs("#expenses");
   const table = qs("#expensesTable");
@@ -8077,7 +8399,8 @@ function renderExpenses() {
   // anyway because subscribeToExpenses() does not subscribe.
   // Emptied, not merely skipped. A demoted manager's rows would otherwise sit
   // in a section hidden by CSS with every wages figure still in the DOM.
-  if (!isManagerOrOwnerRole()) {
+  const ownEntriesOnly = !isManagerOrOwnerRole();
+  if (ownEntriesOnly && !isCashierWith("recordExpenses")) {
     table.innerHTML = "";
     totals.innerHTML = "";
     return;
@@ -8096,7 +8419,7 @@ function renderExpenses() {
   const monthKey = state.expenseMonthSelection;
   const summary = summariseExpenses(scoped, monthKey);
 
-  totals.innerHTML = [
+  const totalTiles = [
     controlTile(t("expenses.monthTotal"), money(summary.total), summary.total > 0 ? "warn" : "",
       t("expenses.monthCount", { count: String(summary.count) })),
     // The docx section 9 split. Two tiles rather than one, because they are two
@@ -8117,7 +8440,22 @@ function renderExpenses() {
       summary.topCategory ? money(summary.topAmount) : "")
   ].join("");
 
-  renderLandedCostSection(monthKey);
+  // The books, or their own entries -- never both. A cashier who records
+  // expenses sees what they recorded and no totals: no month figure, no wages,
+  // no landed costs. The subscription already carries nothing else; this is the
+  // second half of the same decision rather than the boundary, which is
+  // firestore.rules.
+  if (ownEntriesOnly) {
+    totals.innerHTML = "";
+    const landedPanel = qs("#expenseLandedPanel");
+    if (landedPanel) landedPanel.hidden = true;
+  } else {
+    totals.innerHTML = totalTiles;
+    renderLandedCostSection(monthKey);
+  }
+  setDynamicText("#expensesIntro",
+    t(ownEntriesOnly ? "expenses.ownIntro" : "expenses.intro"),
+    ownEntriesOnly ? "expenses.ownIntro" : "expenses.intro");
 
   const rows = scoped
     .filter((expense) => {
@@ -8150,7 +8488,10 @@ function renderExpenses() {
       <td><strong>${money(safeNumber(expense.amount))}</strong></td>
       <td>${canEdit ? `
         <button class="ghost-button compact" type="button" data-edit-expense="${esc(expense.id)}">${esc(t("expenses.edit"))}</button>
-        <button class="ghost-button compact" type="button" data-delete-expense="${esc(expense.id)}">${esc(t("expenses.delete"))}</button>` : ""}</td>
+        <button class="ghost-button compact" type="button" data-delete-expense="${esc(expense.id)}">${esc(t("expenses.delete"))}</button>`
+        : canEditOwnExpense(expense)
+          ? `<button class="ghost-button compact" type="button" data-edit-expense="${esc(expense.id)}">${esc(t("expenses.edit"))}</button>`
+          : ""}</td>
     </tr>`;
   }).join("");
 }
@@ -8514,6 +8855,16 @@ async function receiveDelivery(input = {}) {
     cost: doc(state.db, ...root, "productCosts", line.productId)
   }));
 
+  // Approving a cashier's delivery request happens INSIDE this transaction, not
+  // beside it. Two managers opening the same request would otherwise each
+  // receive it, and the shop would hold twice the stock that arrived; the read
+  // below is what makes the second one lose. firestore.rules requires the same
+  // pairing from the other side -- a request cannot be marked approved unless
+  // the delivery it names lands in the same write.
+  const requestRef = input.requestId
+    ? doc(state.db, ...root, "deliveryRequests", String(input.requestId))
+    : null;
+
   try {
     const attempt = runTransaction(state.db, async (transaction) => {
       const productSnaps = await Promise.all(refs.map((r) => transaction.get(r.product)));
@@ -8522,6 +8873,10 @@ async function receiveDelivery(input = {}) {
       // the first write in a transaction, so deferring this to where the
       // balance is written would fail every credit delivery.
       const supplierSnap = supplierRef ? await transaction.get(supplierRef) : null;
+      const requestSnap = requestRef ? await transaction.get(requestRef) : null;
+      if (requestRef && (!requestSnap.exists() || requestSnap.data().status !== "pending")) {
+        throw new Error("REQUEST_DECIDED");
+      }
 
       // Every existence check before any write, so a delivery naming a product
       // that has since been deleted refuses whole rather than half-applying.
@@ -8649,6 +9004,15 @@ async function receiveDelivery(input = {}) {
           amount: prep.header.totalCost,
           itemCount: prep.header.lineCount
         }));
+
+      if (requestRef) {
+        transaction.update(requestRef, {
+          status: "approved",
+          decidedByUid: state.user?.uid || null,
+          decidedAt: serverTimestamp(),
+          deliveryId: deliveryRef.id
+        });
+      }
     });
 
     // Unlike a sale, a delivery that times out is NOT quietly accepted: there is
@@ -8659,6 +9023,11 @@ async function receiveDelivery(input = {}) {
     if (outcome === "unconfirmed") return { ok: false, error: "unconfirmed", errorIndex: -1 };
   } catch (error) {
     console.warn("[receiveDelivery]", error);
+    // Someone else decided this request first. Named, because "the delivery
+    // failed" would send the manager back to receive it a second time.
+    if (String(error?.message || "") === "REQUEST_DECIDED") {
+      return { ok: false, error: "requestDecided", errorIndex: -1 };
+    }
     return { ok: false, error: "transactionFailed", errorIndex: -1, cause: error };
   }
 
@@ -8757,6 +9126,7 @@ function deliveryErrorMessage(result, lines) {
     case "noStore": return t("deliveries.errNoStore");
     case "needsConnection": return t("deliveries.errNeedsConnection");
     case "unconfirmed": return t("deliveries.errUnconfirmed");
+    case "requestDecided": return t("deliveryRequests.alreadyDecided");
     case "noDelivery": return t("deliveries.errNoDelivery");
     case "deleteFailed": return t("deliveries.errDeleteFailed");
     case "manualMismatch": {
@@ -8875,6 +9245,391 @@ function summariseDeliveries(deliveries, monthKey) {
     units += safeNumber(delivery.lineCount);
   }
   return { total, landed, units, count };
+}
+
+// Deliveries a cashier has counted in, waiting for someone who may see cost --
+// DESIGN-permissions.md 4.
+//
+// Two shapes of one collection: a manager or the owner watches the branch,
+// because they are who decides; a cashier watches only what they asked for, and
+// firestore.rules cannot prove that read without the requestedByUid filter.
+const DELIVERY_REQUEST_LIMIT = 200;
+
+async function subscribeToDeliveryRequests() {
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
+  if (state.unsubscribeDeliveryRequests) state.unsubscribeDeliveryRequests();
+  state.unsubscribeDeliveryRequests = null;
+
+  const ownRequestsOnly = !isManagerOrOwnerRole();
+  if (ownRequestsOnly && !isCashierWith("receiveDeliveries")) {
+    state.deliveryRequests = [];
+    return;
+  }
+  try {
+    const { collection, limit, onSnapshot, orderBy, query, where } = state.firebaseApi.firestore;
+    const ref = collection(state.db, "users", state.businessOwnerUid, "deliveryRequests");
+    const queryStoreIds = await resolveQueryStoreIds();
+    if (queryStoreIds !== null && queryStoreIds.length === 0) {
+      state.deliveryRequests = [];
+      scheduleRenderAll();
+      return;
+    }
+    let requestsQuery;
+    if (ownRequestsOnly) {
+      if (!queryStoreIds?.length) {
+        state.deliveryRequests = [];
+        scheduleRenderAll();
+        return;
+      }
+      requestsQuery = query(ref, where("requestedByUid", "==", state.user.uid),
+        where("storeId", "in", queryStoreIds),
+        orderBy("createdAt", "desc"), limit(DELIVERY_REQUEST_LIMIT));
+    } else if (queryStoreIds === null) {
+      requestsQuery = query(ref, orderBy("createdAt", "desc"), limit(DELIVERY_REQUEST_LIMIT));
+    } else {
+      requestsQuery = query(ref, where("storeId", "in", queryStoreIds),
+        orderBy("createdAt", "desc"), limit(DELIVERY_REQUEST_LIMIT));
+    }
+    state.unsubscribeDeliveryRequests = onSnapshot(
+      requestsQuery,
+      (snapshot) => {
+        state.deliveryRequests = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        scheduleRenderAll();
+      },
+      (error) => {
+        console.warn("[deliveryRequests listener]", error.code || error, "queryStoreIds=", queryStoreIds);
+      }
+    );
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
+function storeDeliveryRequests() {
+  if (!state.currentStoreId || state.currentStoreId === "all") return state.deliveryRequests || [];
+  return (state.deliveryRequests || []).filter((request) => request.storeId === state.currentStoreId);
+}
+
+function deliveryRequestStatus(request) {
+  return String(request?.status || "pending");
+}
+
+function deliveryRequestUnits(request) {
+  return (request?.lines || []).reduce((sum, line) => sum + safeNumber(line.qty), 0);
+}
+
+function deliveryRequestLinesLabel(request) {
+  const lines = request?.lines || [];
+  if (!lines.length) return "-";
+  const names = lines.slice(0, 2).map((line) => line.name || productNameById(line.productId) || "?");
+  const rest = lines.length - names.length;
+  return rest > 0 ? `${names.join(", ")} +${rest}` : names.join(", ");
+}
+
+// The cashier's own screen. Their requests, and nothing about cost.
+function renderDeliveryRequests() {
+  const table = qs("#deliveryRequestsTable");
+  if (!table) return;
+  if (!isCashierWith("receiveDeliveries")) {
+    table.innerHTML = "";
+    return;
+  }
+  const rows = storeDeliveryRequests()
+    .slice()
+    .sort((a, b) => (deliveryReceivedAt(b)?.getTime() || 0) - (deliveryReceivedAt(a)?.getTime() || 0));
+  if (!rows.length) {
+    table.innerHTML = `<tr><td colspan="6" class="empty-state">${t("deliveryRequests.empty")}</td></tr>`;
+    return;
+  }
+  table.innerHTML = rows.map((request) => {
+    const status = deliveryRequestStatus(request);
+    const at = deliveryReceivedAt(request);
+    const pending = status === "pending";
+    return `<tr>
+      <td>${at ? at.toLocaleDateString() : "-"}</td>
+      <td>${esc(request.supplierName || "-")}</td>
+      <td>${esc(request.reference || "-")}</td>
+      <td>${esc(deliveryRequestLinesLabel(request))} <span class="muted">${deliveryRequestUnits(request)}</span></td>
+      <td><span class="status ${pending ? "" : status === "approved" ? "healthy" : "out"}">${t(`deliveryRequests.status_${status}`)}</span>${
+        status === "rejected" && request.rejectReason
+          ? ` <span class="muted">${esc(request.rejectReason)}</span>`
+          : ""}</td>
+      <td class="table-actions">${pending ? `
+        <button class="ghost-button compact" type="button" data-edit-request="${esc(request.id)}">${t("deliveryRequests.editButton")}</button>
+        <button class="ghost-button compact danger" type="button" data-cancel-request="${esc(request.id)}">${t("deliveryRequests.cancelButton")}</button>` : "-"}</td>
+    </tr>`;
+  }).join("");
+}
+
+// The approver's list, inside Purchases beside the deliveries themselves.
+function renderDeliveryRequestsPending() {
+  const block = qs("#deliveryRequestsPendingBlock");
+  const table = qs("#deliveryRequestsPendingTable");
+  if (!block || !table) return;
+  if (!isManagerOrOwnerRole()) {
+    block.hidden = true;
+    table.innerHTML = "";
+    return;
+  }
+  const rows = storeDeliveryRequests().filter((request) => deliveryRequestStatus(request) === "pending");
+  // Hidden when there is nothing waiting: an empty panel on every Purchases
+  // visit teaches people to stop reading it.
+  block.hidden = rows.length === 0;
+  if (!rows.length) {
+    table.innerHTML = "";
+    return;
+  }
+  table.innerHTML = rows.map((request) => {
+    const at = deliveryReceivedAt(request);
+    return `<tr>
+      <td>${at ? at.toLocaleDateString() : "-"}</td>
+      <td>${esc(request.requestedByName || "-")}</td>
+      <td>${esc(request.supplierName || "-")}</td>
+      <td>${esc(request.reference || "-")}</td>
+      <td>${esc(deliveryRequestLinesLabel(request))} <span class="muted">${deliveryRequestUnits(request)}</span></td>
+      <td>${request.invoiceTotal ? money(safeNumber(request.invoiceTotal)) : "-"}</td>
+      <td class="table-actions">
+        <button class="primary-button compact" type="button" data-approve-request="${esc(request.id)}">${t("deliveryRequests.approveButton")}</button>
+        <button class="ghost-button compact danger" type="button" data-reject-request="${esc(request.id)}">${t("deliveryRequests.rejectButton")}</button>
+      </td>
+    </tr>`;
+  }).join("");
+}
+
+// --- the cashier's dialog ---------------------------------------------------
+
+function emptyDeliveryRequestDraft() {
+  return { id: "", lines: [] };
+}
+
+function openDeliveryRequestDialog(requestId = "") {
+  if (!isCashierWith("receiveDeliveries")) return;
+  const dialog = qs("#deliveryRequestDialog");
+  const form = qs("#deliveryRequestForm");
+  if (!dialog || !form) return;
+  // One branch, named before anything is typed -- the same refusal
+  // openDeliveryDialog() makes.
+  if (!state.currentStoreId || state.currentStoreId === "all") {
+    showToast(t("deliveries.errNoStore"));
+    return;
+  }
+  const existing = requestId ? (state.deliveryRequests || []).find((item) => item.id === requestId) : null;
+  if (requestId && (!existing || deliveryRequestStatus(existing) !== "pending")) {
+    showToast(t("deliveryRequests.alreadyDecided"));
+    return;
+  }
+  state.deliveryRequestDraft = {
+    id: existing?.id || "",
+    lines: (existing?.lines || []).map((line) => ({
+      productId: String(line.productId || ""),
+      name: line.name || productNameById(line.productId) || "",
+      qty: safeNumber(line.qty)
+    }))
+  };
+  form.reset();
+  form.elements.supplierName.value = existing?.supplierName || "";
+  form.elements.reference.value = existing?.reference || "";
+  form.elements.note.value = existing?.note || "";
+  form.elements.invoiceTotal.value = existing?.invoiceTotal ? String(safeNumber(existing.invoiceTotal)) : "";
+  const at = existing ? deliveryReceivedAt(existing) : new Date();
+  form.elements.receivedAt.value = localDateInputValue(at || new Date());
+  setDynamicText("#deliveryRequestDialogTitle",
+    t(existing ? "deliveryRequests.dialogTitleEdit" : "deliveryRequests.dialogTitle"),
+    existing ? "deliveryRequests.dialogTitleEdit" : "deliveryRequests.dialogTitle");
+  setFieldError("deliveryRequestError", "");
+  const search = qs("#deliveryRequestSearch");
+  if (search) search.value = "";
+  renderDeliveryRequestDraft();
+  dialog.showModal();
+}
+
+// The picker is a search rather than a <select>: a branch can hold thousands of
+// products, and an option list that long is unusable on the phone this is used
+// on -- the same reason the till searches instead of listing.
+function renderDeliveryRequestSearch() {
+  const results = qs("#deliveryRequestSearchResults");
+  if (!results) return;
+  const term = String(qs("#deliveryRequestSearch")?.value || "").trim().toLowerCase();
+  if (!term) {
+    results.innerHTML = "";
+    return;
+  }
+  const chosen = new Set((state.deliveryRequestDraft?.lines || []).map((line) => line.productId));
+  const matches = storeProducts()
+    .filter((product) => !chosen.has(product.id))
+    .filter((product) => `${product.name || ""} ${product.barcode || ""} ${product.sku || ""}`.toLowerCase().includes(term))
+    .slice(0, 8);
+  results.innerHTML = matches.length
+    ? matches.map((product) =>
+        `<button class="ghost-button compact" type="button" data-add-request-product="${esc(product.id)}">${esc(productDisplayLabel(product))}</button>`).join("")
+    : `<span class="muted">${t("deliveryRequests.searchNoResults")}</span>`;
+}
+
+function renderDeliveryRequestDraft() {
+  const container = qs("#deliveryRequestLines");
+  if (!container) return;
+  const lines = state.deliveryRequestDraft?.lines || [];
+  container.innerHTML = lines.length
+    ? lines.map((line, index) => `<div class="request-line">
+        <span class="request-line-name">${esc(line.name || productNameById(line.productId) || "-")}</span>
+        <label><span>${t("deliveryRequests.qtyLabel")}</span>
+          <input type="number" min="1" step="1" inputmode="numeric" data-request-qty="${index}" value="${esc(String(line.qty || ""))}" autocomplete="off" />
+        </label>
+        <button class="icon-button" type="button" data-remove-request-line="${index}" aria-label="${t("deliveryRequests.removeLine")}">&times;</button>
+      </div>`).join("")
+    : `<p class="muted">${t("deliveryRequests.lineNone")}</p>`;
+  renderDeliveryRequestSearch();
+}
+
+function addDeliveryRequestProduct(productId) {
+  const draft = state.deliveryRequestDraft;
+  if (!draft) return;
+  if (draft.lines.length >= DELIVERY_MAX_LINES) {
+    setFieldError("deliveryRequestError", t("deliveries.errTooManyLines", { max: String(DELIVERY_MAX_LINES) }));
+    return;
+  }
+  if (draft.lines.some((line) => line.productId === productId)) return;
+  const product = state.products.find((item) => item.id === productId);
+  if (!product) return;
+  draft.lines.push({ productId, name: product.name || "", qty: 1 });
+  const search = qs("#deliveryRequestSearch");
+  if (search) search.value = "";
+  setFieldError("deliveryRequestError", "");
+  renderDeliveryRequestDraft();
+}
+
+async function saveDeliveryRequest() {
+  const draft = state.deliveryRequestDraft;
+  const form = qs("#deliveryRequestForm");
+  const button = qs("#saveDeliveryRequestButton");
+  if (!draft || !form || !isCashierWith("receiveDeliveries")) return;
+  if (button?.disabled) return;
+
+  const supplierName = String(form.elements.supplierName?.value || "").trim().slice(0, 60);
+  if (!supplierName) return setFieldError("deliveryRequestError", t("deliveryRequests.needSupplier"));
+  const lines = draft.lines
+    .map((line) => ({ productId: line.productId, name: String(line.name || "").slice(0, 120), qty: safeNumber(line.qty) }))
+    .filter((line) => line.productId && line.qty > 0);
+  if (!lines.length) return setFieldError("deliveryRequestError", t("deliveryRequests.needLines"));
+
+  // Local midday, like every other date in this app: new Date("2026-09-12") is
+  // UTC midnight, which is the previous day west of Greenwich.
+  let receivedAt = new Date();
+  const raw = String(form.elements.receivedAt?.value || "").trim();
+  if (raw) {
+    const [y, m, d] = raw.split("-").map(Number);
+    const parsed = new Date(y, (m || 1) - 1, d || 1, 12, 0, 0);
+    if (!Number.isNaN(parsed.getTime())) receivedAt = parsed;
+  }
+  const invoiceTotal = clampNonNegativeNumber(form.elements.invoiceTotal?.value, MAX_MONEY);
+  const reference = String(form.elements.reference?.value || "").trim().slice(0, 60);
+  const note = String(form.elements.note?.value || "").trim().slice(0, 200);
+
+  if (button) button.disabled = true;
+  try {
+    const { collection, doc, serverTimestamp, setDoc, updateDoc, Timestamp } = state.firebaseApi.firestore;
+    const root = ["users", state.businessOwnerUid, "deliveryRequests"];
+    const body = {
+      supplierName,
+      ...(reference ? { reference } : {}),
+      ...(note ? { note } : {}),
+      ...(invoiceTotal ? { invoiceTotal } : {}),
+      receivedAt: Timestamp.fromDate(receivedAt),
+      lines
+    };
+    if (draft.id) {
+      // Only a pending request moves, and firestore.rules pins the branch, the
+      // requester and createdAt across the edit.
+      await updateDoc(doc(state.db, ...root, draft.id), { ...body, updatedAt: serverTimestamp() });
+    } else {
+      await setDoc(doc(collection(state.db, ...root)), {
+        storeId: state.currentStoreId,
+        requestedByUid: state.user.uid,
+        requestedByName: String(state.currentUserName || "").trim().slice(0, 80) || "Staff",
+        status: "pending",
+        ...body,
+        createdAt: serverTimestamp()
+      });
+    }
+    qs("#deliveryRequestDialog")?.close();
+    state.deliveryRequestDraft = emptyDeliveryRequestDraft();
+    showToast(t(draft.id ? "deliveryRequests.updated" : "deliveryRequests.sent"));
+  } catch (error) {
+    console.warn(error);
+    setFieldError("deliveryRequestError", t("deliveryRequests.saveFailed"));
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function cancelDeliveryRequest(requestId) {
+  const request = (state.deliveryRequests || []).find((item) => item.id === requestId);
+  if (!request || deliveryRequestStatus(request) !== "pending") return;
+  if (!await askConfirm(t("deliveryRequests.cancelConfirm", { supplier: request.supplierName || "" }))) return;
+  try {
+    const { doc, serverTimestamp, updateDoc } = state.firebaseApi.firestore;
+    await updateDoc(doc(state.db, "users", state.businessOwnerUid, "deliveryRequests", requestId),
+      { status: "cancelled", updatedAt: serverTimestamp() });
+    showToast(t("deliveryRequests.cancelled"));
+  } catch (error) {
+    console.warn(error);
+    showToast(t("deliveryRequests.saveFailed"));
+  }
+}
+
+// --- the approver -----------------------------------------------------------
+
+function approveDeliveryRequest(requestId) {
+  if (!isManagerOrOwnerRole()) return;
+  const request = (state.deliveryRequests || []).find((item) => item.id === requestId);
+  if (!request || deliveryRequestStatus(request) !== "pending") return;
+  // The delivery is written against the branch currently selected, so approving
+  // from another one would put the stock in the wrong shop.
+  if (request.storeId !== state.currentStoreId) {
+    showToast(t("deliveryRequests.switchBranch"));
+    return;
+  }
+  openDeliveryDialog();
+  const dialog = qs("#deliveryDialog");
+  if (!dialog?.open) return;
+  state.approvingDeliveryRequestId = requestId;
+  const lines = (request.lines || []).slice(0, DELIVERY_MAX_LINES)
+    .map((line) => ({ productId: String(line.productId || ""), quantity: safeNumber(line.qty), goodsCost: "", manual: "" }));
+  if (lines.length) state.deliveryDraft.lines = lines;
+  const form = qs("#deliveryForm");
+  if (form) {
+    if (form.elements.supplierName) form.elements.supplierName.value = request.supplierName || "";
+    if (form.elements.reference) form.elements.reference.value = request.reference || "";
+    if (form.elements.note) form.elements.note.value = request.note || "";
+    const at = deliveryReceivedAt(request);
+    if (form.elements.receivedAt && at) form.elements.receivedAt.value = localDateInputValue(at);
+  }
+  renderDeliveryDialog();
+}
+
+async function rejectDeliveryRequest(requestId) {
+  if (!isManagerOrOwnerRole()) return;
+  const request = (state.deliveryRequests || []).find((item) => item.id === requestId);
+  if (!request || deliveryRequestStatus(request) !== "pending") return;
+  const raw = await askText(t("deliveryRequests.rejectPrompt", { supplier: request.supplierName || "" }));
+  if (raw === null) return;
+  const reason = String(raw).trim().slice(0, 200);
+  // The rules require one, and so does the cashier who has to do something
+  // about it.
+  if (!reason) return showToast(t("deliveryRequests.rejectNeedsReason"));
+  try {
+    const { doc, serverTimestamp, updateDoc } = state.firebaseApi.firestore;
+    await updateDoc(doc(state.db, "users", state.businessOwnerUid, "deliveryRequests", requestId), {
+      status: "rejected",
+      decidedByUid: state.user.uid,
+      decidedAt: serverTimestamp(),
+      rejectReason: reason
+    });
+    showToast(t("deliveryRequests.rejected"));
+  } catch (error) {
+    console.warn(error);
+    showToast(t("deliveryRequests.saveFailed"));
+  }
 }
 
 function renderDeliveries() {
@@ -9118,6 +9873,10 @@ function openDeliveryDialog() {
     showToast(t("deliveries.errNoStore"));
     return;
   }
+  // Cleared here rather than on close: approveDeliveryRequest() sets it
+  // immediately AFTER opening the dialog, so clearing it there would undo the
+  // approval it is about to make.
+  state.approvingDeliveryRequestId = "";
   state.deliveryDraft = emptyDeliveryDraft();
   const form = qs("#deliveryForm");
   if (form) {
@@ -9168,6 +9927,8 @@ async function submitDelivery() {
       // the box.
       amountPaid: String(form.elements.amountPaid?.value || "").trim(),
       paymentMethod: String(form.elements.paymentMethod?.value || "").trim(),
+      // Present only when this delivery is approving a cashier's request.
+      requestId: state.approvingDeliveryRequestId || "",
       lines: deliveryDraftLines(),
       costs: state.deliveryDraft.costs,
       basis: state.deliveryDraft.basis,
@@ -9190,6 +9951,7 @@ async function submitDelivery() {
     });
     qs("#deliveryDialog")?.close();
     state.deliveryDraft = emptyDeliveryDraft();
+    state.approvingDeliveryRequestId = "";
     renderAll();
     showToast(t("toast.deliveryRecorded", {
       count: String(prep.ok ? prep.header.lineCount : 0),
@@ -10708,6 +11470,9 @@ async function subscribeToTransfers() {
 }
 
 function openRecordPaymentDialog(customerId) {
+  // Withdrawn from this cashier: the rules refuse both the payment record and
+  // the decrease in the balance, so the dialog would only waste the typing.
+  if (!hasStaffPermission("takeRepayments")) return;
   const customer = state.customers.find((item) => item.id === customerId);
   if (!customer) return;
   state.pendingPaymentCustomerId = customerId;
@@ -13142,6 +13907,21 @@ async function resolveCurrentUserName(user, ownerUid) {
     || "Staff";
 }
 
+// Read with the same cached member document the role comes from, so sign-in
+// does not pay a second read for it.
+async function resolveCurrentPermissions(user, ownerUid) {
+  if (user.uid === ownerUid) return normalizeStaffPermissions(null);
+  try {
+    const memberSnap = await readOwnMemberDoc();
+    return normalizeStaffPermissions(memberSnap.exists() ? memberSnap.data().permissions : null);
+  } catch (error) {
+    // The defaults, never "everything granted" -- the same direction
+    // resolveCurrentUserRole() fails in.
+    console.warn("Could not resolve permissions; using the defaults.", error);
+    return normalizeStaffPermissions(null);
+  }
+}
+
 function isOwnerRole() {
   return state.currentUserRole === "owner";
 }
@@ -14824,7 +15604,7 @@ function stockLedgerDiscrepancies() {
 // directions. Money must not outlive the role that was allowed to see it.
 function resubscribeRoleGatedCollections() {
   for (const key of ["unsubscribeExpenses", "unsubscribePurchases", "unsubscribeDeliveries",
-                     "unsubscribeProductCostHistory"]) {
+                     "unsubscribeDeliveryRequests", "unsubscribeProductCostHistory"]) {
     if (state[key]) state[key]();
     state[key] = null;
   }
@@ -14842,6 +15622,7 @@ function resubscribeRoleGatedCollections() {
   subscribeToExpenses();
   subscribeToPurchases();
   subscribeToDeliveries();
+  subscribeToDeliveryRequests();
   invalidateProductCosts();
   subscribeToProductCostHistory();
 }
@@ -14867,10 +15648,22 @@ function subscribeToOwnMembership() {
           return;
         }
         const nextRole = data.role || "cashier";
-        if (nextRole !== state.currentUserRole) {
+        // Permissions are watched exactly as the role is, and for the same
+        // reason: a till tab stays open all day, and a permission the owner has
+        // just withdrawn must stop being offered on the next request rather
+        // than at the next reload. The rules refuse the write either way -- but
+        // a button that refuses in silence is the failure this app treats as a
+        // defect everywhere else.
+        const nextPermissions = normalizeStaffPermissions(data.permissions);
+        const permissionsChanged =
+          JSON.stringify(nextPermissions) !== JSON.stringify(state.currentPermissions || {});
+        if (nextRole !== state.currentUserRole || permissionsChanged) {
           state.currentUserRole = nextRole;
+          state.currentPermissions = nextPermissions;
           clearMemberDocCache();
           resubscribeRoleGatedCollections();
+          // renderAll() runs applyRoleViewVisibility(), which moves them off a
+          // screen they may no longer open.
           renderAll();
         }
       },
@@ -14880,6 +15673,7 @@ function subscribeToOwnMembership() {
         // one -- the same reasoning as resolveCurrentUserRole()'s default.
         console.warn("Could not watch membership; assuming least privilege.", error);
         state.currentUserRole = "cashier";
+        state.currentPermissions = normalizeStaffPermissions(null);
         resubscribeRoleGatedCollections();
         renderAll();
       }
@@ -14893,6 +15687,7 @@ async function handleMembershipEnded() {
   if (state.membershipEnded) return;
   state.membershipEnded = true;
   state.currentUserRole = null;
+  state.currentPermissions = {};
   renderAll();
   showToast(t("auth.accessRemoved"));
   try {
@@ -15018,6 +15813,7 @@ async function initFirebase() {
         state.graceAccessLogged = false;
         state.businessOwnerUid = await resolveBusinessOwnerUid(user);
         state.currentUserRole = await resolveCurrentUserRole(user, state.businessOwnerUid);
+        state.currentPermissions = await resolveCurrentPermissions(user, state.businessOwnerUid);
         state.currentUserName = await resolveCurrentUserName(user, state.businessOwnerUid);
         updateAuthUi();
         renderAll();
@@ -15051,6 +15847,7 @@ async function initFirebase() {
         subscribeToExpenses();
         subscribeToPurchases();
         subscribeToDeliveries();
+        subscribeToDeliveryRequests();
         invalidateProductCosts();
         subscribeToProductCostHistory();
         watchServerConnection();
@@ -15092,6 +15889,8 @@ async function initFirebase() {
         state.purchases = [];
         if (state.unsubscribeDeliveries) state.unsubscribeDeliveries();
         state.unsubscribeDeliveries = null;
+        if (state.unsubscribeDeliveryRequests) state.unsubscribeDeliveryRequests();
+        state.unsubscribeDeliveryRequests = null;
         state.deliveries = [];
         // No listener to detach any more -- costs are fetched on demand. The
         // figures still go, and so does the loaded flag: an empty map that
@@ -15128,7 +15927,9 @@ async function initFirebase() {
         state.currentStoreId = "";
         state.businessOwnerUid = "";
         state.currentUserRole = null;
+        state.currentPermissions = {};
         state.currentUserName = "";
+        state.deliveryRequests = [];
         state.deletionScheduledFor = null;
         renderDeletionBanner();
         clearMemberDocCache();
@@ -15752,6 +16553,78 @@ async function subscribeToMembers() {
   }
 }
 
+// One checklist, two places: the invite dialog and the roster's Permissions
+// dialog. Built from STAFF_PERMISSION_KEYS rather than written out, so a key
+// added to the defaults cannot be missing from the screen that grants it.
+function staffPermissionChecklistHtml(prefix, values) {
+  return STAFF_PERMISSION_KEYS.map((key) => `<label class="checkbox-row permission-row">
+      <input type="checkbox" class="${esc(prefix)}-permission" data-permission="${esc(key)}"${values[key] ? " checked" : ""} />
+      <span>
+        <span class="permission-name">${esc(t(`permissions.${key}`))}</span>
+        <span class="muted permission-hint">${esc(t(`permissions.${key}Hint`))}</span>
+      </span>
+    </label>`).join("");
+}
+
+function readStaffPermissionChecklist(prefix) {
+  const values = {};
+  qsa(`.${prefix}-permission`).forEach((box) => { values[box.dataset.permission] = box.checked; });
+  return normalizeStaffPermissions(values);
+}
+
+// What the roster shows under a cashier's role: what they hold BEYOND the
+// default, and what has been taken away from it. Listing all eight every time
+// would make the two that matter invisible.
+function staffPermissionSummary(member) {
+  const values = normalizeStaffPermissions(member?.permissions);
+  const added = STAFF_PERMISSION_KEYS.filter((key) => !STAFF_PERMISSION_DEFAULTS[key] && values[key]);
+  const removed = STAFF_PERMISSION_KEYS.filter((key) => STAFF_PERMISSION_DEFAULTS[key] && !values[key]);
+  if (!added.length && !removed.length) return t("permissions.standard");
+  const parts = [];
+  if (added.length) parts.push(t("permissions.plusList", { list: added.map((key) => t(`permissions.${key}`)).join(", ") }));
+  if (removed.length) parts.push(t("permissions.minusList", { list: removed.map((key) => t(`permissions.${key}`)).join(", ") }));
+  return parts.join(" · ");
+}
+
+function openStaffPermissionsDialog(memberId) {
+  if (!isOwnerRole()) return;
+  const member = (state.members || []).find((item) => item.id === memberId);
+  // Cashiers only: a manager already holds every one of these, and the rules
+  // ignore the map for them, so offering it would be a lie on screen.
+  if (!member || member.role !== "cashier") return;
+  const dialog = qs("#staffPermissionsDialog");
+  const list = qs("#staffPermissionsList");
+  if (!dialog || !list) return;
+  state.editingMemberId = memberId;
+  setDynamicText("#staffPermissionsName", member.name || member.email || "");
+  list.innerHTML = staffPermissionChecklistHtml("member", normalizeStaffPermissions(member.permissions));
+  dialog.showModal();
+}
+
+async function saveStaffPermissions() {
+  const memberId = state.editingMemberId;
+  if (!memberId || !isOwnerRole()) return;
+  const button = qs("#saveStaffPermissionsButton");
+  if (button?.disabled) return;
+  if (button) button.disabled = true;
+  try {
+    const { doc, updateDoc } = state.firebaseApi.firestore;
+    // Written straight onto the member document: firestore.rules already lets
+    // an owner write these, and the watcher on the staff member's own device
+    // picks the change up on the next snapshot.
+    await updateDoc(doc(state.db, "users", state.user.uid, "members", memberId),
+      { permissions: readStaffPermissionChecklist("member") });
+    qs("#staffPermissionsDialog")?.close();
+    state.editingMemberId = "";
+    showToast(t("permissions.saved"));
+  } catch (error) {
+    console.warn(error);
+    showToast(t("permissions.saveFailed"));
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 function renderStaffRoster() {
   const tbody = qs("#staffRosterTable");
   if (!tbody) return;
@@ -15763,9 +16636,14 @@ function renderStaffRoster() {
       return `<tr>
         <td>${esc(member.name || "-")}</td>
         <td>${esc(member.email || "-")}</td>
-        <td>${esc(member.role || "-")}</td>
+        <td>${esc(member.role || "-")}${member.role === "cashier"
+          ? `<div class="muted permission-summary">${esc(staffPermissionSummary(member))}</div>`
+          : ""}</td>
         <td>${esc(storesLabel)}</td>
         <td class="table-actions">
+          ${member.role === "cashier"
+            ? `<button class="ghost-button compact" type="button" data-member-permissions="${member.id}">${t("permissions.editButton")}</button>`
+            : ""}
           <button class="ghost-button compact danger" type="button" data-revoke-member="${member.id}">${t("staff.revokeButton")}</button>
         </td>
       </tr>`;
@@ -15928,10 +16806,22 @@ function openInviteStaffDialog() {
     .map((store) => `<label class="checkbox-row"><input type="checkbox" class="invite-store-checkbox" value="${store.id}" /> <span>${esc(store.name || t("storeSwitcher.fallbackName"))}</span></label>`)
     .join("");
   qsa(".invite-store-checkbox").forEach((cb) => { cb.disabled = false; });
+  const permissionList = qs("#inviteStaffPermissionList");
+  if (permissionList) {
+    permissionList.innerHTML = staffPermissionChecklistHtml("invite", normalizeStaffPermissions(null));
+  }
+  applyInvitePermissionVisibility();
   setFieldError("inviteStaffError", "");
   qs("#inviteStaffFormSection").hidden = false;
   qs("#inviteStaffResultSection").hidden = true;
   qs("#inviteStaffDialog").showModal();
+}
+
+// Cashiers only. A manager holds every permission already, so showing the
+// checklist for one would promise something the rules do not read.
+function applyInvitePermissionVisibility() {
+  const block = qs("#inviteStaffPermissions");
+  if (block) block.hidden = qs("#inviteStaffRole")?.value !== "cashier";
 }
 
 // Calls the proxy's owner-only /api/staff/invite (Phase 2). The proxy
@@ -15957,7 +16847,14 @@ async function sendStaffInvite() {
     const response = await fetch(new URL("/api/staff/invite", aiConfig.proxyUrl), {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({ email, role, storeIds: selectedStoreIds })
+      // Permissions travel with the invite and are written onto the member
+      // document when it is accepted. The proxy keeps only the keys it knows,
+      // so an old proxy simply ignores this and the cashier arrives with the
+      // defaults -- which is why the proxy deploys first.
+      body: JSON.stringify({
+        email, role, storeIds: selectedStoreIds,
+        ...(role === "cashier" ? { permissions: readStaffPermissionChecklist("invite") } : {})
+      })
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.ok) {
@@ -16805,6 +17702,53 @@ function warmUpAiProxy() {
 // language toggle, which a cashier needs and which are not owner business;
 // every owner-only control inside it is hidden by id, the same way it was
 // hidden when these buttons lived in the topbar.
+// Cashier permissions -- DESIGN-permissions.md.
+//
+// A map of booleans on the member document. An ABSENT map, and an absent key,
+// mean the default below: credit, repayments and discounts on, everything else
+// off. Every member document written before this existed therefore behaves
+// exactly as it did, which matters more than usual -- this ships to shops that
+// are already selling.
+//
+// firestore.rules reads the same map with the same defaults, and
+// tests/permissions-client.test.mjs fails if the two lists ever diverge.
+const STAFF_PERMISSION_DEFAULTS = {
+  recordExpenses: false,
+  receiveDeliveries: false,
+  processReturns: false,
+  viewStock: false,
+  viewTodaySales: false,
+  sellOnCredit: true,
+  takeRepayments: true,
+  giveDiscounts: true
+};
+const STAFF_PERMISSION_KEYS = Object.keys(STAFF_PERMISSION_DEFAULTS);
+
+function normalizeStaffPermissions(raw) {
+  const clean = {};
+  for (const key of STAFF_PERMISSION_KEYS) {
+    clean[key] = typeof raw?.[key] === "boolean" ? raw[key] : STAFF_PERMISSION_DEFAULTS[key];
+  }
+  return clean;
+}
+
+// True on every key for an owner or a manager: permissions widen or narrow a
+// CASHIER, and a manager already holds all of them. The rules take the same
+// view, so the screen and the boundary agree.
+function hasStaffPermission(key) {
+  if (isManagerOrOwnerRole()) return true;
+  if (state.currentUserRole !== "cashier") return false;
+  const value = state.currentPermissions?.[key];
+  return typeof value === "boolean" ? value : STAFF_PERMISSION_DEFAULTS[key] === true;
+}
+
+// For the cashier-only surfaces -- the cut-down Expenses screen and the
+// delivery requests screen. A manager reaches the full version of both and must
+// not be sent to the cut-down one.
+function isCashierWith(key) {
+  return state.currentUserRole === "cashier" && hasStaffPermission(key);
+}
+
 const CASHIER_ALLOWED_VIEWS = ["pos", "settings"];
 
 const VAT_VIEW_ENABLED = false;
@@ -16830,6 +17774,16 @@ function canOpenView(viewId) {
   // being written by the sale path meanwhile, so no history is lost while it is
   // dark, and a shop that switches it on later sees a complete record.
   if (viewId === "vat") return VAT_VIEW_ENABLED && isManagerOrOwnerRole() && vatSettings().registered;
+  // The three screens a permission can unlock. Each is still the same screen a
+  // manager sees; what a cashier gets is decided inside the render functions
+  // and, for everything that writes, by firestore.rules.
+  //
+  // Arrivals is the exception: it is a cashier's own delivery requests and
+  // nobody else's. A manager receives deliveries directly and approves these
+  // from inside Purchases, so sending them here would be a worse screen.
+  if (viewId === "arrivals") return isCashierWith("receiveDeliveries");
+  if (viewId === "inventory") return isManagerOrOwnerRole() || isCashierWith("viewStock");
+  if (viewId === "expenses") return isManagerOrOwnerRole() || isCashierWith("recordExpenses");
   return isManagerOrOwnerRole() || CASHIER_ALLOWED_VIEWS.includes(viewId);
 }
 
@@ -16986,9 +17940,41 @@ function renderCommands(term = "") {
     .join("");
 }
 
+// Controls that live in the static markup and are governed by a PERMISSION
+// rather than a role. Hidden rather than disabled, like the rest of the role
+// gating: a visible control that always refuses tells a bad actor where to push.
+//
+// Nothing here is a security boundary. Credit, repayments and returns are
+// refused by firestore.rules as well; discounts and price overrides are not,
+// and keep the override password as their control (DESIGN-permissions.md 5).
+function applyPermissionVisibility() {
+  const show = (selector, visible) => {
+    const el = qs(selector);
+    if (el) el.hidden = !visible;
+  };
+  show("#posReturnButton", hasStaffPermission("processReturns"));
+  show("#posTodayPanel", isCashierWith("viewTodaySales"));
+  show(".discount-controls", hasStaffPermission("giveDiscounts"));
+  show('[data-payment="credit"]', hasStaffPermission("sellOnCredit"));
+  // A cashier who may LOOK at stock may not change it, and the screen must not
+  // offer what the rules would refuse.
+  for (const id of ["inventoryAddButton", "exportInventoryButton", "generatePoButton"]) {
+    show(`#${id}`, isManagerOrOwnerRole());
+  }
+  // Credit may have been withdrawn while it was the selected method.
+  if (!hasStaffPermission("sellOnCredit") && state.paymentMethod === "credit") {
+    state.paymentMethod = "cash";
+    qsa("[data-payment]").forEach((button) =>
+      button.classList.toggle("active", button.dataset.payment === "cash"));
+    const creditRow = qs("#creditAmountPaidRow");
+    if (creditRow) creditRow.hidden = true;
+  }
+}
+
 function renderAll() {
   applyStoreOwnerControlsVisibility();
   applyRoleViewVisibility();
+  applyPermissionVisibility();
   renderFilters();
   renderKpis();
   renderChart();
@@ -17000,6 +17986,9 @@ function renderAll() {
   renderExpenses();
   renderPurchases();
   renderDeliveries();
+  renderDeliveryRequests();
+  renderDeliveryRequestsPending();
+  renderPosToday();
   renderProfit();
   renderCostReports();
   renderVatNav();
@@ -17228,7 +18217,23 @@ function bindEvents() {
     state.reportsCostMonth = event.currentTarget.value || state.reportsCostMonth;
     renderCostReports();
   });
-  qs("#openDeliveryDialog")?.addEventListener("click", openDeliveryDialog);
+  qs("#openDeliveryDialog")?.addEventListener("click", () => openDeliveryDialog());
+  qs("#newDeliveryRequestButton")?.addEventListener("click", () => openDeliveryRequestDialog());
+  qs("#closeDeliveryRequestDialog")?.addEventListener("click", () => qs("#deliveryRequestDialog").close());
+  qs("#cancelDeliveryRequestDialog")?.addEventListener("click", () => qs("#deliveryRequestDialog").close());
+  qs("#saveDeliveryRequestButton")?.addEventListener("click", saveDeliveryRequest);
+  qs("#deliveryRequestSearch")?.addEventListener("input", debounce(renderDeliveryRequestSearch, 150));
+  qs("#deliveryRequestLines")?.addEventListener("input", (event) => {
+    const input = event.target.closest("[data-request-qty]");
+    if (!input || !state.deliveryRequestDraft) return;
+    const line = state.deliveryRequestDraft.lines[Number(input.dataset.requestQty)];
+    if (line) line.qty = safeNumber(input.value);
+  });
+  qs("#posReturnButton")?.addEventListener("click", openReturnFromTill);
+  qs("#inviteStaffRole")?.addEventListener("change", applyInvitePermissionVisibility);
+  qs("#closeStaffPermissionsDialog")?.addEventListener("click", () => qs("#staffPermissionsDialog").close());
+  qs("#cancelStaffPermissionsDialog")?.addEventListener("click", () => qs("#staffPermissionsDialog").close());
+  qs("#saveStaffPermissionsButton")?.addEventListener("click", saveStaffPermissions);
   qs("#closeDeliveryDialog")?.addEventListener("click", () => qs("#deliveryDialog").close());
   qs("#cancelDeliveryDialog")?.addEventListener("click", () => qs("#deliveryDialog").close());
   qs("#deliveryMonthInput")?.addEventListener("change", (event) => {
@@ -17524,6 +18529,52 @@ function bindEvents() {
       pushCartHistory();
       cartItem.sellingPrice = newPrice;
       renderCart();
+      return;
+    }
+
+    const memberPermissionsButton = event.target.closest("[data-member-permissions]");
+    if (memberPermissionsButton) {
+      openStaffPermissionsDialog(memberPermissionsButton.dataset.memberPermissions);
+      return;
+    }
+
+    const addRequestProduct = event.target.closest("[data-add-request-product]");
+    if (addRequestProduct) {
+      addDeliveryRequestProduct(addRequestProduct.dataset.addRequestProduct);
+      return;
+    }
+
+    const removeRequestLine = event.target.closest("[data-remove-request-line]");
+    if (removeRequestLine) {
+      const index = Number(removeRequestLine.dataset.removeRequestLine);
+      if (state.deliveryRequestDraft) {
+        state.deliveryRequestDraft.lines.splice(index, 1);
+        renderDeliveryRequestDraft();
+      }
+      return;
+    }
+
+    const editRequestButton = event.target.closest("[data-edit-request]");
+    if (editRequestButton) {
+      openDeliveryRequestDialog(editRequestButton.dataset.editRequest);
+      return;
+    }
+
+    const cancelRequestButton = event.target.closest("[data-cancel-request]");
+    if (cancelRequestButton) {
+      await cancelDeliveryRequest(cancelRequestButton.dataset.cancelRequest);
+      return;
+    }
+
+    const approveRequestButton = event.target.closest("[data-approve-request]");
+    if (approveRequestButton) {
+      approveDeliveryRequest(approveRequestButton.dataset.approveRequest);
+      return;
+    }
+
+    const rejectRequestButton = event.target.closest("[data-reject-request]");
+    if (rejectRequestButton) {
+      await rejectDeliveryRequest(rejectRequestButton.dataset.rejectRequest);
       return;
     }
 
@@ -17842,6 +18893,13 @@ function bindEvents() {
     let creditBalanceDue = 0;
     let creditLimitDecision = { allowed: true, overridden: false };
     if (paymentMethod === "credit") {
+      // Withdrawn from this cashier. firestore.rules refuses the sale outright,
+      // and a refusal at the till with a customer waiting is the worst place to
+      // learn that -- so it is said here, before anything is written.
+      if (!hasStaffPermission("sellOnCredit")) {
+        showToast(t("toast.creditNotAllowed"));
+        return;
+      }
       creditPhoneKey = normalizeCustomerPhoneKey(customerPhone);
       if (!creditPhoneKey) return showToast(t("toast.creditNeedsPhone"));
       creditAmountPaid = Number(qs("#creditAmountPaidInput")?.value || 0);

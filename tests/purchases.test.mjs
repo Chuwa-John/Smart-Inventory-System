@@ -582,8 +582,12 @@ console.log("\n=== a role change re-runs the subscriptions gated on it ===");
     resub.indexOf("state[key]()") < resub.indexOf("state.expenses = []"), true);
   check("the membership watcher calls it on a role change",
     /state\.currentUserRole = nextRole;[\s\S]{0,120}resubscribeRoleGatedCollections\(\);/.test(noComments), true);
+  // The permissions fail closed on the same path, and to the DEFAULTS rather
+  // than to nothing: a dead listener cannot be told apart from a demotion, and
+  // a cashier who suddenly could not sell on credit because a snapshot failed
+  // would be a till that stopped working (DESIGN-permissions.md 3).
   check("...and on the fail-closed demotion path too",
-    /state\.currentUserRole = "cashier";\s*resubscribeRoleGatedCollections\(\);/.test(noComments), true);
+    /state\.currentUserRole = "cashier";\s*state\.currentPermissions = normalizeStaffPermissions\(null\);\s*resubscribeRoleGatedCollections\(\);/.test(noComments), true);
 }
 console.log("\n=== Phase C: cost travels with the stock ===");
 {

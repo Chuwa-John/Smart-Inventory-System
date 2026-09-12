@@ -563,6 +563,25 @@ app.post("/api/settings/override-password", passwordChangeLimiter, async (req, r
 });
 
 const STAFF_ROLES = ["manager", "cashier"];
+
+// Cashier permissions -- DESIGN-permissions.md. The closed set the rules know
+// about; anything else a client sends is dropped rather than stored, so a
+// member document can never carry a key firestore.rules would silently ignore
+// and an owner would believe had been granted. Managers get none: they already
+// hold every one of these, and the rules consult the map for cashiers only.
+const STAFF_PERMISSION_KEYS = [
+  "recordExpenses", "receiveDeliveries", "processReturns", "viewStock", "viewTodaySales",
+  "sellOnCredit", "takeRepayments", "giveDiscounts"
+];
+
+function sanitizeStaffPermissions(raw, role) {
+  if (role !== "cashier" || !raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const clean = {};
+  for (const key of STAFF_PERMISSION_KEYS) {
+    if (typeof raw[key] === "boolean") clean[key] = raw[key];
+  }
+  return Object.keys(clean).length ? clean : null;
+}
 const INVITE_TOKEN_BYTES = 32;
 const INVITE_EXPIRY_MS = 48 * 60 * 60 * 1000;
 const INVITE_MAX_STORE_IDS = 20;
@@ -616,6 +635,7 @@ app.post("/api/staff/invite", inviteLimiter, async (req, res) => {
   const email = readString(req.body?.email).trim().toLowerCase();
   const role = readString(req.body?.role);
   const storeIds = req.body?.storeIds;
+  const permissions = sanitizeStaffPermissions(req.body?.permissions, role);
 
   if (!EMAIL_PATTERN.test(email) || email.length > 254) {
     return res.status(400).json({ ok: false, error: "A valid email is required." });
@@ -635,6 +655,7 @@ app.post("/api/staff/invite", inviteLimiter, async (req, res) => {
       email,
       role,
       storeIds,
+      ...(permissions ? { permissions } : {}),
       tokenHash: hashInviteToken(token),
       ownerUid: req.user.uid,
       used: false,
@@ -734,9 +755,14 @@ app.post("/api/staff/accept-invite", acceptInviteLimiter, async (req, res) => {
       }
 
       const memberRef = firestoreDb.collection("users").doc(ownerUid).collection("members").doc(req.user.uid);
+      // Sanitised again on the way out: the invite document is the proxy's own,
+      // but the member document is what firestore.rules reads, and the two
+      // sides of that boundary should not trust each other's shape.
+      const memberPermissions = sanitizeStaffPermissions(invite.permissions, invite.role);
       transaction.set(memberRef, {
         role: invite.role,
         storeIds: invite.storeIds,
+        ...(memberPermissions ? { permissions: memberPermissions } : {}),
         status: "active",
         email: invite.email,
         name,

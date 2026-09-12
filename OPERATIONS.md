@@ -214,3 +214,23 @@ Authentication App Check are in monitoring mode. The matching reCAPTCHA key allo
 both `sanitaryflow-erp.web.app` and `sanitaryflow-erp.firebaseapp.com` (the latter
 was added during this review). Fresh sessions on both Hosting domains produced no
 App Check warning or throttling error in the browser console.
+
+## Deploying cashier permissions (2026-09-12)
+
+`DESIGN-permissions.md`. Order matters, because the permissions an owner ticks
+in the invite dialog travel through the proxy:
+
+1. **Firestore rules and indexes first.** The rules read `permissions` off the
+   member document, and three new composite indexes serve the cashier-scoped
+   queries (`expenses` by `recordedByUid`, and both `deliveryRequests`
+   pairings). A missing index breaks STAFF only -- owners take the unfiltered
+   branch -- and the emulator can never catch it.
+2. **The proxy next** (Render). It is what stores the ticked permissions on the
+   invite and copies them onto the member document when it is accepted. An old
+   proxy ignores the field silently, and the cashier arrives with the defaults.
+3. **Hosting last**, with the service worker stamp and `CACHE_NAME` moved
+   together as always.
+
+Nothing here changes an existing member document. An absent `permissions` map
+means exactly the behaviour every cashier had before: credit, repayments and
+discounts on, nothing else granted.

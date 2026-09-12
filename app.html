@@ -28,7 +28,7 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260910v" />
+    <link rel="stylesheet" href="./styles.css?v=20260912a" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#0b0d10" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -48,7 +48,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260910v"></script>
+    <script type="module" src="./boot.js?v=20260912a"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -95,6 +95,7 @@
                destinations answering one question -- "stock arrived, here is
                what it cost" -- and a shop had to know which of them to open. -->
           <button class="nav-item" data-view="purchases"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5.5 2.8h13v18.4l-2.6-1.5-2.4 1.5-2.5-1.5-2.4 1.5-3.1-1.5z"/><path d="M9 8.4h6M9 12.4h6"/></svg><span data-i18n="nav.purchases">Purchases</span></button>
+          <button class="nav-item" data-view="arrivals" hidden><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7.5h12v9H3z"/><path d="M15 10.5h3.6l2.4 3v3H15z"/><circle cx="7" cy="18.5" r="1.6"/><circle cx="17.5" cy="18.5" r="1.6"/></svg><span data-i18n="nav.arrivals">Deliveries</span></button>
           <button class="nav-item" data-view="pos"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="9.5" cy="19.5" r="1.5"/><circle cx="18" cy="19.5" r="1.5"/><path d="M2.5 3.5H5l2.3 11.6a1.8 1.8 0 0 0 1.77 1.4h8.3a1.8 1.8 0 0 0 1.76-1.44L21 7.3H5.8"/></svg><span data-i18n="nav.pos">Point of Sale</span></button>
           <!-- Sold by a salon or a bar; hidden for a duka. renderServices()
                sets the label from the business type. -->
@@ -617,6 +618,33 @@
 
 
           <div class="kpi-grid" id="deliveryTotals"></div>
+
+          <!-- Waiting for approval. Hidden when nothing is waiting: a panel that
+               is empty on every visit teaches people to stop reading it. -->
+          <div id="deliveryRequestsPendingBlock" hidden>
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="deliveryRequests.pendingEyebrow">From your staff</p>
+                <h3 data-i18n="deliveryRequests.pendingTitle">Waiting for approval</h3>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="deliveryRequests.thDate">Received</th>
+                    <th data-i18n="deliveryRequests.thRequestedBy">Counted by</th>
+                    <th data-i18n="deliveryRequests.thSupplier">Supplier</th>
+                    <th data-i18n="deliveryRequests.thReference">Reference</th>
+                    <th data-i18n="deliveryRequests.thProducts">Products</th>
+                    <th data-i18n="deliveryRequests.thInvoiceTotal">Invoice total</th>
+                    <th data-i18n="deliveryRequests.thActions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="deliveryRequestsPendingTable"></tbody>
+              </table>
+            </div>
+          </div>
           </article>
 
           <!-- Sibling, not child. When Deliveries were folded in from their own
@@ -693,7 +721,7 @@
             </div>
           </div>
 
-          <p class="muted" data-i18n="expenses.intro">What the shop spends, day by day. Rent, power, transport, wages, repairs. These are not stock purchases &mdash; they are the running costs that sit between what you sell for and what you keep.</p>
+          <p class="muted" id="expensesIntro" data-i18n="expenses.intro">What the shop spends, day by day. Rent, power, transport, wages, repairs. These are not stock purchases &mdash; they are the running costs that sit between what you sell for and what you keep.</p>
 
           <div class="kpi-grid" id="expenseTotals"></div>
 
@@ -739,6 +767,45 @@
               </div>
             </div>
             <div id="expenseLandedBody"></div>
+          </article>
+        </section>
+
+        <!-- A cashier's delivery requests -- DESIGN-permissions.md 4. Stock they
+             have counted in, waiting for a manager or the owner to approve it
+             with the costs attached. Cashier-only: canOpenView() refuses it for
+             everyone else, who receive deliveries directly from Purchases. -->
+        <section class="view" id="arrivals">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow" data-i18n="deliveryRequests.eyebrow">Stock arriving</p>
+              <h1 data-i18n="deliveryRequests.title">Deliveries</h1>
+            </div>
+            <div class="button-row">
+              <button class="primary-button" id="newDeliveryRequestButton" type="button" data-i18n="deliveryRequests.newButton">Record delivery</button>
+            </div>
+          </div>
+
+          <p class="muted" data-i18n="deliveryRequests.intro">Count in what arrived and send it for approval. The stock is added once a manager or the owner approves it with the supplier's costs.</p>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h2 data-i18n="deliveryRequests.listTitle">What you have sent</h2>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="deliveryRequests.thDate">Received</th>
+                    <th data-i18n="deliveryRequests.thSupplier">Supplier</th>
+                    <th data-i18n="deliveryRequests.thReference">Reference</th>
+                    <th data-i18n="deliveryRequests.thProducts">Products</th>
+                    <th data-i18n="deliveryRequests.thStatus">Status</th>
+                    <th data-i18n="deliveryRequests.thActions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="deliveryRequestsTable"></tbody>
+              </table>
+            </div>
           </article>
         </section>
 
@@ -846,6 +913,17 @@
               </div>
               <button class="primary-button full-width" id="completeSaleButton" data-i18n="pos.completeSale">Complete Sale</button>
               <button class="ghost-button full-width" id="undoSaleButton" type="button" disabled data-i18n="pos.undoSale">Undo Last Sale</button>
+              <button class="ghost-button full-width" id="posReturnButton" type="button" hidden data-i18n="pos.returnButton">Return an item</button>
+            </article>
+
+            <!-- The viewTodaySales permission. Sales are already readable by
+                 every cashier; this only decides whether the screen adds them
+                 up. No cost, no profit, no other branch. -->
+            <article class="panel" id="posTodayPanel" hidden>
+              <div class="panel-head">
+                <h2 data-i18n="pos.todayTitle">Today at this branch</h2>
+              </div>
+              <div id="posTodayBody"></div>
             </article>
           </div>
         </section>
@@ -2254,6 +2332,69 @@
       </div>
     </dialog>
 
+
+    <!-- The cashier's side of a delivery. No cost fields at all: the supplier's
+         invoice total is optional and is the only money on it, because a cashier
+         who could see unit costs would know the margin on everything. -->
+    <dialog id="deliveryRequestDialog" class="wide-dialog">
+      <div class="dialog-head">
+        <h2 id="deliveryRequestDialogTitle" data-i18n="deliveryRequests.dialogTitle">Record a delivery</h2>
+        <button class="icon-button" type="button" id="closeDeliveryRequestDialog" aria-label="Close">&times;</button>
+      </div>
+      <form id="deliveryRequestForm" novalidate>
+        <div class="form-grid">
+          <label><span data-i18n="deliveryRequests.supplierLabel">Supplier</span>
+            <input name="supplierName" maxlength="60" autocomplete="off" data-i18n-placeholder="deliveryRequests.supplierPlaceholder" placeholder="e.g. Festive Ltd" />
+          </label>
+          <label><span data-i18n="deliveryRequests.referenceLabel">Invoice or reference (optional)</span>
+            <input name="reference" maxlength="60" autocomplete="off" />
+          </label>
+          <label><span data-i18n="deliveryRequests.dateLabel">Date received</span>
+            <input name="receivedAt" type="date" />
+          </label>
+          <label><span data-i18n="deliveryRequests.invoiceTotalLabel">Invoice total (optional)</span>
+            <input name="invoiceTotal" type="number" min="0" step="1" inputmode="decimal" autocomplete="off" />
+          </label>
+          <label><span data-i18n="deliveryRequests.noteLabel">Note (optional)</span>
+            <input name="note" maxlength="200" autocomplete="off" />
+          </label>
+        </div>
+
+        <section class="delivery-block">
+          <div class="panel-head">
+            <h3 data-i18n="deliveryRequests.linesTitle">What arrived</h3>
+          </div>
+          <label><span data-i18n="deliveryRequests.searchLabel">Find a product</span>
+            <input id="deliveryRequestSearch" type="search" autocomplete="off" data-i18n-placeholder="deliveryRequests.searchPlaceholder" placeholder="Search products" />
+          </label>
+          <div id="deliveryRequestSearchResults" class="request-search-results"></div>
+          <div id="deliveryRequestLines"></div>
+        </section>
+
+        <span class="field-error" id="deliveryRequestError"></span>
+        <div class="button-row end">
+          <button class="ghost-button" type="button" id="cancelDeliveryRequestDialog" data-i18n="product.cancel">Cancel</button>
+          <button class="primary-button" type="button" id="saveDeliveryRequestButton" data-i18n="deliveryRequests.sendButton">Send for approval</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Per-cashier permissions -- DESIGN-permissions.md. The same checklist the
+         invite dialog shows, so one list cannot drift from the other. -->
+    <dialog id="staffPermissionsDialog" style="max-width:560px">
+      <div class="dialog-head">
+        <h2 data-i18n="permissions.dialogTitle">What this cashier may do</h2>
+        <button class="icon-button" type="button" id="closeStaffPermissionsDialog" aria-label="Close">&times;</button>
+      </div>
+      <p class="muted"><strong id="staffPermissionsName"></strong></p>
+      <p class="muted" data-i18n="permissions.intro">Ticked means allowed. The three at the bottom are on for every cashier unless you remove them.</p>
+      <div id="staffPermissionsList" class="permission-list"></div>
+      <div class="button-row end">
+        <button class="ghost-button" type="button" id="cancelStaffPermissionsDialog" data-i18n="product.cancel">Cancel</button>
+        <button class="primary-button" type="button" id="saveStaffPermissionsButton" data-i18n="permissions.saveButton">Save</button>
+      </div>
+    </dialog>
+
     <dialog id="staffRosterDialog" style="max-width:640px">
       <div class="dialog-head">
         <h2 data-i18n="staff.rosterTitle">Staff Roster</h2>
@@ -2298,6 +2439,10 @@
         <p class="muted" data-i18n="staff.inviteStoresLabel">Store access</p>
         <label class="checkbox-row"><input type="checkbox" id="inviteStaffAllStores" /> <span data-i18n="staff.inviteAllStores">All stores (roaming access)</span></label>
         <div id="inviteStaffStoreList" class="store-checkbox-list"></div>
+        <div id="inviteStaffPermissions" hidden>
+          <p class="muted" data-i18n="permissions.inviteLabel">What this cashier may do</p>
+          <div id="inviteStaffPermissionList" class="permission-list"></div>
+        </div>
         <span class="field-error" id="inviteStaffError"></span>
         <div class="button-row end">
           <button class="ghost-button" type="button" id="cancelInviteStaffDialog" data-i18n="product.cancel">Cancel</button>
@@ -2422,6 +2567,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260910v"></script>
+    <script type="module" src="./app.js?v=20260912a"></script>
   </body>
 </html>

@@ -345,8 +345,13 @@ console.log("\n=== a cashier neither subscribes to nor renders expenses ===");
   // cashier's console on every sign-in, which teaches a shop to ignore the one
   // channel that reports real breakage.
   const subscribe = body("async function subscribeToExpenses(");
-  check("subscribeToExpenses refuses a non-manager",
-    /if \(!isManagerOrOwnerRole\(\)\)\s*\{\s*state\.expenses = \[\];\s*return;\s*\}/.test(subscribe), true);
+  // Widened on 2026-09-11 (DESIGN-permissions.md): a cashier the owner has
+  // granted recordExpenses subscribes to their OWN entries. Everyone else is
+  // still refused before any listener is created.
+  check("subscribeToExpenses refuses a cashier without the permission",
+    /ownEntriesOnly && !isCashierWith\("recordExpenses"\)\)\s*\{\s*state\.expenses = \[\];\s*return;\s*\}/.test(subscribe), true);
+  check("...and a permitted cashier asks only for their own rows",
+    /where\("recordedByUid", "==", state\.user\.uid\)/.test(subscribe), true);
   check("...before it reaches onSnapshot, not after",
     subscribe.indexOf("isManagerOrOwnerRole()") < subscribe.indexOf("onSnapshot("), true);
   check("...and empties the list rather than leaving a previous role's data",
@@ -356,8 +361,12 @@ console.log("\n=== a cashier neither subscribes to nor renders expenses ===");
   // anyway, but renderExpenses is reached from renderAll on every repaint and
   // the totals tiles must not be built for a role that may not see them.
   const render = body("function renderExpenses(");
-  check("renderExpenses refuses a non-manager",
-    /if \(!isManagerOrOwnerRole\(\)\) \{[\s\S]{0,200}return;\s*\}/.test(render), true);
+  check("renderExpenses refuses a cashier without the permission",
+    /if \(ownEntriesOnly && !isCashierWith\("recordExpenses"\)\) \{[\s\S]{0,200}return;\s*\}/.test(render), true);
+  // And a permitted cashier gets their own entries with NO totals: the tiles
+  // carry the month's spending and the wages figure, which is the book.
+  check("...and builds no totals tiles for one who is",
+    /if \(ownEntriesOnly\) \{[\s\S]{0,120}totals\.innerHTML = "";/.test(render), true);
   // Emptied, not merely skipped. A demoted manager's rows would otherwise sit in
   // a section hidden by CSS with every wages figure still in the DOM.
   check("...and empties the table rather than leaving stale rows",
@@ -404,13 +413,26 @@ console.log("\n=== corrections are the owner's ===");
   check("the deletion is batched with an audit entry",
     /batch\.delete\([^;]+\);\s*batch\.set\([\s\S]{0,200}moneyAuditEntry\("EXPENSE_DELETED"/.test(del), true);
 
+  // Changed on 2026-09-11 (DESIGN-permissions.md 2): the owner still corrects
+  // anything, and staff now correct their OWN entry on the day they wrote it.
+  // canEditOwnExpense() is the same question firestore.rules asks of the write,
+  // and rules-permissions.test.mjs pins the boundary itself.
   const open = body("function openExpenseDialog(");
-  check("editing an existing expense is owner-only",
-    /if \(existing && !isOwnerRole\(\)\) return;/.test(open), true);
+  check("editing an existing expense goes through canEditOwnExpense",
+    /if \(existing && !canEditOwnExpense\(existing\)\) return;/.test(open), true);
   check("...but recording a new one is not blocked by that gate",
-    open.indexOf("existing && !isOwnerRole()") > open.indexOf("state.expenses.find"), true);
+    open.indexOf("existing && !canEditOwnExpense(existing)") > open.indexOf("state.expenses.find"), true);
   check("...and it refuses before the dialog is shown",
-    open.indexOf("isOwnerRole()") < open.indexOf("dialog.showModal()"), true);
+    open.indexOf("canEditOwnExpense(existing)") < open.indexOf("dialog.showModal()"), true);
+
+  const canEditOwn = body("function canEditOwnExpense(");
+  check("the owner keeps correcting anything", /if \(isOwnerRole\(\)\) return true;/.test(canEditOwn), true);
+  check("staff correct only their own entry",
+    /expense\.recordedByUid !== state\.user\.uid/.test(canEditOwn), true);
+  check("...only on the day they wrote it",
+    /localDateInputValue\(written\) === localDateInputValue\(new Date\(\)\)/.test(canEditOwn), true);
+  check("...and a permission-less cashier cannot at all",
+    /!isManagerOrOwnerRole\(\) && !isCashierWith\("recordExpenses"\)/.test(canEditOwn), true);
 
   // The row buttons are only drawn for an owner. Not a security boundary -- the
   // rules and the two gates above are -- but a manager clicking Delete and

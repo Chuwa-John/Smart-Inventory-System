@@ -191,6 +191,11 @@ ${extract("isOwnerRole")}
 ${extract("isManagerOrOwnerRole")}
 ${extract("canOpenView")}
 const CASHIER_ALLOWED_VIEWS = ["pos"];
+// canOpenView() consults the cashier permissions now (DESIGN-permissions.md).
+// This harness drives the ROLE tests, so the permission side is stubbed to the
+// narrowest answer: nothing granted.
+const isCashierWith = () => false;
+const hasStaffPermission = (key) => ["sellOnCredit", "takeRepayments", "giveDiscounts"].includes(key);
 const storeSellsServices = () => false;
 const vatSettings = () => ({ registered: false });
 const salesCoverageFromMs = () => coverageFrom;
