@@ -28,7 +28,12 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260912a" />
+    <!-- Preloaded, not merely referenced: the stylesheet has to be parsed
+         before the browser discovers a font inside it, and on a 2G link that
+         wait is visible as a flash of the fallback face. crossorigin is
+         required even same-origin -- fonts are fetched in CORS mode. -->
+    <link rel="preload" href="./fonts/inter-latin.woff2?v=20260913a" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="./styles.css?v=20260913a" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#0b0d10" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -48,7 +53,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260912a"></script>
+    <script type="module" src="./boot.js?v=20260913a"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -2567,6 +2572,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260912a"></script>
+    <script type="module" src="./app.js?v=20260913a"></script>
   </body>
 </html>
