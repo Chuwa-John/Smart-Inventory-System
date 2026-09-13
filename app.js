@@ -18002,6 +18002,7 @@ function renderAll() {
   renderPaymentReports();
   renderAiQuestionSuggestions();
   renderVatControls();
+  syncThemeButtonLabel();
 }
 
 // Firestore may deliver several initial snapshots in the same event loop.
@@ -18015,16 +18016,38 @@ function scheduleRenderAll() {
   });
 }
 
+// The theme button names the theme it SWITCHES TO, so it reads "Dark" while
+// the app is light. Kept in one place because three things move it: the first
+// paint, the toggle, and a language change.
+function syncThemeButtonLabel() {
+  const button = qs("#themeButton");
+  if (!button) return;
+  button.textContent = document.documentElement.dataset.theme === "light"
+    ? t("theme.dark")
+    : t("theme.light");
+}
+
 function bindEvents() {
   qsa(".nav-item").forEach((button) => button.addEventListener("click", () => openView(button.dataset.view)));
   qs("#mobileMenuButton").addEventListener("click", () => qs(".sidebar").classList.toggle("open"));
   qs("#themeButton").addEventListener("click", () => {
     const nextTheme = document.documentElement.dataset.theme === "light" ? "" : "light";
     document.documentElement.dataset.theme = nextTheme;
-    qs("#themeButton").textContent = nextTheme === "light" ? t("theme.dark") : t("theme.light");
+    // Remembered. Before this the choice survived until the next reload and no
+    // longer -- a shop that wanted dark got the default back every morning,
+    // and there was no way to tell that from the app forgetting on purpose.
+    // boot.js reads it back before the first paint.
+    try {
+      localStorage.setItem("savia.theme", nextTheme === "light" ? "light" : "dark");
+    } catch (error) {
+      // Storage can be blocked. The theme still changes for this session.
+      console.warn("Could not remember the theme.", error);
+    }
+    syncThemeButtonLabel();
     renderChart();
     renderRevenueChart();
   });
+  syncThemeButtonLabel();
   qs("#chartRange").addEventListener("change", renderChart);
   qs("#globalSearch").addEventListener("input", debounce(renderInventory, 250));
   qs("#categoryFilter").addEventListener("change", renderInventory);

@@ -109,8 +109,13 @@ console.log("\n=== the app translates itself, and says so ===");
   // signal Chrome's translator watches, and a browser set to always translate
   // Swahili to English machine-translated the real translation away. The CSP
   // error was that translator's own stylesheet being refused.
+  // Attribute by attribute, not as one exact string. The literal form matched
+  // the whole tag, so it failed the day data-theme="light" was appended to it --
+  // a change that broke nothing this check exists to protect. What matters is
+  // that all three attributes are ON the tag, not the order they sit in.
+  const appHtmlTag = (index.match(/<html[^>]*>/) || [""])[0];
   check("the app page opts out of machine translation",
-    /<html lang="en" class="js-pending" translate="no">/.test(index) &&
+    ['lang="en"', 'class="js-pending"', 'translate="no"'].every((attr) => appHtmlTag.includes(attr)) &&
     /<meta name="google" content="notranslate" \/>/.test(index),
     "without this the browser fights setLanguage() and wins");
   // The landing page joined the app the moment it grew its own Kiswahili
