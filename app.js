@@ -1549,6 +1549,8 @@ const DICTIONARY = {
     "shift.noneOpen": "No shift open on this till",
     "shift.closeLockedToOpener": "{name} opened this drawer and counts it down. A manager can close it if they have left.",
     "shift.expected": "Expected in drawer",
+    "shift.lessTillExpenses": "less {amount} paid from the till",
+    "shift.inDrawerAfterExpenses": "In the drawer now",
     "shift.over": "over",
     "shift.short": "short",
     "shift.variance": "Variance",
@@ -3102,6 +3104,8 @@ const DICTIONARY = {
     "shift.noneOpen": "Hakuna zamu iliyo wazi kwenye kaunta hii",
     "shift.closeLockedToOpener": "{name} alifungua droo hii na ndiye anayeihesabu. Meneja anaweza kuifunga kama ameondoka.",
     "shift.expected": "Inayotarajiwa kwenye droo",
+    "shift.lessTillExpenses": "ukitoa {amount} yaliyolipwa kutoka kwenye mashine",
+    "shift.inDrawerAfterExpenses": "Iliyopo kwenye droo sasa",
     "shift.over": "zaidi",
     "shift.short": "pungufu",
     "shift.variance": "Tofauti",
@@ -16327,18 +16331,70 @@ async function computeShiftReconciliations() {
   }
 }
 
+// The expenses twin of salesCoverageFromMs(). state.expenses is the most recent
+// ACCOUNTS_HISTORY_LIMIT entries, so a shift that opened before the oldest one
+// loaded cannot be judged from it. Returns the cutoff, or null when the whole
+// book is loaded and nothing is hidden behind the limit.
+function expensesCoverageFromMs() {
+  const expenses = state.expenses || [];
+  if (expenses.length < ACCOUNTS_HISTORY_LIMIT) return null;
+  let oldest = null;
+  for (const expense of expenses) {
+    const at = expense.createdAt?.toDate ? expense.createdAt.toDate().getTime() : null;
+    if (at === null) continue;
+    if (oldest === null || at < oldest) oldest = at;
+  }
+  return oldest;
+}
+
+// Money taken OUT of the drawer during a shift, for the derived line the owner
+// reads. Anchored on createdAt, not spentAt: spentAt is a date somebody types
+// and may be backdated up to EXPENSE_BACKDATE_LIMIT_DAYS, while createdAt is
+// when the record was made and therefore when the cash actually left.
+//
+// Returns null rather than a number when the loaded window cannot prove it is
+// complete for this shift. A deduction computed from a truncated list would
+// understate what left the till, and a wrong figure here is worse than none --
+// the same restraint reconcileShiftCash() applies.
+function shiftTillExpenses(storeId, fromMs, toMs) {
+  const coverage = expensesCoverageFromMs();
+  if (coverage !== null && fromMs < coverage) return null;
+  let total = 0;
+  for (const expense of state.expenses || []) {
+    if (expense.storeId !== storeId) continue;
+    if (expense.paidFrom !== "till") continue;
+    const at = expense.createdAt?.toDate ? expense.createdAt.toDate().getTime() : null;
+    if (at === null || at < fromMs || at > toMs) continue;
+    total += safeNumber(expense.amount);
+  }
+  return total;
+}
+
 async function computeShiftExpectedCash(shift) {
   const from = shift.openedAt?.toDate ? shift.openedAt.toDate().getTime() : Date.now();
   const to = Date.now();
   const { cashSales, cashRefunds } = shiftCashFromSales(state.sales, shift.storeId, from, to);
   const cashRepayments = await shiftCashRepayments(shift.storeId, from, to);
   const openingFloat = safeNumber(shift.openingFloat);
+  // `expected` is the figure firestore.rules pins at close
+  // (shiftExpectedCashIsDerived): openingFloat + cashSales - cashRefunds +
+  // cashRepayments, and nothing else. closeShift() writes THIS one, and a
+  // shilling of difference makes the whole close permission-denied.
+  const expected = openingFloat + cashSales - cashRefunds + cashRepayments;
+  // Display only, and never written anywhere. DESIGN-purchases.md 8.3 keeps the
+  // expense term out of the reconciliation on purpose, so that money leaving
+  // the till surfaces as a shortfall somebody has to account for. This line
+  // answers the owner's other, entirely fair question -- what should physically
+  // be in the drawer right now -- without touching the control that asks it.
+  const tillExpenses = shiftTillExpenses(shift.storeId, from, to);
   return {
     openingFloat,
     cashSales,
     cashRefunds,
     cashRepayments,
-    expected: openingFloat + cashSales - cashRefunds + cashRepayments
+    expected,
+    tillExpenses,
+    expectedAfterExpenses: tillExpenses === null ? null : expected - tillExpenses
   };
 }
 
@@ -16588,7 +16644,17 @@ function renderShiftPanel() {
     computeShiftExpectedCash(open)
       .then((totals) => {
         const line = qs("#shiftExpectedLine");
-        if (line) line.innerHTML = `${esc(t("shift.expected"))}: <strong>${esc(money(totals.expected))}</strong>`;
+        if (!line) return;
+        // The rules-pinned figure first, because that is what the close is
+        // judged against. The physical drawer follows only when a till-paid
+        // expense actually moved money out of it, and only when the loaded
+        // expense window can prove the deduction is complete.
+        let html = `${esc(t("shift.expected"))}: <strong>${esc(money(totals.expected))}</strong>`;
+        if (totals.tillExpenses) {
+          html += ` &middot; ${esc(t("shift.lessTillExpenses", { amount: money(totals.tillExpenses) }))}`
+            + ` &middot; ${esc(t("shift.inDrawerAfterExpenses"))}: <strong>${esc(money(totals.expectedAfterExpenses))}</strong>`;
+        }
+        line.innerHTML = html;
       })
       .catch(() => {});
   }

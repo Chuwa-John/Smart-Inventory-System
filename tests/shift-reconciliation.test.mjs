@@ -203,6 +203,77 @@ console.log("\n=== the check is actually wired up, and only for the owner ===");
     "a shift that could not be checked must not read as one that passed");
 }
 
+console.log("\n=== the close writes the RULES-PINNED figure, never the derived one ===");
+{
+  // The load-bearing one. firestore.rules (shiftExpectedCashIsDerived) requires
+  //   expectedCash == openingFloat + cashSales - cashRefunds + cashRepayments
+  // exactly. computeShiftExpectedCash() now also returns expectedAfterExpenses,
+  // which deducts till-paid expenses for the owner to READ. If closeShift() ever
+  // writes that one instead, every close is permission-denied -- at end of day,
+  // with the drawer counted and the shop waiting.
+  const close = extract("closeShift");
+  check("closeShift() was located", close.length > 400);
+  check("it writes totals.expected", /expectedCash: totals\.expected/.test(close));
+  check("...and never the after-expenses figure",
+    !/expectedAfterExpenses/.test(close),
+    "the derived figure is for display; writing it makes shiftExpectedCashIsDerived() refuse the close");
+  check("...and variance is measured against the same figure",
+    /const variance = counted - totals\.expected;/.test(close));
+  // The audit entry is judged by the same rule surface, so it carries the same
+  // number as the shift document.
+  check("the audit entry repeats the pinned figure, not the derived one",
+    (close.match(/expectedCash: totals\.expected/g) || []).length === 2);
+}
+
+console.log("\n=== till expenses: what left the drawer, and when we may say so ===");
+{
+  const LIMIT = 1000;
+  const mk = (over) => Object.assign({
+    storeId: "storeA", paidFrom: "till", amount: 10000,
+    createdAt: ts(new Date("2026-08-01T09:00:00Z"))
+  }, over);
+
+  const run = (expenses, from, to, storeId = "storeA") => {
+    const state = { expenses };
+    return new Function("state", "ACCOUNTS_HISTORY_LIMIT",
+      `${extract("safeNumber")}
+       ${extract("expensesCoverageFromMs")}
+       ${extract("shiftTillExpenses")}
+       return shiftTillExpenses;`
+    )(state, LIMIT)(storeId, from, to);
+  };
+  const FROM = OPENED.getTime();
+  const TO = CLOSED.getTime();
+
+  eq("a till expense inside the shift is counted", run([mk()], FROM, TO), 10000);
+  eq("money paid from somewhere else is not",
+    run([mk({ paidFrom: "other" })], FROM, TO), 0);
+  eq("another branch's expense is not",
+    run([mk({ storeId: "storeB" })], FROM, TO), 0);
+  eq("one recorded before the shift opened is not",
+    run([mk({ createdAt: ts(new Date("2026-07-31T23:00:00Z")) })], FROM, TO), 0);
+  eq("two inside the window add up",
+    run([mk(), mk({ amount: 5000 })], FROM, TO), 15000);
+
+  // spentAt is a date somebody TYPES and may be backdated up to two years;
+  // createdAt is when the record was made, which is when the cash left. An
+  // expense dated last week but recorded during this shift still emptied this
+  // drawer.
+  eq("the anchor is createdAt, not the typed spentAt",
+    run([mk({ spentAt: ts(new Date("2026-07-01T09:00:00Z")) })], FROM, TO), 10000);
+
+  // Restraint, the same rule reconcileShiftCash() follows: state.expenses holds
+  // only the most recent ACCOUNTS_HISTORY_LIMIT entries, so a shift that opened
+  // before the oldest loaded one cannot be judged from it. A deduction computed
+  // from a truncated list would understate what left the till.
+  const full = Array.from({ length: LIMIT }, () =>
+    mk({ createdAt: ts(new Date("2026-08-02T09:00:00Z")) }));
+  eq("a shift older than the loaded window returns null, not a number",
+    run(full, FROM, TO), null);
+  check("...so the screen can say nothing rather than something wrong",
+    run(full, FROM, TO) === null);
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) {
