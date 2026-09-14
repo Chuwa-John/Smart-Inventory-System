@@ -272,6 +272,18 @@ console.log("\n=== the repayment figure is wired where it is claimed to be ===")
   check("...via the once-per-frame path, not a raw renderAll",
     !/[^e]renderAll\(\)/.test(customersBody), true);
 
+  // The tile says what it MEASURES, not what is in the drawer. It sums today's
+  // cash across the store; the shift panel computes expected cash for one open
+  // shift from a rules-pinned formula (KNOWN-LIMITATIONS L-1). Titling both
+  // "Expected in drawer" put two different questions under one name, and an
+  // owner read them as one number contradicting itself.
+  check("the cash tile does not claim to be the drawer figure",
+    /"control\.expectedCash": "Cash taken today"/.test(src), true);
+  check("...and the Kiswahili says the same thing",
+    /"control\.expectedCash": "Fedha iliyopokelewa leo"/.test(src), true);
+  check("the shift panel keeps the authoritative drawer wording",
+    /"shift\.expected": "Expected in drawer"/.test(src), true);
+
   for (const key of ["control.collectedOnAccount", "control.collectedOnAccountNote",
                      "control.collectedOnAccountUnavailable", "control.expectedCashNoteWithRepayments"]) {
     check(`${key} exists in both languages`,

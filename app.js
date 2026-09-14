@@ -583,7 +583,7 @@ const DICTIONARY = {
     "control.adminTitle": "Owner control",
     "control.todayScope": "today",
     "control.allStoresScope": "All stores · month to date",
-    "control.expectedCash": "Expected in drawer",
+    "control.expectedCash": "Cash taken today",
     "control.expectedCashNote": "Cash sales plus cash deposits, less refunds",
     "control.expectedCashNoteWithRepayments": "Cash sales, deposits and debt repaid, less refunds",
     "control.collectedOnAccount": "Collected on account",
@@ -2136,7 +2136,7 @@ const DICTIONARY = {
     "control.adminTitle": "Udhibiti wa mmiliki",
     "control.todayScope": "leo",
     "control.allStoresScope": "Maduka yote · mwezi hadi leo",
-    "control.expectedCash": "Fedha inayotarajiwa",
+    "control.expectedCash": "Fedha iliyopokelewa leo",
     "control.expectedCashNote": "Mauzo ya taslimu na malipo, ukiondoa marejesho",
     "control.expectedCashNoteWithRepayments": "Mauzo ya taslimu, malipo ya awali na madeni yaliyolipwa, ukiondoa marejesho",
     "control.collectedOnAccount": "Madeni yaliyolipwa",
@@ -11935,7 +11935,14 @@ function renderVatNav() {
   const item = qs('.nav-item[data-view="vat"]');
   // Hidden outright for a business that does not collect VAT. DESIGN-vat.md
   // decision 4: an unregistered duka must not be shown a scheme it is not in.
-  if (item) item.hidden = !vatSettings().registered || !isManagerOrOwnerRole();
+  //
+  // VAT_VIEW_ENABLED belongs here as well as in canOpenView(). Without it a
+  // VAT-registered business was shown the tab while the view behind it was
+  // switched off, so clicking it did nothing at all -- openView() returned on
+  // the same flag. A visible control that refuses in silence is the defect this
+  // app treats as a bug everywhere else, and it is why Accounts is rendered
+  // disabled rather than merely hidden.
+  if (item) item.hidden = !VAT_VIEW_ENABLED || !vatSettings().registered || !isManagerOrOwnerRole();
 }
 
 function renderVatRecord() {
@@ -16626,6 +16633,16 @@ function renderManagerControl() {
   // figures on the same screen, differing by exactly the day's repayments.
   // When the figure is unknown (a manager, whom the rules refuse) the note
   // stops claiming repayments are in it rather than quietly overstating.
+  //
+  // The tile is titled "Cash taken today", NOT "Expected in drawer", and the
+  // difference is not cosmetic. This figure is today's cash across the store;
+  // the shift panel's figure is openingFloat + cashSales - cashRefunds +
+  // cashRepayments for one open shift, which firestore.rules pins and
+  // KNOWN-LIMITATIONS L-1 describes. Two different questions, so two different
+  // numbers -- and on 2026-09-14 an owner reported them side by side as one
+  // number that disagreed with itself. Neither subtracts a till-paid expense,
+  // deliberately: DESIGN-purchases.md 8.3 wants that to surface as an
+  // unexplained shortfall at close, which is the signal the control exists for.
   const repayments = repaymentTotalsToday(scopedToStore);
   const drawerCash = s.drawerCash + (repayments?.cash || 0);
 

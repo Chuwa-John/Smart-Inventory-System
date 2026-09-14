@@ -26,7 +26,7 @@
   font-weight: 400 700;
   font-style: normal;
   font-display: swap;
-  src: url("./fonts/inter-latin.woff2?v=20260914e") format("woff2");
+  src: url("./fonts/inter-latin.woff2?v=20260914f") format("woff2");
 }
 
 :root {
@@ -922,6 +922,17 @@ th[data-sort] {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2);
+}
+
+/* A field marked `full` spans both columns. The markup has asked for this on
+   eight fields since the supplier dialog was built -- an address, a note, a
+   reason -- and nothing ever defined the class, so every one of them sat in a
+   half-width cell and pushed its neighbour out of line. Long single-line inputs
+   are the ones that need the room, which is exactly where it was marked.
+   `.full-width` below is a different thing: a block button, not a grid child. */
+.form-grid .full,
+.question-grid .full {
+  grid-column: 1 / -1;
 }
 
 /* Payment method is the last decision before money changes hands, chosen at

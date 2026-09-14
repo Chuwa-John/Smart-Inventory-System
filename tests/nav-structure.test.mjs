@@ -62,6 +62,14 @@ console.log("=== the order the owner asked for ===");
   // Deliveries were folded into Purchases: two destinations answered one
   // question -- "stock arrived, here is what it cost".
   check("deliveries is no longer its own destination", views.includes("deliveries"), false);
+  // VAT is switched off by VAT_VIEW_ENABLED, and BOTH the gate and the nav item
+  // must honour it. They disagreed on the live site: canOpenView() refused the
+  // view while renderVatNav() still showed the tab for a VAT-registered
+  // business, so the item was visible and clicking it did nothing.
+  check("the VAT tab is hidden whenever the view is switched off",
+    /item\.hidden = !VAT_VIEW_ENABLED \|\| !vatSettings\(\)\.registered/.test(src), true);
+  check("...and the gate refuses it on the same flag",
+    /if \(viewId === "vat"\) return VAT_VIEW_ENABLED &&/.test(src), true);
   check("...and its panel lives inside Purchases",
     html.indexOf('id="deliveriesPanel"') > html.indexOf('<section class="view" id="purchases">')
     && html.indexOf('id="deliveriesPanel"') < html.indexOf('</section>', html.indexOf('<section class="view" id="purchases">')),
