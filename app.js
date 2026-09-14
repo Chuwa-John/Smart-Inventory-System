@@ -17168,12 +17168,28 @@ function stockLedgerDiscrepancies() {
 // directions. Money must not outlive the role that was allowed to see it.
 function resubscribeRoleGatedCollections() {
   for (const key of ["unsubscribeExpenses", "unsubscribePurchases", "unsubscribeDeliveries",
-                     "unsubscribeDeliveryRequests", "unsubscribeProductCostHistory"]) {
+                     "unsubscribeDeliveryRequests", "unsubscribeProductCostHistory",
+                     "unsubscribeInvoices", "unsubscribePurchaseReturns"]) {
     if (state[key]) state[key]();
     state[key] = null;
   }
   state.expenses = [];
   state.purchases = [];
+  // Invoices belong here because subscribeToInvoices() asks isManagerOrOwnerRole()
+  // to decide whether to constrain the query to createdByUid. Attached before the
+  // role resolves, an owner gets a cashier-shaped query and nothing ever re-runs
+  // it: the screen then reads "0 invoices" until the page is reloaded, which is
+  // exactly what happened on the live site on 2026-09-14. The demotion case is
+  // the worse half -- a demoted manager would otherwise keep a subscription to
+  // every invoice in the branch.
+  state.invoices = [];
+  // Purchase returns were missing from this block since they were added:
+  // subscribeToPurchaseReturns() early-returns for a cashier, so a PROMOTED
+  // cashier saw none until a reload, and a DEMOTED manager kept both the
+  // subscription and the rows already in memory. Found on 2026-09-14 by the
+  // derived coverage check in tests/purchases.test.mjs rather than by anyone
+  // looking for it.
+  state.purchaseReturns = [];
   // Deliveries too. subscribeToDeliveries() empties it for a cashier anyway, so
   // this is belt and braces -- but the belt is what this block is: a demoted
   // manager must not keep a screenful of buying prices in memory because a
@@ -17187,6 +17203,8 @@ function resubscribeRoleGatedCollections() {
   subscribeToPurchases();
   subscribeToDeliveries();
   subscribeToDeliveryRequests();
+  subscribeToInvoices();
+  subscribeToPurchaseReturns();
   invalidateProductCosts();
   subscribeToProductCostHistory();
 }

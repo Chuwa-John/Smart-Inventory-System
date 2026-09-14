@@ -570,13 +570,39 @@ console.log("\n=== a role change re-runs the subscriptions gated on it ===");
   // they next ask for a cost, rather than being handed the whole catalogue's
   // costs for a screen they may never open.
   for (const fn of ["subscribeToExpenses", "subscribeToPurchases",
-                    "subscribeToProductCostHistory"]) {
+                    "subscribeToProductCostHistory", "subscribeToInvoices"]) {
     check(`promotion re-subscribes via ${fn}()`,
       new RegExp(`${fn}\\(\\);`).test(resub), true);
   }
-  for (const key of ["expenses", "purchases", "productCosts", "productCostHistory"]) {
+  for (const key of ["expenses", "purchases", "productCosts", "productCostHistory", "invoices"]) {
     check(`...and demotion empties state.${key}`,
       new RegExp(`state\\.${key} = \\[\\];`).test(resub), true);
+  }
+
+  // DERIVED, not listed. Every subscribeToX() whose body consults the role must
+  // be re-run when the role changes -- otherwise it attaches a query shaped for
+  // whoever the app thought you were at sign-in and never corrects itself.
+  //
+  // This is written as a derivation because the listed form above did not catch
+  // the real thing: subscribeToInvoices() shipped on 2026-09-14 branching on
+  // isManagerOrOwnerRole() and absent from this function, and the live invoices
+  // screen read "0 invoices" until the page was reloaded. A list only fails for
+  // collections somebody remembered to add to the list.
+  {
+    const roleAware = [...src.matchAll(/^async function (subscribeTo[A-Za-z]+)\(\)/gm)]
+      .map((m) => m[1])
+      .filter((name) => {
+        const fnBody = body(`async function ${name}(`);
+        return /isManagerOrOwnerRole\(|isOwnerRole\(|isCashierWith\(|currentUserRole/.test(fnBody);
+      });
+    const missing = roleAware.filter((name) => !new RegExp(`${name}\\(\\);`).test(resub));
+    // check() here is check(name, actual, expected) -- the missing names go in
+    // the LABEL so a failure still says which subscription is unwired, rather
+    // than in a third argument this file's check() does not take.
+    check(missing.length
+      ? `every role-dependent subscription is re-run on a role change (unwired: ${missing.join(", ")})`
+      : `every role-dependent subscription is re-run on a role change (${roleAware.length} covered)`,
+      missing.length === 0, true);
   }
   check("...and detaches the listeners first",
     resub.indexOf("state[key]()") < resub.indexOf("state.expenses = []"), true);
@@ -769,8 +795,13 @@ console.log("\n=== Phase D: roles and lifecycle ===");
     /if \(state\.unsubscribeProductCostHistory\) state\.unsubscribeProductCostHistory\(\);/.test(noComments), true);
   check("...and cleared",
     /state\.unsubscribeProductCostHistory = null;\s*state\.productCostHistory = \[\];/.test(noComments), true);
+  // Membership, not position. This asserted `unsubscribeProductCostHistory"]`
+  // -- that it was the LAST entry in the detach array -- and so went red the
+  // moment another collection was appended, while a genuinely removed entry
+  // would look identical. The same adjacency trap the comment above this block
+  // already records for the subscribe calls.
   check("a role change re-runs it too",
-    /unsubscribeProductCostHistory"\]/.test(noComments), true);
+    /"unsubscribeProductCostHistory"/.test(noComments), true);
 }
 console.log("\n=== Phase E: three figures, not equally trustworthy ===");
 {
