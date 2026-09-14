@@ -165,6 +165,17 @@ const state = {
   purchaseOrderGroups: [],
   customers: [],
   unsubscribeCustomers: null,
+  invoices: [],
+  unsubscribeInvoices: null,
+  // The lines being edited in the invoice dialog. Held here rather than read
+  // back off the DOM so the totals and the payload are built from one source.
+  invoiceLines: [],
+  // Which invoice the preview, the PDF and the WhatsApp copy are showing.
+  previewInvoiceId: null,
+  // Set ONLY while a payment is being applied to a named invoice. Cleared on
+  // every open of the payment dialog: a stale id here would silently settle an
+  // invoice nobody named out of an ordinary repayment.
+  pendingPaymentInvoiceId: "",
   suppliers: [],
   unsubscribeSuppliers: null,
   purchaseReturns: [],
@@ -269,12 +280,12 @@ const QUESTION_TEMPLATES = {
 };
 
 const BUSINESS_TIPS = {
-  duka: { en: "For general stores, focus on keeping fast-moving grocery and household items in stock \u2014 stockouts on daily basics send customers to competitors.", sw: "Kwa maduka ya jumla, zingatia kuweka bidhaa za nyumbani na vyakula zinazouzwa haraka \u2014 kuishiwa na bidhaa za kila siku huwapeleka wateja kwa washindani." },
-  salon: { en: "For salons, retail products (not just service supplies) often carry the best margins \u2014 keep your top sellers visible and in stock.", sw: "Kwa saluni, bidhaa za rejareja (si tu vifaa vya huduma) mara nyingi huwa na faida kubwa \u2014 hakikisha zinazouzwa zaidi zinaonekana na zipo." },
-  hardware: { en: "For hardware stores, plan reorders around supplier lead times \u2014 building materials often take longer to restock than everyday items.", sw: "Kwa maduka ya vifaa vya ujenzi, panga kuagiza tena kulingana na muda wa usambazaji \u2014 vifaa vya ujenzi mara nyingi huchukua muda mrefu kuliko bidhaa za kawaida." },
-  pharmacy: { en: "For pharmacies, prioritize prescription and first-aid items in your reorder plan \u2014 stockouts here directly affect customer health needs.", sw: "Kwa famasi, zingatia dawa za agizo la daktari na huduma ya kwanza katika mpango wako wa kuagiza \u2014 kuishiwa hapa kunaathiri moja kwa moja mahitaji ya afya ya wateja." },
-  bar: { en: "For bars and restaurants, track your best-selling drinks closely \u2014 running out of a popular item on a busy night costs real revenue.", sw: "Kwa baa na mikahawa, fuatilia kwa karibu vinywaji vinavyouzwa zaidi \u2014 kuishiwa na kinywaji maarufu usiku wa shughuli nyingi hupoteza mapato halisi." },
-  general: { en: "Keep an eye on both your fastest and slowest movers \u2014 reorder the former promptly and reconsider stocking the latter.", sw: "Angalia bidhaa zinazouzwa haraka na zile zinazouzwa polepole \u2014 agiza tena za haraka mapema na fikiria upya kuhusu zile za polepole." }
+  duka: { en: "For general stores, focus on keeping fast-moving grocery and household items in stock. Stockouts on daily basics send customers to competitors.", sw: "Kwa maduka ya jumla, zingatia kuweka bidhaa za nyumbani na vyakula zinazouzwa haraka. Kuishiwa na bidhaa za kila siku huwapeleka wateja kwa washindani." },
+  salon: { en: "For salons, retail products (not just service supplies) often carry the best margins. Keep your top sellers visible and in stock.", sw: "Kwa saluni, bidhaa za rejareja (si tu vifaa vya huduma) mara nyingi huwa na faida kubwa. Hakikisha zinazouzwa zaidi zinaonekana na zipo." },
+  hardware: { en: "For hardware stores, plan reorders around supplier lead times. Building materials often take longer to restock than everyday items.", sw: "Kwa maduka ya vifaa vya ujenzi, panga kuagiza tena kulingana na muda wa usambazaji. Vifaa vya ujenzi mara nyingi huchukua muda mrefu kuliko bidhaa za kawaida." },
+  pharmacy: { en: "For pharmacies, prioritize prescription and first-aid items in your reorder plan. Stockouts here directly affect customer health needs.", sw: "Kwa famasi, zingatia dawa za agizo la daktari na huduma ya kwanza katika mpango wako wa kuagiza. Kuishiwa hapa kunaathiri moja kwa moja mahitaji ya afya ya wateja." },
+  bar: { en: "For bars and restaurants, track your best-selling drinks closely. Running out of a popular item on a busy night costs real revenue.", sw: "Kwa baa na mikahawa, fuatilia kwa karibu vinywaji vinavyouzwa zaidi. Kuishiwa na kinywaji maarufu usiku wa shughuli nyingi hupoteza mapato halisi." },
+  general: { en: "Keep an eye on both your fastest and slowest movers. Reorder the former promptly and reconsider stocking the latter.", sw: "Angalia bidhaa zinazouzwa haraka na zile zinazouzwa polepole. Agiza tena za haraka mapema na fikiria upya kuhusu zile za polepole." }
 };
 
 function currentBusinessType() {
@@ -352,8 +363,8 @@ const DICTIONARY = {
     "settings.accountTitle": "Account",
     "settings.signedInAs": "Signed in as",
     "backup.last": "Last backup: {date}.",
-    "backup.stale": "Last backup: {date} — {days} days ago. Take a fresh one.",
-    "backup.never": "You have never taken a backup. Your records are kept online, so a lost phone loses nothing — sign in again anywhere. But a deletion cannot be undone, and a backup is the only copy that would survive one.",
+    "backup.stale": "Last backup: {date}, {days} days ago. Take a fresh one.",
+    "backup.never": "You have never taken a backup. Your records are kept online, so a lost phone loses nothing. Sign in again anywhere. But a deletion cannot be undone, and a backup is the only copy that would survive one.",
     "reports.groupFinancial": "Financial", "reports.groupSales": "Sales",
     "reports.groupPurchases": "Purchases", "reports.groupInventory": "Inventory",
     "reports.groupExpenses": "Expenses",
@@ -369,7 +380,7 @@ const DICTIONARY = {
     "reports.hint.stockValuation": "What the shelves hold, and what it cost",
     "reports.hint.stockSummary": "What is on the shelves right now",
     "reports.hint.stockAdjustments": "Where stock went when it was not sold",
-    "reports.hint.offlineSales": "Sold during an outage — shelves worth recounting",
+    "reports.hint.offlineSales": "Sold during an outage, shelves worth recounting",
     "reports.hint.purchaseSummary": "What you bought, less what went back",
     "reports.hint.purchasesByProduct": "What you spent, product by product",
     "reports.hint.purchaseReturns": "What you sent back to suppliers",
@@ -416,7 +427,7 @@ const DICTIONARY = {
     "kpi.payable": "You owe suppliers", "kpi.payableDelta": "Unpaid deliveries",
     "product.unitLabel": "Unit", "product.unitPlaceholder": "e.g. piece, crate, kg",
     "product.skuLabel": "SKU (optional)", "product.activeLabel": "Status",
-    "product.activeYes": "Active", "product.activeNo": "Inactive — stop selling it",
+    "product.activeYes": "Active", "product.activeNo": "Inactive, stop selling it",
     "movement.colProduct": "Product",
     "reports.thCustomer": "Customer", "reports.thOrders": "Orders", "reports.thRevenue": "Revenue",
     "reports.thOrder": "Order", "reports.thRefunded": "Refunded",
@@ -514,7 +525,7 @@ const DICTIONARY = {
     "suppliers.openingBalanceHint": "Leave at 0 unless you already owed them before you started using SaviaSmart.",
     "suppliers.openingBalanceInvalid": "Enter 0 or a positive amount.",
     "suppliers.statusLabel": "Status", "suppliers.statusActive": "Active",
-    "suppliers.statusInactive": "Inactive — stop offering them", "suppliers.statusInactiveShort": "Inactive",
+    "suppliers.statusInactive": "Inactive, stop offering them", "suppliers.statusInactiveShort": "Inactive",
     "suppliers.saveButton": "Save Supplier",
     "suppliers.nameRequired": "Enter the supplier's name.",
     "suppliers.nameTaken": "You already have a supplier with this name.",
@@ -537,7 +548,7 @@ const DICTIONARY = {
     "dashboard.eyebrowToday": "Today", "dashboard.title": "Operations Command Center",
     "dashboard.profitEyebrow": "Performance",
     "dashboard.profitTitle": "Net profit",
-    "dashboard.profitNote": "Revenue less what the goods cost and what you spent, for each period. Only as complete as the expenses you have entered — the Profit Report shows the working.",
+    "dashboard.profitNote": "Revenue less what the goods cost and what you spent, for each period. Only as complete as the expenses you have entered. The Profit Report shows the working.",
     "dashboard.chartWeek": "Weekly",
     "dashboard.chartMonth": "Monthly",
     "dashboard.chartYear": "Annual",
@@ -548,7 +559,7 @@ const DICTIONARY = {
     "dashboard.alertsEyebrow": "Smart alerts", "dashboard.needsAttention": "Needs attention",
     "dashboard.popupAlerts": "Popup alerts", "dashboard.movementTitle": "Movement classes",
     "dashboard.aiEngineEyebrow": "AI reorder engine", "dashboard.recommendationsTitle": "Purchase recommendations",
-    "inventory.intro": "What is on your shelves. Add the stock you already had here \u2014 new stock you buy is recorded under Purchases, where what you paid and the delivery costs are captured together.",
+    "inventory.intro": "What is on your shelves. Add the stock you already had here. New stock you buy is recorded under Purchases, where what you paid and the delivery costs are captured together.",
     "inventory.eyebrow": "Stock control", "inventory.title": "Inventory Management",
     "inventory.exportCsv": "Export CSV", "inventory.addProduct": "Add Product",
     "inventory.stockAll": "All stock states", "inventory.stockLow": "Low stock",
@@ -576,7 +587,7 @@ const DICTIONARY = {
     "control.expectedCashNote": "Cash sales plus cash deposits, less refunds",
     "control.expectedCashNoteWithRepayments": "Cash sales, deposits and debt repaid, less refunds",
     "control.collectedOnAccount": "Collected on account",
-    "control.collectedOnAccountNote": "Cash · Mobile · Card — no debt repaid today",
+    "control.collectedOnAccountNote": "Cash · Mobile · Card, no debt repaid today",
     "control.collectedOnAccountUnavailable": "Owner sign-in only",
     "control.netTakings": "Net takings",
     "control.netTakingsNote": "After refunds, excluding voids",
@@ -614,7 +625,7 @@ const DICTIONARY = {
     "vatRecord.net": "Net payable",
     "vatRecord.netNote": "Output VAT less what you can reclaim",
     "vatRecord.netCreditNote": "You reclaimed more than you charged this month",
-    "vatRecord.refundsNotNetted": "Output VAT does not yet reduce for refunds, so it is higher than the true figure. {amount} was refunded this month — see KNOWN-LIMITATIONS L-12.",
+    "vatRecord.refundsNotNetted": "Output VAT does not yet reduce for refunds, so it is higher than the true figure. {amount} was refunded this month. See KNOWN-LIMITATIONS L-12.",
     "vatRecord.outsideWindow": "This device can only see records back to {date}, so this month cannot be totalled in full. A VAT figure that is too low is the dangerous one, so it is not shown. Choose a more recent month, or narrow to one branch.",
     "vatRecord.expiringTitle": "Claims you are about to lose",
     "vatRecord.expiringHint": "You have the receipt, but no VAT recorded against it. Add it before the six-month window closes.",
@@ -625,7 +636,7 @@ const DICTIONARY = {
     "vatRecord.colPaid": "Total paid",
     "vatRecord.colExpires": "Claim closes",
     "vatRecord.colReason": "Why not",
-    "vatRecord.reason.noReceipt": "No fiscal receipt — ask the supplier for one",
+    "vatRecord.reason.noReceipt": "No fiscal receipt, ask the supplier for one",
     "vatRecord.reason.noReceiptDate": "No date recorded from the receipt",
     "vatRecord.reason.noVatAmount": "VAT not recorded from the receipt",
     "vatRecord.reason.expired": "The six-month claim window has closed",
@@ -650,7 +661,7 @@ const DICTIONARY = {
     "reports.stockAtRetail": "If it all sold at list price",
     "reports.stockAtRetailNote": "What the shelves would bring in at today's prices. Not what the stock is worth.",
     "reports.stockComplete": "Every product on the shelf has a recorded cost.",
-    "reports.stockPartial": "{missing} products have no recorded cost, covering {units} units — they are missing from this total.",
+    "reports.stockPartial": "{missing} products have no recorded cost, covering {units} units. They are missing from this total.",
     "reports.stockEmpty": "No products in this branch yet.",
     "reports.svThProduct": "Product",
     "reports.svThQuantity": "On hand",
@@ -682,7 +693,7 @@ const DICTIONARY = {
     "profit.pdTotal": "TOTAL",
     "profit.pdNoCost": "{count} products have no recorded cost, so their margin cannot be worked out.",
     "profit.pdNoLanded": "{count} products were bought before landed costs were recorded, so nothing is attributed to freight for them.",
-    "profit.pdAttribution": "The goods and landed columns split each product's cost of sales in the same proportion as everything ever bought of it — they are an attribution, not a separate measurement.",
+    "profit.pdAttribution": "The goods and landed columns split each product's cost of sales in the same proportion as everything ever bought of it. They are an attribution, not a separate measurement.",
     "profit.stRevenue": "Sales revenue",
     "profit.stCogs": "Cost of goods sold",
     "profit.stCogsNote": "What the goods you sold this month cost you, including freight and duty",
@@ -699,11 +710,11 @@ const DICTIONARY = {
     "profit.revenueNoteVatOne": "1 sale, after refunds and VAT",
     "profit.gross": "Gross profit",
     "profit.grossNote": "Revenue less what those goods cost you",
-    "profit.grossPartial": "Incomplete \u2014 {missing} of {total} sold lines have no recorded cost",
+    "profit.grossPartial": "Incomplete, {missing} of {total} sold lines have no recorded cost",
     "profit.grossNoCost": "No cost recorded for anything sold this month",
     "profit.expenses": "Expenses",
     "profit.expensesNote": "{count} recorded this month",
-    "profit.expensesNone": "Nothing recorded \u2014 this is not the same as nothing spent",
+    "profit.expensesNone": "Nothing recorded. This is not the same as nothing spent",
     "profit.net": "What you kept",
     "profit.netNote": "Gross profit less recorded expenses. Only as complete as what you entered.",
     "profit.netNoCost": "Needs a recorded cost before this means anything",
@@ -713,7 +724,7 @@ const DICTIONARY = {
     "nav.purchases": "Purchases",
     "purchases.eyebrow": "Stock bought",
     "purchases.title": "Purchases",
-    "purchases.intro": "Every delivery, and what you paid for it. Recorded when you restock \u2014 you enter the total for the batch, and the cost per unit is worked out from it.",
+    "purchases.intro": "Every delivery, and what you paid for it. Recorded when you restock. You enter the total for the batch, and the cost per unit is worked out from it.",
     "purchases.listTitle": "Recorded",
     "purchases.monthLabel": "Month",
     "purchases.thDate": "Date",
@@ -741,7 +752,7 @@ const DICTIONARY = {
     "nav.deliveries": "Deliveries",
     "deliveries.eyebrow": "Goods received",
     "deliveries.title": "Deliveries",
-    "deliveries.intro": "One delivery, many products, and the costs of getting it here. Freight, duty, clearing and transport are spread across the goods they brought in, so each item carries what it truly cost — not just what the supplier charged.",
+    "deliveries.intro": "One delivery, many products, and the costs of getting it here. Freight, duty, clearing and transport are spread across the goods they brought in, so each item carries what it truly cost, not just what the supplier charged.",
     "deliveries.receiveButton": "Receive delivery",
     "deliveries.listTitle": "Recorded",
     "deliveries.monthLabel": "Month",
@@ -767,7 +778,7 @@ const DICTIONARY = {
     "deliveries.basisQuantity": "Quantity",
     "deliveries.basisManual": "Entered by hand",
     "deliveries.deleteButton": "Delete",
-    "deliveries.deleteConfirm": "Delete this delivery and its {count} purchase {line}? What it already added to your stock and its cost stays — record a new delivery to correct that.",
+    "deliveries.deleteConfirm": "Delete this delivery and its {count} purchase {line}? What it already added to your stock and its cost stays. Record a new delivery to correct that.",
     "deliveries.lineSingular": "line",
     "deliveries.linePlural": "lines",
     "deliveries.dialogTitle": "Receive delivery",
@@ -785,7 +796,7 @@ const DICTIONARY = {
     "deliveries.linePickProduct": "Choose a product…",
     "deliveries.goodsTotal": "Goods cost: {value}",
     "deliveries.costsTitle": "Additional costs",
-    "deliveries.costsIntro": "What it cost to get the goods here and ready to sell. These are added to the value of the stock, not charged as an expense — they become cost of sales when the goods sell.",
+    "deliveries.costsIntro": "What it cost to get the goods here and ready to sell. These are added to the value of the stock, not charged as an expense. They become cost of sales when the goods sell.",
     "deliveries.costFreight": "Freight",
     "deliveries.costImportDuty": "Import duty",
     "deliveries.costClearing": "Clearing charges",
@@ -800,7 +811,7 @@ const DICTIONARY = {
     "deliveries.basisManualHint": "You decide each share. They must add up to the additional costs exactly.",
     "deliveries.manualLabel": "Share",
     "deliveries.previewTitle": "What each product will cost",
-    "deliveries.previewIntro": "Worked out before anything is saved. The last column is what one unit will cost you — and what will be charged to cost of sales when it sells.",
+    "deliveries.previewIntro": "Worked out before anything is saved. The last column is what one unit will cost you, and what will be charged to cost of sales when it sells.",
     "deliveries.thOriginal": "Goods cost",
     "deliveries.thAllocation": "Share of additional",
     "deliveries.thFinal": "Final inventory cost",
@@ -824,7 +835,7 @@ const DICTIONARY = {
     "deliveries.errNegativeAmount": "A share cannot be negative.",
     "deliveries.errNoWeight": "These products have neither a cost nor a quantity to spread the additional costs across.",
     "deliveries.errNoStore": "Pick a single branch before recording a delivery.",
-    "deliveries.errNeedsConnection": "A delivery needs a connection — there is nowhere to record it offline.",
+    "deliveries.errNeedsConnection": "A delivery needs a connection. There is nowhere to record it offline.",
     "deliveries.errUnconfirmed": "The delivery was sent but not confirmed. Check the list before recording it again.",
     "deliveries.errTransactionFailed": "Could not record that delivery. Nothing was saved. Try again.",
     "deliveries.errNoDelivery": "That delivery no longer exists.",
@@ -853,7 +864,7 @@ const DICTIONARY = {
     "expenses.eyebrow": "Money out",
     "expenses.title": "Expenses",
     "expenses.addButton": "Record Expense",
-    "expenses.intro": "What the shop spends, day by day. Rent, power, transport, wages, repairs. These are not stock purchases \u2014 they are the running costs that sit between what you sell for and what you keep.",
+    "expenses.intro": "What the shop spends, day by day. Rent, power, transport, wages, repairs. These are not stock purchases. They are the running costs that sit between what you sell for and what you keep.",
     "expenses.listTitle": "Recorded",
     "expenses.monthLabel": "Month",
     "expenses.thDate": "Date",
@@ -877,7 +888,7 @@ const DICTIONARY = {
     "expenses.monthTotal": "Spent this month",
     "expenses.monthCount": "{count} recorded",
     "expenses.fromTill": "Paid from the till",
-    "expenses.fromTillNote": "Counted separately \u2014 the drawer will be short by this much",
+    "expenses.fromTillNote": "Counted separately. The drawer will be short by this much",
     "expenses.topCategory": "Biggest category",
     "expenses.empty": "Nothing recorded for this month yet.",
     "expenses.emptyNoStore": "Pick a branch to record what it spends.",
@@ -892,8 +903,8 @@ const DICTIONARY = {
     "cat.delivery": "Delivery to a customer",
     "cat.packaging": "Sales packaging",
     "expenses.natureLabel": "Type of cost",
-    "expenses.natureDirect": "Direct — attributable to a sale",
-    "expenses.natureIndirect": "Indirect — running the business",
+    "expenses.natureDirect": "Direct, attributable to a sale",
+    "expenses.natureIndirect": "Indirect, running the business",
     "expenses.natureDirectHint": "Costs that only happen because something was sold: commission, delivery to a customer, packaging. Shown on its own line under gross profit.",
     "expenses.natureIndirectHint": "Costs of keeping the shop open whether or not you sell today: rent, power, salaries, licences. Shown on its own line under gross profit.",
     "expenses.thNature": "Type",
@@ -903,11 +914,11 @@ const DICTIONARY = {
     "expenses.indirectNote": "Costs of keeping the shop open, sale or no sale.",
     "expenses.landedEyebrow": "Not an expense",
     "expenses.landedTitle": "Landed costs, capitalised into stock",
-    "expenses.landedIntro": "Freight, duty, clearing and transport from {count} {delivery} received this month. This money is not spent — it is held in the value of your stock, and becomes cost of sales when those goods sell.",
+    "expenses.landedIntro": "Freight, duty, clearing and transport from {count} {delivery} received this month. This money is not spent. It is held in the value of your stock, and becomes cost of sales when those goods sell.",
     "expenses.landedThType": "Cost",
     "expenses.landedThAmount": "Amount",
     "expenses.landedTotalRow": "TOTAL CAPITALISED",
-    "expenses.landedExcluded": "Shown here for reference only. This total is NOT included in the expense figures above — counting it twice would understate your profit.",
+    "expenses.landedExcluded": "Shown here for reference only. This total is NOT included in the expense figures above. Counting it twice would understate your profit.",
     "cat.rent": "Rent",
     "cat.utilities": "Power and water",
     "cat.wages": "Wages",
@@ -925,7 +936,7 @@ const DICTIONARY = {
     "control.salesCountNoteOne": "1 sale this month",
     "control.grossMargin": "Gross margin (est.)",
     "control.marginNote": "Revenue less cost of goods sold",
-    "control.marginIncomplete": "Incomplete — {missing} of {total} sold lines have no cost price",
+    "control.marginIncomplete": "Incomplete, {missing} of {total} sold lines have no cost price",
     "control.marginNoCost": "No cost prices recorded, so margin cannot be worked out",
     "control.showStockValue": "Show stock value",
     "control.stockValueLoading": "Loading…",
@@ -954,7 +965,7 @@ const DICTIONARY = {
     "control.govTeamValue": "{managers} manager(s), {cashiers} cashier(s)",
     "control.govOverride": "Override password",
     "control.govSet": "Set",
-    "control.govNotSet": "Not set — voids and returns are blocked",
+    "control.govNotSet": "Not set, voids and returns are blocked",
     "control.govUnnamed": "Staff without a name on file",
     "control.govDeletion": "Account deletion",
     "control.govDeletionPending": "Scheduled",
@@ -962,7 +973,7 @@ const DICTIONARY = {
     "reports.staffBreakdownTitle": "Sales by Staff", "reports.staffColumn": "Staff",
     "reports.ordersColumn": "Orders", "reports.allStaffRow": "All staff",
     "reports.searchOrderPlaceholder": "Search order number", "reports.orderNotFound": "No sale found for that order number.",
-    "reports.orderFoundLabel": "Order #{orderNumber} \u2014 {name}, {date}, {method}, {total}",
+    "reports.orderFoundLabel": "Order #{orderNumber}: {name}, {date}, {method}, {total}",
     "reports.staffOrderLookupTitle": "Order Lookup",
     "reports.staffOrderLookupDateLabel": "Date",
     "reports.staffOrderLookupDateHint": "Leave both dates blank to see every order for this staff member.",
@@ -1026,7 +1037,7 @@ const DICTIONARY = {
     "auth.ledgerCounted": "Counted at close",
     "auth.ledgerDiff": "Difference",
     "auth.whyMultiStore": "Track inventory across every branch from one dashboard.",
-    "auth.whyOffline": "Keep selling even when the internet drops \u2014 it syncs automatically once you're back online.",
+    "auth.whyOffline": "Keep selling even when the internet drops. It syncs automatically once you're back online.",
     "auth.whyReceipts": "Print or share receipts on WhatsApp, with cash, mobile money, and card tracking built in.",
     "auth.whyAi": "Ask the built-in AI Advisor which products to reorder, in English or Swahili.",
     "stockAlert.title": "Stock Alert", "stockAlert.ok": "OK",
@@ -1061,9 +1072,9 @@ const DICTIONARY = {
     "dialog.transferQuantityPrompt": "How many units of \"{name}\" to transfer? (Available: {quantity})",
     "dialog.transferTitle": "Transfer Stock", "dialog.transferDestinationLabel": "Destination store",
     "dialog.transferQuantityLabel": "Quantity to transfer", "dialog.transferConfirm": "Transfer",
-    "dialog.transferProductLabel": "{name} \u2014 {quantity} available at {store}",
+    "dialog.transferProductLabel": "{name}: {quantity} available at {store}",
     "restock.dialogTitle": "Restock Product",
-    "restock.productLabel": "{name} \u2014 current stock: {quantity}",
+    "restock.productLabel": "{name}, current stock: {quantity}",
     "restock.qtyLabel": "Quantity received",
     "restock.qtyPlaceholder": "e.g. 20",
     "restock.confirmButton": "Add to Stock",
@@ -1120,7 +1131,7 @@ const DICTIONARY = {
     "monthlyReport.topProductsLine": "Top sellers: {list}.",
     "monthlyReport.noTopProducts": "No product sales recorded this period.",
     "monthlyReport.stockLine": "{low} products are low on stock and {out} are out of stock.",
-    "monthlyReport.localFallbackNote": "(Local summary \u2014 the AI proxy was unavailable for this report.)",
+    "monthlyReport.localFallbackNote": "(Local summary: the AI proxy was unavailable for this report.)",
     "monthlyReport.sectionEyebrow": "AI-generated",
     "monthlyReport.sectionTitle": "Monthly Reports",
     "monthlyReport.monthLabel": "Month",
@@ -1183,11 +1194,11 @@ const DICTIONARY = {
     "report.colPaymentMethod": "Payment Method", "report.colTransactions": "Transactions",
     "report.colTotalTZS": "Total", "report.colAvgSaleTZS": "Average Sale",
     "report.colTopItems": "Top Items", "report.combined": "Combined", "report.storePrefix": "Store: {name}",
-    "tutorial.pos": "How to use Point of Sale:\n1. Open the POS tab and search or browse for a product.\n2. Set the quantity, then click Add. Products flagged as flexible/dynamic price ask for a price per unit first.\n3. Adjust quantities in the cart with +/-, the qty box, or Remove. Use Undo Last Action if you make a mistake.\n4. Pick the staff member making the sale, and enter the order number from their physical sales sheet.\n5. Pick a payment method (Cash, Mobile Money, Card). For cash, enter the amount tendered to see change due.\n6. Click Complete Sale. If you need to reverse it, use Undo Last Sale right after \u2014 stock is restored automatically.",
+    "tutorial.pos": "How to use Point of Sale:\n1. Open the POS tab and search or browse for a product.\n2. Set the quantity, then click Add. Products flagged as flexible/dynamic price ask for a price per unit first.\n3. Adjust quantities in the cart with +/-, the qty box, or Remove. Use Undo Last Action if you make a mistake.\n4. Pick the staff member making the sale, and enter the order number from their physical sales sheet.\n5. Pick a payment method (Cash, Mobile Money, Card). For cash, enter the amount tendered to see change due.\n6. Click Complete Sale. If you need to reverse it, use Undo Last Sale right after. Stock is restored automatically.",
     "tutorial.inventory": "How to manage inventory:\n1. Go to Inventory and click Add Product (or use the Dashboard button). Fill in name, category, quantity, and selling price.\n2. Set a Low stock threshold so the product shows up in Smart alerts and reorder recommendations once it dips below that number.\n3. Choose Fixed price for normal items, or Flexible/dynamic price if the price varies per sale.\n4. Use Edit on any row to update details, or Delete to remove a product. If you have 2+ stores, Transfer moves stock between them.\n5. Use the category and stock-status filters above the table, or the search bar, to find items quickly.",
-    "tutorial.reports": "How to read your reports:\n1. The Reports tab breaks sales down by payment method \u2014 cash, mobile money, and card \u2014 with totals, counts, and top items each.\n2. Pick a date range preset (today, week, month, all time) or choose Custom range for specific dates.\n3. If you're viewing All Stores, a per-store breakdown appears below the combined summary.\n4. Use Export CSV or Export PDF to save the payment report. The Inventory Summary cards further down export stock data separately.",
-    "tutorial.stores": "How to work with multiple stores:\n1. Use the store switcher on the Dashboard to change which store you're viewing or working in.\n2. Click + Store to add a new branch. Once you have 2+ stores, an \"All Stores (combined)\" option appears for read-only overviews.\n3. While All Stores is selected, adding products, adding to cart, and completing sales are disabled \u2014 switch to one specific store first.\n4. Use the Transfer button on an inventory row to move stock from one store to another; matching SKUs merge automatically.",
-    "chat.emptyState": "Ask a question about your inventory to get started \u2014 in any language.",
+    "tutorial.reports": "How to read your reports:\n1. The Reports tab breaks sales down by payment method (cash, mobile money, and card) with totals, counts, and top items each.\n2. Pick a date range preset (today, week, month, all time) or choose Custom range for specific dates.\n3. If you're viewing All Stores, a per-store breakdown appears below the combined summary.\n4. Use Export CSV or Export PDF to save the payment report. The Inventory Summary cards further down export stock data separately.",
+    "tutorial.stores": "How to work with multiple stores:\n1. Use the store switcher on the Dashboard to change which store you're viewing or working in.\n2. Click + Store to add a new branch. Once you have 2+ stores, an \"All Stores (combined)\" option appears for read-only overviews.\n3. While All Stores is selected, adding products, adding to cart, and completing sales are disabled. Switch to one specific store first.\n4. Use the Transfer button on an inventory row to move stock from one store to another; matching SKUs merge automatically.",
+    "chat.emptyState": "Ask a question about your inventory to get started, in any language.",
     "auth.createAccount": "Create account", "auth.signIn": "Sign in",
     "auth.haveAccount": "I already have an account", "auth.newAccount": "Create a new account",
     "auth.errorRequired": "This field is required.",
@@ -1200,7 +1211,7 @@ const DICTIONARY = {
     "inventory.edit": "Edit", "inventory.transfer": "Transfer", "inventory.restock": "Restock", "inventory.delete": "Delete",
     "inventory.emptyState": "No inventory yet. Add your first material or product to start tracking stock.",
     "inventory.loadingState": "Loading your stock\u2026 a large catalogue can take a moment on the first sign-in from a device.",
-    "inventory.loadFailedState": "Your stock could not be loaded. Check the connection and reload \u2014 nothing has been lost.",
+    "inventory.loadFailedState": "Your stock could not be loaded. Check the connection and reload. Nothing has been lost.",
     "inventory.noMatchesState": "No products match this search or filter. Clear it to see the rest of your stock.",
     "inventory.clearFilters": "Clear search and filters",
     "toast.incorrectPassword": "Incorrect password. Price change cancelled.",
@@ -1359,7 +1370,7 @@ const DICTIONARY = {
     "dashboard.askAiQuestionRecommendations": "Explain my current purchase recommendations and what I should order this week.",
     "deleteAccount.button": "Delete Account",
     "deleteAccount.title": "Delete Account",
-    "deleteAccount.warning": "Your account will be locked immediately and scheduled for permanent deletion in 30 days. You can restore it by signing in at any time during those 30 days. After that, all personal details — your staff and customer names, phone numbers and emails — are erased permanently and cannot be recovered. Sales and financial records are kept in anonymised form for the period required by law, as described in the Terms & Conditions.",
+    "deleteAccount.warning": "Your account will be locked immediately and scheduled for permanent deletion in 30 days. You can restore it by signing in at any time during those 30 days. After that, all personal details, your staff and customer names, phone numbers and emails, are erased permanently and cannot be recovered. Sales and financial records are kept in anonymised form for the period required by law, as described in the Terms & Conditions.",
     "deleteAccount.passwordLabel": "Confirm your password",
     "deleteAccount.typeDeleteLabel": "Type DELETE to confirm",
     "deleteAccount.confirmButton": "Schedule Account Deletion",
@@ -1483,7 +1494,7 @@ const DICTIONARY = {
     "returns.maxReturnable": "{qty} returnable",
     "returns.confirmButton": "Process Refund",
     "returns.noItemsSelected": "All items on this order have already been returned.",
-    "returns.servicesNotReturnable": "This sale is services only. A service cannot be returned once given — void the whole sale instead.",
+    "returns.servicesNotReturnable": "This sale is services only. A service cannot be returned once given. Void the whole sale instead.",
     "returns.refundedLabel": "Refunded",
     "toast.returnNoSelection": "Enter a quantity to return for at least one item.",
     "toast.returnProcessed": "Refund of {amount} processed and stock restored.",
@@ -1546,7 +1557,7 @@ const DICTIONARY = {
     "shift.reconcileOk": "Checks out",
     "shift.reconcileMismatch": "{amount} unaccounted",
     "shift.reconcileMismatchHelp": "The sales record for this shift does not agree with the figures it was closed on. Worth asking about before assuming anything.",
-    "shift.reconcileUnknown": "Not checked — this shift is older than the sales history loaded here.",
+    "shift.reconcileUnknown": "Not checked. This shift is older than the sales history loaded here.",
     "shift.balanced": "Balanced",
     "shift.selectStore": "Choose a single branch to run a shift",
     "toast.selectStoreBeforeShift": "Choose a single branch before opening a shift.",
@@ -1575,6 +1586,160 @@ const DICTIONARY = {
     "customers.colCreditLimit": "Credit Alert At",
     "customers.setLimitButton": "Set Alert",
     "customers.noLimit": "No alert",
+    "nav.customers": "Customers",
+    "customersScreen.eyebrow": "Who you sell to",
+    "customersScreen.title": "Customers",
+    "customersScreen.intro": "Everyone you sell to, including the customers a credit sale created at the till. Recording a TIN and an address here is what lets an invoice be raised for them properly.",
+    "customersScreen.listTitle": "All customers",
+    "customersScreen.addButton": "+ Customer",
+    "customersScreen.searchLabel": "Find",
+    "customersScreen.searchPlaceholder": "Search by name, phone or TIN",
+    "customersScreen.count": "{total} customers",
+    "customersScreen.countOne": "1 customer",
+    "customersScreen.countFiltered": "Showing {shown} of {total}",
+    "customersScreen.empty": "No customers yet. A credit sale at the till adds one, or add them here before you invoice them.",
+    "customersScreen.noMatch": "No customer matches that search.",
+    "customersScreen.thName": "Customer",
+    "customersScreen.thPhone": "Phone",
+    "customersScreen.thTin": "TIN",
+    "customersScreen.thOwed": "Balance owed",
+    "customersScreen.thDays": "Days outstanding",
+    "customersScreen.thActions": "Actions",
+    "customersScreen.history": "History",
+    "customersScreen.edit": "Edit",
+    "customersScreen.dialogTitle": "Add Customer",
+    "customersScreen.dialogTitleEdit": "Edit Customer",
+    "customersScreen.nameLabel": "Customer name",
+    "customersScreen.namePlaceholder": "e.g. Kariakoo Traders",
+    "customersScreen.phoneLabel": "Phone",
+    "customersScreen.tinLabel": "TIN",
+    "customersScreen.vrnLabel": "VAT number",
+    "customersScreen.emailLabel": "Email",
+    "customersScreen.termsLabel": "Payment terms",
+    "customersScreen.termsPlaceholder": "e.g. 30 days",
+    "customersScreen.addressLabel": "Address",
+    "customersScreen.billingNote": "TIN, VAT number and address appear on an invoice raised for this customer. What they owe is not edited here. It moves when a credit sale, a payment or an invoice is recorded.",
+    "customersScreen.saveButton": "Save Customer",
+    "customersScreen.nameRequired": "Enter the customer's name.",
+    "customersScreen.phoneRequired": "Enter a phone number. It is how the till finds them again, and how a reminder reaches them.",
+    "customersScreen.phoneTaken": "{name} already uses that phone number.",
+    "customersScreen.historyTitle": "Customer History",
+    "customersScreen.historyIntro": "What {name} owes, and what they have paid.",
+    "customersScreen.historyLoading": "Loading...",
+    "customersScreen.historyOwed": "Owed now",
+    "customersScreen.historyInvoicesTitle": "Invoices",
+    "customersScreen.historyPaymentsTitle": "Payments",
+    "customersScreen.historyNoInvoices": "No invoices raised for this customer yet.",
+    "customersScreen.historyNoPayments": "No payments recorded yet.",
+    "customersScreen.historyColNumber": "Number",
+    "customersScreen.historyColDate": "Date",
+    "customersScreen.historyColAmount": "Amount",
+    "customersScreen.historyColStatus": "Status",
+    "customersScreen.historyColNote": "Note",
+    "customersScreen.historyBoundedNote": "The lists show recent history. The balance is kept as a running figure, so it stays right even when the history is longer than this.",
+    "customersScreen.detailPhone": "Phone",
+    "customersScreen.detailTin": "TIN",
+    "customersScreen.detailVrn": "VAT number",
+    "customersScreen.detailEmail": "Email",
+    "customersScreen.detailTerms": "Payment terms",
+    "customersScreen.detailAddress": "Address",
+    "customersScreen.statusDraft": "Draft",
+    "customersScreen.statusIssued": "Issued",
+    "customersScreen.statusPartly": "Partly paid",
+    "customersScreen.statusPaid": "Paid",
+    "customersScreen.statusVoid": "Void",
+    "toast.customerAdded": "{name} added.",
+    "toast.customerUpdated": "{name} updated.",
+    "toast.couldNotSaveCustomer": "Could not save the customer. Check your connection and try again.",
+    "invoices.navLabel": "Invoices",
+    "invoices.eyebrow": "Billing",
+    "invoices.title": "Invoices",
+    "invoices.intro": "A request for payment that records what is owed and what it was for. This is not a tax invoice. In Tanzania only an EFD or VFD receipt proves VAT, and a buyer still needs one to claim it back.",
+    "invoices.listTitle": "Raised",
+    "invoices.newButton": "+ Invoice",
+    "invoices.count": "{total} invoices",
+    "invoices.countOne": "1 invoice",
+    "invoices.outstanding": "Outstanding",
+    "invoices.empty": "No invoices yet. Raise one for a customer, check it reads right, then issue it.",
+    "invoices.thNumber": "Number",
+    "invoices.thCustomer": "Customer",
+    "invoices.thDate": "Date",
+    "invoices.thDue": "Due",
+    "invoices.thTotal": "Total",
+    "invoices.thStatus": "Status",
+    "invoices.thActions": "Actions",
+    "invoices.thDescription": "Description",
+    "invoices.thQty": "Qty",
+    "invoices.thUnitPrice": "Unit price",
+    "invoices.thLineTotal": "Line total",
+    "invoices.thRemove": "Remove",
+    "invoices.noNumberYet": "Draft",
+    "invoices.edit": "Edit",
+    "invoices.issueButton": "Issue",
+    "invoices.dialogTitle": "New Invoice",
+    "invoices.dialogTitleEdit": "Edit Draft",
+    "invoices.customerLabel": "Customer",
+    "invoices.issueDateLabel": "Invoice date",
+    "invoices.dueDateLabel": "Due date",
+    "invoices.termsLabel": "Payment terms",
+    "invoices.noteLabel": "Note",
+    "invoices.addProductLabel": "Add from stock",
+    "invoices.addProductButton": "Add product",
+    "invoices.addFreeButton": "Add other item",
+    "invoices.choose": "Choose...",
+    "invoices.noLines": "Nothing on this invoice yet.",
+    "invoices.removeLine": "Remove",
+    "invoices.totalLabel": "Invoice total",
+    "invoices.draftNote": "Saving keeps this a draft: nothing is numbered, no stock moves and nothing is owed until you issue it.",
+    "invoices.saveDraftButton": "Save Draft",
+    "invoices.draftSaved": "Draft saved.",
+    "invoices.draftUpdated": "Draft updated.",
+    "invoices.saveFailed": "Could not save the draft. Check your connection and try again.",
+    "invoices.customerRequired": "Choose the customer this invoice is for.",
+    "invoices.needACustomer": "Add a customer first. An invoice is raised for somebody.",
+    "invoices.dueBeforeIssue": "The due date cannot be before the invoice date.",
+    "invoices.linesRequired": "Add at least one item, with a description and a quantity.",
+    "invoices.tooManyLines": "An invoice can carry {max} lines.",
+    "invoices.totalMustBePositive": "An invoice has to be for more than zero.",
+    "invoices.totalTooLarge": "That total is larger than this system records.",
+    "invoices.issuedNotEditable": "An issued invoice cannot be edited. Raise a credit note against it instead.",
+    "invoices.issueConfirm": "Issue this invoice to {name} for {total}? It takes its number, moves the stock, and creates the debt. This cannot be undone.",
+    "invoices.issued": "Invoice issued.",
+    "invoices.alreadyIssued": "That invoice has already been issued.",
+    "invoices.issueFailed": "Could not issue the invoice. Nothing was changed.",
+    "invoices.issueUnconfirmed": "Still working. Check the list before issuing it again.",
+    "invoices.offlineIssue": "Issuing needs a connection, because the number has to be the next one nobody else has taken. The draft is saved.",
+    "invoices.customerGone": "That customer no longer exists.",
+    "invoices.view": "View",
+    "invoices.payButton": "Record payment",
+    "invoices.voidButton": "Void",
+    "invoices.previewTitle": "Invoice",
+    "invoices.shareWhatsApp": "Send on WhatsApp",
+    "invoices.downloadPdf": "Download PDF",
+    "invoices.docTitle": "INVOICE",
+    "invoices.docNumber": "Invoice number",
+    "invoices.docDate": "Date",
+    "invoices.docDue": "Due",
+    "invoices.docBillTo": "Bill to",
+    "invoices.docTin": "TIN",
+    "invoices.docVrn": "VAT number",
+    "invoices.docTerms": "Payment terms",
+    "invoices.docTotal": "Total",
+    "invoices.docPaid": "Paid",
+    "invoices.docCredited": "Credited",
+    "invoices.docOutstanding": "Still owed",
+    "invoices.docNotTaxInvoice": "This is not a tax invoice. In Tanzania a fiscal receipt from an EFD or VFD is what proves VAT, and a VAT-registered buyer needs one to claim it back.",
+    "invoices.docVoidBanner": "VOID. {reason}",
+    "invoices.voidConfirm": "Void invoice {number} for {total}? It keeps its number, the stock goes back, and the debt is removed. This cannot be undone.",
+    "invoices.voidReasonPrompt": "Why is this invoice being voided? The number stays in the sequence, so this is the only record of why it stands for nothing.",
+    "invoices.voidReasonRequired": "Enter a reason. A voided number with no explanation is what an auditor asks about.",
+    "invoices.voided": "Invoice voided.",
+    "invoices.voidHasMoney": "That invoice has money against it. Raise a credit note instead.",
+    "invoices.voidNotIssued": "Only an issued invoice can be voided.",
+    "invoices.voidOffline": "Voiding needs a connection, because the stock and the debt move with it.",
+    "invoices.voidFailed": "Could not void the invoice. Nothing was changed.",
+    "invoices.voidUnconfirmed": "Still working. Check the invoice before voiding it again.",
+    "payment.againstInvoice": "Paying invoice {number}. Still owed on it: {outstanding}",
     "dialog.creditLimitPrompt": "Alert when {name} owes more than this, in {currency}. Sales above it need a manager's override password. Leave blank for no alert:",
     "toast.creditLimitInvalid": "Enter a valid credit limit, or leave blank for no limit.",
     "toast.creditLimitSet": "{name}'s credit limit set to {limit}.",
@@ -1582,7 +1747,7 @@ const DICTIONARY = {
     "toast.creditLimitFailed": "Could not update the credit alert. Please try again.",
     "toast.creditLimitOverrideRefused": "Not authorised. The sale was not completed.",
     "control.creditOverrides": "Credit alerts overridden (30 days)",
-    "dialog.creditLimitExceededConfirm": "{name} already owes {currentBalance}. This sale adds {newBalanceDue}, bringing them to {projectedTotal} — above the {limit} alert level. Continuing needs a manager override password, and will be recorded. Continue?",
+    "dialog.creditLimitExceededConfirm": "{name} already owes {currentBalance}. This sale adds {newBalanceDue}, bringing them to {projectedTotal}, above the {limit} alert level. Continuing needs a manager override password, and will be recorded. Continue?",
     "dashboard.setCurrency": "Currency",
     "dialog.currencyCodePrompt": "Enter a 3-letter currency code for this store (e.g. TZS, USD, KES, UGX):",
     "toast.currencyInvalid": "Enter a valid 3-letter currency code (letters only).",
@@ -1627,7 +1792,7 @@ const DICTIONARY = {
     "staff.inviteStoresRequired": "Select at least one store, or All stores.",
     "staff.inviteFailed": "Could not create the invite. Please try again.",
     "staff.inviteNetworkError": "Could not reach the invite service. Check your connection and try again.",
-    "staff.inviteResultText": "Invite created for {email} as {role}. Share the link below \u2014 it expires in 48 hours and can only be used once.",
+    "staff.inviteResultText": "Invite created for {email} as {role}. Share the link below. It expires in 48 hours and can only be used once.",
     "staff.copyLinkButton": "Copy Link",
     "staff.sendWhatsAppButton": "Send via WhatsApp",
     "staff.linkCopied": "Invite link copied.",
@@ -1643,7 +1808,7 @@ const DICTIONARY = {
     "confirm.cancel": "Cancel",
     "confirm.accept": "Yes, continue",
     "staff.inviteLinkLabel": "Invite link",
-    "staff.copyFailedUseLink": "Could not copy automatically. The link is shown above — copy it from there.",
+    "staff.copyFailedUseLink": "Could not copy automatically. The link is shown above. Copy it from there.",
     "nav.arrivals": "Deliveries",
     "permissions.dialogTitle": "What this cashier may do",
     "permissions.intro": "Ticked means allowed. The three at the bottom are on for every cashier unless you remove them.",
@@ -1661,6 +1826,8 @@ const DICTIONARY = {
     "permissions.receiveDeliveriesHint": "Counts in stock that arrives and sends it for approval. The stock is added when you or a manager approve it with the costs.",
     "permissions.processReturns": "Process returns",
     "permissions.processReturnsHint": "Takes an item back and refunds it, item by item. The discount password is still required.",
+    "permissions.issueInvoices": "Raise and issue invoices",
+    "permissions.issueInvoicesHint": "Prepares an invoice for a customer and issues it. Issuing gives it a number and creates the debt, so it cannot be edited afterwards.",
     "permissions.viewStock": "See stock levels",
     "permissions.viewStockHint": "Opens the Inventory screen to look at quantities. No prices, no changes.",
     "permissions.viewTodaySales": "See today's takings",
@@ -1749,8 +1916,8 @@ const DICTIONARY = {
     "settings.accountTitle": "Akaunti",
     "settings.signedInAs": "Umeingia kama",
     "backup.last": "Nakala ya mwisho: {date}.",
-    "backup.stale": "Nakala ya mwisho: {date} — siku {days} zilizopita. Chukua mpya.",
-    "backup.never": "Hujawahi kuchukua nakala. Kumbukumbu zako zimehifadhiwa mtandaoni, hivyo simu ikipotea hakuna kinachopotea — ingia tena mahali popote. Lakini kilichofutwa hakiwezi kurudishwa, na nakala ndiyo pekee ingesalia.",
+    "backup.stale": "Nakala ya mwisho: {date}, siku {days} zilizopita. Chukua mpya.",
+    "backup.never": "Hujawahi kuchukua nakala. Kumbukumbu zako zimehifadhiwa mtandaoni, hivyo simu ikipotea hakuna kinachopotea. Ingia tena mahali popote. Lakini kilichofutwa hakiwezi kurudishwa, na nakala ndiyo pekee ingesalia.",
     "reports.groupFinancial": "Fedha", "reports.groupSales": "Mauzo",
     "reports.groupPurchases": "Manunuzi", "reports.groupInventory": "Hisa",
     "reports.groupExpenses": "Matumizi",
@@ -1766,7 +1933,7 @@ const DICTIONARY = {
     "reports.hint.stockValuation": "Rafuni zina nini, na iligharimu kiasi gani",
     "reports.hint.stockSummary": "Kilichopo rafuni kwa sasa",
     "reports.hint.stockAdjustments": "Hisa ilikwenda wapi bila kuuzwa",
-    "reports.hint.offlineSales": "Iliuzwa wakati wa hitilafu — rafuni za kuhesabu upya",
+    "reports.hint.offlineSales": "Iliuzwa wakati wa hitilafu, rafuni za kuhesabu upya",
     "reports.hint.purchaseSummary": "Ulichonunua, ukiondoa kilichorudishwa",
     "reports.hint.purchasesByProduct": "Ulichotumia, bidhaa kwa bidhaa",
     "reports.hint.purchaseReturns": "Ulichorudisha kwa wasambazaji",
@@ -1813,7 +1980,7 @@ const DICTIONARY = {
     "kpi.payable": "Unachodaiwa na wasambazaji", "kpi.payableDelta": "Usafirishaji ambao haujalipwa",
     "product.unitLabel": "Kipimo", "product.unitPlaceholder": "mfano kipande, kreti, kg",
     "product.skuLabel": "SKU (hiari)", "product.activeLabel": "Hali",
-    "product.activeYes": "Inatumika", "product.activeNo": "Haitumiki — acha kuiuza",
+    "product.activeYes": "Inatumika", "product.activeNo": "Haitumiki, acha kuiuza",
     "movement.colProduct": "Bidhaa",
     "reports.thCustomer": "Mteja", "reports.thOrders": "Oda", "reports.thRevenue": "Mapato",
     "reports.thOrder": "Oda", "reports.thRefunded": "Kilichorejeshwa",
@@ -1911,7 +2078,7 @@ const DICTIONARY = {
     "suppliers.openingBalanceHint": "Acha 0 isipokuwa ulikuwa unawadai kabla ya kuanza kutumia SaviaSmart.",
     "suppliers.openingBalanceInvalid": "Weka 0 au kiasi chanya.",
     "suppliers.statusLabel": "Hali", "suppliers.statusActive": "Anatumika",
-    "suppliers.statusInactive": "Hatumiki — acha kumpendekeza", "suppliers.statusInactiveShort": "Hatumiki",
+    "suppliers.statusInactive": "Hatumiki, acha kumpendekeza", "suppliers.statusInactiveShort": "Hatumiki",
     "suppliers.saveButton": "Hifadhi Msambazaji",
     "suppliers.nameRequired": "Weka jina la msambazaji.",
     "suppliers.nameTaken": "Tayari una msambazaji mwenye jina hili.",
@@ -1934,7 +2101,7 @@ const DICTIONARY = {
     "dashboard.eyebrowToday": "Leo", "dashboard.title": "Kituo cha Uendeshaji",
     "dashboard.profitEyebrow": "Utendaji",
     "dashboard.profitTitle": "Faida halisi",
-    "dashboard.profitNote": "Mapato ukiondoa gharama ya bidhaa na matumizi, kwa kila kipindi. Ni kamili kadri ya matumizi uliyoingiza — Ripoti ya Faida inaonyesha hesabu.",
+    "dashboard.profitNote": "Mapato ukiondoa gharama ya bidhaa na matumizi, kwa kila kipindi. Ni kamili kadri ya matumizi uliyoingiza. Ripoti ya Faida inaonyesha hesabu.",
     "dashboard.chartWeek": "Kwa wiki",
     "dashboard.chartMonth": "Kwa mwezi",
     "dashboard.chartYear": "Kwa mwaka",
@@ -1945,7 +2112,7 @@ const DICTIONARY = {
     "dashboard.alertsEyebrow": "Arifa muhimu", "dashboard.needsAttention": "Yanayohitaji uangalizi",
     "dashboard.popupAlerts": "Arifa za dirisha ibukizi", "dashboard.movementTitle": "Mwendo wa bidhaa",
     "dashboard.aiEngineEyebrow": "Injini ya kuagiza upya ya AI", "dashboard.recommendationsTitle": "Mapendekezo ya ununuzi",
-    "inventory.intro": "Kilichopo rafuni zako. Ongeza hisa uliyokuwa nayo tayari hapa \u2014 hisa mpya unayonunua inarekodiwa chini ya Manunuzi, ambako ulicholipa na gharama za usafirishaji vinachukuliwa pamoja.",
+    "inventory.intro": "Kilichopo rafuni zako. Ongeza hisa uliyokuwa nayo tayari hapa. Hisa mpya unayonunua inarekodiwa chini ya Manunuzi, ambako ulicholipa na gharama za usafirishaji vinachukuliwa pamoja.",
     "inventory.eyebrow": "Udhibiti wa hisa", "inventory.title": "Usimamizi wa Hisa",
     "inventory.exportCsv": "Hamisha CSV", "inventory.addProduct": "Ongeza Bidhaa",
     "inventory.stockAll": "Hali zote za hisa", "inventory.stockLow": "Hisa chache",
@@ -1973,7 +2140,7 @@ const DICTIONARY = {
     "control.expectedCashNote": "Mauzo ya taslimu na malipo, ukiondoa marejesho",
     "control.expectedCashNoteWithRepayments": "Mauzo ya taslimu, malipo ya awali na madeni yaliyolipwa, ukiondoa marejesho",
     "control.collectedOnAccount": "Madeni yaliyolipwa",
-    "control.collectedOnAccountNote": "Taslimu · Simu · Kadi — hakuna deni lililolipwa leo",
+    "control.collectedOnAccountNote": "Taslimu · Simu · Kadi, hakuna deni lililolipwa leo",
     "control.collectedOnAccountUnavailable": "Kwa mmiliki pekee",
     "control.netTakings": "Mapato halisi",
     "control.netTakingsNote": "Baada ya marejesho, bila mauzo yaliyofutwa",
@@ -2011,7 +2178,7 @@ const DICTIONARY = {
     "vatRecord.net": "Kiasi cha kulipa",
     "vatRecord.netNote": "VAT ya mauzo ukiondoa unayoweza kudai",
     "vatRecord.netCreditNote": "Ulidai zaidi ya ulivyotoza mwezi huu",
-    "vatRecord.refundsNotNetted": "VAT ya mauzo bado haipunguzwi kwa marejesho, hivyo ni kubwa kuliko takwimu halisi. {amount} yalirejeshwa mwezi huu — angalia KNOWN-LIMITATIONS L-12.",
+    "vatRecord.refundsNotNetted": "VAT ya mauzo bado haipunguzwi kwa marejesho, hivyo ni kubwa kuliko takwimu halisi. {amount} yalirejeshwa mwezi huu. Angalia KNOWN-LIMITATIONS L-12.",
     "vatRecord.outsideWindow": "Kifaa hiki kinaona kumbukumbu hadi {date} pekee, hivyo mwezi huu hauwezi kujumlishwa kikamilifu. Takwimu ndogo kuliko halisi ndiyo hatari, hivyo haionyeshwi. Chagua mwezi wa karibuni, au chagua tawi moja.",
     "vatRecord.expiringTitle": "Madai unayokaribia kupoteza",
     "vatRecord.expiringHint": "Una risiti, lakini hujaandika VAT yake. Iandike kabla ya miezi sita kuisha.",
@@ -2022,7 +2189,7 @@ const DICTIONARY = {
     "vatRecord.colPaid": "Jumla iliyolipwa",
     "vatRecord.colExpires": "Dai linafungwa",
     "vatRecord.colReason": "Kwa nini hapana",
-    "vatRecord.reason.noReceipt": "Hakuna risiti ya kodi — mwombe msambazaji",
+    "vatRecord.reason.noReceipt": "Hakuna risiti ya kodi, mwombe msambazaji",
     "vatRecord.reason.noReceiptDate": "Hakuna tarehe iliyoandikwa kutoka kwenye risiti",
     "vatRecord.reason.noVatAmount": "VAT haijaandikwa kutoka kwenye risiti",
     "vatRecord.reason.expired": "Muda wa miezi sita wa kudai umeisha",
@@ -2047,7 +2214,7 @@ const DICTIONARY = {
     "reports.stockAtRetail": "Ikiuzwa yote kwa bei ya orodha",
     "reports.stockAtRetailNote": "Kiasi ambacho rafu zingeingiza kwa bei za leo. Si thamani halisi ya hisa.",
     "reports.stockComplete": "Kila bidhaa iliyopo rafuni ina gharama iliyorekodiwa.",
-    "reports.stockPartial": "Bidhaa {missing} hazina gharama iliyorekodiwa, zinazohusisha vipande {units} — hazipo kwenye jumla hii.",
+    "reports.stockPartial": "Bidhaa {missing} hazina gharama iliyorekodiwa, zinazohusisha vipande {units}. Hazipo kwenye jumla hii.",
     "reports.stockEmpty": "Hakuna bidhaa katika tawi hili bado.",
     "reports.svThProduct": "Bidhaa",
     "reports.svThQuantity": "Zilizopo",
@@ -2079,7 +2246,7 @@ const DICTIONARY = {
     "profit.pdTotal": "JUMLA",
     "profit.pdNoCost": "Bidhaa {count} hazina gharama iliyorekodiwa, hivyo kiwango chake cha faida hakiwezi kupatikana.",
     "profit.pdNoLanded": "Bidhaa {count} zilinunuliwa kabla gharama za ziada hazijarekodiwa, hivyo hakuna kilichotengwa kwa usafirishaji.",
-    "profit.pdAttribution": "Safu za bidhaa na gharama za ziada zinagawanya gharama ya mauzo ya kila bidhaa kwa uwiano sawa na kila kilichowahi kununuliwa — ni ugawaji, si kipimo tofauti.",
+    "profit.pdAttribution": "Safu za bidhaa na gharama za ziada zinagawanya gharama ya mauzo ya kila bidhaa kwa uwiano sawa na kila kilichowahi kununuliwa. Ni ugawaji, si kipimo tofauti.",
     "profit.stRevenue": "Mapato ya mauzo",
     "profit.stCogs": "Gharama ya bidhaa zilizouzwa",
     "profit.stCogsNote": "Gharama ya bidhaa ulizouza mwezi huu, pamoja na usafirishaji na ushuru",
@@ -2096,11 +2263,11 @@ const DICTIONARY = {
     "profit.revenueNoteVatOne": "Mauzo 1, baada ya marejesho na VAT",
     "profit.gross": "Faida ghafi",
     "profit.grossNote": "Mapato ukiondoa gharama ya bidhaa hizo",
-    "profit.grossPartial": "Haijakamilika \u2014 safu {missing} kati ya {total} zilizouzwa hazina gharama iliyorekodiwa",
+    "profit.grossPartial": "Haijakamilika, safu {missing} kati ya {total} zilizouzwa hazina gharama iliyorekodiwa",
     "profit.grossNoCost": "Hakuna gharama iliyorekodiwa kwa kilichouzwa mwezi huu",
     "profit.expenses": "Matumizi",
     "profit.expensesNote": "{count} yamerekodiwa mwezi huu",
-    "profit.expensesNone": "Hakuna kilichorekodiwa \u2014 si sawa na kutokutumia chochote",
+    "profit.expensesNone": "Hakuna kilichorekodiwa. Si sawa na kutokutumia chochote",
     "profit.net": "Ulichobakiza",
     "profit.netNote": "Faida ghafi ukiondoa matumizi yaliyorekodiwa. Ni kamili kadri ulivyoingiza.",
     "profit.netNoCost": "Inahitaji gharama iliyorekodiwa kabla haijamaanisha kitu",
@@ -2110,7 +2277,7 @@ const DICTIONARY = {
     "nav.purchases": "Manunuzi",
     "purchases.eyebrow": "Bidhaa zilizonunuliwa",
     "purchases.title": "Manunuzi",
-    "purchases.intro": "Kila mzigo, na ulicholipa kwa ajili yake. Hurekodiwa unapojaza stoo \u2014 unaweka jumla ya mzigo, na gharama ya kila kimoja inahesabiwa kutoka hapo.",
+    "purchases.intro": "Kila mzigo, na ulicholipa kwa ajili yake. Hurekodiwa unapojaza stoo. Unaweka jumla ya mzigo, na gharama ya kila kimoja inahesabiwa kutoka hapo.",
     "purchases.listTitle": "Yaliyorekodiwa",
     "purchases.monthLabel": "Mwezi",
     "purchases.thDate": "Tarehe",
@@ -2138,7 +2305,7 @@ const DICTIONARY = {
     "nav.deliveries": "Mizigo",
     "deliveries.eyebrow": "Bidhaa zilizopokelewa",
     "deliveries.title": "Mizigo",
-    "deliveries.intro": "Mzigo mmoja, bidhaa nyingi, na gharama za kuufikisha hapa. Usafirishaji, ushuru, uondoshaji bandarini na usafiri vinagawanywa kwa bidhaa vilizoleta, ili kila kitu kibebe gharama yake halisi — si tu kile msambazaji alichotoza.",
+    "deliveries.intro": "Mzigo mmoja, bidhaa nyingi, na gharama za kuufikisha hapa. Usafirishaji, ushuru, uondoshaji bandarini na usafiri vinagawanywa kwa bidhaa vilizoleta, ili kila kitu kibebe gharama yake halisi, si tu kile msambazaji alichotoza.",
     "deliveries.receiveButton": "Pokea mzigo",
     "deliveries.listTitle": "Iliyorekodiwa",
     "deliveries.monthLabel": "Mwezi",
@@ -2164,7 +2331,7 @@ const DICTIONARY = {
     "deliveries.basisQuantity": "Idadi",
     "deliveries.basisManual": "Imewekwa kwa mkono",
     "deliveries.deleteButton": "Futa",
-    "deliveries.deleteConfirm": "Futa mzigo huu na {count} {line} zake za manunuzi? Kile kilichoongezwa kwenye hisa yako na gharama yake kitabaki — rekodi mzigo mpya ili kurekebisha hilo.",
+    "deliveries.deleteConfirm": "Futa mzigo huu na {count} {line} zake za manunuzi? Kile kilichoongezwa kwenye hisa yako na gharama yake kitabaki. Rekodi mzigo mpya ili kurekebisha hilo.",
     "deliveries.lineSingular": "safu",
     "deliveries.linePlural": "safu",
     "deliveries.dialogTitle": "Pokea mzigo",
@@ -2182,7 +2349,7 @@ const DICTIONARY = {
     "deliveries.linePickProduct": "Chagua bidhaa…",
     "deliveries.goodsTotal": "Gharama ya bidhaa: {value}",
     "deliveries.costsTitle": "Gharama za ziada",
-    "deliveries.costsIntro": "Gharama za kufikisha bidhaa hapa na kuziandaa kuuzwa. Hizi zinaongezwa kwenye thamani ya hisa, hazitozwi kama matumizi — zinakuwa gharama ya mauzo bidhaa zinapouzwa.",
+    "deliveries.costsIntro": "Gharama za kufikisha bidhaa hapa na kuziandaa kuuzwa. Hizi zinaongezwa kwenye thamani ya hisa, hazitozwi kama matumizi. Zinakuwa gharama ya mauzo bidhaa zinapouzwa.",
     "deliveries.costFreight": "Usafirishaji",
     "deliveries.costImportDuty": "Ushuru wa forodha",
     "deliveries.costClearing": "Gharama za uondoshaji",
@@ -2197,7 +2364,7 @@ const DICTIONARY = {
     "deliveries.basisManualHint": "Wewe unaamua kila sehemu. Lazima zijumuishe gharama za ziada sawasawa.",
     "deliveries.manualLabel": "Sehemu",
     "deliveries.previewTitle": "Kila bidhaa itagharimu kiasi gani",
-    "deliveries.previewIntro": "Imehesabiwa kabla ya kuhifadhi chochote. Safu ya mwisho ni gharama ya kipande kimoja — na ndiyo itakayotozwa kwenye gharama ya mauzo kitakapouzwa.",
+    "deliveries.previewIntro": "Imehesabiwa kabla ya kuhifadhi chochote. Safu ya mwisho ni gharama ya kipande kimoja, na ndiyo itakayotozwa kwenye gharama ya mauzo kitakapouzwa.",
     "deliveries.thOriginal": "Gharama ya bidhaa",
     "deliveries.thAllocation": "Sehemu ya gharama za ziada",
     "deliveries.thFinal": "Gharama ya mwisho ya hisa",
@@ -2221,7 +2388,7 @@ const DICTIONARY = {
     "deliveries.errNegativeAmount": "Sehemu haiwezi kuwa hasi.",
     "deliveries.errNoWeight": "Bidhaa hizi hazina gharama wala idadi ya kugawanya gharama za ziada.",
     "deliveries.errNoStore": "Chagua tawi moja kabla ya kurekodi mzigo.",
-    "deliveries.errNeedsConnection": "Mzigo unahitaji muunganisho — hakuna pa kuurekodi bila mtandao.",
+    "deliveries.errNeedsConnection": "Mzigo unahitaji muunganisho. Hakuna pa kuurekodi bila mtandao.",
     "deliveries.errUnconfirmed": "Mzigo ulitumwa lakini haukuthibitishwa. Angalia orodha kabla ya kuurekodi tena.",
     "deliveries.errTransactionFailed": "Haikuwezekana kurekodi mzigo huo. Hakuna kilichohifadhiwa. Jaribu tena.",
     "deliveries.errNoDelivery": "Mzigo huo haupo tena.",
@@ -2250,7 +2417,7 @@ const DICTIONARY = {
     "expenses.eyebrow": "Fedha zinazotoka",
     "expenses.title": "Matumizi",
     "expenses.addButton": "Rekodi Matumizi",
-    "expenses.intro": "Kile duka linatumia, siku hadi siku. Kodi, umeme, usafiri, mishahara, matengenezo. Haya si manunuzi ya bidhaa \u2014 ni gharama za uendeshaji zilizo kati ya unachouza na unachobakiza.",
+    "expenses.intro": "Kile duka linatumia, siku hadi siku. Kodi, umeme, usafiri, mishahara, matengenezo. Haya si manunuzi ya bidhaa. Ni gharama za uendeshaji zilizo kati ya unachouza na unachobakiza.",
     "expenses.listTitle": "Yaliyorekodiwa",
     "expenses.monthLabel": "Mwezi",
     "expenses.thDate": "Tarehe",
@@ -2274,7 +2441,7 @@ const DICTIONARY = {
     "expenses.monthTotal": "Yaliyotumika mwezi huu",
     "expenses.monthCount": "{count} yamerekodiwa",
     "expenses.fromTill": "Yaliyotolewa kwenye mashine",
-    "expenses.fromTillNote": "Yanahesabiwa peke yake \u2014 mashine itapungukiwa kwa kiasi hiki",
+    "expenses.fromTillNote": "Yanahesabiwa peke yake. Mashine itapungukiwa kwa kiasi hiki",
     "expenses.topCategory": "Aina kubwa zaidi",
     "expenses.empty": "Hakuna kilichorekodiwa mwezi huu bado.",
     "expenses.emptyNoStore": "Chagua tawi ili kurekodi matumizi yake.",
@@ -2289,8 +2456,8 @@ const DICTIONARY = {
     "cat.delivery": "Usafirishaji kwa mteja",
     "cat.packaging": "Vifungashio vya mauzo",
     "expenses.natureLabel": "Aina ya gharama",
-    "expenses.natureDirect": "Ya moja kwa moja — inatokana na mauzo",
-    "expenses.natureIndirect": "Isiyo ya moja kwa moja — uendeshaji wa biashara",
+    "expenses.natureDirect": "Ya moja kwa moja, inatokana na mauzo",
+    "expenses.natureIndirect": "Isiyo ya moja kwa moja, uendeshaji wa biashara",
     "expenses.natureDirectHint": "Gharama zinazotokea kwa sababu tu kitu kimeuzwa: kamisheni, usafirishaji kwa mteja, vifungashio. Inaonyeshwa kwenye mstari wake chini ya faida ghafi.",
     "expenses.natureIndirectHint": "Gharama za kuweka duka wazi hata kama hujauza leo: kodi ya pango, umeme, mishahara, leseni. Inaonyeshwa kwenye mstari wake chini ya faida ghafi.",
     "expenses.thNature": "Aina",
@@ -2300,11 +2467,11 @@ const DICTIONARY = {
     "expenses.indirectNote": "Gharama za kuweka duka wazi, uuze au usiuze.",
     "expenses.landedEyebrow": "Si matumizi",
     "expenses.landedTitle": "Gharama za ziada, zimeongezwa kwenye thamani ya hisa",
-    "expenses.landedIntro": "Usafirishaji, ushuru, uondoshaji na usafiri kutoka {count} {delivery} iliyopokelewa mwezi huu. Fedha hizi hazijatumika — zimehifadhiwa kwenye thamani ya hisa yako, na zitakuwa gharama ya mauzo bidhaa hizo zitakapouzwa.",
+    "expenses.landedIntro": "Usafirishaji, ushuru, uondoshaji na usafiri kutoka {count} {delivery} iliyopokelewa mwezi huu. Fedha hizi hazijatumika. Zimehifadhiwa kwenye thamani ya hisa yako, na zitakuwa gharama ya mauzo bidhaa hizo zitakapouzwa.",
     "expenses.landedThType": "Gharama",
     "expenses.landedThAmount": "Kiasi",
     "expenses.landedTotalRow": "JUMLA ILIYOONGEZWA",
-    "expenses.landedExcluded": "Imeonyeshwa hapa kwa kumbukumbu tu. Jumla hii HAIJAJUMUISHWA kwenye takwimu za matumizi hapo juu — kuihesabu mara mbili kungepunguza faida yako.",
+    "expenses.landedExcluded": "Imeonyeshwa hapa kwa kumbukumbu tu. Jumla hii HAIJAJUMUISHWA kwenye takwimu za matumizi hapo juu. Kuihesabu mara mbili kungepunguza faida yako.",
     "cat.rent": "Kodi ya pango",
     "cat.utilities": "Umeme na maji",
     "cat.wages": "Mishahara",
@@ -2322,7 +2489,7 @@ const DICTIONARY = {
     "control.salesCountNoteOne": "Mauzo 1 mwezi huu",
     "control.grossMargin": "Faida ghafi (makadirio)",
     "control.marginNote": "Mapato ukiondoa gharama ya bidhaa",
-    "control.marginIncomplete": "Haijakamilika — safu {missing} kati ya {total} zilizouzwa hazina bei ya gharama",
+    "control.marginIncomplete": "Haijakamilika, safu {missing} kati ya {total} zilizouzwa hazina bei ya gharama",
     "control.marginNoCost": "Hakuna bei za gharama zilizorekodiwa, hivyo faida haiwezi kupigwa hesabu",
     "control.showStockValue": "Onyesha thamani ya hisa",
     "control.stockValueLoading": "Inapakia…",
@@ -2351,7 +2518,7 @@ const DICTIONARY = {
     "control.govTeamValue": "Wasimamizi {managers}, wauzaji {cashiers}",
     "control.govOverride": "Nenosiri la idhini",
     "control.govSet": "Limewekwa",
-    "control.govNotSet": "Halijawekwa — kufuta na marejesho hayafanyi kazi",
+    "control.govNotSet": "Halijawekwa, kufuta na marejesho hayafanyi kazi",
     "control.govUnnamed": "Wafanyakazi wasio na jina",
     "control.govDeletion": "Kufuta akaunti",
     "control.govDeletionPending": "Kumepangwa",
@@ -2359,7 +2526,7 @@ const DICTIONARY = {
     "reports.staffBreakdownTitle": "Mauzo kwa Mfanyakazi", "reports.staffColumn": "Mfanyakazi",
     "reports.ordersColumn": "Oda", "reports.allStaffRow": "Wafanyakazi wote",
     "reports.searchOrderPlaceholder": "Tafuta nambari ya oda", "reports.orderNotFound": "Hakuna mauzo yaliyopatikana kwa nambari hiyo ya oda.",
-    "reports.orderFoundLabel": "Oda #{orderNumber} \u2014 {name}, {date}, {method}, {total}",
+    "reports.orderFoundLabel": "Oda #{orderNumber}: {name}, {date}, {method}, {total}",
     "reports.staffOrderLookupTitle": "Tafuta Oda",
     "reports.staffOrderLookupDateLabel": "Tarehe",
     "reports.staffOrderLookupOrderLabel": "Nambari ya oda",
@@ -2423,7 +2590,7 @@ const DICTIONARY = {
     "auth.ledgerCounted": "Iliyohesabiwa mwisho",
     "auth.ledgerDiff": "Tofauti",
     "auth.whyMultiStore": "Fuatilia hisa ya matawi yako yote kwenye dashibodi moja.",
-    "auth.whyOffline": "Endelea kuuza hata mtandao ukikatika \u2014 hujisawazisha kiotomatiki ukirudi mtandaoni.",
+    "auth.whyOffline": "Endelea kuuza hata mtandao ukikatika. Hujisawazisha kiotomatiki ukirudi mtandaoni.",
     "auth.whyReceipts": "Chapisha au shiriki risiti kupitia WhatsApp, ukiwa na ufuatiliaji wa fedha taslimu, pesa za simu, na kadi.",
     "auth.whyAi": "Uliza Mshauri wa AI ni bidhaa zipi za kuagiza tena, kwa Kiingereza au Kiswahili.",
     "stockAlert.title": "Arifa ya Hisa", "stockAlert.ok": "Sawa",
@@ -2458,9 +2625,9 @@ const DICTIONARY = {
     "dialog.transferQuantityPrompt": "Vitengo vingapi vya \"{name}\" kuhamisha? (Vinavyopatikana: {quantity})",
     "dialog.transferTitle": "Hamisha Hisa", "dialog.transferDestinationLabel": "Duka la kupokea",
     "dialog.transferQuantityLabel": "Kiasi cha kuhamisha", "dialog.transferConfirm": "Hamisha",
-    "dialog.transferProductLabel": "{name} \u2014 {quantity} zinapatikana katika {store}",
+    "dialog.transferProductLabel": "{name}: {quantity} zinapatikana katika {store}",
     "restock.dialogTitle": "Ongeza Hisa ya Bidhaa",
-    "restock.productLabel": "{name} \u2014 hisa ya sasa: {quantity}",
+    "restock.productLabel": "{name}, hisa ya sasa: {quantity}",
     "restock.qtyLabel": "Kiasi kilichopokelewa",
     "restock.qtyPlaceholder": "mfano, 20",
     "restock.confirmButton": "Ongeza kwenye Hisa",
@@ -2517,7 +2684,7 @@ const DICTIONARY = {
     "monthlyReport.topProductsLine": "Bidhaa bora zilizouzwa: {list}.",
     "monthlyReport.noTopProducts": "Hakuna mauzo ya bidhaa yaliyorekodiwa kipindi hiki.",
     "monthlyReport.stockLine": "Bidhaa {low} zina hisa chache na {out} hazipo kabisa.",
-    "monthlyReport.localFallbackNote": "(Muhtasari wa ndani \u2014 proksi ya AI haikupatikana kwa ripoti hii.)",
+    "monthlyReport.localFallbackNote": "(Muhtasari wa ndani: proksi ya AI haikupatikana kwa ripoti hii.)",
     "monthlyReport.sectionEyebrow": "Imetengenezwa na AI",
     "monthlyReport.sectionTitle": "Ripoti za Kila Mwezi",
     "monthlyReport.monthLabel": "Mwezi",
@@ -2580,11 +2747,11 @@ const DICTIONARY = {
     "report.colPaymentMethod": "Njia ya Malipo", "report.colTransactions": "Miamala",
     "report.colTotalTZS": "Jumla", "report.colAvgSaleTZS": "Wastani wa Mauzo",
     "report.colTopItems": "Bidhaa Bora", "report.combined": "Jumla", "report.storePrefix": "Duka: {name}",
-    "tutorial.pos": "Jinsi ya kutumia Sehemu ya Mauzo (POS):\n1. Fungua kichupo cha POS na utafute au uvinjari bidhaa.\n2. Weka kiasi, kisha bofya Ongeza. Bidhaa zenye bei inayobadilika huuliza bei kwa kila kitengo kwanza.\n3. Rekebisha kiasi kwenye kikapu kwa +/-, kisanduku cha kiasi, au Ondoa. Tumia Tengua Kitendo cha Mwisho ukikosea.\n4. Chagua mfanyakazi anayefanya mauzo, na uweke nambari ya oda kutoka kwenye karatasi yake ya mauzo.\n5. Chagua njia ya malipo (Fedha Taslimu, Pesa za Simu, Kadi). Kwa fedha taslimu, weka kiasi kilicholipwa ili kuona chenji.\n6. Bofya Kamilisha Mauzo. Ukihitaji kutengua, tumia Tengua Mauzo ya Mwisho mara moja \u2014 hisa hurejeshwa kiotomatiki.",
+    "tutorial.pos": "Jinsi ya kutumia Sehemu ya Mauzo (POS):\n1. Fungua kichupo cha POS na utafute au uvinjari bidhaa.\n2. Weka kiasi, kisha bofya Ongeza. Bidhaa zenye bei inayobadilika huuliza bei kwa kila kitengo kwanza.\n3. Rekebisha kiasi kwenye kikapu kwa +/-, kisanduku cha kiasi, au Ondoa. Tumia Tengua Kitendo cha Mwisho ukikosea.\n4. Chagua mfanyakazi anayefanya mauzo, na uweke nambari ya oda kutoka kwenye karatasi yake ya mauzo.\n5. Chagua njia ya malipo (Fedha Taslimu, Pesa za Simu, Kadi). Kwa fedha taslimu, weka kiasi kilicholipwa ili kuona chenji.\n6. Bofya Kamilisha Mauzo. Ukihitaji kutengua, tumia Tengua Mauzo ya Mwisho mara moja. Hisa hurejeshwa kiotomatiki.",
     "tutorial.inventory": "Jinsi ya kusimamia hisa:\n1. Nenda kwenye Hisa na bofya Ongeza Bidhaa (au tumia kitufe cha Dashibodi). Jaza jina, aina, kiasi, na bei ya kuuza.\n2. Weka Kiwango cha chini cha hisa ili bidhaa ionekane kwenye Arifa muhimu na mapendekezo ya kuagiza upya ikipungua chini ya kiwango hicho.\n3. Chagua Bei maalum kwa bidhaa za kawaida, au Bei inayobadilika ikiwa bei hubadilika kwa kila mauzo.\n4. Tumia Hariri kwenye safu yoyote kubadilisha maelezo, au Futa kuondoa bidhaa. Ukiwa na maduka 2 au zaidi, Hamisha huhamisha hisa kati yao.\n5. Tumia vichujio vya aina na hali ya hisa juu ya jedwali, au sanduku la utafutaji, kupata bidhaa haraka.",
-    "tutorial.reports": "Jinsi ya kusoma ripoti zako:\n1. Kichupo cha Ripoti kinagawanya mauzo kwa njia ya malipo \u2014 fedha taslimu, pesa za simu, na kadi \u2014 na jumla, idadi, na bidhaa bora za kila moja.\n2. Chagua muda maalum uliowekwa (leo, wiki, mwezi, muda wote) au chagua Muda maalum kwa tarehe mahususi.\n3. Ukiwa unaangalia Maduka Yote, mchanganuo wa kila duka unaonekana chini ya muhtasari wa pamoja.\n4. Tumia Hamisha CSV au Hamisha PDF kuhifadhi ripoti ya malipo. Kadi za Muhtasari wa Hisa chini zaidi huhamisha data ya hisa kando.",
-    "tutorial.stores": "Jinsi ya kufanya kazi na maduka mengi:\n1. Tumia kibadilishaji duka kwenye Dashibodi kubadilisha duka unaloangalia au kufanyia kazi.\n2. Bofya + Duka kuongeza tawi jipya. Ukiwa na maduka 2 au zaidi, chaguo la \"Maduka Yote (pamoja)\" litaonekana kwa muhtasari wa kusoma tu.\n3. Wakati Maduka Yote limechaguliwa, kuongeza bidhaa, kuongeza kwenye kikapu, na kukamilisha mauzo hazitafanya kazi \u2014 badilisha kwenda duka mahususi kwanza.\n4. Tumia kitufe cha Hamisha kwenye safu ya hisa kuhamisha hisa kutoka duka moja kwenda lingine; SKU zinazolingana huungana kiotomatiki.",
-    "chat.emptyState": "Uliza swali kuhusu hisa yako kuanza \u2014 kwa lugha yoyote.",
+    "tutorial.reports": "Jinsi ya kusoma ripoti zako:\n1. Kichupo cha Ripoti kinagawanya mauzo kwa njia ya malipo (fedha taslimu, pesa za simu, na kadi) na jumla, idadi, na bidhaa bora za kila moja.\n2. Chagua muda maalum uliowekwa (leo, wiki, mwezi, muda wote) au chagua Muda maalum kwa tarehe mahususi.\n3. Ukiwa unaangalia Maduka Yote, mchanganuo wa kila duka unaonekana chini ya muhtasari wa pamoja.\n4. Tumia Hamisha CSV au Hamisha PDF kuhifadhi ripoti ya malipo. Kadi za Muhtasari wa Hisa chini zaidi huhamisha data ya hisa kando.",
+    "tutorial.stores": "Jinsi ya kufanya kazi na maduka mengi:\n1. Tumia kibadilishaji duka kwenye Dashibodi kubadilisha duka unaloangalia au kufanyia kazi.\n2. Bofya + Duka kuongeza tawi jipya. Ukiwa na maduka 2 au zaidi, chaguo la \"Maduka Yote (pamoja)\" litaonekana kwa muhtasari wa kusoma tu.\n3. Wakati Maduka Yote limechaguliwa, kuongeza bidhaa, kuongeza kwenye kikapu, na kukamilisha mauzo hazitafanya kazi. Badilisha kwenda duka mahususi kwanza.\n4. Tumia kitufe cha Hamisha kwenye safu ya hisa kuhamisha hisa kutoka duka moja kwenda lingine; SKU zinazolingana huungana kiotomatiki.",
+    "chat.emptyState": "Uliza swali kuhusu hisa yako kuanza, kwa lugha yoyote.",
     "auth.createAccount": "Fungua akaunti", "auth.signIn": "Ingia",
     "auth.haveAccount": "Nina akaunti tayari", "auth.newAccount": "Fungua akaunti mpya",
     "auth.errorRequired": "Sehemu hii inahitajika.",
@@ -2597,7 +2764,7 @@ const DICTIONARY = {
     "inventory.edit": "Hariri", "inventory.transfer": "Hamisha", "inventory.restock": "Ongeza Hisa", "inventory.delete": "Futa",
     "inventory.emptyState": "Hakuna hisa bado. Ongeza bidhaa yako ya kwanza kuanza kufuatilia hisa.",
     "inventory.loadingState": "Inapakia hisa zako\u2026 orodha kubwa inaweza kuchukua muda kidogo unapoingia mara ya kwanza kwenye kifaa.",
-    "inventory.loadFailedState": "Hisa zako hazikuweza kupakiwa. Angalia muunganisho kisha upakie upya \u2014 hakuna kilichopotea.",
+    "inventory.loadFailedState": "Hisa zako hazikuweza kupakiwa. Angalia muunganisho kisha upakie upya. Hakuna kilichopotea.",
     "inventory.noMatchesState": "Hakuna bidhaa zinazolingana na utafutaji huu. Ondoa kichujio ili kuona hisa zako zote.",
     "inventory.clearFilters": "Ondoa utafutaji na vichujio",
     "toast.incorrectPassword": "Nenosiri si sahihi. Mabadiliko ya bei yamesitishwa.",
@@ -2756,7 +2923,7 @@ const DICTIONARY = {
     "dashboard.askAiQuestionRecommendations": "Eleza mapendekezo yangu ya sasa ya ununuzi na nini ninachopaswa kuagiza wiki hii.",
     "deleteAccount.button": "Futa Akaunti",
     "deleteAccount.title": "Futa Akaunti",
-    "deleteAccount.warning": "Akaunti yako itafungwa mara moja na kupangwa kufutwa kabisa baada ya siku 30. Unaweza kuirejesha kwa kuingia wakati wowote katika siku hizo 30. Baada ya hapo, taarifa zote za kibinafsi — majina ya wafanyakazi na wateja, namba za simu na barua pepe — zitafutwa kabisa na haziwezi kurejeshwa. Kumbukumbu za mauzo na fedha zitabaki bila majina kwa kipindi kinachohitajika kisheria, kama ilivyoelezwa kwenye Sheria na Masharti.",
+    "deleteAccount.warning": "Akaunti yako itafungwa mara moja na kupangwa kufutwa kabisa baada ya siku 30. Unaweza kuirejesha kwa kuingia wakati wowote katika siku hizo 30. Baada ya hapo, taarifa zote za kibinafsi, majina ya wafanyakazi na wateja, namba za simu na barua pepe, zitafutwa kabisa na haziwezi kurejeshwa. Kumbukumbu za mauzo na fedha zitabaki bila majina kwa kipindi kinachohitajika kisheria, kama ilivyoelezwa kwenye Sheria na Masharti.",
     "deleteAccount.passwordLabel": "Thibitisha nenosiri lako",
     "deleteAccount.typeDeleteLabel": "Andika DELETE kuthibitisha",
     "deleteAccount.confirmButton": "Panga Kufuta Akaunti",
@@ -2880,7 +3047,7 @@ const DICTIONARY = {
     "returns.maxReturnable": "{qty} zinaweza kurejeshwa",
     "returns.confirmButton": "Kamilisha Kurejesha Fedha",
     "returns.noItemsSelected": "Bidhaa zote za oda hii tayari zimerejeshwa.",
-    "returns.servicesNotReturnable": "Mauzo haya ni huduma pekee. Huduma haiwezi kurejeshwa ikishatolewa — futa mauzo yote badala yake.",
+    "returns.servicesNotReturnable": "Mauzo haya ni huduma pekee. Huduma haiwezi kurejeshwa ikishatolewa. Futa mauzo yote badala yake.",
     "returns.refundedLabel": "Fedha Iliyorejeshwa",
     "toast.returnNoSelection": "Weka kiasi cha kurejesha kwa angalau bidhaa moja.",
     "toast.returnProcessed": "Kurejesha fedha kwa {amount} kumekamilika na hisa imerejeshwa.",
@@ -2943,7 +3110,7 @@ const DICTIONARY = {
     "shift.reconcileOk": "Inalingana",
     "shift.reconcileMismatch": "{amount} hazijaelezwa",
     "shift.reconcileMismatchHelp": "Kumbukumbu ya mauzo ya zamu hii hailingani na takwimu zilizotumika kuifunga. Inafaa kuuliza kabla ya kuhitimisha lolote.",
-    "shift.reconcileUnknown": "Haijakaguliwa — zamu hii ni ya zamani kuliko historia ya mauzo iliyopakiwa hapa.",
+    "shift.reconcileUnknown": "Haijakaguliwa. Zamu hii ni ya zamani kuliko historia ya mauzo iliyopakiwa hapa.",
     "shift.balanced": "Sawa kabisa",
     "shift.selectStore": "Chagua tawi moja ili kuendesha zamu",
     "toast.selectStoreBeforeShift": "Chagua tawi moja kabla ya kufungua zamu.",
@@ -2972,6 +3139,160 @@ const DICTIONARY = {
     "customers.colCreditLimit": "Tahadhari ya Deni",
     "customers.setLimitButton": "Weka Tahadhari",
     "customers.noLimit": "Hakuna tahadhari",
+    "nav.customers": "Wateja",
+    "customersScreen.eyebrow": "Unaowauzia",
+    "customersScreen.title": "Wateja",
+    "customersScreen.intro": "Kila unayemuuzia, pamoja na wateja walioongezwa na mauzo ya deni kwenye kaunta. Kuweka TIN na anwani hapa ndiko kunakowezesha kumtengenezea ankara kamili.",
+    "customersScreen.listTitle": "Wateja wote",
+    "customersScreen.addButton": "+ Mteja",
+    "customersScreen.searchLabel": "Tafuta",
+    "customersScreen.searchPlaceholder": "Tafuta kwa jina, simu au TIN",
+    "customersScreen.count": "Wateja {total}",
+    "customersScreen.countOne": "Mteja 1",
+    "customersScreen.countFiltered": "Inaonyesha {shown} kati ya {total}",
+    "customersScreen.empty": "Bado hakuna wateja. Mauzo ya deni kwenye kaunta huongeza mmoja, au waongeze hapa kabla ya kuwatengenezea ankara.",
+    "customersScreen.noMatch": "Hakuna mteja anayelingana na utafutaji huo.",
+    "customersScreen.thName": "Mteja",
+    "customersScreen.thPhone": "Simu",
+    "customersScreen.thTin": "TIN",
+    "customersScreen.thOwed": "Deni analodaiwa",
+    "customersScreen.thDays": "Siku za deni",
+    "customersScreen.thActions": "Vitendo",
+    "customersScreen.history": "Historia",
+    "customersScreen.edit": "Hariri",
+    "customersScreen.dialogTitle": "Ongeza Mteja",
+    "customersScreen.dialogTitleEdit": "Hariri Mteja",
+    "customersScreen.nameLabel": "Jina la mteja",
+    "customersScreen.namePlaceholder": "mf. Kariakoo Traders",
+    "customersScreen.phoneLabel": "Simu",
+    "customersScreen.tinLabel": "TIN",
+    "customersScreen.vrnLabel": "Namba ya VAT",
+    "customersScreen.emailLabel": "Barua pepe",
+    "customersScreen.termsLabel": "Masharti ya malipo",
+    "customersScreen.termsPlaceholder": "mf. Siku 30",
+    "customersScreen.addressLabel": "Anwani",
+    "customersScreen.billingNote": "TIN, namba ya VAT na anwani huonekana kwenye ankara inayotengenezwa kwa mteja huyu. Deni lake halihaririwi hapa. Hubadilika pale mauzo ya deni, malipo au ankara inaporekodiwa.",
+    "customersScreen.saveButton": "Hifadhi Mteja",
+    "customersScreen.nameRequired": "Weka jina la mteja.",
+    "customersScreen.phoneRequired": "Weka namba ya simu. Ndiyo inayomtambua tena kwenye kaunta, na ndiyo inayofikisha kumbusho.",
+    "customersScreen.phoneTaken": "{name} tayari anatumia namba hiyo ya simu.",
+    "customersScreen.historyTitle": "Historia ya Mteja",
+    "customersScreen.historyIntro": "Deni la {name}, na alicholipa.",
+    "customersScreen.historyLoading": "Inapakia...",
+    "customersScreen.historyOwed": "Anadaiwa sasa",
+    "customersScreen.historyInvoicesTitle": "Ankara",
+    "customersScreen.historyPaymentsTitle": "Malipo",
+    "customersScreen.historyNoInvoices": "Bado hakuna ankara iliyotengenezwa kwa mteja huyu.",
+    "customersScreen.historyNoPayments": "Bado hakuna malipo yaliyorekodiwa.",
+    "customersScreen.historyColNumber": "Namba",
+    "customersScreen.historyColDate": "Tarehe",
+    "customersScreen.historyColAmount": "Kiasi",
+    "customersScreen.historyColStatus": "Hali",
+    "customersScreen.historyColNote": "Maelezo",
+    "customersScreen.historyBoundedNote": "Orodha zinaonyesha historia ya karibuni. Deni huhifadhiwa kama jumla inayoendelea, hivyo hubaki sahihi hata historia ikiwa ndefu zaidi ya hii.",
+    "customersScreen.detailPhone": "Simu",
+    "customersScreen.detailTin": "TIN",
+    "customersScreen.detailVrn": "Namba ya VAT",
+    "customersScreen.detailEmail": "Barua pepe",
+    "customersScreen.detailTerms": "Masharti ya malipo",
+    "customersScreen.detailAddress": "Anwani",
+    "customersScreen.statusDraft": "Rasimu",
+    "customersScreen.statusIssued": "Imetolewa",
+    "customersScreen.statusPartly": "Imelipwa kiasi",
+    "customersScreen.statusPaid": "Imelipwa",
+    "customersScreen.statusVoid": "Imefutwa",
+    "toast.customerAdded": "{name} ameongezwa.",
+    "toast.customerUpdated": "{name} amesasishwa.",
+    "toast.couldNotSaveCustomer": "Imeshindikana kuhifadhi mteja. Angalia mtandao kisha jaribu tena.",
+    "invoices.navLabel": "Ankara",
+    "invoices.eyebrow": "Madai",
+    "invoices.title": "Ankara",
+    "invoices.intro": "Ombi la malipo linaloonyesha deni na lilitokana na nini. Hii si ankara ya kodi. Tanzania ni risiti ya EFD au VFD pekee inayothibitisha VAT, na mnunuzi bado anaihitaji ili kudai marejesho.",
+    "invoices.listTitle": "Zilizotolewa",
+    "invoices.newButton": "+ Ankara",
+    "invoices.count": "Ankara {total}",
+    "invoices.countOne": "Ankara 1",
+    "invoices.outstanding": "Bado inadaiwa",
+    "invoices.empty": "Bado hakuna ankara. Andaa moja kwa mteja, hakiki inasomeka sawa, kisha itoe.",
+    "invoices.thNumber": "Namba",
+    "invoices.thCustomer": "Mteja",
+    "invoices.thDate": "Tarehe",
+    "invoices.thDue": "Mwisho wa malipo",
+    "invoices.thTotal": "Jumla",
+    "invoices.thStatus": "Hali",
+    "invoices.thActions": "Vitendo",
+    "invoices.thDescription": "Maelezo",
+    "invoices.thQty": "Idadi",
+    "invoices.thUnitPrice": "Bei ya kimoja",
+    "invoices.thLineTotal": "Jumla ya mstari",
+    "invoices.thRemove": "Ondoa",
+    "invoices.noNumberYet": "Rasimu",
+    "invoices.edit": "Hariri",
+    "invoices.issueButton": "Toa",
+    "invoices.dialogTitle": "Ankara Mpya",
+    "invoices.dialogTitleEdit": "Hariri Rasimu",
+    "invoices.customerLabel": "Mteja",
+    "invoices.issueDateLabel": "Tarehe ya ankara",
+    "invoices.dueDateLabel": "Mwisho wa malipo",
+    "invoices.termsLabel": "Masharti ya malipo",
+    "invoices.noteLabel": "Maelezo",
+    "invoices.addProductLabel": "Ongeza kutoka stoo",
+    "invoices.addProductButton": "Ongeza bidhaa",
+    "invoices.addFreeButton": "Ongeza kitu kingine",
+    "invoices.choose": "Chagua...",
+    "invoices.noLines": "Bado hakuna kitu kwenye ankara hii.",
+    "invoices.removeLine": "Ondoa",
+    "invoices.totalLabel": "Jumla ya ankara",
+    "invoices.draftNote": "Kuhifadhi kunaibakiza kama rasimu: haipewi namba, hakuna stoo inayotoka na hakuna deni mpaka utakapoitoa.",
+    "invoices.saveDraftButton": "Hifadhi Rasimu",
+    "invoices.draftSaved": "Rasimu imehifadhiwa.",
+    "invoices.draftUpdated": "Rasimu imesasishwa.",
+    "invoices.saveFailed": "Imeshindikana kuhifadhi rasimu. Angalia mtandao kisha jaribu tena.",
+    "invoices.customerRequired": "Chagua mteja ambaye ankara hii ni yake.",
+    "invoices.needACustomer": "Ongeza mteja kwanza. Ankara hutolewa kwa mtu.",
+    "invoices.dueBeforeIssue": "Tarehe ya mwisho haiwezi kuwa kabla ya tarehe ya ankara.",
+    "invoices.linesRequired": "Ongeza angalau kitu kimoja, chenye maelezo na idadi.",
+    "invoices.tooManyLines": "Ankara inaweza kubeba mistari {max}.",
+    "invoices.totalMustBePositive": "Ankara lazima iwe ya zaidi ya sifuri.",
+    "invoices.totalTooLarge": "Jumla hiyo ni kubwa kuliko mfumo huu unavyoweza kurekodi.",
+    "invoices.issuedNotEditable": "Ankara iliyotolewa haiwezi kuhaririwa. Badala yake toa noti ya marejesho dhidi yake.",
+    "invoices.issueConfirm": "Utoe ankara hii kwa {name} ya {total}? Itapewa namba, stoo itatoka, na deni litatengenezwa. Hii haiwezi kutenguliwa.",
+    "invoices.issued": "Ankara imetolewa.",
+    "invoices.alreadyIssued": "Ankara hiyo tayari imeshatolewa.",
+    "invoices.issueFailed": "Imeshindikana kutoa ankara. Hakuna kilichobadilishwa.",
+    "invoices.issueUnconfirmed": "Bado inaendelea. Angalia orodha kabla ya kuitoa tena.",
+    "invoices.offlineIssue": "Kutoa ankara kunahitaji mtandao, kwa sababu namba lazima iwe inayofuata ambayo hakuna mwingine ameichukua. Rasimu imehifadhiwa.",
+    "invoices.customerGone": "Mteja huyo hayupo tena.",
+    "invoices.view": "Angalia",
+    "invoices.payButton": "Rekodi malipo",
+    "invoices.voidButton": "Futa",
+    "invoices.previewTitle": "Ankara",
+    "invoices.shareWhatsApp": "Tuma kwa WhatsApp",
+    "invoices.downloadPdf": "Pakua PDF",
+    "invoices.docTitle": "ANKARA",
+    "invoices.docNumber": "Namba ya ankara",
+    "invoices.docDate": "Tarehe",
+    "invoices.docDue": "Mwisho wa malipo",
+    "invoices.docBillTo": "Ankara kwa",
+    "invoices.docTin": "TIN",
+    "invoices.docVrn": "Namba ya VAT",
+    "invoices.docTerms": "Masharti ya malipo",
+    "invoices.docTotal": "Jumla",
+    "invoices.docPaid": "Imelipwa",
+    "invoices.docCredited": "Imepunguzwa",
+    "invoices.docOutstanding": "Bado inadaiwa",
+    "invoices.docNotTaxInvoice": "Hii si ankara ya kodi. Tanzania risiti ya kodi kutoka EFD au VFD ndiyo inayothibitisha VAT, na mnunuzi aliyesajiliwa VAT anaihitaji ili kudai marejesho.",
+    "invoices.docVoidBanner": "IMEFUTWA. {reason}",
+    "invoices.voidConfirm": "Ufute ankara {number} ya {total}? Itabaki na namba yake, hisa itarudi, na deni litaondolewa. Hii haiwezi kutenguliwa.",
+    "invoices.voidReasonPrompt": "Kwa nini ankara hii inafutwa? Namba yake inabaki kwenye mfululizo, hivyo hii ndiyo kumbukumbu pekee ya kwa nini haina maana.",
+    "invoices.voidReasonRequired": "Weka sababu. Namba iliyofutwa bila maelezo ndiyo mkaguzi anayoiuliza.",
+    "invoices.voided": "Ankara imefutwa.",
+    "invoices.voidHasMoney": "Ankara hiyo ina malipo dhidi yake. Badala yake toa noti ya marejesho.",
+    "invoices.voidNotIssued": "Ni ankara iliyotolewa pekee inayoweza kufutwa.",
+    "invoices.voidOffline": "Kufuta ankara kunahitaji mtandao, kwa sababu hisa na deni vinasogea nayo.",
+    "invoices.voidFailed": "Imeshindikana kufuta ankara. Hakuna kilichobadilishwa.",
+    "invoices.voidUnconfirmed": "Bado inaendelea. Angalia ankara kabla ya kuifuta tena.",
+    "payment.againstInvoice": "Unalipia ankara {number}. Bado inadaiwa: {outstanding}",
     "dialog.creditLimitPrompt": "Toa tahadhari {name} anapodaiwa zaidi ya kiasi hiki, kwa {currency}. Mauzo zaidi ya hapo yanahitaji nenosiri la meneja. Acha wazi kama hakuna tahadhari:",
     "toast.creditLimitInvalid": "Weka kikomo sahihi cha deni, au acha wazi kama hakuna kikomo.",
     "toast.creditLimitSet": "Kikomo cha deni cha {name} kimewekwa kuwa {limit}.",
@@ -2979,7 +3300,7 @@ const DICTIONARY = {
     "toast.creditLimitFailed": "Imeshindwa kusasisha tahadhari ya deni. Tafadhali jaribu tena.",
     "toast.creditLimitOverrideRefused": "Hujaidhinishwa. Mauzo hayakukamilika.",
     "control.creditOverrides": "Tahadhari za deni zilizopitishwa (siku 30)",
-    "dialog.creditLimitExceededConfirm": "{name} tayari anadaiwa {currentBalance}. Mauzo haya yanaongeza {newBalanceDue}, hadi {projectedTotal} — zaidi ya tahadhari ya {limit}. Kuendelea kunahitaji nenosiri la meneja, na kutarekodiwa. Uendelee?",
+    "dialog.creditLimitExceededConfirm": "{name} tayari anadaiwa {currentBalance}. Mauzo haya yanaongeza {newBalanceDue}, hadi {projectedTotal}, zaidi ya tahadhari ya {limit}. Kuendelea kunahitaji nenosiri la meneja, na kutarekodiwa. Uendelee?",
     "dashboard.setCurrency": "Sarafu",
     "dialog.currencyCodePrompt": "Weka msimbo wa herufi 3 wa sarafu ya duka hili (mfano, TZS, USD, KES, UGX):",
     "toast.currencyInvalid": "Weka msimbo sahihi wa herufi 3 za sarafu (herufi pekee).",
@@ -3024,7 +3345,7 @@ const DICTIONARY = {
     "staff.inviteStoresRequired": "Chagua duka moja angalau, au Maduka yote.",
     "staff.inviteFailed": "Imeshindwa kuunda mwaliko. Tafadhali jaribu tena.",
     "staff.inviteNetworkError": "Imeshindwa kufikia huduma ya mwaliko. Angalia muunganisho wako na ujaribu tena.",
-    "staff.inviteResultText": "Mwaliko umeundwa kwa {email} kama {role}. Shiriki kiungo hapa chini \u2014 kinaisha baada ya masaa 48 na kinaweza kutumika mara moja tu.",
+    "staff.inviteResultText": "Mwaliko umeundwa kwa {email} kama {role}. Shiriki kiungo hapa chini. Kinaisha baada ya masaa 48 na kinaweza kutumika mara moja tu.",
     "staff.copyLinkButton": "Nakili Kiungo",
     "staff.sendWhatsAppButton": "Tuma kupitia WhatsApp",
     "staff.linkCopied": "Kiungo cha mwaliko kimenakiliwa.",
@@ -3040,7 +3361,7 @@ const DICTIONARY = {
     "confirm.cancel": "Ghairi",
     "confirm.accept": "Ndiyo, endelea",
     "staff.inviteLinkLabel": "Kiungo cha mwaliko",
-    "staff.copyFailedUseLink": "Imeshindwa kunakili yenyewe. Kiungo kimeonyeshwa hapo juu — kinakili kutoka hapo.",
+    "staff.copyFailedUseLink": "Imeshindwa kunakili yenyewe. Kiungo kimeonyeshwa hapo juu. Kinakili kutoka hapo.",
     "nav.arrivals": "Mizigo",
     "permissions.dialogTitle": "Mfanya mauzo huyu anaruhusiwa nini",
     "permissions.intro": "Alama ya tiki maana yake anaruhusiwa. Matatu ya mwisho yapo kwa kila mfanya mauzo mpaka uyaondoe.",
@@ -3058,6 +3379,8 @@ const DICTIONARY = {
     "permissions.receiveDeliveriesHint": "Anahesabu mzigo uliofika na kuutuma uidhinishwe. Bidhaa zinaingia pale wewe au meneja mnapoidhinisha na gharama zake.",
     "permissions.processReturns": "Kupokea marejesho",
     "permissions.processReturnsHint": "Anapokea bidhaa iliyorudishwa na kurejesha pesa, bidhaa kwa bidhaa. Nenosiri la punguzo bado linahitajika.",
+    "permissions.issueInvoices": "Kutoa ankara",
+    "permissions.issueInvoicesHint": "Anaandaa ankara ya mteja na kuitoa. Kuitoa kunaipa namba na kutengeneza deni, hivyo haiwezi kuhaririwa baadaye.",
     "permissions.viewStock": "Kuona kiasi cha bidhaa",
     "permissions.viewStockHint": "Anafungua ukurasa wa Bidhaa kuona idadi tu. Hakuna bei, hakuna mabadiliko.",
     "permissions.viewTodaySales": "Kuona mauzo ya leo",
@@ -4678,7 +5001,7 @@ function renderMonthlyReportsList() {
   container.innerHTML = state.monthlyReports
     .map((report) => `<article class="report-card" data-view-monthly-report="${report.id}" style="cursor:pointer">
         <strong>${esc(report.periodLabel)}</strong>
-        <span class="muted">${money(report.metrics?.revenue || 0)} \u2014 ${Number(report.metrics?.transactionCount || 0)} ${report.metrics?.transactionCount === 1 ? t("report.transaction") : t("report.transactions")}</span>
+        <span class="muted">${money(report.metrics?.revenue || 0)}, ${Number(report.metrics?.transactionCount || 0)} ${report.metrics?.transactionCount === 1 ? t("report.transaction") : t("report.transactions")}</span>
       </article>`)
     .join("") || `<p class="muted">${t("monthlyReport.emptyState")}</p>`;
 }
@@ -4827,7 +5150,7 @@ async function exportMonthlyReportPdf() {
   const metrics = report.metrics || {};
   const doc = new jsPdfCtor();
   doc.setFontSize(14);
-  doc.text(`SaviaSmart Monthly Report \u2014 ${report.periodLabel}`, 14, 16);
+  doc.text(`SaviaSmart Monthly Report: ${report.periodLabel}`, 14, 16);
   doc.setFontSize(10);
   doc.text(new Date().toLocaleString(), 14, 22);
 
@@ -5747,7 +6070,7 @@ function renderStaffOrderNumberOptions() {
       const date = saleDate(sale);
       const dateLabel = date ? date.toLocaleDateString() : "";
       const timeLabel = date ? date.toLocaleTimeString() : "";
-      return `<option value="${esc(sale.id)}">#${esc(sale.orderNumber || "")} \u2014 ${money(sale.total)} (${dateLabel} ${timeLabel})</option>`;
+      return `<option value="${esc(sale.id)}">#${esc(sale.orderNumber || "")}: ${money(sale.total)} (${dateLabel} ${timeLabel})</option>`;
     })
     .join("");
   if (sales.some((sale) => sale.id === previousValue)) select.value = previousValue;
@@ -6440,11 +6763,16 @@ async function downloadAccountBackup() {
     //
     // errorLog is deliberately absent: it is diagnostic, not business data, and
     // restoring last month's faults would help nobody.
+    // `counters` looks like machinery rather than business data, and is the one
+    // here that must NOT be left out: it holds the next invoice number, so a
+    // restore without it starts the sequence again and mints numbers that
+    // already exist on paper. A duplicate in an invoice sequence is the first
+    // thing an auditor asks about (DESIGN-invoicing.md 3).
     const rootCollections = ["products", "sales", "stores", "staff", "members", "shifts",
                              "customers", "transfers", "auditLogs", "monthlyReports",
                              "purchases", "expenses", "deliveries", "deliveryRequests", "suppliers",
                              "purchaseReturns", "productCosts", "productCostHistory",
-                             "stockMovements", "services"];
+                             "stockMovements", "services", "invoices", "counters"];
     const [profileSnap, ...collectionSnaps] = await Promise.all([
       getDoc(doc(state.db, "users", state.user.uid)),
       ...rootCollections.map((name) => getDocs(collection(state.db, "users", state.user.uid, name)))
@@ -6627,7 +6955,7 @@ function renderCustomerAccounts() {
       const bucket = customerAgingBucket(days);
       const statusClass = agingBucketStatusClass(bucket);
       const bucketLabelKey = bucket === "current" ? "agingCurrent" : bucket;
-      const daysLabel = days === null ? "-" : `${days} \u2014 ${t(`customers.${bucketLabelKey}`)}`;
+      const daysLabel = days === null ? "-" : `${days}, ${t(`customers.${bucketLabelKey}`)}`;
       return `<tr>
         <td>${esc(customer.name || "-")}</td>
         <td>${esc(customer.phone || "-")}</td>
@@ -6647,6 +6975,1182 @@ function renderCustomerAccounts() {
 
   const totalEl = qs("#customerAccountsTotal");
   if (totalEl) totalEl.textContent = `${t("customers.totalOwed")}: ${money(total)}`;
+}
+
+// ---------------------------------------------------------------------------
+// The Customers screen. DESIGN-invoicing.md 8.
+//
+// Until now a customer existed only as a name and a phone typed at the till,
+// created implicitly by findOrCreateCustomerForCredit(), with nowhere to edit
+// it and no way to see what one had bought. A customer you can only reach
+// through a report is the wrong shape for invoicing a business that has a TIN
+// and payment terms.
+//
+// This does NOT replace renderCustomerAccounts(): that panel answers "who owes
+// me", which is a different question from "who do I sell to", and it is the
+// panel the owner already reads.
+
+function customerById(customerId) {
+  return (state.customers || []).find((customer) => customer.id === customerId) || null;
+}
+
+// Name order, not creation order: this is a list you scan for somebody you
+// already know, unlike the receivables panel, which is sorted by what is owed.
+function customersMatchingSearch() {
+  const customers = [...(state.customers || [])]
+    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  const term = String(state.customerSearch || "").trim().toLowerCase();
+  if (!term) return customers;
+  return customers.filter((customer) =>
+    String(customer.name || "").toLowerCase().includes(term)
+    || String(customer.phone || "").toLowerCase().includes(term)
+    || String(customer.tin || "").toLowerCase().includes(term));
+}
+
+function renderCustomers() {
+  const table = qs("#customersTable");
+  if (!table) return;
+  // Manager and owner. A cashier's till reads customers in order to sell on
+  // credit, but a list of who owes what is the receivables book, and
+  // DESIGN-permissions.md is explicit that a cashier records without seeing
+  // the books. canOpenView() refuses the screen for the same reason.
+  if (!isManagerOrOwnerRole()) { table.innerHTML = ""; return; }
+
+  const all = state.customers || [];
+  const customers = customersMatchingSearch();
+
+  const totalEl = qs("#customersTotalOwed");
+  if (totalEl) {
+    const owed = all.reduce((sum, customer) => sum + safeNumber(customer.balanceOwed), 0);
+    totalEl.textContent = `${t("customers.totalOwed")}: ${money(owed)}`;
+  }
+  const countEl = qs("#customersCount");
+  if (countEl) {
+    countEl.textContent = customers.length !== all.length
+      ? t("customersScreen.countFiltered", { shown: customers.length, total: all.length })
+      : all.length === 1
+        ? t("customersScreen.countOne")
+        : t("customersScreen.count", { total: all.length });
+  }
+
+  if (!customers.length) {
+    table.innerHTML = `<tr><td colspan="6" class="empty-state">${
+      t(String(state.customerSearch || "").trim() ? "customersScreen.noMatch" : "customersScreen.empty")}</td></tr>`;
+    return;
+  }
+
+  table.innerHTML = customers.map((customer) => {
+    const owed = safeNumber(customer.balanceOwed);
+    const days = customerDaysOutstanding(customer);
+    const bucket = customerAgingBucket(days);
+    return `<tr>
+      <td>${esc(customer.name || "-")}</td>
+      <td>${esc(customer.phone || "-")}</td>
+      <td>${esc(customer.tin || "-")}</td>
+      <td>${owed > 0 ? `<strong>${money(owed)}</strong>` : `<span class="muted">-</span>`}</td>
+      <td>${owed > 0 && days !== null
+        ? `<span class="status ${agingBucketStatusClass(bucket)}">${days}</span>`
+        : `<span class="muted">-</span>`}</td>
+      <td class="table-actions">
+        <button class="link-button" type="button" data-customer-history="${esc(customer.id)}">${t("customersScreen.history")}</button>
+        ${owed > 0 && hasStaffPermission("takeRepayments")
+          ? `<button class="ghost-button compact" type="button" data-record-payment="${esc(customer.id)}">${t("customers.recordPayment")}</button>`
+          : ""}
+        <button class="link-button" type="button" data-edit-customer="${esc(customer.id)}">${t("customersScreen.edit")}</button>
+      </td>
+    </tr>`;
+  }).join("");
+}
+
+function openCustomerDialog(customerId) {
+  const dialog = qs("#customerDialog");
+  const form = qs("#customerForm");
+  if (!dialog || !form) return;
+  const customer = customerId ? customerById(customerId) : null;
+  form.reset();
+  qs("#customerNameError").textContent = "";
+  qs("#customerPhoneError").textContent = "";
+  const titleKey = customer ? "customersScreen.dialogTitleEdit" : "customersScreen.dialogTitle";
+  setDynamicText("#customerDialogTitle", t(titleKey), titleKey);
+  form.elements.id.value = customer?.id || "";
+  form.elements.name.value = customer?.name || "";
+  form.elements.phone.value = customer?.phone || "";
+  form.elements.tin.value = customer?.tin || "";
+  form.elements.vrn.value = customer?.vrn || "";
+  form.elements.email.value = customer?.email || "";
+  form.elements.terms.value = customer?.terms || "";
+  form.elements.address.value = customer?.address || "";
+  dialog.showModal();
+}
+
+// A create writes the whole document; an edit writes ONLY the profile fields.
+//
+// firestore.rules is strict about that difference: a staff profile edit is
+// diff-checked against exactly this key list AND must leave balanceOwed where
+// it found it, because a profile edit that could move money would be a way to
+// write off a debt while renaming somebody. So storeId, createdAt and
+// balanceOwed are absent from the edit payload on purpose -- including any one
+// of them would put a key outside the permitted diff and the whole write would
+// be refused.
+async function saveCustomer(input) {
+  const existing = input.id ? customerById(input.id) : null;
+
+  // "all stores" cannot own a document. The same refusal saveProduct() and
+  // saveSupplier() make.
+  if (!existing && state.currentStoreId === "all") return showToast(t("toast.selectStoreBeforeAdd"));
+  if (!existing && !state.currentStoreId) return showToast(t("toast.loadingStore"));
+  if (!state.db || !state.user || !state.businessOwnerUid) return showToast(t("toast.signInToAddStore"));
+
+  qs("#customerNameError").textContent = "";
+  qs("#customerPhoneError").textContent = "";
+
+  const name = String(input.name || "").trim().slice(0, 80);
+  if (!name) {
+    qs("#customerNameError").textContent = t("customersScreen.nameRequired");
+    return;
+  }
+
+  // Required here as well as in the rules. The till matches an existing
+  // customer on the phone number, so a customer without one is a customer the
+  // next credit sale will silently create a second time.
+  const typedPhone = String(input.phone || "").trim().slice(0, 20);
+  if (!typedPhone) {
+    qs("#customerPhoneError").textContent = t("customersScreen.phoneRequired");
+    return;
+  }
+  // Stored in the same normalised form findCustomerByPhone() compares against,
+  // so a customer added here is the one the till finds later rather than a
+  // duplicate differing by a leading zero.
+  const phone = normalizeCustomerPhoneKey(typedPhone) || typedPhone;
+
+  // Refused rather than merged, for the reason saveSupplier() refuses a
+  // duplicate name: silently merging would attach a sale to a customer nobody
+  // chose, and here that customer carries a debt.
+  const clash = (state.customers || []).find((other) =>
+    other.id !== (existing?.id || "") && String(other.phone || "") === phone);
+  if (clash) {
+    qs("#customerPhoneError").textContent = t("customersScreen.phoneTaken", { name: clash.name || "" });
+    return;
+  }
+
+  const optional = {};
+  for (const [key, max] of [["tin", 40], ["vrn", 20], ["address", 200], ["email", 120], ["terms", 60]]) {
+    optional[key] = String(input[key] || "").trim().slice(0, max);
+  }
+
+  try {
+    const { doc, collection, setDoc, serverTimestamp } = state.firebaseApi.firestore;
+    if (existing) {
+      const payload = { name, phone, updatedAt: serverTimestamp() };
+      // Only what actually changed. A cleared field is written as "" so it can
+      // be cleared at all; an untouched one is left out entirely, so two
+      // devices editing different fields do not overwrite each other.
+      for (const [key, value] of Object.entries(optional)) {
+        if (value !== String(existing[key] || "")) payload[key] = value;
+      }
+      await setDoc(doc(state.db, "users", state.businessOwnerUid, "customers", existing.id), payload, { merge: true });
+    } else {
+      const payload = {
+        name,
+        phone,
+        // The till owns this figure. A customer is created owing nothing, and
+        // what they owe moves only through a credit sale, a payment, or an
+        // invoice -- never through this form.
+        balanceOwed: 0,
+        storeId: state.currentStoreId,
+        createdAt: serverTimestamp()
+      };
+      for (const [key, value] of Object.entries(optional)) {
+        if (value) payload[key] = value;
+      }
+      await setDoc(doc(collection(state.db, "users", state.businessOwnerUid, "customers")), payload);
+    }
+    qs("#customerDialog")?.close();
+    showToast(t(existing ? "toast.customerUpdated" : "toast.customerAdded", { name }));
+  } catch (error) {
+    console.warn(error);
+    showToast(t("toast.couldNotSaveCustomer"));
+  }
+}
+
+// Derived, never stored. DESIGN-invoicing.md 2: a status somebody can set by
+// hand is a status that disagrees with the money.
+function invoiceStatusLabel(invoice) {
+  if (invoice.status === "void") return t("customersScreen.statusVoid");
+  if (invoice.status === "draft") return t("customersScreen.statusDraft");
+  const settled = safeNumber(invoice.amountPaid) + safeNumber(invoice.amountCredited);
+  const total = safeNumber(invoice.total);
+  if (total > 0 && settled >= total) return t("customersScreen.statusPaid");
+  if (settled > 0) return t("customersScreen.statusPartly");
+  return t("customersScreen.statusIssued");
+}
+
+// `payments` and `invoices` are null while they are still being fetched, which
+// is a different thing from an empty list and is said differently.
+function buildCustomerHistoryHtml(customer, payments, invoices) {
+  const detailRow = (labelKey, value) => value
+    ? `<tr><th style="text-align:left;white-space:nowrap">${t(labelKey)}</th><td>${esc(value)}</td></tr>`
+    : "";
+
+  const paymentRows = payments === null
+    ? `<tr><td colspan="3" class="empty-state">${t("customersScreen.historyLoading")}</td></tr>`
+    : (payments.length
+      ? payments.map((payment) => `<tr>
+          <td>${payment.at ? esc(payment.at.toLocaleDateString()) : "-"}</td>
+          <td>${money(payment.amount)}</td>
+          <td>${esc(payment.note || "-")}</td>
+        </tr>`).join("")
+      : `<tr><td colspan="3" class="empty-state">${t("customersScreen.historyNoPayments")}</td></tr>`);
+
+  const invoiceRows = invoices === null
+    ? `<tr><td colspan="4" class="empty-state">${t("customersScreen.historyLoading")}</td></tr>`
+    : (invoices.length
+      ? invoices.map((invoice) => `<tr>
+          <td>${esc(invoice.number || "-")}</td>
+          <td>${invoice.at ? esc(invoice.at.toLocaleDateString()) : "-"}</td>
+          <td>${money(invoice.total)}</td>
+          <td>${esc(invoiceStatusLabel(invoice))}</td>
+        </tr>`).join("")
+      : `<tr><td colspan="4" class="empty-state">${t("customersScreen.historyNoInvoices")}</td></tr>`);
+
+  return `
+    <p class="muted">${esc(t("customersScreen.historyIntro", { name: customer.name || "" }))}</p>
+    <div class="table-panel" style="box-shadow:none;border:none">
+      <table>
+        <tbody>
+          <tr><th style="text-align:left;white-space:nowrap">${t("customersScreen.historyOwed")}</th>
+              <td><strong>${money(customer.balanceOwed)}</strong></td></tr>
+          ${detailRow("customersScreen.detailPhone", customer.phone)}
+          ${detailRow("customersScreen.detailTin", customer.tin)}
+          ${detailRow("customersScreen.detailVrn", customer.vrn)}
+          ${detailRow("customersScreen.detailEmail", customer.email)}
+          ${detailRow("customersScreen.detailTerms", customer.terms)}
+          ${detailRow("customersScreen.detailAddress", customer.address)}
+        </tbody>
+      </table>
+    </div>
+    <h3>${t("customersScreen.historyInvoicesTitle")}</h3>
+    <div class="table-panel" style="box-shadow:none;border:none">
+      <table>
+        <thead><tr>
+          <th>${t("customersScreen.historyColNumber")}</th>
+          <th>${t("customersScreen.historyColDate")}</th>
+          <th>${t("customersScreen.historyColAmount")}</th>
+          <th>${t("customersScreen.historyColStatus")}</th>
+        </tr></thead>
+        <tbody>${invoiceRows}</tbody>
+      </table>
+    </div>
+    <h3>${t("customersScreen.historyPaymentsTitle")}</h3>
+    <div class="table-panel" style="box-shadow:none;border:none">
+      <table>
+        <thead><tr>
+          <th>${t("customersScreen.historyColDate")}</th>
+          <th>${t("customersScreen.historyColAmount")}</th>
+          <th>${t("customersScreen.historyColNote")}</th>
+        </tr></thead>
+        <tbody>${paymentRows}</tbody>
+      </table>
+    </div>
+    <p class="muted">${t("customersScreen.historyBoundedNote")}</p>`;
+}
+
+async function openCustomerHistory(customerId) {
+  const customer = customerById(customerId);
+  const dialog = qs("#customerHistoryDialog");
+  if (!customer || !dialog) return;
+  setDynamicText("#customerHistoryTitle", `${t("customersScreen.historyTitle")}: ${customer.name || ""}`);
+  // Opened first, with what is already known. The fetches below can be slow on
+  // a bad connection and a dialog that appears only afterwards looks broken.
+  qs("#customerHistoryContent").innerHTML = buildCustomerHistoryHtml(customer, null, null);
+  dialog.showModal();
+
+  let payments = [];
+  let invoices = [];
+  try {
+    const { collection, getDocs, orderBy, query, limit, where } = state.firebaseApi.firestore;
+    const paymentsRef = collection(state.db, "users", state.businessOwnerUid, "customers", customerId, "payments");
+    const paymentSnap = await getDocs(query(paymentsRef, orderBy("createdAt", "desc"), limit(ACCOUNTS_HISTORY_LIMIT)));
+    payments = paymentSnap.docs.map((docSnap) => {
+      const data = docSnap.data();
+      return { id: docSnap.id, ...data, at: purchasedAt(data) };
+    });
+
+    // Empty until the invoices screen lands, and harmless until then: the
+    // collection simply has no documents. Needs the (customerId, createdAt)
+    // composite index -- without it this throws and the dialog shows no
+    // invoices rather than failing, which is why it has its own catch below.
+    try {
+      const invoicesRef = collection(state.db, "users", state.businessOwnerUid, "invoices");
+      const invoiceSnap = await getDocs(query(invoicesRef,
+        where("customerId", "==", customerId), orderBy("createdAt", "desc"), limit(ACCOUNTS_HISTORY_LIMIT)));
+      invoices = invoiceSnap.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return { id: docSnap.id, ...data, at: purchasedAt(data) };
+      });
+    } catch (invoiceError) {
+      console.warn("Could not load customer invoices.", invoiceError);
+    }
+  } catch (error) {
+    console.warn("Could not load customer history.", error);
+  }
+
+  // Still open? A slow fetch that lands after the user has closed the dialog
+  // must not repaint it.
+  if (dialog.open) {
+    qs("#customerHistoryContent").innerHTML = buildCustomerHistoryHtml(customer, payments, invoices);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Invoices. DESIGN-invoicing.md.
+//
+// A COMMERCIAL invoice: a formal request for payment that records the debt and
+// what it was for. NOT a tax invoice -- in Tanzania only an EFD or VFD receipt
+// proves VAT, so the document says "Invoice" and never claims otherwise.
+//
+// Two states matter and only three are ever stored (draft | issued | void).
+// "Partly paid" and "paid" are DERIVED from the amounts by invoiceStatusLabel()
+// above: a status somebody can set by hand is a status that disagrees with the
+// money.
+
+// The rules cap a basket at 40 lines. Kept in step deliberately: a 41st line
+// would be refused by firestore.rules with nothing on screen explaining why.
+const INVOICE_MAX_LINES = 40;
+
+function invoiceById(invoiceId) {
+  return (state.invoices || []).find((invoice) => invoice.id === invoiceId) || null;
+}
+
+function invoiceDateValue(value) {
+  if (!value) return null;
+  if (typeof value.toDate === "function") return value.toDate();
+  if (value instanceof Date) return value;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+// Local parts, not toISOString(): east of Greenwich the UTC date is yesterday
+// for the first three hours of every day, which would silently backdate an
+// invoice raised before 3am.
+function dateInputValue(date) {
+  const value = date instanceof Date ? date : new Date();
+  const pad = (part) => String(part).padStart(2, "0");
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+}
+
+function parseDateInput(value) {
+  const text = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  const parsed = new Date(`${text}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+// Whole shillings, like every other price in this system.
+function invoiceLineTotal(line) {
+  return Math.max(0, Math.round(safeNumber(line?.quantity) * safeNumber(line?.unitPrice)));
+}
+
+// Money the way sales store it. netTotal is derived from the total ACTUALLY
+// being written rather than from the tax helper's own idea of it: firestore.rules
+// enforces netTotal + taxTotal == total, so a divergence would not be a wrong
+// figure on a report, it would be a REJECTED invoice.
+function computeInvoiceTotals(lines) {
+  const subtotal = (lines || []).reduce((sum, line) => sum + invoiceLineTotal(line), 0);
+  const total = subtotal;
+  const vatConfig = vatSettings();
+  let taxFields = {};
+  if (vatConfig.registered && total > 0) {
+    const computed = computeSaleTax((lines || []).map((line) => ({
+      inclusive: invoiceLineTotal(line),
+      taxClass: TAX_CLASSES.includes(line.taxClass) ? line.taxClass : "standard"
+    })), 0);
+    const taxTotal = Math.min(Math.max(computed.taxTotal, 0), total);
+    taxFields = {
+      vatRegistered: true,
+      // Stamped now, not read at print time: an invoice reprinted next year is
+      // a document the shop is audited on, and it must show the number that was
+      // in force when it was raised.
+      vrn: vatConfig.vrn,
+      vatRate: computed.vatRate,
+      taxTotal,
+      netTotal: total - taxTotal,
+      taxBreakdown: computed.breakdown
+    };
+  }
+  return { subtotal, total, taxFields };
+}
+
+function renderInvoices() {
+  const table = qs("#invoicesTable");
+  if (!table) return;
+  // The same question openView() asks, so hiding the screen and emptying it
+  // cannot disagree.
+  if (!canOpenView("invoices")) { table.innerHTML = ""; return; }
+
+  const invoices = state.invoices || [];
+  const countEl = qs("#invoicesCount");
+  // "1 invoices" is the kind of wrong that makes a shop trust the rest of the
+  // screen less, and Kiswahili needs its own wording rather than a plural "s".
+  if (countEl) {
+    countEl.textContent = invoices.length === 1
+      ? t("invoices.countOne")
+      : t("invoices.count", { total: invoices.length });
+  }
+
+  const outstandingEl = qs("#invoicesOutstanding");
+  if (outstandingEl) {
+    // Derived, never stored. A draft owes nothing and a void owes nothing.
+    const outstanding = invoices
+      .filter((invoice) => invoice.status === "issued")
+      .reduce((sum, invoice) => sum + Math.max(0,
+        safeNumber(invoice.total) - safeNumber(invoice.amountPaid) - safeNumber(invoice.amountCredited)), 0);
+    outstandingEl.textContent = `${t("invoices.outstanding")}: ${money(outstanding)}`;
+  }
+
+  if (!invoices.length) {
+    table.innerHTML = `<tr><td colspan="7" class="empty-state">${t("invoices.empty")}</td></tr>`;
+    return;
+  }
+
+  table.innerHTML = invoices.map((invoice) => {
+    const isDraft = invoice.status === "draft";
+    // firestore.rules lets only the person who raised a draft edit it
+    // (validInvoiceDraft pins createdByUid to the caller), so offering the
+    // button to anyone else would be offering a refusal.
+    const mine = invoice.createdByUid === state.user?.uid;
+    const issueDate = invoiceDateValue(invoice.issueDate);
+    const dueDate = invoiceDateValue(invoice.dueDate);
+    return `<tr>
+      <td>${invoice.number ? esc(invoice.number) : `<span class="muted">${t("invoices.noNumberYet")}</span>`}</td>
+      <td>${esc(invoice.customerName || "-")}</td>
+      <td>${issueDate ? esc(issueDate.toLocaleDateString()) : "-"}</td>
+      <td>${dueDate ? esc(dueDate.toLocaleDateString()) : "-"}</td>
+      <td>${money(invoice.total)}</td>
+      <td><span class="status">${esc(invoiceStatusLabel(invoice))}</span></td>
+      <td class="table-actions">
+        ${isDraft && mine ? `<button class="link-button" type="button" data-edit-invoice="${esc(invoice.id)}">${t("invoices.edit")}</button>` : ""}
+        ${isDraft ? `<button class="ghost-button compact" type="button" data-issue-invoice="${esc(invoice.id)}">${t("invoices.issueButton")}</button>` : ""}
+        ${!isDraft ? `<button class="link-button" type="button" data-view-invoice="${esc(invoice.id)}">${t("invoices.view")}</button>` : ""}
+        ${invoice.status === "issued" && invoiceOutstanding(invoice) > 0 && hasStaffPermission("takeRepayments")
+          ? `<button class="ghost-button compact" type="button" data-pay-invoice="${esc(invoice.id)}">${t("invoices.payButton")}</button>`
+          : ""}
+        ${invoice.status === "issued" && isOwnerRole()
+          && safeNumber(invoice.amountPaid) === 0 && safeNumber(invoice.amountCredited) === 0
+          ? `<button class="link-button" type="button" data-void-invoice="${esc(invoice.id)}">${t("invoices.voidButton")}</button>`
+          : ""}
+      </td>
+    </tr>`;
+  }).join("");
+}
+
+function renderInvoiceCustomerOptions(selectedId) {
+  const select = qs("#invoiceCustomerSelect");
+  if (!select) return;
+  const customers = [...(state.customers || [])]
+    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  select.innerHTML = `<option value="">${esc(t("invoices.choose"))}</option>` +
+    customers.map((customer) => {
+      const label = `${customer.name || ""}${customer.phone ? ` (${customer.phone})` : ""}`;
+      return `<option value="${esc(customer.id)}"${customer.id === selectedId ? " selected" : ""}>${esc(label)}</option>`;
+    }).join("");
+}
+
+function renderInvoiceProductOptions() {
+  const select = qs("#invoiceProductSelect");
+  if (!select) return;
+  select.innerHTML = `<option value="">${esc(t("invoices.choose"))}</option>` +
+    storeProducts().map((product) =>
+      `<option value="${esc(product.id)}">${esc(product.name || "")}</option>`).join("");
+}
+
+function updateInvoiceTotalsSummary() {
+  const summary = qs("#invoiceTotalsSummary");
+  if (!summary) return;
+  const totals = computeInvoiceTotals(state.invoiceLines || []);
+  summary.textContent = `${t("invoices.totalLabel")}: ${money(totals.total)}`;
+}
+
+function renderInvoiceLines() {
+  const table = qs("#invoiceLinesTable");
+  if (!table) return;
+  const lines = state.invoiceLines || [];
+  table.innerHTML = lines.length
+    ? lines.map((line, index) => `<tr>
+        <td><input type="text" maxlength="120" value="${esc(line.description || "")}" data-invoice-line="${index}" data-invoice-field="description" /></td>
+        <td><input type="number" min="0" step="1" value="${safeNumber(line.quantity)}" data-invoice-line="${index}" data-invoice-field="quantity" /></td>
+        <td><input type="number" min="0" step="1" value="${safeNumber(line.unitPrice)}" data-invoice-line="${index}" data-invoice-field="unitPrice" /></td>
+        <td>${money(invoiceLineTotal(line))}</td>
+        <td><button class="link-button" type="button" data-invoice-line-remove="${index}">${t("invoices.removeLine")}</button></td>
+      </tr>`).join("")
+    : `<tr><td colspan="5" class="empty-state">${t("invoices.noLines")}</td></tr>`;
+  updateInvoiceTotalsSummary();
+}
+
+function addInvoiceProductLine() {
+  const productId = qs("#invoiceProductSelect")?.value || "";
+  const product = (state.products || []).find((item) => item.id === productId);
+  if (!product) return;
+  if ((state.invoiceLines || []).length >= INVOICE_MAX_LINES) return showToast(t("invoices.tooManyLines", { max: INVOICE_MAX_LINES }));
+  state.invoiceLines = [...(state.invoiceLines || []), {
+    productId: product.id,
+    description: String(product.name || "").slice(0, 120),
+    quantity: 1,
+    unitPrice: safeNumber(product.sellingPrice),
+    taxClass: taxClassOf(product)
+  }];
+  renderInvoiceLines();
+}
+
+// A line with no product behind it: labour, delivery, a service. Moves no stock
+// at issue, because there is no shelf to move.
+function addInvoiceFreeLine() {
+  if ((state.invoiceLines || []).length >= INVOICE_MAX_LINES) return showToast(t("invoices.tooManyLines", { max: INVOICE_MAX_LINES }));
+  state.invoiceLines = [...(state.invoiceLines || []), { description: "", quantity: 1, unitPrice: 0 }];
+  renderInvoiceLines();
+}
+
+function openInvoiceDialog(invoiceId) {
+  const dialog = qs("#invoiceDialog");
+  const form = qs("#invoiceForm");
+  if (!dialog || !form) return;
+  const invoice = invoiceId ? invoiceById(invoiceId) : null;
+  // An issued invoice is never edited -- only credited or voided.
+  if (invoice && invoice.status !== "draft") return showToast(t("invoices.issuedNotEditable"));
+  if (!invoice && !(state.customers || []).length) return showToast(t("invoices.needACustomer"));
+
+  form.reset();
+  for (const selector of ["#invoiceCustomerError", "#invoiceDueDateError", "#invoiceLinesError"]) {
+    const el = qs(selector);
+    if (el) el.textContent = "";
+  }
+  const titleKey = invoice ? "invoices.dialogTitleEdit" : "invoices.dialogTitle";
+  setDynamicText("#invoiceDialogTitle", t(titleKey), titleKey);
+
+  renderInvoiceCustomerOptions(invoice?.customerId || "");
+  renderInvoiceProductOptions();
+  form.elements.id.value = invoice?.id || "";
+  form.elements.issueDate.value = dateInputValue(invoiceDateValue(invoice?.issueDate) || new Date());
+  form.elements.dueDate.value = dateInputValue(invoiceDateValue(invoice?.dueDate) || new Date());
+  form.elements.terms.value = invoice?.terms || "";
+  form.elements.note.value = invoice?.note || "";
+  // Copied, not referenced: closing the dialog must not have edited the record
+  // that is still on screen behind it.
+  state.invoiceLines = (invoice?.lines || []).map((line) => ({ ...line }));
+  renderInvoiceLines();
+  dialog.showModal();
+}
+
+async function saveInvoiceDraft(input) {
+  const existing = input.id ? invoiceById(input.id) : null;
+  if (existing && existing.status !== "draft") return showToast(t("invoices.issuedNotEditable"));
+  if (!existing && state.currentStoreId === "all") return showToast(t("toast.selectStoreBeforeAdd"));
+  if (!existing && !state.currentStoreId) return showToast(t("toast.loadingStore"));
+  if (!state.db || !state.user || !state.businessOwnerUid) return showToast(t("toast.signInToAddStore"));
+
+  const customerError = qs("#invoiceCustomerError");
+  const dueError = qs("#invoiceDueDateError");
+  const linesError = qs("#invoiceLinesError");
+  for (const el of [customerError, dueError, linesError]) if (el) el.textContent = "";
+
+  const customer = customerById(String(input.customerId || ""));
+  if (!customer) {
+    if (customerError) customerError.textContent = t("invoices.customerRequired");
+    return;
+  }
+
+  const issueDate = parseDateInput(input.issueDate) || new Date();
+  const dueDate = parseDateInput(input.dueDate) || issueDate;
+  // The rules refuse dueDate < issueDate outright, so catching it here is the
+  // difference between a sentence and a permission error.
+  if (dueDate < issueDate) {
+    if (dueError) dueError.textContent = t("invoices.dueBeforeIssue");
+    return;
+  }
+
+  const lines = (state.invoiceLines || [])
+    .map((line) => ({
+      ...(line.productId ? { productId: String(line.productId) } : {}),
+      description: String(line.description || "").trim().slice(0, 120),
+      quantity: safeNumber(line.quantity),
+      unitPrice: safeNumber(line.unitPrice),
+      lineTotal: invoiceLineTotal(line),
+      ...(line.taxClass ? { taxClass: line.taxClass } : {})
+    }))
+    .filter((line) => line.description && line.quantity > 0);
+
+  if (!lines.length) {
+    if (linesError) linesError.textContent = t("invoices.linesRequired");
+    return;
+  }
+  if (lines.length > INVOICE_MAX_LINES) {
+    if (linesError) linesError.textContent = t("invoices.tooManyLines", { max: INVOICE_MAX_LINES });
+    return;
+  }
+
+  const totals = computeInvoiceTotals(lines);
+  if (totals.total <= 0) {
+    if (linesError) linesError.textContent = t("invoices.totalMustBePositive");
+    return;
+  }
+  if (totals.total > MAX_MONEY) {
+    if (linesError) linesError.textContent = t("invoices.totalTooLarge");
+    return;
+  }
+
+  try {
+    const { doc, collection, setDoc, serverTimestamp } = state.firebaseApi.firestore;
+    const payload = {
+      status: "draft",
+      storeId: existing?.storeId || state.currentStoreId,
+      customerId: customer.id,
+      // Denormalised so the document survives the customer being renamed: an
+      // invoice states what was agreed, not what the record says today.
+      customerName: String(customer.name || "").slice(0, 120),
+      lines,
+      subtotal: totals.subtotal,
+      total: totals.total,
+      amountPaid: 0,
+      amountCredited: 0,
+      issueDate,
+      dueDate,
+      terms: String(input.terms || "").trim().slice(0, 60),
+      note: String(input.note || "").trim().slice(0, 200),
+      updatedAt: serverTimestamp(),
+      ...totals.taxFields
+    };
+    for (const [field, source, max] of [
+      ["customerPhone", customer.phone, 20], ["customerTin", customer.tin, 40],
+      ["customerVrn", customer.vrn, 20], ["customerAddress", customer.address, 200],
+      ["customerEmail", customer.email, 120]
+    ]) {
+      const value = String(source || "").trim().slice(0, max);
+      if (value) payload[field] = value;
+    }
+
+    if (existing) {
+      // createdAt and createdByUid are deliberately absent: the rules pin both
+      // across an edit, and validInvoiceDraft() additionally requires the
+      // editor to BE the creator, so sending them could only ever fail.
+      await setDoc(doc(state.db, "users", state.businessOwnerUid, "invoices", existing.id), payload, { merge: true });
+    } else {
+      payload.createdByUid = state.user.uid;
+      payload.createdAt = serverTimestamp();
+      await setDoc(doc(collection(state.db, "users", state.businessOwnerUid, "invoices")), payload);
+    }
+    qs("#invoiceDialog")?.close();
+    showToast(t(existing ? "invoices.draftUpdated" : "invoices.draftSaved"));
+  } catch (error) {
+    console.warn(error);
+    showToast(describeOperationError(error, "invoices.saveFailed"));
+  }
+}
+
+// Issuing. The one write that mints a number, and the only irreversible step in
+// the whole feature: it creates the debt and takes the goods off the shelf.
+//
+// Everything happens in ONE transaction because the number, the stock and the
+// balance have to agree or none of them should move. The counter is read and
+// written inside it -- which is exactly the read-then-write offline selling
+// forbids, and why issuing needs a connection (DESIGN-invoicing.md 3).
+//
+// Double-issue needs no idempotency trick here: firestore.rules requires the
+// invoice to be a draft BEFORE the write, so a second attempt is refused by the
+// rules rather than minting a second number.
+async function issueInvoice(invoiceId) {
+  const invoice = invoiceById(invoiceId);
+  if (!invoice || invoice.status !== "draft") return;
+  if (!state.db || !state.user || !state.businessOwnerUid) return showToast(t("toast.signInToAddStore"));
+  if (isOfflineNow()) return showToast(t("invoices.offlineIssue"));
+
+  const customer = customerById(invoice.customerId);
+  if (!customer) return showToast(t("invoices.customerGone"));
+
+  if (!await askConfirm(t("invoices.issueConfirm", {
+    name: invoice.customerName || "",
+    total: money(invoice.total)
+  }))) return;
+
+  // The year the number is MINTED in, not the date typed on the document: a
+  // sequence belongs to the year it was issued, and an invoice backdated across
+  // a year boundary must not reach into a sequence that is already closed.
+  const year = new Date().getFullYear();
+  const counterId = `invoice-${year}`;
+
+  const { doc, collection, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
+  const root = ["users", state.businessOwnerUid];
+  const invoiceRef = doc(state.db, ...root, "invoices", invoiceId);
+  const counterRef = doc(state.db, ...root, "counters", counterId);
+  const customerRef = doc(state.db, ...root, "customers", invoice.customerId);
+  const stockLines = (invoice.lines || []).filter((line) => line.productId);
+  const productRefs = stockLines.map((line) => doc(state.db, ...root, "products", line.productId));
+
+  try {
+    const attempt = runTransaction(state.db, async (transaction) => {
+      // Every read before any write: Firestore refuses a get() after the first
+      // write in a transaction.
+      const invoiceSnap = await transaction.get(invoiceRef);
+      if (!invoiceSnap.exists()) throw new Error("INVOICE_GONE");
+      if (invoiceSnap.data().status !== "draft") throw new Error("ALREADY_ISSUED");
+      const counterSnap = await transaction.get(counterRef);
+      const productSnaps = await Promise.all(productRefs.map((ref) => transaction.get(ref)));
+      const customerSnap = await transaction.get(customerRef);
+      if (!customerSnap.exists()) throw new Error("CUSTOMER_GONE");
+
+      productSnaps.forEach((snap, index) => {
+        const line = stockLines[index];
+        if (!snap.exists()) throw new Error(t("txerror.itemGone", { name: line.description }));
+        const available = safeNumber(snap.data().quantity);
+        if (available < safeNumber(line.quantity)) {
+          throw new Error(t("txerror.notEnoughStockItem", { name: line.description, quantity: available }));
+        }
+      });
+
+      const nextSequence = (counterSnap.exists() ? safeNumber(counterSnap.data().value) : 0) + 1;
+      const number = `INV-${year}-${String(nextSequence).padStart(4, "0")}`;
+
+      // The counter and the number move together or neither does: the rule
+      // reads the counter with getAfter() and refuses any invoice whose
+      // sequence disagrees with what this same commit leaves behind. Two people
+      // issuing at the same moment cannot mint one number -- the loser re-runs
+      // and takes the next.
+      transaction.set(counterRef, { value: nextSequence, updatedAt: serverTimestamp() });
+      transaction.update(invoiceRef, {
+        status: "issued",
+        number,
+        sequence: nextSequence,
+        counterId,
+        issuedByUid: state.user.uid,
+        issuedAt: serverTimestamp()
+      });
+
+      productSnaps.forEach((snap, index) => {
+        const line = stockLines[index];
+        const qty = safeNumber(line.quantity);
+        const before = safeNumber(snap.data().quantity);
+        transaction.update(productRefs[index], {
+          quantity: before - qty,
+          sold30: safeNumber(snap.data().sold30) + qty,
+          sold90: safeNumber(snap.data().sold90) + qty,
+          updatedAt: serverTimestamp(),
+          // The existing reason, deliberately: the goods leave on a sale-like
+          // event and the allowlist is closed. Inventing an "invoice" reason is
+          // the trap DESIGN-purchases.md 9 names.
+          movementReason: "sale"
+        });
+        recordStockMovement(transaction, {
+          productId: line.productId,
+          productName: line.description,
+          storeId: invoice.storeId,
+          reason: "sale",
+          delta: -qty,
+          quantityBefore: before,
+          invoiceId
+        });
+      });
+
+      // An invoice raised against a sale that already happened only formalises
+      // a debt the till created; one raised fresh creates it here.
+      // DESIGN-invoicing.md 4 -- the same goods must never leave twice.
+      if (!invoice.saleId) {
+        const currentOwed = safeNumber(customerSnap.data().balanceOwed);
+        const customerUpdate = {
+          balanceOwed: currentOwed + safeNumber(invoice.total),
+          updatedAt: serverTimestamp()
+        };
+        if (currentOwed <= 0) customerUpdate.oldestUnpaidAt = serverTimestamp();
+        transaction.update(customerRef, customerUpdate);
+      }
+
+      transaction.set(doc(collection(state.db, ...root, "auditLogs")), {
+        action: "INVOICE_ISSUED",
+        invoiceId,
+        invoiceNumber: number,
+        customerId: invoice.customerId,
+        storeId: invoice.storeId,
+        total: safeNumber(invoice.total),
+        uid: state.user.uid,
+        createdAt: serverTimestamp()
+      });
+    });
+
+    // Bounded, like the sale path: a transaction cannot complete without a
+    // server, and an unbounded await leaves the button dead with no explanation.
+    const outcome = await awaitSaleTransaction(attempt);
+    if (outcome === "unconfirmed") return showToast(t("invoices.issueUnconfirmed"));
+    showToast(t("invoices.issued"));
+  } catch (error) {
+    console.warn(error);
+    const message = String(error?.message || "");
+    if (message === "ALREADY_ISSUED") return showToast(t("invoices.alreadyIssued"));
+    if (message === "CUSTOMER_GONE") return showToast(t("invoices.customerGone"));
+    showToast(describeOperationError(error, "invoices.issueFailed"));
+  }
+}
+
+async function subscribeToInvoices() {
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
+  if (state.unsubscribeInvoices) state.unsubscribeInvoices();
+  try {
+    const { collection, onSnapshot, orderBy, query, where } = state.firebaseApi.firestore;
+    const invoicesRef = collection(state.db, "users", state.businessOwnerUid, "invoices");
+    const queryStoreIds = await resolveQueryStoreIds();
+    if (queryStoreIds !== null && queryStoreIds.length === 0) {
+      state.invoices = [];
+      renderInvoices();
+      return;
+    }
+    // A cashier reads only what they raised -- firestore.rules says so, and a
+    // query that asks for more is refused outright rather than filtered down.
+    const clauses = [];
+    if (!isManagerOrOwnerRole()) clauses.push(where("createdByUid", "==", state.user.uid));
+    if (queryStoreIds !== null) clauses.push(where("storeId", "in", queryStoreIds));
+    const invoicesQuery = query(invoicesRef, ...clauses, orderBy("createdAt", "desc"));
+    state.unsubscribeInvoices = onSnapshot(invoicesQuery, (snapshot) => {
+      state.invoices = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      renderInvoices();
+      scheduleRenderAll();
+    });
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The invoice as a document, and the two things that can happen to it after it
+// is issued: money against it, or the owner voiding it. DESIGN-invoicing.md 6-8.
+
+function invoiceOutstanding(invoice) {
+  return Math.max(0, safeNumber(invoice?.total)
+    - safeNumber(invoice?.amountPaid) - safeNumber(invoice?.amountCredited));
+}
+
+// A printed invoice states money in the currency of the branch that RAISED it,
+// not the one on screen. A manager viewing "all stores" would otherwise print
+// another branch's currency code onto a document the customer keeps.
+function invoiceMoney(invoice, amount) {
+  return moneyForStore(amount, invoice?.storeId);
+}
+
+function invoiceDocumentMeta(invoice) {
+  const store = state.stores.find((item) => item.id === invoice?.storeId);
+  return {
+    storeName: store?.name || t("storeSwitcher.fallbackName"),
+    businessName: state.cachedProfile?.businessName || state.user?.displayName || "SaviaSmart"
+  };
+}
+
+// The rows every rendering of the document shares, so the screen, the PDF and
+// the WhatsApp copy cannot disagree about what was agreed.
+function invoiceSummaryRows(invoice) {
+  const rows = [[t("invoices.docTotal"), invoiceMoney(invoice, invoice.total)]];
+  if (safeNumber(invoice.amountPaid) > 0) {
+    rows.push([t("invoices.docPaid"), invoiceMoney(invoice, invoice.amountPaid)]);
+  }
+  if (safeNumber(invoice.amountCredited) > 0) {
+    rows.push([t("invoices.docCredited"), invoiceMoney(invoice, invoice.amountCredited)]);
+  }
+  if (invoiceOutstanding(invoice) !== safeNumber(invoice.total)) {
+    rows.push([t("invoices.docOutstanding"), invoiceMoney(invoice, invoiceOutstanding(invoice))]);
+  }
+  return rows;
+}
+
+function buildInvoiceDocumentHtml(invoice) {
+  const meta = invoiceDocumentMeta(invoice);
+  const issueDate = invoiceDateValue(invoice.issueDate);
+  const dueDate = invoiceDateValue(invoice.dueDate);
+  const detail = (label, value) => value
+    ? `<tr><th style="text-align:left;white-space:nowrap">${label}</th><td>${esc(value)}</td></tr>`
+    : "";
+  const lineRows = (invoice.lines || []).map((line) => `<tr>
+      <td>${esc(line.description || "")}</td>
+      <td>${safeNumber(line.quantity)}</td>
+      <td>${invoiceMoney(invoice, line.unitPrice)}</td>
+      <td>${invoiceMoney(invoice, line.lineTotal)}</td>
+    </tr>`).join("");
+
+  return `
+    ${invoice.status === "void"
+      ? `<p class="field-error"><strong>${esc(t("invoices.docVoidBanner", { reason: invoice.voidReason || "" }))}</strong></p>`
+      : ""}
+    <p><strong>${esc(meta.businessName)}</strong><br /><span class="muted">${esc(meta.storeName)}</span></p>
+    <div class="table-panel" style="box-shadow:none;border:none">
+      <table><tbody>
+        ${detail(t("invoices.docNumber"), invoice.number)}
+        ${detail(t("invoices.docDate"), issueDate ? issueDate.toLocaleDateString() : "")}
+        ${detail(t("invoices.docDue"), dueDate ? dueDate.toLocaleDateString() : "")}
+        ${detail(t("invoices.docBillTo"), invoice.customerName)}
+        ${detail(t("customersScreen.detailPhone"), invoice.customerPhone)}
+        ${detail(t("invoices.docTin"), invoice.customerTin)}
+        ${detail(t("invoices.docVrn"), invoice.customerVrn)}
+        ${detail(t("customersScreen.detailAddress"), invoice.customerAddress)}
+        ${detail(t("invoices.docTerms"), invoice.terms)}
+      </tbody></table>
+    </div>
+    <div class="table-panel" style="box-shadow:none;border:none">
+      <table>
+        <thead><tr>
+          <th>${t("invoices.thDescription")}</th>
+          <th>${t("invoices.thQty")}</th>
+          <th>${t("invoices.thUnitPrice")}</th>
+          <th>${t("invoices.thLineTotal")}</th>
+        </tr></thead>
+        <tbody>${lineRows}</tbody>
+      </table>
+    </div>
+    <div class="table-panel" style="box-shadow:none;border:none">
+      <table><tbody>
+        ${invoiceSummaryRows(invoice).map(([label, value]) =>
+          `<tr><th style="text-align:left">${esc(label)}</th><td><strong>${value}</strong></td></tr>`).join("")}
+      </tbody></table>
+    </div>
+    ${invoice.note ? `<p class="muted">${esc(invoice.note)}</p>` : ""}
+    <p class="muted">${t("invoices.docNotTaxInvoice")}</p>`;
+}
+
+function buildInvoiceTextLines(invoice) {
+  const meta = invoiceDocumentMeta(invoice);
+  const issueDate = invoiceDateValue(invoice.issueDate);
+  const dueDate = invoiceDateValue(invoice.dueDate);
+  const lines = [meta.businessName, meta.storeName, ""];
+  if (invoice.status === "void") lines.push(t("invoices.docVoidBanner", { reason: invoice.voidReason || "" }), "");
+  lines.push(`${t("invoices.docNumber")}: ${invoice.number || ""}`);
+  if (issueDate) lines.push(`${t("invoices.docDate")}: ${issueDate.toLocaleDateString()}`);
+  if (dueDate) lines.push(`${t("invoices.docDue")}: ${dueDate.toLocaleDateString()}`);
+  lines.push(`${t("invoices.docBillTo")}: ${invoice.customerName || ""}`);
+  if (invoice.terms) lines.push(`${t("invoices.docTerms")}: ${invoice.terms}`);
+  lines.push("--------------------------------");
+  (invoice.lines || []).forEach((line) => {
+    lines.push(String(line.description || ""));
+    lines.push(`  ${safeNumber(line.quantity)} x ${invoiceMoney(invoice, line.unitPrice)} = ${invoiceMoney(invoice, line.lineTotal)}`);
+  });
+  lines.push("--------------------------------");
+  invoiceSummaryRows(invoice).forEach(([label, value]) => lines.push(`${label}: ${value}`));
+  if (invoice.note) lines.push("", String(invoice.note));
+  lines.push("", t("invoices.docNotTaxInvoice"));
+  return lines;
+}
+
+function openInvoicePreview(invoiceId) {
+  const invoice = invoiceById(invoiceId);
+  const dialog = qs("#invoicePreviewDialog");
+  if (!invoice || !dialog) return;
+  state.previewInvoiceId = invoice.id;
+  setDynamicText("#invoicePreviewTitle", `${t("invoices.previewTitle")}: ${invoice.number || t("invoices.noNumberYet")}`);
+  qs("#invoicePreviewContent").innerHTML = buildInvoiceDocumentHtml(invoice);
+  dialog.showModal();
+}
+
+async function downloadInvoicePdf() {
+  const invoice = invoiceById(state.previewInvoiceId);
+  if (!invoice) return;
+  if (!(await ensureLibrary("pdf", "toast.pdfLibraryFailed"))) return;
+  const jsPdfCtor = window.jspdf && window.jspdf.jsPDF;
+  if (!jsPdfCtor) return showToast(t("toast.pdfLibraryFailed"));
+
+  const meta = invoiceDocumentMeta(invoice);
+  const issueDate = invoiceDateValue(invoice.issueDate);
+  const dueDate = invoiceDateValue(invoice.dueDate);
+  // A4, because an invoice is filed rather than torn off a till roll.
+  const doc = new jsPdfCtor({ unit: "mm", format: "a4" });
+
+  doc.setFontSize(16);
+  doc.text(String(meta.businessName), 14, 18);
+  doc.setFontSize(10);
+  doc.text(String(meta.storeName), 14, 24);
+  doc.setFontSize(18);
+  // "Invoice", never "Tax Invoice" -- DESIGN-invoicing.md 1.
+  doc.text(t("invoices.docTitle"), 196, 18, { align: "right" });
+  doc.setFontSize(10);
+  doc.text(String(invoice.number || ""), 196, 24, { align: "right" });
+
+  let y = 34;
+  const say = (label, value) => {
+    if (!value) return;
+    doc.text(`${label}: ${value}`, 14, y);
+    y += 5;
+  };
+  say(t("invoices.docDate"), issueDate ? issueDate.toLocaleDateString() : "");
+  say(t("invoices.docDue"), dueDate ? dueDate.toLocaleDateString() : "");
+  say(t("invoices.docBillTo"), invoice.customerName || "");
+  say(t("customersScreen.detailPhone"), invoice.customerPhone || "");
+  say(t("invoices.docTin"), invoice.customerTin || "");
+  say(t("invoices.docVrn"), invoice.customerVrn || "");
+  say(t("customersScreen.detailAddress"), invoice.customerAddress || "");
+  say(t("invoices.docTerms"), invoice.terms || "");
+  if (invoice.status === "void") {
+    say(t("invoices.docVoidBanner", { reason: invoice.voidReason || "" }), " ");
+  }
+
+  const headers = [t("invoices.thDescription"), t("invoices.thQty"),
+                   t("invoices.thUnitPrice"), t("invoices.thLineTotal")];
+  const body = (invoice.lines || []).map((line) => [
+    String(line.description || ""),
+    String(safeNumber(line.quantity)),
+    invoiceMoney(invoice, line.unitPrice),
+    invoiceMoney(invoice, line.lineTotal)
+  ]);
+  if (typeof doc.autoTable === "function") {
+    doc.autoTable({ head: [headers], body, startY: y + 2 });
+    y = (doc.lastAutoTable?.finalY || y) + 8;
+  } else {
+    y += 4;
+    doc.text(headers.join(" | "), 14, y);
+    body.forEach((row) => { y += 6; doc.text(row.join(" | "), 14, y); });
+    y += 8;
+  }
+
+  invoiceSummaryRows(invoice).forEach(([label, value]) => {
+    doc.text(`${label}: ${value}`, 196, y, { align: "right" });
+    y += 6;
+  });
+  if (invoice.note) {
+    y += 2;
+    doc.splitTextToSize(String(invoice.note), 180).forEach((wrapped) => {
+      doc.text(wrapped, 14, y);
+      y += 5;
+    });
+  }
+  y += 2;
+  doc.setFontSize(9);
+  doc.splitTextToSize(t("invoices.docNotTaxInvoice"), 180).forEach((wrapped) => {
+    doc.text(wrapped, 14, y);
+    y += 4.5;
+  });
+
+  doc.save(`${invoice.number || "invoice"}.pdf`);
+}
+
+async function shareInvoiceWhatsApp() {
+  const invoice = invoiceById(state.previewInvoiceId);
+  if (!invoice) return;
+  let rawPhone = invoice.customerPhone || customerById(invoice.customerId)?.phone || "";
+  if (!rawPhone) {
+    rawPhone = await askText(t("dialog.customerPhonePrompt"));
+    if (rawPhone === null) return;
+  }
+  const normalized = normalizeTzPhoneForWhatsApp(rawPhone);
+  if (!normalized) return showToast(t("toast.invalidPhoneNumber"));
+  const text = buildInvoiceTextLines(invoice).join("\n");
+  window.open(`https://wa.me/${normalized}?text=${encodeURIComponent(text)}`, "_blank");
+}
+
+// Voiding. The owner alone, and only while nothing is against it: anything with
+// money on it is corrected by a credit note instead (DESIGN-invoicing.md 7).
+//
+// The number is KEPT. A gap in an invoice sequence is the first thing an auditor
+// asks about, so the document stays and says why it stands for nothing.
+async function voidInvoice(invoiceId) {
+  const invoice = invoiceById(invoiceId);
+  if (!invoice || invoice.status !== "issued") return;
+  // The rules say owner-only; asking here too means the button never offers a
+  // refusal.
+  if (!isOwnerRole()) return;
+  if (safeNumber(invoice.amountPaid) > 0 || safeNumber(invoice.amountCredited) > 0) {
+    return showToast(t("invoices.voidHasMoney"));
+  }
+  if (!state.db || !state.user || !state.businessOwnerUid) return showToast(t("toast.signInToAddStore"));
+  if (isOfflineNow()) return showToast(t("invoices.voidOffline"));
+
+  if (!await askConfirm(t("invoices.voidConfirm", {
+    number: invoice.number || "",
+    total: invoiceMoney(invoice, invoice.total)
+  }))) return;
+
+  const typed = await askText(t("invoices.voidReasonPrompt"));
+  if (typed === null) return;
+  const voidReason = String(typed).trim().slice(0, 200);
+  // The rules require a reason, so an empty one would be refused with nothing
+  // on screen explaining why.
+  if (!voidReason) return showToast(t("invoices.voidReasonRequired"));
+
+  const { doc, collection, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
+  const root = ["users", state.businessOwnerUid];
+  const invoiceRef = doc(state.db, ...root, "invoices", invoiceId);
+  const customerRef = doc(state.db, ...root, "customers", invoice.customerId);
+  const stockLines = (invoice.lines || []).filter((line) => line.productId);
+  const productRefs = stockLines.map((line) => doc(state.db, ...root, "products", line.productId));
+
+  try {
+    const attempt = runTransaction(state.db, async (transaction) => {
+      const invoiceSnap = await transaction.get(invoiceRef);
+      if (!invoiceSnap.exists()) throw new Error("INVOICE_GONE");
+      const current = invoiceSnap.data();
+      if (current.status !== "issued") throw new Error("NOT_ISSUED");
+      // Re-checked inside the transaction: the snapshot the screen opened with
+      // is not evidence at commit time, and a payment may have landed since.
+      if (safeNumber(current.amountPaid) > 0 || safeNumber(current.amountCredited) > 0) {
+        throw new Error("HAS_MONEY");
+      }
+      const productSnaps = await Promise.all(productRefs.map((ref) => transaction.get(ref)));
+      const customerSnap = invoice.saleId ? null : await transaction.get(customerRef);
+
+      transaction.update(invoiceRef, {
+        status: "void",
+        voidedByUid: state.user.uid,
+        voidedAt: serverTimestamp(),
+        voidReason
+      });
+
+      productSnaps.forEach((snap, index) => {
+        // A product deleted since the invoice was issued must not block the
+        // void: the same tolerance undoLastSale() applies.
+        if (!snap.exists()) return;
+        const line = stockLines[index];
+        const qty = safeNumber(line.quantity);
+        const before = safeNumber(snap.data().quantity);
+        recordStockMovement(transaction, {
+          productId: line.productId,
+          productName: line.description,
+          storeId: invoice.storeId,
+          reason: "void",
+          delta: qty,
+          quantityBefore: before,
+          invoiceId
+        });
+        transaction.update(productRefs[index], {
+          quantity: before + qty,
+          sold30: Math.max(0, safeNumber(snap.data().sold30) - qty),
+          sold90: Math.max(0, safeNumber(snap.data().sold90) - qty),
+          updatedAt: serverTimestamp(),
+          movementReason: "void"
+        });
+      });
+
+      // Only a debt this invoice CREATED is reversed. One raised against an
+      // existing credit sale never added to the balance, so removing it here
+      // would credit the customer for money the till is still owed.
+      if (!invoice.saleId && customerSnap?.exists()) {
+        const owed = safeNumber(customerSnap.data().balanceOwed);
+        transaction.update(customerRef, {
+          balanceOwed: Math.max(0, owed - safeNumber(invoice.total)),
+          updatedAt: serverTimestamp()
+        });
+      }
+
+      transaction.set(doc(collection(state.db, ...root, "auditLogs")), {
+        action: "INVOICE_VOIDED",
+        invoiceId,
+        invoiceNumber: String(current.number || ""),
+        customerId: invoice.customerId,
+        storeId: invoice.storeId,
+        total: safeNumber(invoice.total),
+        uid: state.user.uid,
+        createdAt: serverTimestamp()
+      });
+    });
+
+    const outcome = await awaitSaleTransaction(attempt);
+    if (outcome === "unconfirmed") return showToast(t("invoices.voidUnconfirmed"));
+    showToast(t("invoices.voided"));
+  } catch (error) {
+    console.warn(error);
+    const message = String(error?.message || "");
+    if (message === "HAS_MONEY") return showToast(t("invoices.voidHasMoney"));
+    if (message === "NOT_ISSUED") return showToast(t("invoices.voidNotIssued"));
+    showToast(describeOperationError(error, "invoices.voidFailed"));
+  }
 }
 
 // Services, scoped exactly like products (DESIGN-services.md Phase B).
@@ -7248,7 +8752,7 @@ function openSupplierPaymentDialog(supplierId) {
   if (!supplier || !dialog || !form) return;
   form.reset();
   qs("#supplierPaymentAmountError").textContent = "";
-  setDynamicText("#supplierPaymentTitle", `${t("suppliers.paymentTitle")} — ${supplier.name || ""}`);
+  setDynamicText("#supplierPaymentTitle", `${t("suppliers.paymentTitle")}: ${supplier.name || ""}`);
   qs("#supplierPaymentBalance").textContent =
     t("suppliers.paymentOwedNow", { amount: money(safeNumber(supplier.balanceOwed)) });
   form.elements.supplierId.value = supplier.id;
@@ -7358,7 +8862,7 @@ async function openSupplierStatement(supplierId) {
   const supplier = supplierById(supplierId);
   const dialog = qs("#supplierStatementDialog");
   if (!supplier || !dialog) return;
-  setDynamicText("#supplierStatementTitle", `${t("suppliers.statementTitle")} — ${supplier.name || ""}`);
+  setDynamicText("#supplierStatementTitle", `${t("suppliers.statementTitle")}: ${supplier.name || ""}`);
   // Opened first, with what is already known. The fetch below can be slow on a
   // bad connection and a dialog that appears only after it looks broken.
   qs("#supplierStatementContent").innerHTML = buildSupplierStatementHtml(supplierId, []);
@@ -7515,7 +9019,7 @@ function openPurchaseReturnDialog(purchaseId) {
   const returnable = purchaseReturnableQty(purchase);
   form.reset();
   qs("#purchaseReturnQtyError").textContent = "";
-  setDynamicText("#purchaseReturnTitle", `${t("purchaseReturn.title")} — ${purchase.productName || ""}`);
+  setDynamicText("#purchaseReturnTitle", `${t("purchaseReturn.title")}: ${purchase.productName || ""}`);
   qs("#purchaseReturnSummary").textContent = t("purchaseReturn.summary", {
     qty: String(safeNumber(purchase.quantity)),
     supplier: purchaseSupplierLabel(purchase) || t("purchaseReturn.noSupplier"),
@@ -7618,7 +9122,7 @@ function openStockAdjustDialog(productId) {
   if (!product || !dialog || !form) return;
   form.reset();
   qs("#adjustQtyError").textContent = "";
-  setDynamicText("#stockAdjustTitle", `${t("adjust.title")} — ${product.name || ""}`);
+  setDynamicText("#stockAdjustTitle", `${t("adjust.title")}: ${product.name || ""}`);
   form.elements.productId.value = product.id;
   form.elements.currentQuantity.value = String(safeNumber(product.quantity));
   form.elements.newQuantity.value = String(safeNumber(product.quantity));
@@ -11469,12 +12973,33 @@ async function subscribeToTransfers() {
   }
 }
 
-function openRecordPaymentDialog(customerId) {
+function openRecordPaymentDialog(customerId, invoiceId = "") {
   // Withdrawn from this cashier: the rules refuse both the payment record and
   // the decrease in the balance, so the dialog would only waste the typing.
   if (!hasStaffPermission("takeRepayments")) return;
   const customer = state.customers.find((item) => item.id === customerId);
   if (!customer) return;
+
+  // Cleared UNCONDITIONALLY before anything else. A leftover id from a previous
+  // open would apply an ordinary repayment to an invoice nobody named, and the
+  // invoice would show as settled by money that was never meant for it.
+  state.pendingPaymentInvoiceId = "";
+  const invoice = invoiceId ? invoiceById(invoiceId) : null;
+  const invoiceLine = qs("#paymentInvoiceLine");
+  if (invoice && invoice.status === "issued") {
+    state.pendingPaymentInvoiceId = invoice.id;
+    if (invoiceLine) {
+      invoiceLine.hidden = false;
+      invoiceLine.textContent = t("payment.againstInvoice", {
+        number: invoice.number || "",
+        outstanding: invoiceMoney(invoice, invoiceOutstanding(invoice))
+      });
+    }
+  } else if (invoiceLine) {
+    invoiceLine.hidden = true;
+    invoiceLine.textContent = "";
+  }
+
   state.pendingPaymentCustomerId = customerId;
   qs("#paymentCustomerName").textContent = `${customer.name || "-"} (${customer.phone || "-"})`;
   qs("#paymentCurrentBalance").textContent = money(customer.balanceOwed);
@@ -11512,27 +13037,62 @@ async function confirmRecordPayment() {
       const { doc, collection, runTransaction, serverTimestamp } = state.firebaseApi.firestore;
       const customerRef = doc(state.db, "users", state.businessOwnerUid, "customers", customerId);
       const paymentRef = doc(collection(state.db, "users", state.businessOwnerUid, "customers", customerId, "payments"));
+      // Applied to one invoice, or to the account. A payment with no invoice is
+      // what the till writes today and keeps writing.
+      const settlingInvoiceId = state.pendingPaymentInvoiceId || "";
+      const invoiceRef = settlingInvoiceId
+        ? doc(state.db, "users", state.businessOwnerUid, "invoices", settlingInvoiceId)
+        : null;
       await runTransaction(state.db, async (transaction) => {
         const snap = await transaction.get(customerRef);
         if (!snap.exists()) throw new Error("customer gone");
+        // Read in the READ phase with the rest: Firestore refuses a get() after
+        // the first write in a transaction.
+        const invoiceSnap = invoiceRef ? await transaction.get(invoiceRef) : null;
         const currentBalance = Number(snap.data().balanceOwed || 0);
         if (amount > currentBalance) throw new Error(t("toast.paymentExceedsBalance"));
+
+        let invoiceNumber = "";
+        if (invoiceRef) {
+          if (!invoiceSnap.exists()) throw new Error("INVOICE_GONE");
+          const invoiceData = invoiceSnap.data();
+          if (invoiceData.status !== "issued") throw new Error("INVOICE_NOT_ISSUED");
+          invoiceNumber = String(invoiceData.number || "");
+          const settled = safeNumber(invoiceData.amountPaid) + safeNumber(invoiceData.amountCredited);
+          // firestore.rules caps amountPaid + amountCredited at the total, and a
+          // refusal there would abort the WHOLE transaction -- taking the
+          // balance and the payment record with it, for a generic permission
+          // error. So the overpayment is caught here, by name.
+          if (amount > safeNumber(invoiceData.total) - settled) throw new Error("INVOICE_OVERPAID");
+          transaction.update(invoiceRef, {
+            amountPaid: safeNumber(invoiceData.amountPaid) + amount,
+            updatedAt: serverTimestamp()
+          });
+        }
+
         const nextBalance = currentBalance - amount;
         const customerUpdate = { balanceOwed: nextBalance, updatedAt: serverTimestamp() };
         if (nextBalance <= 0) customerUpdate.oldestUnpaidAt = null;
         transaction.update(customerRef, customerUpdate);
         transaction.set(paymentRef, {
           amount, note, method: paymentMethod, storeId: paymentStoreId,
+          ...(settlingInvoiceId ? { invoiceId: settlingInvoiceId } : {}),
           createdAt: serverTimestamp()
         });
 
         const auditRef = doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs"));
         transaction.set(auditRef, {
+          // PAYMENT_RECORDED even when it settles an invoice, deliberately:
+          // loadRepaymentsToday() counts this action and nothing else, so a
+          // separate action would drop invoice settlements out of the day's
+          // repayment figure and understate expected cash on every till.
           action: "PAYMENT_RECORDED",
           customerId,
           amount,
           method: paymentMethod,
           storeId: paymentStoreId,
+          ...(settlingInvoiceId ? { invoiceId: settlingInvoiceId } : {}),
+          ...(invoiceNumber ? { invoiceNumber } : {}),
           uid: state.user?.uid || null,
           createdAt: serverTimestamp()
         });
@@ -11838,7 +13398,7 @@ function buildStockLedgerRows(movements) {
   return ordered.map((entry) => {
     const delta = safeNumber(entry.delta);
     const label = entry.reason === "adjustment" && entry.adjustmentReason
-      ? `${t("movement.reason.adjustment")} \u2014 ${stockAdjustmentReasonLabel(entry.adjustmentReason)}`
+      ? `${t("movement.reason.adjustment")}: ${stockAdjustmentReasonLabel(entry.adjustmentReason)}`
       : t(`movement.reason.${entry.reason}`);
     const balance = entry.offline || entry.quantityAfter === undefined || entry.quantityAfter === null
       ? `<span class="muted">${t("movement.balanceUnknown")}</span>`
@@ -11965,7 +13525,7 @@ function buildProductMovementHtml(productId, movements = null) {
 
 function renderProductMovementDialog(productId) {
   const product = state.products.find((item) => item.id === productId);
-  setDynamicText("#productMovementDialogTitle", product ? `${t("movement.title")} \u2014 ${productDisplayLabel(product)}` : t("movement.title"));
+  setDynamicText("#productMovementDialogTitle", product ? `${t("movement.title")}: ${productDisplayLabel(product)}` : t("movement.title"));
   qs("#productMovementContent").innerHTML = buildProductMovementHtml(productId);
 }
 
@@ -14231,6 +15791,10 @@ function recordStockMovement(transaction, fields) {
   if (fields.productName) entry.productName = String(fields.productName).slice(0, 120);
   if (fields.saleId) entry.saleId = String(fields.saleId).slice(0, 120);
   if (fields.transferId) entry.transferId = String(fields.transferId).slice(0, 120);
+  // Stock that left on an issued invoice. The reason stays "sale" -- the goods
+  // leave on a sale-like event and the allowlist is closed -- so this is the
+  // only thing that says WHICH document took them off the shelf.
+  if (fields.invoiceId) entry.invoiceId = String(fields.invoiceId).slice(0, 120);
   // Why the shelf was corrected, and any words the person added. Spec 4.4.
   // Both optional and both validated by the rules, so a typo here is refused
   // rather than stored as an uncountable category.
@@ -15840,6 +17404,7 @@ async function initFirebase() {
         subscribeToStockLedger();
         subscribeToMonthlyReports();
         subscribeToCustomers();
+        subscribeToInvoices();
         subscribeToSuppliers();
         subscribeToPurchaseReturns();
         subscribeToTransfers();
@@ -15872,6 +17437,11 @@ async function initFirebase() {
         state.unsubscribeMonthlyReports = null;
         if (state.unsubscribeCustomers) state.unsubscribeCustomers();
         state.unsubscribeCustomers = null;
+        // A listener left running across a sign-out shows one shop's invoices
+        // to whoever signs in next on the same till.
+        if (state.unsubscribeInvoices) state.unsubscribeInvoices();
+        state.unsubscribeInvoices = null;
+        state.invoices = [];
         if (state.unsubscribeSuppliers) state.unsubscribeSuppliers();
         state.unsubscribeSuppliers = null;
         if (state.unsubscribePurchaseReturns) state.unsubscribePurchaseReturns();
@@ -17716,6 +19286,7 @@ const STAFF_PERMISSION_DEFAULTS = {
   recordExpenses: false,
   receiveDeliveries: false,
   processReturns: false,
+  issueInvoices: false,
   viewStock: false,
   viewTodaySales: false,
   sellOnCredit: true,
@@ -17784,6 +19355,11 @@ function canOpenView(viewId) {
   if (viewId === "arrivals") return isCashierWith("receiveDeliveries");
   if (viewId === "inventory") return isManagerOrOwnerRole() || isCashierWith("viewStock");
   if (viewId === "expenses") return isManagerOrOwnerRole() || isCashierWith("recordExpenses");
+  // Raising and issuing invoices is the ninth cashier permission
+  // (DESIGN-permissions.md 3). The screen is the same one a manager sees; what
+  // a cashier gets is narrowed inside renderInvoices() and, for every write, by
+  // firestore.rules -- which shows a cashier only the invoices they raised.
+  if (viewId === "invoices") return isManagerOrOwnerRole() || isCashierWith("issueInvoices");
   return isManagerOrOwnerRole() || CASHIER_ALLOWED_VIEWS.includes(viewId);
 }
 
@@ -17989,6 +19565,8 @@ function renderAll() {
   renderDeliveryRequests();
   renderDeliveryRequestsPending();
   renderPosToday();
+  renderCustomers();
+  renderInvoices();
   renderProfit();
   renderCostReports();
   renderVatNav();
@@ -18184,6 +19762,79 @@ function bindEvents() {
     if (remove) return deletePurchase(remove.dataset.deletePurchase);
     const ret = event.target.closest("[data-return-purchase]");
     if (ret) openPurchaseReturnDialog(ret.dataset.returnPurchase);
+  });
+  qs("#newInvoiceButton")?.addEventListener("click", () => openInvoiceDialog(""));
+  qs("#closeInvoiceDialog")?.addEventListener("click", () => qs("#invoiceDialog").close());
+  qs("#cancelInvoiceDialog")?.addEventListener("click", () => qs("#invoiceDialog").close());
+  qs("#addInvoiceProductLine")?.addEventListener("click", addInvoiceProductLine);
+  qs("#addInvoiceFreeLine")?.addEventListener("click", addInvoiceFreeLine);
+  qs("#invoiceForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveInvoiceDraft(Object.fromEntries(new FormData(event.currentTarget).entries()));
+  });
+  // Typing updates the held line and the derived figures ONLY. Re-rendering the
+  // table on every keystroke would rebuild the input under the cursor and throw
+  // focus out of it.
+  qs("#invoiceLinesTable")?.addEventListener("input", (event) => {
+    const cell = event.target.closest("[data-invoice-line]");
+    if (!cell) return;
+    const line = (state.invoiceLines || [])[Number(cell.dataset.invoiceLine)];
+    if (!line) return;
+    const field = cell.dataset.invoiceField;
+    line[field] = field === "description"
+      ? String(event.target.value).slice(0, 120)
+      : safeNumber(event.target.value);
+    const totalCell = event.target.closest("tr")?.children?.[3];
+    if (totalCell) totalCell.textContent = money(invoiceLineTotal(line));
+    updateInvoiceTotalsSummary();
+  });
+  qs("#invoiceLinesTable")?.addEventListener("click", (event) => {
+    const remove = event.target.closest("[data-invoice-line-remove]");
+    if (!remove) return;
+    const index = Number(remove.dataset.invoiceLineRemove);
+    state.invoiceLines = (state.invoiceLines || []).filter((_, position) => position !== index);
+    renderInvoiceLines();
+  });
+  qs("#closeInvoicePreviewDialog")?.addEventListener("click", () => qs("#invoicePreviewDialog").close());
+  qs("#downloadInvoicePdfButton")?.addEventListener("click", downloadInvoicePdf);
+  qs("#shareInvoiceWhatsAppButton")?.addEventListener("click", shareInvoiceWhatsApp);
+  qs("#invoicesTable")?.addEventListener("click", (event) => {
+    const edit = event.target.closest("[data-edit-invoice]");
+    if (edit) return openInvoiceDialog(edit.dataset.editInvoice);
+    const issue = event.target.closest("[data-issue-invoice]");
+    if (issue) return issueInvoice(issue.dataset.issueInvoice);
+    const view = event.target.closest("[data-view-invoice]");
+    if (view) return openInvoicePreview(view.dataset.viewInvoice);
+    const pay = event.target.closest("[data-pay-invoice]");
+    if (pay) {
+      // The same payment path the till uses, told which invoice it settles.
+      const invoice = invoiceById(pay.dataset.payInvoice);
+      if (invoice) openRecordPaymentDialog(invoice.customerId, invoice.id);
+      return;
+    }
+    const voidIt = event.target.closest("[data-void-invoice]");
+    if (voidIt) voidInvoice(voidIt.dataset.voidInvoice);
+  });
+  qs("#addCustomerButton")?.addEventListener("click", () => openCustomerDialog(""));
+  qs("#closeCustomerDialog")?.addEventListener("click", () => qs("#customerDialog").close());
+  qs("#cancelCustomerDialog")?.addEventListener("click", () => qs("#customerDialog").close());
+  qs("#closeCustomerHistoryDialog")?.addEventListener("click", () => qs("#customerHistoryDialog").close());
+  qs("#customerForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveCustomer(Object.fromEntries(new FormData(event.currentTarget).entries()));
+  });
+  qs("#customerSearchInput")?.addEventListener("input", (event) => {
+    state.customerSearch = event.target.value || "";
+    renderCustomers();
+  });
+  // Only the two actions this screen owns. Recording a payment, reminding and
+  // setting a credit alert are already handled by the document-level click
+  // delegation, so repeating them here would fire each of them twice.
+  qs("#customersTable")?.addEventListener("click", (event) => {
+    const edit = event.target.closest("[data-edit-customer]");
+    if (edit) return openCustomerDialog(edit.dataset.editCustomer);
+    const history = event.target.closest("[data-customer-history]");
+    if (history) openCustomerHistory(history.dataset.customerHistory);
   });
   qs("#addSupplierButton")?.addEventListener("click", () => openSupplierDialog(""));
   qs("#closeSupplierDialog")?.addEventListener("click", () => qs("#supplierDialog").close());

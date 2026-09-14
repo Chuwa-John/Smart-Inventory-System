@@ -32,8 +32,8 @@
          before the browser discovers a font inside it, and on a 2G link that
          wait is visible as a flash of the fallback face. crossorigin is
          required even same-origin -- fonts are fetched in CORS mode. -->
-    <link rel="preload" href="./fonts/inter-latin.woff2?v=20260913c" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260913c" />
+    <link rel="preload" href="./fonts/inter-latin.woff2?v=20260914d" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="./styles.css?v=20260914d" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#f6f8fa" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -53,7 +53,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260913c"></script>
+    <script type="module" src="./boot.js?v=20260914d"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -105,6 +105,20 @@
           <!-- Sold by a salon or a bar; hidden for a duka. renderServices()
                sets the label from the business type. -->
           <button class="nav-item" data-view="services" id="servicesNavItem" hidden><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="6.5" cy="6.5" r="2.4"/><circle cx="6.5" cy="17.5" r="2.4"/><path d="M8.6 8.1 20 19.5M20 4.5 8.6 15.9"/></svg><span id="servicesNavLabel">Services</span></button>
+          <!-- Customers get a screen of their own (DESIGN-invoicing.md 8).
+               Until now a customer existed only as a name and a phone typed at
+               the till by findOrCreateCustomerForCredit(), with nowhere to edit
+               it and no way to see what one had bought. Sits with selling:
+               after the till and the services it sells, before what the shop
+               spends. Manager and owner only -- canOpenView() falls through to
+               the manager check, and `customers` is not in
+               CASHIER_ALLOWED_VIEWS. -->
+          <button class="nav-item" data-view="customers"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="9.2" cy="8.4" r="3.4"/><path d="M3.4 20.3a5.8 5.8 0 0 1 11.6 0"/><path d="M16.4 5.6a3.4 3.4 0 0 1 0 5.6"/><path d="M17.6 14.9a5.8 5.8 0 0 1 3 5.4"/></svg><span data-i18n="nav.customers">Customers</span></button>
+          <!-- Invoices. DESIGN-invoicing.md. A COMMERCIAL invoice: a formal
+               request for payment that records the debt. Sits next to Customers
+               because that is who it is raised for. Manager and owner, plus a
+               cashier holding `issueInvoices` -- canOpenView() decides. -->
+          <button class="nav-item" data-view="invoices"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 2.6h12v18.8l-2.4-1.4-2.4 1.4-2.4-1.4-2.4 1.4L6 21.4z"/><path d="M9.2 7.6h5.6M9.2 11.4h5.6M9.2 15.2h3.2"/></svg><span data-i18n="invoices.navLabel">Invoices</span></button>
           <button class="nav-item" data-view="expenses"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7.6A2.1 2.1 0 0 1 5.1 5.5h12.4a1 1 0 0 1 1 1v2"/><path d="M3 7.6v9.3a2.1 2.1 0 0 0 2.1 2.1h13.4a1 1 0 0 0 1-1v-3.1"/><path d="M21 10.4v4.2h-4.1a2.1 2.1 0 0 1 0-4.2z"/></svg><span data-i18n="nav.expenses">Expenses</span></button>
           <button class="nav-item" data-view="reports"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.2 20.8h17.6"/><path d="M7.4 20.8V10.6M12 20.8V4.2M16.6 20.8v-6.6"/></svg><span data-i18n="nav.reports">Reports</span></button>
           <button class="nav-item" data-view="ai"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M11.4 3.2 13.1 8l4.8 1.7-4.8 1.7-1.7 4.8-1.7-4.8L4.9 9.7 9.7 8z"/><path d="M18.3 15.1l.63 1.72 1.72.63-1.72.63-.63 1.72-.63-1.72-1.72-.63 1.72-.63z"/></svg><span data-i18n="nav.ai">AI Advisor</span></button>
@@ -376,7 +390,7 @@
             </div>
           </div>
 
-          <p class="muted" data-i18n="inventory.intro">What is on your shelves. Add the stock you already had here &mdash; new stock you buy is recorded under Purchases, where what you paid and the delivery costs are captured together.</p>
+          <p class="muted" data-i18n="inventory.intro">What is on your shelves. Add the stock you already had here. New stock you buy is recorded under Purchases, where what you paid and the delivery costs are captured together.</p>
 
           <div class="filters">
             <select id="categoryFilter" aria-label="Category filter"></select>
@@ -571,7 +585,7 @@
             </div>
           </div>
 
-          <p class="muted" data-i18n="purchases.intro">Every delivery, and what you paid for it. Recorded when you restock or add a product &mdash; you enter the total for the batch, and the cost per unit is worked out from it.</p>
+          <p class="muted" data-i18n="purchases.intro">Every delivery, and what you paid for it. Recorded when you restock or add a product. You enter the total for the batch, and the cost per unit is worked out from it.</p>
 
           <div class="kpi-grid" id="purchaseTotals"></div>
 
@@ -726,7 +740,7 @@
             </div>
           </div>
 
-          <p class="muted" id="expensesIntro" data-i18n="expenses.intro">What the shop spends, day by day. Rent, power, transport, wages, repairs. These are not stock purchases &mdash; they are the running costs that sit between what you sell for and what you keep.</p>
+          <p class="muted" id="expensesIntro" data-i18n="expenses.intro">What the shop spends, day by day. Rent, power, transport, wages, repairs. These are not stock purchases. They are the running costs that sit between what you sell for and what you keep.</p>
 
           <div class="kpi-grid" id="expenseTotals"></div>
 
@@ -931,6 +945,104 @@
               <div id="posTodayBody"></div>
             </article>
           </div>
+        </section>
+
+        <!-- Customers. DESIGN-invoicing.md 8.
+             The Customer Accounts panel in Reports is NOT replaced by this: it
+             answers "who owes me", which is a different question from "who do I
+             sell to", and it is the panel the owner already reads. This screen
+             lists everyone, including the customers who owe nothing. -->
+        <section class="view" id="customers">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow" data-i18n="customersScreen.eyebrow">Who you sell to</p>
+              <h1 data-i18n="customersScreen.title">Customers</h1>
+            </div>
+            <div class="button-row">
+              <button class="primary-button" id="addCustomerButton" type="button" data-i18n="customersScreen.addButton">+ Customer</button>
+            </div>
+          </div>
+
+          <p class="muted" data-i18n="customersScreen.intro">Everyone you sell to, including the customers a credit sale created at the till. Recording a TIN and an address here is what lets an invoice be raised for them properly.</p>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h2 data-i18n="customersScreen.listTitle">All customers</h2>
+                <!-- Written by renderCustomers(), so it carries no data-i18n:
+                     translateStaticDom() re-applies every marked element and
+                     would overwrite the count on a language change. -->
+                <span class="muted" id="customersCount"></span>
+              </div>
+              <strong id="customersTotalOwed"></strong>
+            </div>
+            <label style="flex-direction:row;align-items:center;gap:6px;color:inherit">
+              <span data-i18n="customersScreen.searchLabel">Find</span>
+              <input id="customerSearchInput" type="search" maxlength="60" autocomplete="off" placeholder="Search by name, phone or TIN" data-i18n-placeholder="customersScreen.searchPlaceholder" />
+            </label>
+            <div class="table-panel" style="box-shadow:none;border:none">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="customersScreen.thName">Customer</th>
+                    <th data-i18n="customersScreen.thPhone">Phone</th>
+                    <th data-i18n="customersScreen.thTin">TIN</th>
+                    <th data-i18n="customersScreen.thOwed">Balance owed</th>
+                    <th data-i18n="customersScreen.thDays">Days outstanding</th>
+                    <th data-i18n="customersScreen.thActions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="customersTable"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <!-- Invoices. DESIGN-invoicing.md.
+             A draft owes nothing and is numbered nothing. Issuing mints the
+             number, moves the stock and creates the debt, and cannot be undone
+             by editing -- so Issue is a separate, deliberate action on the row
+             rather than a second button inside the editor. -->
+        <section class="view" id="invoices">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow" data-i18n="invoices.eyebrow">Billing</p>
+              <h1 data-i18n="invoices.title">Invoices</h1>
+            </div>
+            <div class="button-row">
+              <button class="primary-button" id="newInvoiceButton" type="button" data-i18n="invoices.newButton">+ Invoice</button>
+            </div>
+          </div>
+
+          <p class="muted" data-i18n="invoices.intro">A request for payment that records what is owed and what it was for. This is not a tax invoice. In Tanzania only an EFD or VFD receipt proves VAT, and a buyer still needs one to claim it back.</p>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h2 data-i18n="invoices.listTitle">Raised</h2>
+                <!-- Written by renderInvoices(), so no data-i18n: a marked
+                     element is re-translated and the count would be lost. -->
+                <span class="muted" id="invoicesCount"></span>
+              </div>
+              <strong id="invoicesOutstanding"></strong>
+            </div>
+            <div class="table-panel" style="box-shadow:none;border:none">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="invoices.thNumber">Number</th>
+                    <th data-i18n="invoices.thCustomer">Customer</th>
+                    <th data-i18n="invoices.thDate">Date</th>
+                    <th data-i18n="invoices.thDue">Due</th>
+                    <th data-i18n="invoices.thTotal">Total</th>
+                    <th data-i18n="invoices.thStatus">Status</th>
+                    <th data-i18n="invoices.thActions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="invoicesTable"></tbody>
+              </table>
+            </div>
+          </article>
         </section>
 
         <section class="view" id="reports">
@@ -1596,7 +1708,7 @@
           <label><span data-i18n="product.activeLabel">Status</span>
             <select name="active">
               <option value="true" data-i18n="product.activeYes">Active</option>
-              <option value="false" data-i18n="product.activeNo">Inactive &mdash; stop selling it</option>
+              <option value="false" data-i18n="product.activeNo">Inactive, stop selling it</option>
             </select>
           </label>
           <label><span data-i18n="product.priceTypeLabel">Price type</span>
@@ -1934,7 +2046,7 @@
           <label><span data-i18n="suppliers.statusLabel">Status</span>
             <select name="active">
               <option value="true" data-i18n="suppliers.statusActive">Active</option>
-              <option value="false" data-i18n="suppliers.statusInactive">Inactive &mdash; stop offering them</option>
+              <option value="false" data-i18n="suppliers.statusInactive">Inactive, stop offering them</option>
             </select>
           </label>
         </div>
@@ -1943,6 +2055,142 @@
           <button class="primary-button" type="submit" data-i18n="suppliers.saveButton">Save Supplier</button>
         </div>
       </form>
+    </dialog>
+
+    <!-- The invoice as a document: what the customer is given. Read-only, and
+         the same content the PDF and the WhatsApp copy carry, so the three
+         cannot disagree about what was agreed. -->
+    <dialog id="invoicePreviewDialog">
+      <div class="dialog-head">
+        <h2 id="invoicePreviewTitle" data-i18n="invoices.previewTitle">Invoice</h2>
+        <button class="icon-button" type="button" id="closeInvoicePreviewDialog" aria-label="Close">&times;</button>
+      </div>
+      <div id="invoicePreviewContent"></div>
+      <div class="dialog-actions">
+        <button class="ghost-button" type="button" id="shareInvoiceWhatsAppButton" data-i18n="invoices.shareWhatsApp">Send on WhatsApp</button>
+        <button class="primary-button" type="button" id="downloadInvoicePdfButton" data-i18n="invoices.downloadPdf">Download PDF</button>
+      </div>
+    </dialog>
+
+    <!-- Raising or editing a DRAFT invoice. DESIGN-invoicing.md 2.
+         There is no Issue button in here on purpose: issuing is a tax event and
+         is irreversible, so it is a separate decision taken on the row, after
+         the draft reads correctly. -->
+    <dialog id="invoiceDialog">
+      <div class="dialog-head">
+        <h2 id="invoiceDialogTitle" data-i18n="invoices.dialogTitle">New Invoice</h2>
+        <button class="icon-button" type="button" id="closeInvoiceDialog" aria-label="Close">&times;</button>
+      </div>
+      <form id="invoiceForm" novalidate>
+        <input type="hidden" name="id" />
+        <div class="form-grid">
+          <label><span data-i18n="invoices.customerLabel">Customer</span>
+            <select name="customerId" id="invoiceCustomerSelect"></select>
+            <span class="field-error" id="invoiceCustomerError"></span>
+          </label>
+          <label><span data-i18n="invoices.issueDateLabel">Invoice date</span>
+            <input name="issueDate" type="date" autocomplete="off" />
+          </label>
+          <label><span data-i18n="invoices.dueDateLabel">Due date</span>
+            <input name="dueDate" type="date" autocomplete="off" />
+            <span class="field-error" id="invoiceDueDateError"></span>
+          </label>
+          <label><span data-i18n="invoices.termsLabel">Payment terms</span>
+            <input name="terms" type="text" maxlength="60" autocomplete="off" placeholder="e.g. 30 days" data-i18n-placeholder="customersScreen.termsPlaceholder" />
+          </label>
+          <label class="full"><span data-i18n="invoices.noteLabel">Note</span>
+            <input name="note" type="text" maxlength="200" autocomplete="off" />
+          </label>
+        </div>
+
+        <div class="form-grid">
+          <label><span data-i18n="invoices.addProductLabel">Add from stock</span>
+            <select id="invoiceProductSelect"></select>
+          </label>
+          <div class="button-row">
+            <button class="ghost-button compact" type="button" id="addInvoiceProductLine" data-i18n="invoices.addProductButton">Add product</button>
+            <button class="ghost-button compact" type="button" id="addInvoiceFreeLine" data-i18n="invoices.addFreeButton">Add other item</button>
+          </div>
+        </div>
+
+        <div class="table-panel" style="box-shadow:none;border:none">
+          <table>
+            <thead>
+              <tr>
+                <th data-i18n="invoices.thDescription">Description</th>
+                <th data-i18n="invoices.thQty">Qty</th>
+                <th data-i18n="invoices.thUnitPrice">Unit price</th>
+                <th data-i18n="invoices.thLineTotal">Line total</th>
+                <th data-i18n="invoices.thRemove">Remove</th>
+              </tr>
+            </thead>
+            <tbody id="invoiceLinesTable"></tbody>
+          </table>
+        </div>
+        <span class="field-error" id="invoiceLinesError"></span>
+        <p class="muted" id="invoiceTotalsSummary"></p>
+        <p class="muted" data-i18n="invoices.draftNote">Saving keeps this a draft: nothing is numbered, no stock moves and nothing is owed until you issue it.</p>
+        <div class="dialog-actions">
+          <button class="ghost-button" type="button" id="cancelInvoiceDialog" data-i18n="product.cancel">Cancel</button>
+          <button class="primary-button" type="submit" data-i18n="invoices.saveDraftButton">Save Draft</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Adding or editing a customer. DESIGN-invoicing.md 8.
+         The billing fields are all optional: every customer on the live shops
+         predates them, having been created from a name and a phone at the till.
+         Phone is required, because it is how the till finds an existing
+         customer again and how a reminder reaches them. -->
+    <dialog id="customerDialog">
+      <div class="dialog-head">
+        <h2 id="customerDialogTitle" data-i18n="customersScreen.dialogTitle">Add Customer</h2>
+        <button class="icon-button" type="button" id="closeCustomerDialog" aria-label="Close">&times;</button>
+      </div>
+      <form id="customerForm" novalidate>
+        <input type="hidden" name="id" />
+        <div class="form-grid">
+          <label><span data-i18n="customersScreen.nameLabel">Customer name</span>
+            <input name="name" type="text" required maxlength="80" autocomplete="name" placeholder="e.g. Kariakoo Traders" data-i18n-placeholder="customersScreen.namePlaceholder" />
+            <span class="field-error" id="customerNameError"></span>
+          </label>
+          <label><span data-i18n="customersScreen.phoneLabel">Phone</span>
+            <input name="phone" type="tel" required maxlength="20" autocomplete="tel" />
+            <span class="field-error" id="customerPhoneError"></span>
+          </label>
+          <label><span data-i18n="customersScreen.tinLabel">TIN</span>
+            <input name="tin" type="text" maxlength="40" autocomplete="off" />
+          </label>
+          <label><span data-i18n="customersScreen.vrnLabel">VAT number</span>
+            <input name="vrn" type="text" maxlength="20" autocomplete="off" />
+          </label>
+          <label><span data-i18n="customersScreen.emailLabel">Email</span>
+            <input name="email" type="email" maxlength="120" autocomplete="email" />
+          </label>
+          <label><span data-i18n="customersScreen.termsLabel">Payment terms</span>
+            <input name="terms" type="text" maxlength="60" autocomplete="off" placeholder="e.g. 30 days" data-i18n-placeholder="customersScreen.termsPlaceholder" />
+          </label>
+          <label class="full"><span data-i18n="customersScreen.addressLabel">Address</span>
+            <input name="address" type="text" maxlength="200" autocomplete="street-address" />
+          </label>
+        </div>
+        <p class="muted" data-i18n="customersScreen.billingNote">TIN, VAT number and address appear on an invoice raised for this customer. What they owe is not edited here. It moves when a credit sale, a payment or an invoice is recorded.</p>
+        <div class="dialog-actions">
+          <button class="ghost-button" type="button" id="cancelCustomerDialog" data-i18n="product.cancel">Cancel</button>
+          <button class="primary-button" type="submit" data-i18n="customersScreen.saveButton">Save Customer</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- One customer's record: what they owe now, the payments they have made,
+         and the invoices raised for them. Read on demand and bounded, like the
+         supplier statement -- history is not something every render pays for. -->
+    <dialog id="customerHistoryDialog">
+      <div class="dialog-head">
+        <h2 id="customerHistoryTitle" data-i18n="customersScreen.historyTitle">Customer History</h2>
+        <button class="icon-button" type="button" id="closeCustomerHistoryDialog" aria-label="Close">&times;</button>
+      </div>
+      <div id="customerHistoryContent"></div>
     </dialog>
 
     <dialog id="expenseDialog">
@@ -1968,8 +2216,8 @@
                net profit, only the split. DESIGN-landed-costs.md 5. -->
           <label><span data-i18n="expenses.natureLabel">Type of cost</span>
             <select name="nature" id="expenseNatureSelect">
-              <option value="indirect" data-i18n="expenses.natureIndirect">Indirect &mdash; running the business</option>
-              <option value="direct" data-i18n="expenses.natureDirect">Direct &mdash; attributable to a sale</option>
+              <option value="indirect" data-i18n="expenses.natureIndirect">Indirect, running the business</option>
+              <option value="direct" data-i18n="expenses.natureDirect">Direct, attributable to a sale</option>
             </select>
             <span class="muted" id="expenseNatureHint"></span>
           </label>
@@ -2231,6 +2479,11 @@
       </div>
       <p class="muted"><strong id="paymentCustomerName"></strong></p>
       <p class="muted"><span data-i18n="payment.currentBalanceLabel">Current balance</span>: <strong id="paymentCurrentBalance"></strong></p>
+      <!-- Written by openRecordPaymentDialog() only when the payment is being
+           applied to a specific invoice, and hidden again otherwise. It carries
+           no data-i18n: translateStaticDom() re-applies every marked element, so
+           a marked line would lose the invoice number on a language change. -->
+      <p class="muted" id="paymentInvoiceLine" hidden></p>
       <div class="form-grid">
         <label><span data-i18n="payment.amountLabel">Payment amount (TZS)</span>
           <input id="paymentAmountInput" type="number" min="0" step="1" />
@@ -2511,7 +2764,7 @@
           <p class="eyebrow" data-i18n="auth.whyTitle">Why SaviaSmart</p>
           <ul class="auth-why-list">
             <li data-i18n="auth.whyMultiStore">Track inventory across every branch from one dashboard.</li>
-            <li data-i18n="auth.whyOffline">Keep selling even when the internet drops — it syncs automatically once you're back online.</li>
+            <li data-i18n="auth.whyOffline">Keep selling even when the internet drops. It syncs automatically once you're back online.</li>
             <li data-i18n="auth.whyReceipts">Print or share receipts on WhatsApp, with cash, mobile money, and card tracking built in.</li>
             <li data-i18n="auth.whyAi">Ask the built-in AI Advisor which products to reorder, in English or Swahili.</li>
           </ul>
@@ -2572,6 +2825,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260913c"></script>
+    <script type="module" src="./app.js?v=20260914d"></script>
   </body>
 </html>

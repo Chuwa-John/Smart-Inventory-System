@@ -856,6 +856,26 @@ service cloud.firestore {
             || m.get('permissions', {}).get('takeRepayments', true) == true);
     }
 
+    // Invoicing -- DESIGN-invoicing.md. A cashier issues invoices only where the
+    // owner has granted it; a manager always may. Same single-read shape as the
+    // other member helpers, for the expression-budget reason recorded above.
+    function memberMayInvoice(ownerUid, storeId) {
+      return memberMayInvoiceAnywhere(ownerUid) && memberCanAccessStore(ownerUid, storeId);
+    }
+
+    // The counters are per BUSINESS -- invoice-2026, not invoice-2026-branchA --
+    // so the store question does not apply to them. Asking it anyway refused
+    // every branch-scoped member, which meant no staff member could issue at
+    // all: the counter write is part of the same commit as the number.
+    function memberMayInvoiceAnywhere(ownerUid) {
+      let path = memberDocPath(ownerUid);
+      let m = exists(path) ? get(path).data : null;
+      return m != null
+        && m.status == "active"
+        && (m.role == "manager"
+            || (m.role == "cashier" && m.get('permissions', {}).get('issueInvoices', false) == true));
+    }
+
     function memberMayTakeRepayment(ownerUid) {
       let path = memberDocPath(ownerUid);
       let m = exists(path) ? get(path).data : null;
@@ -918,6 +938,143 @@ service cloud.firestore {
         // whole feature is judged on. They travel together or not at all.
         && (('taxTotal' in d) == ('netTotal' in d))
         && (!('taxTotal' in d) || d.netTotal + d.taxTotal == d.total);
+    }
+
+    // An invoice line. Not iterated, for the same reason validSaleItems() is not:
+    // Firestore caps one rule evaluation at 1000 expressions and per-item
+    // unrolling blew it for staff sales of two or more items. The basket bound
+    // and the money invariants below are what carry the weight.
+    function validInvoiceLines(lines) {
+      return lines is list && lines.size() > 0 && lines.size() <= 40;
+    }
+
+    // Money on an invoice is checked exactly as money on a sale is, including
+    // the invariant the whole VAT feature is judged on: net and tax travel
+    // together or not at all, and they must add to the total actually charged.
+    function validInvoiceMoney() {
+      let d = request.resource.data;
+      return totalInRange(d.total)
+        && totalInRange(d.subtotal)
+        && (!('discountType' in d) || d.discountType in ['none', 'percent', 'fixed'])
+        && (!('discountValue' in d) || totalInRange(d.discountValue))
+        && (!('discountAmount' in d) || totalInRange(d.discountAmount))
+        && d.total == d.subtotal - d.get('discountAmount', 0)
+        && (!('vatRegistered' in d) || d.vatRegistered is bool)
+        && (!('vrn' in d) || (d.vrn is string && d.vrn.size() <= 20))
+        && (!('vatRate' in d) || (d.vatRate is number && d.vatRate >= 0 && d.vatRate <= 1))
+        && (!('taxTotal' in d) || totalInRange(d.taxTotal))
+        && (!('netTotal' in d) || totalInRange(d.netTotal))
+        && (('taxTotal' in d) == ('netTotal' in d))
+        && (!('taxTotal' in d) || d.netTotal + d.taxTotal == d.total)
+        && d.amountPaid is number && d.amountPaid >= 0 && d.amountPaid <= d.total
+        && d.amountCredited is number && d.amountCredited >= 0 && d.amountCredited <= d.total;
+    }
+
+    function validInvoice() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['number', 'sequence', 'counterId', 'status', 'storeId',
+                               'customerId', 'customerName', 'customerPhone', 'customerTin',
+                               'customerVrn', 'customerAddress', 'customerEmail',
+                               'lines', 'subtotal', 'discountType', 'discountValue', 'discountAmount',
+                               'total', 'amountPaid', 'amountCredited',
+                               'vatRegistered', 'vrn', 'vatRate', 'taxTotal', 'netTotal', 'taxBreakdown',
+                               'issueDate', 'dueDate', 'terms', 'note',
+                               'saleId', 'quotationId',
+                               'createdByUid', 'createdAt', 'updatedAt',
+                               'issuedByUid', 'issuedAt', 'voidedByUid', 'voidedAt', 'voidReason'])
+        // Stored status is draft | issued | void. Paid and partly paid are
+        // DERIVED from the amounts -- a stored status can disagree with money,
+        // and then two screens tell a shop different things.
+        && d.status in ['draft', 'issued', 'void']
+        && d.storeId is string && d.storeId.size() > 0 && d.storeId.size() <= 120
+        && d.customerId is string && d.customerId.size() > 0 && d.customerId.size() <= 120
+        // Denormalised so the document survives the customer being renamed --
+        // an invoice states what was agreed, not what the record says today.
+        && d.customerName is string && d.customerName.size() > 0 && d.customerName.size() <= 120
+        && (!('customerPhone' in d) || (d.customerPhone is string && d.customerPhone.size() <= 20))
+        && (!('customerTin' in d) || (d.customerTin is string && d.customerTin.size() <= 40))
+        && (!('customerVrn' in d) || (d.customerVrn is string && d.customerVrn.size() <= 20))
+        && (!('customerAddress' in d) || (d.customerAddress is string && d.customerAddress.size() <= 200))
+        && (!('customerEmail' in d) || (d.customerEmail is string && d.customerEmail.size() <= 120))
+        && validInvoiceLines(d.lines)
+        && validInvoiceMoney()
+        && d.issueDate is timestamp
+        && d.dueDate is timestamp
+        && d.dueDate >= d.issueDate
+        && (!('terms' in d) || (d.terms is string && d.terms.size() <= 60))
+        && (!('note' in d) || (d.note is string && d.note.size() <= 200))
+        // An invoice raised against a sale that already happened formalises a
+        // debt rather than creating one, and moves no stock. DESIGN-invoicing 4.
+        && (!('saleId' in d) || (d.saleId is string && d.saleId.size() > 0 && d.saleId.size() <= 120))
+        && (!('quotationId' in d) || (d.quotationId is string && d.quotationId.size() <= 120))
+        && d.createdByUid is string && d.createdByUid.size() > 0
+        && d.createdAt is timestamp;
+    }
+
+    // A draft has no number and owes nothing. Numbering happens once, at issue.
+    function validInvoiceDraft() {
+      let d = request.resource.data;
+      return validInvoice()
+        && d.status == 'draft'
+        && !('number' in d) && !('sequence' in d) && !('counterId' in d)
+        && !('issuedAt' in d) && !('issuedByUid' in d)
+        && !('voidedAt' in d) && !('voidedByUid' in d)
+        && d.amountPaid == 0 && d.amountCredited == 0
+        && d.createdByUid == request.auth.uid;
+    }
+
+    // Issuing: the one write that mints a number. The number and the counter
+    // move together or neither does -- getAfter() reads the counter as it will
+    // be AFTER this commit, so two tills issuing at the same moment cannot mint
+    // the same sequence: the loser re-runs and takes the next one.
+    function validInvoiceIssue(userId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      return before.status == 'draft'
+        && after.status == 'issued'
+        && after.number is string && after.number.size() > 0 && after.number.size() <= 40
+        && after.sequence is int && after.sequence > 0
+        && after.counterId is string && after.counterId.size() > 0 && after.counterId.size() <= 40
+        && getAfter(/databases/$(database)/documents/users/$(userId)/counters/$(after.counterId)).data.value == after.sequence
+        && after.issuedByUid == request.auth.uid
+        && after.issuedAt == request.time
+        && after.amountPaid == 0 && after.amountCredited == 0
+        // Everything the draft said stays said. An issue is not an edit.
+        && after.lines == before.lines
+        && after.total == before.total
+        && after.customerId == before.customerId
+        && after.storeId == before.storeId
+        && after.createdAt == before.createdAt
+        && after.createdByUid == before.createdByUid;
+    }
+
+    // Money applied to an issued invoice: paid or credited, upward only. The
+    // amounts are bounded by the total in validInvoiceMoney(), so an invoice
+    // cannot be over-paid or over-credited.
+    function validInvoiceSettlement() {
+      let before = resource.data;
+      let after = request.resource.data;
+      return before.status == 'issued'
+        && after.status == 'issued'
+        && after.diff(before).affectedKeys().hasOnly(['amountPaid', 'amountCredited', 'updatedAt'])
+        && after.amountPaid >= before.amountPaid
+        && after.amountCredited >= before.amountCredited
+        && after.amountPaid + after.amountCredited <= after.total;
+    }
+
+    // Voiding keeps the number. A gap in an invoice sequence is the first thing
+    // an auditor asks about, so nothing is ever renumbered or removed -- and
+    // anything with money against it is corrected by credit note instead.
+    function validInvoiceVoid() {
+      let before = resource.data;
+      let after = request.resource.data;
+      return before.status == 'issued'
+        && after.status == 'void'
+        && before.amountPaid == 0 && before.amountCredited == 0
+        && after.diff(before).affectedKeys().hasOnly(['status', 'voidedByUid', 'voidedAt', 'voidReason', 'updatedAt'])
+        && after.voidedByUid == request.auth.uid
+        && after.voidedAt == request.time
+        && after.voidReason is string && after.voidReason.size() > 0 && after.voidReason.size() <= 200;
     }
 
     function validShiftOpen() {
@@ -1026,6 +1183,18 @@ service cloud.firestore {
               // who records the spending -- and therefore who records that they
               // recorded it. Correcting and removing stay with the owner below.
               'EXPENSE_RECORDED',
+              // Issuing an invoice is a tax event (DESIGN-invoicing.md 2): it
+              // mints a number, moves stock and creates a debt, and cannot be
+              // undone by editing. So it is recorded by whoever did it.
+              //
+              // It is back here because issueInvoice() now writes it, inside
+              // the same transaction that mints the number -- an enum entry no
+              // client can produce is permission nobody is checking, which is
+              // what tests/audit-actions-agree.test.mjs fails on. The others
+              // (INVOICE_PAYMENT_APPLIED, CREDIT_NOTE_ISSUED, QUOTATION_ISSUED,
+              // CUSTOMER_UPDATED, and the owner's INVOICE_VOIDED) are still
+              // absent, and return with the code that emits them.
+              'INVOICE_ISSUED',
               // Staff correct their OWN expense on the day they wrote it
               // (DESIGN-permissions.md 2), so the correction is theirs to log.
               'EXPENSE_UPDATED',
@@ -1050,6 +1219,17 @@ service cloud.firestore {
          // collection in this file refuses deletion outright, and a document
          // that can vanish silently is a note rather than a book.
          'EXPENSE_DELETED', 'PURCHASE_DELETED', 'DELIVERY_DELETED',
+         // Voiding an issued invoice is the owner's alone (DESIGN-invoicing.md 7)
+         // and is back here because voidInvoice() now writes it. The invoice
+         // keeps its number, so the log is the only record of WHY a number in
+         // the sequence stands for nothing.
+         //
+         // INVOICE_PAYMENT_APPLIED is deliberately still absent. A payment
+         // against an invoice writes PAYMENT_RECORDED with the invoice on it,
+         // because loadRepaymentsToday() counts that action and nothing else --
+         // a separate action would drop invoice settlements out of the day's
+         // repayment figure and understate expected cash on every till.
+         'INVOICE_VOIDED',
          'PRODUCT_CREATED', 'PRODUCT_EDITED', 'PRODUCT_DELETED', 'STORE_CURRENCY_CHANGED', 'STORE_ARCHIVED',
          'ACCOUNT_DELETION_REQUESTED', 'ACCOUNT_DELETION_CANCELLED', 'ACCOUNT_ACCESS_DURING_GRACE',
          'VAT_REGISTRATION_ENABLED', 'VAT_REGISTRATION_DISABLED',
@@ -1078,6 +1258,7 @@ service cloud.firestore {
               // expense amount and a purchase total; `qtyAdded` and `name` are
               // reused for the units and the product on a purchase.
               'category', 'expenseId', 'purchaseId',
+              'invoiceId', 'invoiceNumber', 'quotationId', 'creditNoteId',
               // What an expense said before a correction, beside `amount`.
               'previousAmount',
               // Deliveries reuse `amount` for the delivery's total cost and
@@ -1111,6 +1292,10 @@ service cloud.firestore {
         // it. The client omits these fields rather than nulling them.
         && (!('category' in d) || (d.category is string && d.category.size() <= 40))
         && (!('expenseId' in d) || (d.expenseId is string && d.expenseId.size() <= 120))
+        && (!('invoiceId' in d) || (d.invoiceId is string && d.invoiceId.size() <= 120))
+        && (!('invoiceNumber' in d) || (d.invoiceNumber is string && d.invoiceNumber.size() <= 40))
+        && (!('quotationId' in d) || (d.quotationId is string && d.quotationId.size() <= 120))
+        && (!('creditNoteId' in d) || (d.creditNoteId is string && d.creditNoteId.size() <= 120))
         && (!('previousAmount' in d) || moneyInRange(d.previousAmount))
         && (!('purchaseId' in d) || (d.purchaseId is string && d.purchaseId.size() <= 120))
         && (!('deliveryId' in d) || (d.deliveryId is string && d.deliveryId.size() <= 120))
@@ -1477,6 +1662,67 @@ service cloud.firestore {
         allow write: if isOwner(userId) && tenantNotFrozen(userId);
       }
 
+      // Invoices -- DESIGN-invoicing.md. A COMMERCIAL invoice: a request for
+      // payment that records the debt. Not a tax invoice, which in Tanzania can
+      // only come from an EFD or VFD.
+      //
+      // A cashier sees only what they raised; a manager sees their branches.
+      // Nothing here is ever deleted: an issued invoice keeps its number
+      // forever, because a gap in the sequence is the first thing an auditor
+      // asks about.
+      match /invoices/{invoiceId} {
+        allow read: if isOwner(userId)
+          || (isOwnerOrRole(userId, ["manager"])
+              && (resource == null || memberCanAccessStore(userId, resource.data.storeId)))
+          || (resource.data.createdByUid == request.auth.uid
+              && memberMayInvoice(userId, resource.data.storeId));
+
+        allow create: if tenantNotFrozen(userId) && validInvoiceDraft() && (
+             isOwner(userId)
+          || memberMayInvoice(userId, request.resource.data.storeId));
+
+        allow update: if tenantNotFrozen(userId) && (
+          // Editing a draft, by whoever raised it.
+             (resource.data.status == 'draft'
+              && request.resource.data.status == 'draft'
+              && validInvoiceDraft()
+              && request.resource.data.createdByUid == resource.data.createdByUid
+              && request.resource.data.storeId == resource.data.storeId
+              && (isOwner(userId) || memberMayInvoice(userId, resource.data.storeId)))
+          // Issuing it -- the number and the counter move together.
+          || (validInvoice() && validInvoiceIssue(userId)
+              && (isOwner(userId) || memberMayInvoice(userId, resource.data.storeId)))
+          // Money landing against it. Whoever may take a repayment may apply
+          // one, and a credit note is a manager or the owner (DESIGN 11).
+          || (validInvoiceSettlement()
+              && (isOwner(userId)
+                  || (isOwnerOrRole(userId, ["manager", "cashier"])
+                      && memberMayTakeRepayment(userId)
+                      && memberCanAccessStore(userId, resource.data.storeId))))
+          // Voiding: the owner alone, and only while nothing is against it.
+          || (isOwner(userId) && validInvoiceVoid()));
+
+        allow delete: if false;
+      }
+
+      // The gapless counters behind those numbers. One per document kind per
+      // year: invoice-2026, quotation-2026, creditnote-2026.
+      //
+      // Bounded to exactly +1 and to this one field: a counter that can jump can
+      // also collide, and a collision is two invoices with one number.
+      match /counters/{counterId} {
+        allow read: if isOwner(userId) || isOwnerOrRole(userId, ["manager", "cashier"]);
+        allow create: if tenantNotFrozen(userId)
+          && request.resource.data.keys().hasOnly(['value', 'updatedAt'])
+          && request.resource.data.value == 1
+          && (isOwner(userId) || memberMayInvoiceAnywhere(userId));
+        allow update: if tenantNotFrozen(userId)
+          && request.resource.data.keys().hasOnly(['value', 'updatedAt'])
+          && request.resource.data.value == resource.data.value + 1
+          && (isOwner(userId) || memberMayInvoiceAnywhere(userId));
+        allow delete: if false;
+      }
+
       match /sales/{saleId} {
         function validVoidUpdate() {
           let before = resource.data;
@@ -1579,7 +1825,17 @@ service cloud.firestore {
             && d.balanceOwed is number && d.balanceOwed >= 0
             && d.storeId is string && d.storeId.size() > 0
             && (!('oldestUnpaidAt' in d) || d.oldestUnpaidAt == null || d.oldestUnpaidAt is timestamp)
-            && (!('creditLimit' in d) || d.creditLimit == null || (d.creditLimit is number && d.creditLimit >= 0));
+            && (!('creditLimit' in d) || d.creditLimit == null || (d.creditLimit is number && d.creditLimit >= 0))
+            // Invoicing -- DESIGN-invoicing.md 8. All optional: every customer
+            // on the live shops predates them, having been created from a name
+            // and a phone at the till. Captured now because retrofitting means
+            // guessing at history, and because a VFD integration later makes the
+            // buyer TIN mandatory on the fiscal document.
+            && (!('tin' in d) || (d.tin is string && d.tin.size() <= 40))
+            && (!('vrn' in d) || (d.vrn is string && d.vrn.size() <= 20))
+            && (!('address' in d) || (d.address is string && d.address.size() <= 200))
+            && (!('email' in d) || (d.email is string && d.email.size() <= 120))
+            && (!('terms' in d) || (d.terms is string && d.terms.size() <= 60));
         }
         // Cashier-safe: a credit sale (or recording a payment) only ever
         // touches balanceOwed/oldestUnpaidAt -- diff-checked so a cashier
@@ -1592,6 +1848,14 @@ service cloud.firestore {
         function validCustomerLimitUpdate() {
           return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['creditLimit']);
         }
+        // The record itself -- who they are and how to bill them. Never the
+        // balance: that has its own rule, and a profile edit that could move
+        // money would be a way to write off a debt while renaming somebody.
+        function validCustomerProfileUpdate() {
+          return request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['name', 'phone', 'tin', 'vrn', 'address', 'email', 'terms', 'updatedAt'])
+            && request.resource.data.balanceOwed == resource.data.balanceOwed;
+        }
         // resource == null: see the note on the same branch under /sales.
         allow read: if isOwner(userId)
           || (isOwnerOrRole(userId, ["manager", "cashier"])
@@ -1599,17 +1863,27 @@ service cloud.firestore {
         allow create: if tenantNotFrozen(userId) && (
              (isOwner(userId) && validCustomer())
           || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, request.resource.data.storeId) && validCustomer()));
+        // The owner's branch is deliberately the ONLY one that may rewrite the
+        // document wholesale. Every staff branch below is diff-checked, so a
+        // write that changes more than that branch allows matches nothing
+        // rather than falling through to a looser neighbour.
         allow update: if tenantNotFrozen(userId) && (
              (isOwner(userId) && validCustomer())
-          || (memberMayMoveBalance(userId, resource.data.storeId) && validCustomerBalanceUpdate())
-          || (isOwnerOrRole(userId, ["manager"]) && memberCanAccessStore(userId, resource.data.storeId) && validCustomerLimitUpdate()));
+          || (!isOwner(userId) && memberMayMoveBalance(userId, resource.data.storeId) && validCustomerBalanceUpdate())
+          || (!isOwner(userId) && isOwnerOrRole(userId, ["manager"]) && memberCanAccessStore(userId, resource.data.storeId)
+              && validCustomerLimitUpdate())
+          || (!isOwner(userId) && isOwnerOrRole(userId, ["manager"]) && memberCanAccessStore(userId, resource.data.storeId)
+              && validCustomer() && validCustomerProfileUpdate()));
         allow delete: if false;
 
         match /payments/{paymentId} {
           function validPayment() {
             let d = request.resource.data;
             return d.amount is number && d.amount > 0 && d.amount <= 1000000000000
-              && (!('note' in d) || (d.note is string && d.note.size() <= 200));
+              && (!('note' in d) || (d.note is string && d.note.size() <= 200))
+              // Applied to one invoice, or to the account. A payment with no
+              // invoiceId is what the till writes today and keeps writing.
+              && (!('invoiceId' in d) || (d.invoiceId is string && d.invoiceId.size() > 0 && d.invoiceId.size() <= 120));
           }
           allow read: if isOwner(userId) || (isOwnerOrRole(userId, ["manager", "cashier"]) && memberCanAccessStore(userId, get(/databases/$(database)/documents/users/$(userId)/customers/$(customerId)).data.storeId));
           allow create: if tenantNotFrozen(userId) && (
@@ -1829,6 +2103,12 @@ service cloud.firestore {
             && d.uid == request.auth.uid
             && (!('productName' in d) || (d.productName is string && d.productName.size() <= 120))
             && (!('saleId' in d) || (d.saleId is string && d.saleId.size() <= 120))
+            // Stock that left on an ISSUED INVOICE rather than a till sale
+            // (DESIGN-invoicing.md 4). The reason stays 'sale' -- the goods
+            // genuinely leave on a sale-like event, and inventing a reason is
+            // the trap DESIGN-purchases.md 9 describes -- so without this the
+            // ledger could not say which document took the units off the shelf.
+            && (!('invoiceId' in d) || (d.invoiceId is string && d.invoiceId.size() <= 120))
             && (!('transferId' in d) || (d.transferId is string && d.transferId.size() <= 120))
             && (!('staffName' in d) || (d.staffName is string && d.staffName.size() <= 80))
             // WHY the shelf was corrected. Spec 4.4 asks for the reason to be

@@ -46,6 +46,7 @@ that exists today has no map, so the 8 live shops behave exactly as before.
 | `recordExpenses` | off | Create an expense in an assigned branch. Read and edit only their own, same day. | rules + UI |
 | `receiveDeliveries` | off | Create a delivery **request** (quantities, supplier, reference, optional invoice total). Edit or cancel their own while pending. | rules + UI |
 | `processReturns` | off | Item-by-item return on a sale in their branch (capped and monotonic, as for managers). Discount password still required. | rules + UI |
+| `issueInvoices` | off | Raise a draft invoice and issue it (`DESIGN-invoicing.md`). Issuing mints the number and creates the debt, so it cannot be undone by editing. | rules + UI |
 | `viewStock` | off | Inventory screen, quantities only. No edit, restock, adjust, transfer or delete. | UI (products are already readable by every cashier) |
 | `viewTodaySales` | off | Today's count and takings for the branch, by payment method. No cost, no profit. | UI (sales are already readable by every cashier) |
 | `sellOnCredit` | **on** | Credit as a payment method at the till. | rules + UI |

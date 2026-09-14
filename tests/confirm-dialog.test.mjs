@@ -176,7 +176,17 @@ console.log("\n=== every destructive action went through ===");
   // would still be suppressible, and would still fail silently.
   const expected = ["toggleServiceActive", "deleteExpense", "confirmDeleteDelivery",
     "deletePurchase", "checkCreditLimitBeforeSale", "deleteProduct",
-    "cancelAccountDeletion", "undoLastSale", "archiveStore", "revokeStaffMember"];
+    "cancelAccountDeletion", "undoLastSale", "archiveStore", "revokeStaffMember",
+    // Issuing an invoice is not a deletion, but it is the same KIND of action:
+    // it mints a gapless number, takes goods off the shelf and creates a debt,
+    // and none of that can be undone by editing (DESIGN-invoicing.md 2). So it
+    // asks the app rather than the browser, for the same reason the rest do.
+    "issueInvoice",
+    // Voiding an issued invoice reverses stock and debt and keeps the number
+    // (DESIGN-invoicing.md 7). Owner-only, and irreversible, so it asks twice:
+    // this confirmation, then askText() for the reason the number stands for
+    // nothing.
+    "voidInvoice"];
   for (const name of expected) {
     check(`${name} asks the app, not the browser`,
       /await askConfirm\(/.test(extract(name)), true);
@@ -184,7 +194,16 @@ console.log("\n=== every destructive action went through ===");
   // Twelve since 2026-09-11: cancelling a delivery request a cashier has sent
   // for approval (DESIGN-permissions.md 4) is the same kind of action and asks
   // the same way.
-  check("every confirmation site is converted", (src.match(/await askConfirm\(t\(/g) || []).length, 12);
+  //
+  // Thirteen since 2026-09-14: issuing an invoice (DESIGN-invoicing.md 2).
+  // Fourteen the same day: voiding one (DESIGN-invoicing.md 7).
+  //
+  // The number is a census, not a target. It exists so that a confirmation left
+  // on the browser's own confirm() -- which a browser may suppress, silently
+  // answering "no" -- fails here loudly. A NEW site that is correctly converted
+  // also moves it, so whoever bumps this must name the site above, or the count
+  // stops being auditable and starts being a number people edit to get green.
+  check("every confirmation site is converted", (src.match(/await askConfirm\(t\(/g) || []).length, 14);
   // Each one still reads the answer as a plain boolean, so the guard clauses
   // did not change shape when the mechanism did.
   check("revoke still refuses on a no",
@@ -217,7 +236,18 @@ console.log("\n=== window.prompt is gone too ===");
   // Twelve: the two added with cashier permissions are the reason a manager
   // must give for rejecting a delivery, and the order number a cashier types
   // to find a sale to return at the till.
-  check("every prompt goes through it", (src.match(/await askText\(/g) || []).length, 12);
+  //
+  // Fourteen since 2026-09-14, both from invoicing: the reason an owner must
+  // give for voiding an invoice (DESIGN-invoicing.md 7 -- the number stays in
+  // the sequence, so the reason is the only record of why it stands for
+  // nothing), and the phone number to send an invoice to on WhatsApp when the
+  // customer record carries none, which is the same fallback
+  // shareReceiptWhatsApp() already uses.
+  //
+  // As with the confirmation census above: this number moves when a NEW site is
+  // added correctly, so whoever bumps it must name the site here. A number
+  // edited to get green is a guard that has stopped guarding.
+  check("every prompt goes through it", (src.match(/await askText\(/g) || []).length, 14);
 
   const fn = extract("askText");
   // A password typed into a native prompt is displayed in clear text, on a

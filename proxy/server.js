@@ -401,7 +401,14 @@ async function verifyFirebaseToken(req, res, next) {
 // reached production -- which matters now that OPERATIONS.md requires the proxy
 // to ship BEFORE hosting, so ticked cashier permissions are not dropped in
 // silence for a newly invited staff member.
-const BUILD_MARKER = "2026-09-12-cashier-permissions";
+// Moved with the invoicing work on 2026-09-14. The marker exists so a Render
+// deploy is verifiable from outside -- GET /health and read `build`. It was
+// left unchanged when `issueInvoices` joined STAFF_PERMISSION_KEYS, which made
+// /health unable to answer the one question it is for: a proxy carrying eight
+// keys and one carrying nine both reported "2026-09-12-cashier-permissions".
+// Whoever adds a key here moves this too, or the endpoint stops meaning
+// anything.
+const BUILD_MARKER = "2026-09-14-invoicing";
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "savia-ai-proxy", build: BUILD_MARKER });
@@ -577,7 +584,7 @@ const STAFF_ROLES = ["manager", "cashier"];
 // and an owner would believe had been granted. Managers get none: they already
 // hold every one of these, and the rules consult the map for cashiers only.
 const STAFF_PERMISSION_KEYS = [
-  "recordExpenses", "receiveDeliveries", "processReturns", "viewStock", "viewTodaySales",
+  "recordExpenses", "receiveDeliveries", "processReturns", "issueInvoices", "viewStock", "viewTodaySales",
   "sellOnCredit", "takeRepayments", "giveDiscounts"
 ];
 

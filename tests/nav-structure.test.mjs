@@ -43,7 +43,17 @@ console.log("=== the order the owner asked for ===");
     // sitting where a cashier expects stock to live -- right after Purchases,
     // which is where the same requests are approved. It is hidden for everyone
     // else, by canOpenView() rather than by CSS.
-    ["dashboard", "inventory", "purchases", "arrivals", "pos", "services", "expenses",
+    // `customers` was added on 2026-09-13 with the invoicing work. The owner
+    // asked for a screen of its own (DESIGN-invoicing.md 8): until then a
+    // customer existed only as a name and a phone typed at the till, with
+    // nowhere to edit it. It sits with selling -- after the till and the
+    // services it sells, before what the shop spends -- and is manager/owner
+    // only, by canOpenView() falling through to the manager check.
+    // `invoices` joined it on the same day, straight after Customers: an
+    // invoice is raised FOR a customer, so the two sit together. Manager and
+    // owner, plus a cashier holding `issueInvoices` -- canOpenView() has an
+    // explicit branch for it rather than falling through to the manager check.
+    ["dashboard", "inventory", "purchases", "arrivals", "pos", "services", "customers", "invoices", "expenses",
      "reports", "ai", "vat", "settings"]);
   check("arrivals is cashier-only, and only with the permission",
     /if \(viewId === "arrivals"\) return isCashierWith\("receiveDeliveries"\);/.test(src), true);
