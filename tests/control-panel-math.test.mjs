@@ -450,6 +450,43 @@ console.log("\n=== the tiles say what they know ===");
     (src.match(/"control\.marginIncomplete": "[^"]*\{missing\}[^"]*\{total\}[^"]*"/g) || []).length, 2);
 }
 
+console.log("\n=== a denied read does not cache a dash for the whole session ===");
+{
+  const noComments = src.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  const keys = ["creditOverrideFetchKey", "repaymentFetchKey", "shiftFetchKey", "faultFetchKey"];
+
+  // Four panel figures are fetched rather than subscribed, each guarded by a
+  // cache key so renderManagerControl() does not fire a query on every
+  // repaint. The key is set BEFORE the query, so a denied read leaves the key
+  // set with its figure at null, and null renders as a dash. On a cold sign-in
+  // renderAll() paints before Firestore has picked up the credential, which is
+  // how an owner ends up reading a dash until they reload the page.
+  const invStart = noComments.indexOf("function invalidateControlPanelLoaders(");
+  check("one place drops every fetched panel cache", invStart > -1, true);
+  const invBody = noComments.slice(invStart, noComments.indexOf("\n}", invStart));
+  for (const key of keys) {
+    check(`...and it drops ${key}`, new RegExp(`${key} = null;`).test(invBody), true);
+  }
+
+  // Called once from the auth flow, after two awaited reads have proved the
+  // credential works, and NOT from a render, which would fire it on repaint.
+  check("the auth flow drops the caches once the credential is live",
+    /await loadUserSettings\(user\);[\s\S]{0,800}invalidateControlPanelLoaders\(\);/.test(noComments), true);
+  check("...and repaints both panels so the retry actually happens",
+    /invalidateControlPanelLoaders\(\);\s*renderManagerControl\(\);\s*renderAdminControl\(\);/.test(noComments), true);
+
+  // The regression this must never become. firestore.rules makes auditLogs
+  // owner-read, so a manager is denied permanently rather than transiently. A
+  // key cleared inside the catch would have the panel re-query on every single
+  // render for as long as that manager stayed signed in.
+  for (const fn of ["loadCreditOverrideCount", "loadRepaymentsToday", "loadShifts", "loadFaults"]) {
+    const start = noComments.indexOf(`async function ${fn}(`);
+    check(`${fn} was located`, start > -1, true);
+    const body = noComments.slice(start, noComments.indexOf("\n}", start));
+    check(`...and ${fn} does not clear its own key on failure`, /FetchKey/.test(body), false);
+  }
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 process.exit(failed.length ? 1 : 0);

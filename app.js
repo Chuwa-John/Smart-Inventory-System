@@ -16941,6 +16941,33 @@ async function loadFaults() {
   }
 }
 
+// Every control-panel figure that is FETCHED rather than subscribed, back to
+// "not yet asked".
+//
+// These four caches exist so renderManagerControl() can run on every data
+// change without firing a query each time. That guard is right, but it caches
+// a FAILURE as readily as a result: the key is set before the query runs, and
+// a denied query leaves the key set with its figure at null, which the tiles
+// render as a dash for the rest of the session.
+//
+// A sign-in is exactly that case. onAuthStateChanged fires, renderAll() paints
+// immediately -- deliberately, so the screen is usable at once -- and Firestore
+// has not always picked up the credential by then. The reads are denied, the
+// dashes stick, and until now only recording a payment ever cleared one.
+//
+// So the keys are dropped ONCE, from the auth flow, at the point where the
+// credential is known to be live. Deliberately NOT cleared inside each catch:
+// firestore.rules makes auditLogs owner-read, so a manager is denied
+// permanently rather than transiently, and a key cleared on failure would have
+// renderManagerControl() re-query on every render for as long as they stayed
+// signed in.
+function invalidateControlPanelLoaders() {
+  creditOverrideFetchKey = null;
+  repaymentFetchKey = null;
+  shiftFetchKey = null;
+  faultFetchKey = null;
+}
+
 // Cost of goods for a set of sales, given the cost the catalogue currently
 // carries for each product. Extracted from renderAdminControl() so the
 // arithmetic can be tested without a DOM -- tests/control-panel-math.test.mjs
@@ -17494,6 +17521,14 @@ async function initFirebase() {
         state.currentUserName = await resolveCurrentUserName(user, state.businessOwnerUid);
         renderStaffSelect();
         updateAuthUi();
+        // The credential is live by this point: ensureUserProfile() and
+        // loadUserSettings() have both completed reads against it. The panel
+        // figures fetched back in renderAll() may have been denied on a cold
+        // sign-in, so drop those caches and paint the panels again. Without
+        // this the dash they fell back to outlives the whole session.
+        invalidateControlPanelLoaders();
+        renderManagerControl();
+        renderAdminControl();
         state.pendingBusinessName = "";
         state.pendingOwnerName = "";
         subscribeToProducts();
