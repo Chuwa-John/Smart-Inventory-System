@@ -1055,3 +1055,58 @@ this hole deliberately, so if it ever becomes preventable that test fails and
 this entry should close.
 
 **Milestone:** next release, in the shape of `reconcileShiftCash()`.
+
+---
+
+## L-16 An invoice raised against an existing sale would move the stock twice — **LATENT, guard owed**
+
+Found on 2026-09-19 while verifying the invoicing flow on the live site.
+
+`issueInvoice()` guards the **money** against double counting and does not guard
+the **stock**. The debt is written only when the invoice is not formalising a
+sale that already happened:
+
+```js
+// DESIGN-invoicing.md 4 -- the same goods must never leave twice.
+if (!invoice.saleId) { ...balanceOwed += invoice.total... }
+```
+
+The stock loop directly above it has no equivalent condition. Its input is
+`const stockLines = (invoice.lines || []).filter((line) => line.productId);` —
+filtered on the presence of a product id alone. Every product line therefore
+decrements the shelf and writes a `stockMovement` with `reason: "sale"`,
+whether or not those units already left the shelf on the till sale the invoice
+is formalising.
+
+**Why it is not reachable today.** Nothing in `app.js` ever *sets*
+`invoice.saleId`. All three occurrences read it — the guard above, and two in
+`voidInvoice()`. So the condition is always true, the debt is always created,
+and the stock moves exactly once. Verified live on 2026-09-19: issuing
+`INV-2026-0003` for one Nail Polish moved the shelf 300 to 299, once.
+
+**Why it is not simply fixed now.** The fix has no behaviour to attach to.
+Gating the stock loop on `!invoice.saleId` today changes nothing and adds an
+untested branch, and it presumes the eventual feature copies the sale lines with
+`productId` populated. That is a design decision nobody has made yet: a
+sale-linked invoice might carry description-only lines, in which case the
+existing `productId` filter already excludes them and no gate is wanted. Writing
+the guard before the feature would bake in an assumption about the feature.
+
+**Direction of the error.** It **understates** stock — the shelf reads lower
+than it is. That is the dangerous direction here, because the discrepancy does
+not announce itself as a bug: `reconcileProductStock()` reports the difference
+as unaccounted stock, which is the anti-theft control accusing a cashier for
+goods that never moved.
+
+**Risk: None today. High on the day the feature lands**, and silent when it does.
+
+**Workaround:** none needed while `saleId` is never written. The invariant that
+keeps this dormant is exactly that, so it is worth stating plainly: if a grep
+for `saleId` in `app.js` ever shows a write, this entry is live.
+
+**Milestone:** whichever release introduces raising an invoice from an existing
+sale. Whoever builds it must decide explicitly whether the stock loop is gated
+the same way the debt is, and add a test that issues a sale-linked invoice and
+asserts the shelf moves once, not twice.
+
+---
