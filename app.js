@@ -333,6 +333,31 @@ function paymentMethodLabel(method) {
 const qs = (selector) => document.querySelector(selector);
 const qsa = (selector) => [...document.querySelectorAll(selector)];
 
+// One tap, one write.
+//
+// These tills run on cheap Android handsets where a repaint lags a beat behind
+// the finger, so a button that has already been pressed still looks unpressed
+// and gets pressed again. The handler then runs twice, and nothing on screen
+// says so: a second payment is the money recorded twice, a second stock
+// adjustment is the shelf corrected twice, and both land as separate documents
+// that no transaction can refuse because neither is individually wrong.
+//
+// The guard sits on the BUTTON rather than on a module-level flag, so the
+// control greys out and the person can SEE why the second tap did nothing.
+// Released in a finally, because a write that failed must stay retryable --
+// a till that locks its own button after a dropped connection is worse than
+// the double it was guarding against.
+async function guardedClick(button, run) {
+  if (!button) return run();
+  if (button.disabled) return;
+  button.disabled = true;
+  try {
+    return await run();
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function esc(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -19985,7 +20010,11 @@ function bindEvents() {
   qs("#addInvoiceFreeLine")?.addEventListener("click", addInvoiceFreeLine);
   qs("#invoiceForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
-    saveInvoiceDraft(Object.fromEntries(new FormData(event.currentTarget).entries()));
+    // Read the form BEFORE awaiting: the guard disables the submitter, and a
+    // handler that re-read the form afterwards would read a dialog the write
+    // may already have closed.
+    const fields = Object.fromEntries(new FormData(event.currentTarget).entries());
+    guardedClick(event.submitter, () => saveInvoiceDraft(fields));
   });
   // Typing updates the held line and the derived figures ONLY. Re-rendering the
   // table on every keystroke would rebuild the input under the cursor and throw
@@ -20017,7 +20046,10 @@ function bindEvents() {
     const edit = event.target.closest("[data-edit-invoice]");
     if (edit) return openInvoiceDialog(edit.dataset.editInvoice);
     const issue = event.target.closest("[data-issue-invoice]");
-    if (issue) return issueInvoice(issue.dataset.issueInvoice);
+    // Issuing is the irreversible one: it mints a number, moves the stock and
+    // creates the debt. The guard holds through the confirm dialog too, so a
+    // second tap cannot queue a second issue behind the first.
+    if (issue) return guardedClick(issue, () => issueInvoice(issue.dataset.issueInvoice));
     const view = event.target.closest("[data-view-invoice]");
     if (view) return openInvoicePreview(view.dataset.viewInvoice);
     const pay = event.target.closest("[data-pay-invoice]");
@@ -20028,7 +20060,7 @@ function bindEvents() {
       return;
     }
     const voidIt = event.target.closest("[data-void-invoice]");
-    if (voidIt) voidInvoice(voidIt.dataset.voidInvoice);
+    if (voidIt) guardedClick(voidIt, () => voidInvoice(voidIt.dataset.voidInvoice));
   });
   qs("#addCustomerButton")?.addEventListener("click", () => openCustomerDialog(""));
   qs("#closeCustomerDialog")?.addEventListener("click", () => qs("#customerDialog").close());
@@ -20070,7 +20102,8 @@ function bindEvents() {
   qs("#cancelStockAdjustDialog")?.addEventListener("click", () => qs("#stockAdjustDialog").close());
   qs("#stockAdjustForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
-    recordStockAdjustment(Object.fromEntries(new FormData(event.currentTarget).entries()));
+    const fields = Object.fromEntries(new FormData(event.currentTarget).entries());
+    guardedClick(event.submitter, () => recordStockAdjustment(fields));
   });
   qs("#stockAdjustForm")?.addEventListener("input", (event) => {
     if (event.target?.name === "newQuantity") renderAdjustDelta();
@@ -20224,7 +20257,8 @@ function bindEvents() {
   qs("#donePurchaseOrderDialog")?.addEventListener("click", () => qs("#purchaseOrderDialog").close());
   qs("#closePaymentDialog")?.addEventListener("click", () => qs("#paymentDialog").close());
   qs("#cancelPaymentDialog")?.addEventListener("click", () => qs("#paymentDialog").close());
-  qs("#confirmPaymentButton")?.addEventListener("click", confirmRecordPayment);
+  qs("#confirmPaymentButton")?.addEventListener("click", (event) =>
+    guardedClick(event.currentTarget, confirmRecordPayment));
   qs("#scanProductBarcodeButton")?.addEventListener("click", () => openBarcodeScanner("product"));
   qs("#scanPosBarcodeButton")?.addEventListener("click", () => openBarcodeScanner("pos"));
   qs("#closeBarcodeScannerDialog")?.addEventListener("click", closeBarcodeScanner);
