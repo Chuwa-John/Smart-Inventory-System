@@ -7322,6 +7322,12 @@ async function openCustomerHistory(customerId) {
 // would be refused by firestore.rules with nothing on screen explaining why.
 const INVOICE_MAX_LINES = 40;
 
+// How many open invoices one unallocated payment may settle, oldest first.
+// A transaction that grows with a customer's whole billing history eventually
+// fails on contention rather than on anything a shop did wrong, and a customer
+// with more than ten invoices open at once wants a statement, not a cascade.
+const PAYMENT_FIFO_INVOICE_LIMIT = 10;
+
 function invoiceById(invoiceId) {
   return (state.invoices || []).find((invoice) => invoice.id === invoiceId) || null;
 }
@@ -13054,12 +13060,49 @@ async function confirmRecordPayment() {
       const invoiceRef = settlingInvoiceId
         ? doc(state.db, "users", state.businessOwnerUid, "invoices", settlingInvoiceId)
         : null;
+
+      // A payment that names no invoice is spread over the open ones, OLDEST
+      // FIRST, and whatever is left over reduces the account as it always did.
+      //
+      // Without this the two screens disagreed about the same money for ever: a
+      // repayment taken from the Customers screen or the till moved
+      // balanceOwed and left every invoice reading unpaid, so a customer who
+      // owed nothing still had an invoice quoting the full amount outstanding.
+      //
+      // Best-effort BY DESIGN, and the asymmetry is in the rules, not here:
+      // settling an invoice is allowed to anyone who may take a repayment, but
+      // READING invoices is owner, manager, or the staff member who raised it.
+      // A cashier therefore cannot see what to allocate against. They allocate
+      // nothing, the balance still falls by the full amount, and the result is
+      // exactly today's behaviour rather than an error. balanceOwed is the
+      // figure that must never be wrong, and every branch below writes it the
+      // same way.
+      //
+      // Capped because a transaction that grows with a customer's history
+      // eventually fails on contention rather than on anything meaningful.
+      const fifoInvoices = settlingInvoiceId ? [] : (state.invoices || [])
+        .filter((row) => row.customerId === customerId
+          && row.status === "issued"
+          && invoiceOutstanding(row) > 0)
+        .sort((a, b) => {
+          const at = invoiceDateValue(a.issueDate)?.getTime() ?? 0;
+          const bt = invoiceDateValue(b.issueDate)?.getTime() ?? 0;
+          if (at !== bt) return at - bt;
+          // Same day: the number is the tie-break, and it sorts lexically
+          // because the sequence is zero-padded within a year.
+          return String(a.number || "").localeCompare(String(b.number || ""));
+        })
+        .slice(0, PAYMENT_FIFO_INVOICE_LIMIT);
+      const fifoRefs = fifoInvoices.map((row) =>
+        doc(state.db, "users", state.businessOwnerUid, "invoices", row.id));
+
       await runTransaction(state.db, async (transaction) => {
         const snap = await transaction.get(customerRef);
         if (!snap.exists()) throw new Error("customer gone");
         // Read in the READ phase with the rest: Firestore refuses a get() after
         // the first write in a transaction.
         const invoiceSnap = invoiceRef ? await transaction.get(invoiceRef) : null;
+        const fifoSnaps = await Promise.all(fifoRefs.map((ref) => transaction.get(ref)));
         const currentBalance = Number(snap.data().balanceOwed || 0);
         if (amount > currentBalance) throw new Error(t("toast.paymentExceedsBalance"));
 
@@ -13081,13 +13124,49 @@ async function confirmRecordPayment() {
           });
         }
 
+        // Oldest first, each capped at what that invoice still owes, so a
+        // payment bigger than one invoice rolls onto the next and a smaller one
+        // part-pays it. Whatever is left over stays on the account: a till
+        // repayment against a credit sale has no invoice to land on, and
+        // inventing one would be a lie about what the customer was billed.
+        const allocations = [];
+        if (!invoiceRef) {
+          let unallocated = amount;
+          fifoSnaps.forEach((fifoSnap, index) => {
+            if (unallocated <= 0 || !fifoSnap.exists()) return;
+            const data = fifoSnap.data();
+            // Judged on the SERVER copy, never on the cached list that chose
+            // these: another till may have settled or voided it since.
+            if (data.status !== "issued") return;
+            const owing = safeNumber(data.total)
+              - safeNumber(data.amountPaid) - safeNumber(data.amountCredited);
+            if (owing <= 0) return;
+            const applied = Math.min(unallocated, owing);
+            transaction.update(fifoRefs[index], {
+              amountPaid: safeNumber(data.amountPaid) + applied,
+              updatedAt: serverTimestamp()
+            });
+            allocations.push({ id: fifoRefs[index].id, number: String(data.number || "") });
+            unallocated -= applied;
+          });
+        }
+
+        // The payment names one invoice, as it always has. Spread over several
+        // it can only name the wrong one, so it names none and the invoices
+        // themselves carry the money -- validPayment() allows invoiceId to be
+        // absent, which is exactly what the till has always written.
+        const appliedInvoiceId = settlingInvoiceId
+          || (allocations.length === 1 ? allocations[0].id : "");
+        const appliedInvoiceNumber = invoiceNumber
+          || (allocations.length === 1 ? allocations[0].number : "");
+
         const nextBalance = currentBalance - amount;
         const customerUpdate = { balanceOwed: nextBalance, updatedAt: serverTimestamp() };
         if (nextBalance <= 0) customerUpdate.oldestUnpaidAt = null;
         transaction.update(customerRef, customerUpdate);
         transaction.set(paymentRef, {
           amount, note, method: paymentMethod, storeId: paymentStoreId,
-          ...(settlingInvoiceId ? { invoiceId: settlingInvoiceId } : {}),
+          ...(appliedInvoiceId ? { invoiceId: appliedInvoiceId } : {}),
           createdAt: serverTimestamp()
         });
 
@@ -13102,8 +13181,8 @@ async function confirmRecordPayment() {
           amount,
           method: paymentMethod,
           storeId: paymentStoreId,
-          ...(settlingInvoiceId ? { invoiceId: settlingInvoiceId } : {}),
-          ...(invoiceNumber ? { invoiceNumber } : {}),
+          ...(appliedInvoiceId ? { invoiceId: appliedInvoiceId } : {}),
+          ...(appliedInvoiceNumber ? { invoiceNumber: appliedInvoiceNumber } : {}),
           uid: state.user?.uid || null,
           createdAt: serverTimestamp()
         });

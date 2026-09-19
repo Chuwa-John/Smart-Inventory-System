@@ -190,19 +190,30 @@ console.log("\n=== a payment against an invoice stays a repayment ===");
   check("...and never a separate invoice action",
     !/INVOICE_PAYMENT_APPLIED/.test(body),
     "a second action would drop invoice settlements out of repayments-today");
-  check("the invoice is named on the entry", /invoiceId: settlingInvoiceId/.test(body));
+  check("the invoice is named on the entry", /invoiceId: appliedInvoiceId/.test(body),
+    "appliedInvoiceId is the one the payment named, or the single one it settled by allocation");
 
   // firestore.rules (validInvoiceSettlement) permits exactly amountPaid,
   // amountCredited and updatedAt to move. Anything else refuses the WHOLE
   // transaction, taking the balance and the payment record with it.
-  const update = body.slice(body.indexOf("transaction.update(invoiceRef"),
-                            body.indexOf("const nextBalance"));
-  check("the invoice update raises amountPaid", /amountPaid:/.test(update));
-  check("...and stamps updatedAt", /updatedAt: serverTimestamp\(\)/.test(update));
-  for (const forbidden of ["status:", "total:", "number:", "lines:"]) {
-    check(`...and never touches ${forbidden.replace(":", "")}`, !update.includes(forbidden),
-      "validInvoiceSettlement() diff-checks this write down to three keys");
-  }
+  //
+  // Read as PAYLOADS rather than as a slice of the function: there are two
+  // settlement writes now -- the invoice a payment names, and each invoice an
+  // unallocated payment settles oldest-first -- and a slice spanning both also
+  // swept up ordinary code between them.
+  const settlementWrites = [...body.matchAll(
+    /transaction\.update\((?:invoiceRef|fifoRefs\[index\]), \{([\s\S]*?)\}\);/g)].map((m) => m[1]);
+  check("both settlement writes were found", settlementWrites.length === 2,
+    `found ${settlementWrites.length}: the named invoice and the oldest-first allocation`);
+  settlementWrites.forEach((update, index) => {
+    const which = index === 0 ? "the named invoice" : "an allocated invoice";
+    check(`${which} raises amountPaid`, /amountPaid:/.test(update));
+    check(`${which} stamps updatedAt`, /updatedAt: serverTimestamp\(\)/.test(update));
+    for (const forbidden of ["status:", "total:", "number:", "lines:"]) {
+      check(`${which} never touches ${forbidden.replace(":", "")}`, !update.includes(forbidden),
+        "validInvoiceSettlement() diff-checks this write down to three keys");
+    }
+  });
 
   // An over-payment would be refused by the rules as a permission error with
   // nothing explaining it, so it is caught by name first.
@@ -210,6 +221,61 @@ console.log("\n=== a payment against an invoice stays a repayment ===");
   check("the invoice is read in the read phase",
     body.indexOf("await transaction.get(invoiceRef)") < body.indexOf("transaction.update("),
     "Firestore refuses a get() after the first write");
+}
+
+console.log("\n=== a payment naming no invoice still settles them, oldest first ===");
+{
+  const body = bodyOf("async function confirmRecordPayment(");
+
+  // The divergence this closes. A repayment taken from the Customers screen or
+  // the till moved balanceOwed and left every invoice reading unpaid for ever,
+  // so one screen said the customer owed nothing while another quoted the whole
+  // invoice as outstanding. Found on the live site 2026-09-19: INV-2026-0001
+  // showed 2,400,000 outstanding against a customer whose balance was zero.
+  check("an unallocated payment gathers the customer's open invoices",
+    /fifoInvoices = settlingInvoiceId \? \[\] : \(state\.invoices \|\| \[\]\)/.test(body),
+    "a payment that NAMES an invoice must keep paying exactly that one");
+  check("...only this customer's, only issued, only ones still owing",
+    /row\.customerId === customerId[\s\S]{0,140}row\.status === "issued"[\s\S]{0,100}invoiceOutstanding\(row\) > 0/.test(body));
+  check("...oldest first",
+    /invoiceDateValue\(a\.issueDate\)[\s\S]{0,260}return at - bt;/.test(body),
+    "FIFO is the point: the oldest debt is the one a payment answers");
+  check("...and bounded", /slice\(0, PAYMENT_FIFO_INVOICE_LIMIT\)/.test(body));
+  check("the bound is declared", /const PAYMENT_FIFO_INVOICE_LIMIT = \d+;/.test(src),
+    "an unbounded transaction fails on contention, not on anything the shop did");
+
+  // Same ordering invariant as issuing, and the same runtime-only failure.
+  const fifoRead = body.indexOf("fifoRefs.map((ref) => transaction.get(ref))");
+  const firstWrite = body.indexOf("transaction.update(");
+  check("every candidate invoice is read before anything is written",
+    fifoRead !== -1 && firstWrite !== -1 && fifoRead < firstWrite,
+    `read at ${fifoRead}, first write at ${firstWrite} -- Firestore refuses a read after a write`);
+
+  check("each invoice takes only what it still owes",
+    /const applied = Math\.min\(unallocated, owing\);/.test(body),
+    "uncapped, a large payment overpays the first invoice and the rules refuse the WHOLE transaction");
+  check("...and what is left stays on the account",
+    /unallocated -= applied;/.test(body),
+    "a till repayment against a credit sale has no invoice to land on");
+  check("the server copy decides, not the list that chose it",
+    /if \(data\.status !== "issued"\) return;/.test(body),
+    "another till may have settled or voided it since the snapshot");
+
+  // The figure that must never be wrong, in every branch including the one
+  // where nothing could be allocated at all.
+  check("the balance falls by the full amount however little was allocated",
+    /const nextBalance = currentBalance - amount;/.test(body)
+    && !/nextBalance[\s\S]{0,60}unallocated/.test(body),
+    "a cashier cannot READ invoices, so allocates none -- and must still take the money");
+
+  check("a payment names one invoice only when exactly one took money",
+    /allocations\.length === 1 \? allocations\[0\]\.id : ""/.test(body),
+    "spread over several it can only name the wrong one, so it names none");
+
+  // Cross-file: the allocation writes the same three keys the single-invoice
+  // path does, which is all validInvoiceSettlement() permits to move.
+  check("the rules permit exactly the fields the allocation writes",
+    /hasOnly\(\['amountPaid', 'amountCredited', 'updatedAt'\]\)/.test(rules));
 }
 
 console.log("\n=== a stale invoice id cannot settle the wrong invoice ===");
