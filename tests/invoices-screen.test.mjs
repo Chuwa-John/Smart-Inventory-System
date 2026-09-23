@@ -223,6 +223,46 @@ console.log("\n=== a payment against an invoice stays a repayment ===");
     "Firestore refuses a get() after the first write");
 }
 
+console.log("\n=== the invoice caps its own payment, not the account ===");
+{
+  const body = bodyOf("async function confirmRecordPayment(");
+
+  // A customer can hand over money this system never recorded: a debt entered
+  // late, a repayment written in a book, or funds from somewhere else. Capping
+  // an INVOICE payment by the account balance asserts our bookkeeping over the
+  // document in their hand. Found live 2026-09-19: INV-2026-0001 said
+  // 2,400,000 was due and the app refused every payment against it, because
+  // the account balance read zero.
+  check("an invoice payment is capped by that invoice",
+    /paymentCap = payingInvoice[\s\S]{0,60}invoiceOutstanding\(payingInvoice\)/.test(body),
+    "the invoice is the document the customer is holding");
+  check("...and an account payment is still capped by the balance",
+    /: Number\(customer\.balanceOwed \|\| 0\);/.test(body),
+    "nothing evidences a larger figure, and the excess would have nowhere to go");
+  check("the refusal names the invoice figure",
+    /t\("toast\.paymentExceedsInvoice", \{ amount: money\(paymentCap\) \}\)/.test(body),
+    "telling someone the cap without telling them what it is wastes the typing");
+  check("the new message exists in both languages",
+    (src.match(/"toast\.paymentExceedsInvoice":/g) || []).length === 2);
+
+  // The same relaxation has to reach the transaction, or the screen allows
+  // what the commit then refuses.
+  check("the transaction caps by the balance ONLY when no invoice is named",
+    /if \(!invoiceRef && amount > currentBalance\)/.test(body),
+    "otherwise the screen accepts the payment and the commit rejects it");
+  check("an invoice payment is still capped server-side by the invoice",
+    /INVOICE_OVERPAID/.test(body),
+    "relaxing the account cap must not relax the invoice one");
+
+  // firestore.rules requires balanceOwed >= 0. An invoice payment can now
+  // exceed what the account thinks is owed, so the subtraction must floor.
+  check("the balance floors at zero rather than going negative",
+    /const nextBalance = Math\.max\(0, currentBalance - amount\);/.test(body),
+    "a negative balance is refused by the rules as a bare permission error");
+  check("...and the rules are what require it",
+    /balanceOwed >= 0/.test(rules));
+}
+
 console.log("\n=== a payment naming no invoice still settles them, oldest first ===");
 {
   const body = bodyOf("async function confirmRecordPayment(");
@@ -264,9 +304,10 @@ console.log("\n=== a payment naming no invoice still settles them, oldest first 
   // The figure that must never be wrong, in every branch including the one
   // where nothing could be allocated at all.
   check("the balance falls by the full amount however little was allocated",
-    /const nextBalance = currentBalance - amount;/.test(body)
+    /const nextBalance = Math\.max\(0, currentBalance - amount\);/.test(body)
     && !/nextBalance[\s\S]{0,60}unallocated/.test(body),
-    "a cashier cannot READ invoices, so allocates none -- and must still take the money");
+    "a cashier cannot READ invoices, so allocates none -- and must still take the money;"
+      + " the floor is for an invoice payment that exceeds what the account thinks is owed");
 
   check("a payment names one invoice only when exactly one took money",
     /allocations\.length === 1 \? allocations\[0\]\.id : ""/.test(body),

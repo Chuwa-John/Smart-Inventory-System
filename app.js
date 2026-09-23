@@ -358,6 +358,69 @@ async function guardedClick(button, run) {
   }
 }
 
+// An eye on every password box.
+//
+// Staff type these on a phone keyboard, standing at a till, often from a
+// password somebody read out to them. With the characters hidden, a mistyped
+// one is indistinguishable from a wrong password, and the natural response is
+// to try again -- until Firebase answers auth/too-many-requests and locks them
+// out of their own shift over a typo.
+//
+// The input is WRAPPED, never replaced or rebuilt: it keeps its id, name,
+// autocomplete, minlength and required exactly as the markup declared them, so
+// neither a password manager nor the form validation can tell the difference.
+//
+// Safe to call more than once -- an already-wrapped field is skipped -- so
+// markup that arrives later can simply call it again.
+const EYE_SHOW_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2.6 12S6.2 5.8 12 5.8 21.4 12 21.4 12 17.8 18.2 12 18.2 2.6 12 2.6 12z"/><circle cx="12" cy="12" r="3.1"/></svg>';
+const EYE_HIDE_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2.6 12S6.2 5.8 12 5.8c1.5 0 2.9.42 4.1 1.05M21.4 12S17.8 18.2 12 18.2c-1.5 0-2.9-.42-4.1-1.05"/><path d="M9.9 9.9a3.1 3.1 0 0 0 4.2 4.2"/><path d="M4 4l16 16"/></svg>';
+
+function enablePasswordReveal(root = document) {
+  for (const input of root.querySelectorAll('input[type="password"]')) {
+    if (input.closest(".password-field")) continue;
+
+    const wrapper = document.createElement("span");
+    wrapper.className = "password-field";
+    input.parentNode.insertBefore(wrapper, input);
+    wrapper.appendChild(input);
+
+    const button = document.createElement("button");
+    // Explicitly type=button. A button inside a form with no type IS a submit
+    // button, so the first press of the eye would try to sign the person in.
+    button.type = "button";
+    button.className = "password-reveal";
+
+    // Labelled through data-i18n-aria-label rather than a bare aria-label, so
+    // translateStaticDom() re-applies it when the language changes -- an
+    // English label sitting in a Swahili form is its own bug.
+    const setState = (visible) => {
+      input.type = visible ? "text" : "password";
+      button.innerHTML = visible ? EYE_HIDE_SVG : EYE_SHOW_SVG;
+      button.dataset.i18nAriaLabel = visible ? "auth.hidePassword" : "auth.showPassword";
+      button.setAttribute("aria-label", t(button.dataset.i18nAriaLabel));
+      button.setAttribute("aria-pressed", visible ? "true" : "false");
+    };
+    setState(false);
+
+    button.addEventListener("click", () => {
+      setState(input.type !== "text");
+      // Back to where they were typing, caret after the last character rather
+      // than selecting the lot -- the next keystroke must not wipe it.
+      input.focus();
+      const end = input.value.length;
+      try { input.setSelectionRange(end, end); } catch (error) { /* some types refuse */ }
+    });
+
+    // A till is shared. Leaving a password legible on screen for whoever opens
+    // the dialog next is precisely what this control must not cause, so it
+    // falls back to hidden whenever the form is reset or the dialog closes.
+    input.form?.addEventListener("reset", () => setState(false));
+    input.closest("dialog")?.addEventListener("close", () => setState(false));
+
+    wrapper.appendChild(button);
+  }
+}
+
 function esc(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -1054,6 +1117,7 @@ const DICTIONARY = {
     "auth.resetSentDismiss": "Back to sign in",
     "auth.businessName": "Business name", "auth.email": "Email", "auth.password": "Password", "auth.forgotPassword": "Forgot password?",
     "auth.confirmPassword": "Confirm password",
+    "auth.showPassword": "Show password", "auth.hidePassword": "Hide password",
     "auth.consentPrefix": "I agree to the", "auth.consentTerms": "Terms & Conditions",
     "auth.consentAnd": "and", "auth.consentPrivacy": "Privacy Policy", "auth.consentSuffix": ".",
     "auth.whyTitle": "Why SaviaSmart",
@@ -1292,6 +1356,7 @@ const DICTIONARY = {
     "toast.couldNotSaveAlertSetting": "Could not save alert popup setting.",
     "toast.tooManyFailedAttempts": "Too many failed attempts for this email. Please wait 15 minutes and try again.",
     "toast.accountCreated": "Account created. Add your first inventory item.",
+    "toast.accountCreatedNoVerification": "Account created, but the verification email could not be sent. Use the Resend verification email button above to try again.",
     "toast.signedIn": "Signed in.", "toast.signedOut": "Signed out.",
     "toast.firebaseNotConnected": "Firebase is not connected yet.",
     "toast.authFailedGeneric": "Authentication failed. Check your details and try again.",
@@ -1563,6 +1628,7 @@ const DICTIONARY = {
     "payment.confirmButton": "Record Payment",
     "toast.paymentInvalidAmount": "Enter a valid payment amount.",
     "toast.paymentExceedsBalance": "Payment cannot exceed the current balance.",
+    "toast.paymentExceedsInvoice": "Payment cannot exceed what this invoice still owes, {amount}.",
     "toast.paymentMethodInvalid": "Choose how the payment was made.",
     "shift.heading": "Shift & cash",
     "shift.openButton": "Open shift",
@@ -2609,6 +2675,7 @@ const DICTIONARY = {
     "auth.resetSentDismiss": "Rudi kuingia",
     "auth.businessName": "Jina la biashara", "auth.email": "Barua pepe", "auth.password": "Nenosiri", "auth.forgotPassword": "Umesahau nenosiri?",
     "auth.confirmPassword": "Thibitisha nenosiri",
+    "auth.showPassword": "Onyesha nenosiri", "auth.hidePassword": "Ficha nenosiri",
     "auth.consentPrefix": "Nakubali", "auth.consentTerms": "Sheria na Masharti",
     "auth.consentAnd": "na", "auth.consentPrivacy": "Sera ya Faragha", "auth.consentSuffix": ".",
     "auth.whyTitle": "Kwa Nini SaviaSmart",
@@ -2847,6 +2914,7 @@ const DICTIONARY = {
     "toast.couldNotSaveAlertSetting": "Imeshindwa kuhifadhi mpangilio wa arifa ibukizi.",
     "toast.tooManyFailedAttempts": "Majaribio mengi yameshindwa kwa barua pepe hii. Tafadhali subiri dakika 15 na ujaribu tena.",
     "toast.accountCreated": "Akaunti imefunguliwa. Ongeza bidhaa yako ya kwanza ya hisa.",
+    "toast.accountCreatedNoVerification": "Akaunti imefunguliwa, lakini barua pepe ya uthibitisho haikutumwa. Tumia kitufe cha Tuma tena barua pepe ya uthibitisho hapo juu kujaribu tena.",
     "toast.signedIn": "Umeingia.", "toast.signedOut": "Umetoka.",
     "toast.firebaseNotConnected": "Firebase haijaunganishwa bado.",
     "toast.authFailedGeneric": "Uthibitishaji umeshindwa. Angalia maelezo yako na ujaribu tena.",
@@ -3118,6 +3186,7 @@ const DICTIONARY = {
     "payment.confirmButton": "Rekodi Malipo",
     "toast.paymentInvalidAmount": "Weka kiasi sahihi cha malipo.",
     "toast.paymentExceedsBalance": "Malipo hayawezi kuzidi deni la sasa.",
+    "toast.paymentExceedsInvoice": "Malipo hayawezi kuzidi kiasi kinachodaiwa kwenye ankara hii, {amount}.",
     "toast.paymentMethodInvalid": "Chagua jinsi malipo yalivyofanyika.",
     "shift.heading": "Zamu na fedha",
     "shift.openButton": "Fungua zamu",
@@ -13057,7 +13126,32 @@ async function confirmRecordPayment() {
 
   const amount = Number(qs("#paymentAmountInput")?.value || 0);
   if (!Number.isFinite(amount) || amount <= 0) return showToast(t("toast.paymentInvalidAmount"));
-  if (amount > Number(customer.balanceOwed || 0)) return showToast(t("toast.paymentExceedsBalance"));
+
+  // Capped by the INVOICE when the payment names one, by the account when it
+  // does not.
+  //
+  // A customer can hand over money this system never recorded: a debt entered
+  // late, a repayment written in a book, an invoice raised against a sale the
+  // till already settled, or simply funds from somewhere else entirely.
+  // Refusing their cash because our aggregate says they owe nothing asserts
+  // our bookkeeping over the document in their hand -- and the invoice IS the
+  // document. So an invoice payment is capped by what that invoice still owes.
+  //
+  // An account payment keeps the balance cap, because there is no document
+  // behind it to justify a larger figure, and the excess would have nowhere to
+  // go: firestore.rules requires balanceOwed >= 0, so a customer in credit is
+  // not a state this system can represent yet.
+  const payingInvoice = state.pendingPaymentInvoiceId
+    ? invoiceById(state.pendingPaymentInvoiceId)
+    : null;
+  const paymentCap = payingInvoice
+    ? invoiceOutstanding(payingInvoice)
+    : Number(customer.balanceOwed || 0);
+  if (amount > paymentCap) {
+    return showToast(payingInvoice
+      ? t("toast.paymentExceedsInvoice", { amount: money(paymentCap) })
+      : t("toast.paymentExceedsBalance"));
+  }
   const note = (qs("#paymentNoteInput")?.value || "").trim().slice(0, 200);
   if (note.length > 200) return showToast(t("toast.fieldTooLong", { field: t("payment.noteLabel"), max: 200 }));
 
@@ -13129,7 +13223,14 @@ async function confirmRecordPayment() {
         const invoiceSnap = invoiceRef ? await transaction.get(invoiceRef) : null;
         const fifoSnaps = await Promise.all(fifoRefs.map((ref) => transaction.get(ref)));
         const currentBalance = Number(snap.data().balanceOwed || 0);
-        if (amount > currentBalance) throw new Error(t("toast.paymentExceedsBalance"));
+        // Only an ACCOUNT payment is capped by the balance. An invoice payment
+        // is capped by that invoice instead, checked as INVOICE_OVERPAID below
+        // against the server copy -- see the note where paymentCap is worked
+        // out. Re-checked here rather than trusted from the screen, because the
+        // balance may have moved since the dialog opened.
+        if (!invoiceRef && amount > currentBalance) {
+          throw new Error(t("toast.paymentExceedsBalance"));
+        }
 
         let invoiceNumber = "";
         if (invoiceRef) {
@@ -13185,7 +13286,13 @@ async function confirmRecordPayment() {
         const appliedInvoiceNumber = invoiceNumber
           || (allocations.length === 1 ? allocations[0].number : "");
 
-        const nextBalance = currentBalance - amount;
+        // Floored at zero, not just arithmetic. An invoice payment is capped by
+        // the INVOICE, so it can legitimately exceed what the account thinks is
+        // owed -- money the system never recorded, paid against a document that
+        // says it is due. firestore.rules requires balanceOwed >= 0, so without
+        // this floor that payment would be refused as a bare permission error
+        // with nothing on screen explaining it.
+        const nextBalance = Math.max(0, currentBalance - amount);
         const customerUpdate = { balanceOwed: nextBalance, updatedAt: serverTimestamp() };
         if (nextBalance <= 0) customerUpdate.oldestUnpaidAt = null;
         transaction.update(customerRef, customerUpdate);
@@ -19458,12 +19565,31 @@ async function handleAuthSubmit(event) {
       state.pendingConsent = { accepted: true, version: LEGAL_DOC_VERSION, acceptedAt: new Date().toISOString() };
       const credential = await authApi.createUserWithEmailAndPassword(state.auth, email, password);
       if (businessName) await authApi.updateProfile(credential.user, { displayName: businessName });
+      // The account already exists by here, so a failed verification email must
+      // NOT throw -- undoing the signup over it would be worse. But it must not
+      // pass in silence either, which is what it used to do: the send failed,
+      // the console got a warning nobody reads, and the new staff member was
+      // told their account was created with no hint that the email they are now
+      // waiting for was never sent. They then wait for a message that is not
+      // coming, and the one control that would fix it -- Resend verification
+      // email, on the banner above -- is the one thing they have no reason to
+      // press.
+      //
+      // Reported from the field 2026-09-19: staff accepting an invite never
+      // received the verification link. App Check enforcement on Authentication
+      // refuses sendEmailVerification() outright for any device whose
+      // attestation fails, and 10% of Auth requests were unverified while it was
+      // enforced -- exactly this, and entirely invisible from here.
+      let verificationSent = true;
       try {
         await authApi.sendEmailVerification(credential.user);
       } catch (verificationError) {
+        verificationSent = false;
         console.warn("Could not send verification email:", verificationError);
       }
-      showToast(t("toast.accountCreated"));
+      showToast(verificationSent
+        ? t("toast.accountCreated")
+        : t("toast.accountCreatedNoVerification"));
     } else {
       state.pendingBusinessName = "";
       state.pendingOwnerName = "";
@@ -21409,6 +21535,10 @@ bindEvents();
 initIdleActivityTracking();
 watchConnection();
 prewarmScannerWhenIdle();
+// Before translateStaticDom(), which is what gives the new buttons their
+// labels: every password box in the shell is static markup, so one pass here
+// covers all of them, dialogs included.
+enablePasswordReveal();
 translateStaticDom();
 renderAll();
 renderChatLog();

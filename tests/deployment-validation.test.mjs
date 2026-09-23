@@ -175,6 +175,27 @@ console.log("\n=== what a rollback restores is the whole set, not part of it ===
     `app.html ${[...stamps].join(",")} vs sw.js ${[...swStamps].join(",")}`);
 
   check("CACHE_NAME moved too", /const CACHE_NAME = "savia-shell-v\d+"/.test(sw));
+
+  // EVERY stamped page, not only app.html.
+  //
+  // accept-invite.html carries a second stamped asset of its own,
+  // accept-invite.js, and nothing here used to look at it: this file hashes
+  // app.js, styles.css and boot.js, and walks app.html alone. OPERATIONS.md
+  // records what that cost -- `20260731b` meant FOUR different builds, the last
+  // of which shipped user-visible copy under an unmoved stamp, served
+  // `immutable` for a year by firebase.json.
+  //
+  // One stamp per page is the cheap invariant that catches it: bump the shared
+  // styles.css for a release and forget the page's own script, and the page now
+  // carries two stamps and fails here.
+  for (const page of readdirSync(ROOT).filter((f) => f.endsWith(".html"))) {
+    const html = readFileSync(new URL(page, ROOT), "utf8");
+    const pageStamps = new Set([...html.matchAll(/\?v=([0-9a-z]+)/g)].map((m) => m[1]));
+    if (pageStamps.size === 0) continue;
+    check(`${page} carries exactly one version across all its assets`,
+      pageStamps.size === 1,
+      `found ${[...pageStamps].join(", ")} -- every stamped asset on a page moves together`);
+  }
 }
 
 console.log("\n=== a withdrawn version string is never reissued ===");

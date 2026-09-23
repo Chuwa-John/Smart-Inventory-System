@@ -148,6 +148,50 @@ console.log("\n=== the wiring exists and the strings are translated ===");
     "expected two dictionary entries plus at least one usage");
 }
 
+console.log("\n=== a verification email that never sent says so ===");
+{
+  // Reported from the field 2026-09-19: staff accepted an invite and never
+  // received the verification link. sendEmailVerification() goes through the
+  // Authentication API, which App Check was enforcing at the time, so any
+  // device whose attestation failed had the send refused outright -- 10% of
+  // Auth requests were unverified while it was enforced.
+  //
+  // The send failing is survivable. Failing SILENTLY is not: the account
+  // exists, the person is told it was created, and they then wait for a
+  // message that was never sent, while the one control that would fix it is
+  // the one thing they have no reason to press.
+  // Comments stripped first: the block below explains at length why a failed
+  // send must NOT throw, and a check reading the raw text would match its own
+  // explanation rather than the code.
+  const code = src.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  const signup = code.slice(code.indexOf('if (state.authMode === "signup")'));
+  const body = signup.slice(0, signup.indexOf("} else {"));
+
+  check("a failed send is recorded rather than only logged",
+    /verificationSent = false;/.test(body),
+    "a console warning is not a way to tell a shop assistant anything");
+  check("the signup is NOT undone over it",
+    !/throw/.test(body),
+    "the account already exists; unwinding it would be worse than an unsent email");
+  check("the success message is conditional on the send",
+    /showToast\(verificationSent[\s\S]{0,120}toast\.accountCreatedNoVerification/.test(body),
+    "an unconditional Account created is the bug: it reports a success that did not happen");
+  check("the failure message names the control that recovers it",
+    /"toast\.accountCreatedNoVerification": "[^"]*Resend[^"]*"/.test(src),
+    "telling someone it failed without telling them what to press leaves them stuck");
+  check("...in both languages",
+    (src.match(/"toast\.accountCreatedNoVerification":/g) || []).length === 2);
+
+  // The recovery path itself already reported failure properly. It must keep
+  // doing so, because it is now the route the new message points at.
+  const resend = extractFn("handleResendVerification");
+  check("Resend still reports its own failure",
+    /toast\.verificationEmailFailed/.test(resend));
+  check("...and still names the too-many-requests case separately",
+    /auth\/too-many-requests/.test(resend),
+    "a throttled resend is not a broken one, and saying so stops a retry loop");
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) {

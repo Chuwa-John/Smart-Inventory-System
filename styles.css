@@ -26,7 +26,7 @@
   font-weight: 400 700;
   font-style: normal;
   font-display: swap;
-  src: url("./fonts/inter-latin.woff2?v=20260919b") format("woff2");
+  src: url("./fonts/inter-latin.woff2?v=20260923a") format("woff2");
 }
 
 :root {
@@ -1853,6 +1853,61 @@ label input[type="radio"] {
   color: var(--red);
   font-size: 0.78rem;
   line-height: 1.3;
+}
+
+/* Show/hide on a password box.
+ *
+ * The control sits INSIDE the field rather than beside it: these forms are laid
+ * out as a two-column grid that collapses to one on a phone, and a button added
+ * as a sibling would take a grid cell of its own and drop onto the next line,
+ * leaving the input looking cut in half.
+ *
+ * The wrapper is added by script around the existing input, so the input keeps
+ * its own id, name, autocomplete and validation exactly as they were -- a
+ * password manager must not be able to tell the difference. */
+.password-field {
+  position: relative;
+  display: block;
+}
+
+.password-field > input {
+  width: 100%;
+  /* Room for the button, so a long password never runs underneath it. */
+  padding-right: 2.6rem;
+}
+
+.password-reveal {
+  position: absolute;
+  top: 0;
+  right: 0.3rem;
+  /* The wrapper holds the input and this button and nothing else -- the label
+   * text and the validation message stay outside it -- so full height here is
+   * exactly the input's height, at any font size, without hard-coding one. */
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.password-reveal:hover {
+  color: var(--text);
+}
+
+.password-reveal svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
 }
 
 .legal-doc {

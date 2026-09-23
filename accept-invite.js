@@ -384,6 +384,55 @@ async function handleSubmit(event) {
   }
 }
 
+// An eye on the two password boxes, matching the app shell.
+//
+// This page matters more than most for it: the invitee is choosing a password
+// for the first time, on a phone, and the confirm field below rejects them for
+// a typo they cannot see in either box. Deliberately duplicated rather than
+// shared with app.js -- app.js is precached whole by the service worker, and a
+// new imported module would have to be precached with it or the till breaks
+// offline, which is a poor trade for twenty lines of UI. English only, like the
+// rest of this page.
+const EYE_SHOW_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2.6 12S6.2 5.8 12 5.8 21.4 12 21.4 12 17.8 18.2 12 18.2 2.6 12 2.6 12z"/><circle cx="12" cy="12" r="3.1"/></svg>';
+const EYE_HIDE_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2.6 12S6.2 5.8 12 5.8c1.5 0 2.9.42 4.1 1.05M21.4 12S17.8 18.2 12 18.2c-1.5 0-2.9-.42-4.1-1.05"/><path d="M9.9 9.9a3.1 3.1 0 0 0 4.2 4.2"/><path d="M4 4l16 16"/></svg>';
+
+function enablePasswordReveal(root = document) {
+  for (const input of root.querySelectorAll('input[type="password"]')) {
+    if (input.closest(".password-field")) continue;
+
+    const wrapper = document.createElement("span");
+    wrapper.className = "password-field";
+    input.parentNode.insertBefore(wrapper, input);
+    wrapper.appendChild(input);
+
+    const button = document.createElement("button");
+    // type=button, or the first press submits the form instead of revealing.
+    button.type = "button";
+    button.className = "password-reveal";
+
+    const setState = (visible) => {
+      input.type = visible ? "text" : "password";
+      button.innerHTML = visible ? EYE_HIDE_SVG : EYE_SHOW_SVG;
+      button.setAttribute("aria-label", visible ? "Hide password" : "Show password");
+      button.setAttribute("aria-pressed", visible ? "true" : "false");
+    };
+    setState(false);
+
+    button.addEventListener("click", () => {
+      setState(input.type !== "text");
+      input.focus();
+      const end = input.value.length;
+      try { input.setSelectionRange(end, end); } catch (error) { /* some types refuse */ }
+    });
+
+    input.form?.addEventListener("reset", () => setState(false));
+
+    wrapper.appendChild(button);
+  }
+}
+
+enablePasswordReveal();
+
 qs("#acceptInviteForm").addEventListener("submit", handleSubmit);
 qs("#inviteVerifyContinueButton").addEventListener("click", handleVerifyContinue);
 qs("#inviteResendVerificationButton").addEventListener("click", handleResendVerification);
