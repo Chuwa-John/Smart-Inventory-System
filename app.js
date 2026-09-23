@@ -457,6 +457,31 @@ const DICTIONARY = {
     "reports.groupPurchases": "Purchases", "reports.groupInventory": "Inventory",
     "reports.groupExpenses": "Expenses",
     "reports.hint.profit": "Revenue, what the goods cost, and what you kept",
+    "reports.hint.cogs": "What the goods you sold cost, for any period",
+    "cogs.sectionEyebrow": "Cost of sales",
+    "cogs.sectionTitle": "Cost of Goods Sold",
+    "cogs.intro": "What the goods you sold actually cost, worked out from the shelves rather than sale by sale: what you started the period with, plus what you bought, less what was still there at the end.",
+    "cogs.fromLabel": "From", "cogs.toLabel": "To",
+    "cogs.generateButton": "Generate Report",
+    "cogs.colLine": "COGS calculation", "cogs.colAmount": "Amount",
+    "cogs.rowOpening": "Opening Stock",
+    "cogs.rowPurchases": "Add: Purchases",
+    "cogs.rowCarriage": "Add: Carriage Inwards",
+    "cogs.rowOtherDirect": "Add: Other Direct Costs",
+    "cogs.rowReturns": "Less: Purchase Returns",
+    "cogs.rowDiscounts": "Less: Purchase Discounts",
+    "cogs.rowNetPurchases": "Net Purchases",
+    "cogs.rowAvailable": "Cost of Goods Available for Sale",
+    "cogs.rowClosing": "Less: Closing Stock",
+    "cogs.rowCogs": "COGS",
+    "cogs.working": "Working it out...",
+    "cogs.datesRequired": "Choose a From date and a To date.",
+    "cogs.datesBackwards": "The To date cannot be before the From date.",
+    "cogs.ledgerFailed": "Could not read the stock history, so this period cannot be worked out.",
+    "cogs.warnLedgerShort": "The stock history loaded only reaches back to {date}, so the opening stock is not reliable for a period starting before that.",
+    "cogs.warnUncosted": "{count} product(s) have no recorded buying price at these dates, so they are left out of the stock values.",
+    "cogs.warnNoDiscounts": "Purchase discounts are not recorded anywhere yet, so that line is zero because nothing asks for it.",
+    "cogs.warnShrinkage": "This method treats anything missing from the shelf as sold, so theft, breakage and miscounts are inside this figure rather than shown separately.",
     "reports.hint.salesPayments": "What came in, and how it was paid",
     "reports.hint.customerCredit": "Who owes you, and how much",
     "reports.hint.expensesByCategory": "What the shop spent, grouped by kind",
@@ -2015,6 +2040,31 @@ const DICTIONARY = {
     "reports.groupPurchases": "Manunuzi", "reports.groupInventory": "Hisa",
     "reports.groupExpenses": "Matumizi",
     "reports.hint.profit": "Mapato, gharama ya bidhaa, na ulichobakiza",
+    "reports.hint.cogs": "Gharama ya bidhaa ulizouza, kwa kipindi chochote",
+    "cogs.sectionEyebrow": "Gharama ya mauzo",
+    "cogs.sectionTitle": "Gharama ya Bidhaa Zilizouzwa",
+    "cogs.intro": "Gharama halisi ya bidhaa ulizouza, ikihesabiwa kutoka kwenye rafu badala ya mauzo moja baada ya jingine: ulichoanza nacho kipindi, pamoja na ulichonunua, ukitoa kilichobaki mwishoni.",
+    "cogs.fromLabel": "Kuanzia", "cogs.toLabel": "Hadi",
+    "cogs.generateButton": "Tengeneza Ripoti",
+    "cogs.colLine": "Hesabu ya COGS", "cogs.colAmount": "Kiasi",
+    "cogs.rowOpening": "Hisa ya Kuanzia",
+    "cogs.rowPurchases": "Jumlisha: Manunuzi",
+    "cogs.rowCarriage": "Jumlisha: Gharama za Usafirishaji",
+    "cogs.rowOtherDirect": "Jumlisha: Gharama Nyingine za Moja kwa Moja",
+    "cogs.rowReturns": "Toa: Marejesho ya Manunuzi",
+    "cogs.rowDiscounts": "Toa: Punguzo la Manunuzi",
+    "cogs.rowNetPurchases": "Manunuzi Halisi",
+    "cogs.rowAvailable": "Gharama ya Bidhaa Zilizopo kwa Mauzo",
+    "cogs.rowClosing": "Toa: Hisa ya Mwisho",
+    "cogs.rowCogs": "COGS",
+    "cogs.working": "Inahesabu...",
+    "cogs.datesRequired": "Chagua tarehe ya kuanzia na tarehe ya mwisho.",
+    "cogs.datesBackwards": "Tarehe ya mwisho haiwezi kuwa kabla ya tarehe ya kuanzia.",
+    "cogs.ledgerFailed": "Imeshindwa kusoma historia ya hisa, hivyo kipindi hiki hakiwezi kuhesabiwa.",
+    "cogs.warnLedgerShort": "Historia ya hisa iliyopakiwa inafika hadi {date} pekee, hivyo hisa ya kuanzia si ya kuaminika kwa kipindi kinachoanza kabla ya hapo.",
+    "cogs.warnUncosted": "Bidhaa {count} hazina bei ya ununuzi iliyorekodiwa katika tarehe hizi, hivyo hazikujumuishwa katika thamani ya hisa.",
+    "cogs.warnNoDiscounts": "Punguzo la manunuzi halirekodiwi popote bado, hivyo mstari huo ni sifuri kwa sababu hakuna kinachouliza.",
+    "cogs.warnShrinkage": "Njia hii inahesabu chochote kinachokosekana kwenye rafu kama kilichouzwa, hivyo wizi, uharibifu na makosa ya kuhesabu yamo ndani ya takwimu hii badala ya kuonyeshwa peke yake.",
     "reports.hint.salesPayments": "Kilichoingia, na kililipwaje",
     "reports.hint.customerCredit": "Nani anakudai, na kiasi gani",
     "reports.hint.expensesByCategory": "Duka lilitumia nini, kwa makundi",
@@ -12544,6 +12594,126 @@ function summariseExpensesByNature(expenses, monthKey) {
 // the same gate /purchases and /productCosts already carry -- each of these is
 // built from a collection those roles can already read, so none of them widens
 // a disclosure.
+// The screen around computePeriodCogs(). The arithmetic lives in the engine;
+// this only asks for two dates and states the answer.
+//
+// Manager and owner, the same gate renderCostReports() uses: the table states
+// buying prices by arithmetic even though it never prints one, so it belongs
+// behind the same door as stock valuation.
+function renderCogsReport() {
+  const panel = qs("#cogsPanel");
+  if (!panel) return;
+  setReportRoleVisibility(panel, !isManagerOrOwnerRole());
+  if (panel.hidden) {
+    // Emptied as well as hidden, for the reason renderCostReports() gives: a
+    // demoted manager must not keep buying prices in the DOM.
+    const table = qs("#cogsTable");
+    if (table) table.innerHTML = "";
+    const caveat = qs("#cogsCaveat");
+    if (caveat) { caveat.hidden = true; caveat.textContent = ""; }
+    return;
+  }
+
+  // Month to date, so the first press of Generate answers a real question
+  // rather than an empty one.
+  const from = qs("#cogsFromInput");
+  const to = qs("#cogsToInput");
+  const now = new Date();
+  if (from && !from.value) {
+    from.value = dateInputValue(new Date(now.getFullYear(), now.getMonth(), 1));
+  }
+  if (to && !to.value) to.value = dateInputValue(now);
+}
+
+async function generateCogsReport() {
+  const table = qs("#cogsTable");
+  const caveat = qs("#cogsCaveat");
+  if (!table) return;
+  if (!isManagerOrOwnerRole()) return;
+
+  const fromDate = parseDateInput(qs("#cogsFromInput")?.value || "");
+  const toDate = parseDateInput(qs("#cogsToInput")?.value || "");
+  if (!fromDate || !toDate) return showToast(t("cogs.datesRequired"));
+  // Local end of day, so a report To 31 January includes everything that
+  // happened on the 31st rather than stopping at midnight on its first second.
+  const toEnd = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate(), 23, 59, 59, 999);
+  if (toEnd.getTime() < fromDate.getTime()) return showToast(t("cogs.datesBackwards"));
+
+  table.innerHTML = `<tr><td colspan="2" class="empty-state">${esc(t("cogs.working"))}</td></tr>`;
+
+  // Fetched rather than subscribed, like every other ledger read: it grows
+  // without bound and this screen is opened occasionally.
+  let movements = [];
+  try {
+    const { collection, getDocs, orderBy, query, limit } = state.firebaseApi.firestore;
+    const ref = collection(state.db, "users", state.businessOwnerUid, "stockMovements");
+    const snap = await getDocs(query(ref, orderBy("createdAt", "desc"), limit(ACCOUNTS_HISTORY_LIMIT)));
+    movements = snap.docs.map((docSnap) => docSnap.data());
+  } catch (error) {
+    console.warn("Could not load the stock ledger for the COGS report.", error);
+    table.innerHTML = `<tr><td colspan="2" class="empty-state">${esc(t("cogs.ledgerFailed"))}</td></tr>`;
+    return;
+  }
+
+  const result = computePeriodCogs({
+    fromMs: fromDate.getTime(),
+    toMs: toEnd.getTime(),
+    storeId: state.currentStoreId,
+    products: state.products,
+    movements,
+    costIndex: buildCostIndex(state.productCostHistory),
+    purchases: state.purchases,
+    purchaseReturns: state.purchaseReturns
+  });
+
+  // The spec's own table, in its order. Subtractions are shown in brackets
+  // because that is how the spec prints them and how an accountant reads them.
+  const bracket = (amount) => `(${money(amount)})`;
+  const rows = [
+    [t("cogs.rowOpening"), money(result.openingStock), false],
+    [t("cogs.rowPurchases"), money(result.purchases), false],
+    [t("cogs.rowCarriage"), money(result.carriageInwards), false]
+  ];
+  if (result.otherDirectCosts) rows.push([t("cogs.rowOtherDirect"), money(result.otherDirectCosts), false]);
+  rows.push(
+    [t("cogs.rowReturns"), bracket(result.purchaseReturns), false],
+    [t("cogs.rowDiscounts"), bracket(result.purchaseDiscounts), false],
+    [t("cogs.rowNetPurchases"), money(result.netPurchases), true],
+    [t("cogs.rowAvailable"), money(result.goodsAvailable), true],
+    [t("cogs.rowClosing"), bracket(result.closingStock), false],
+    [t("cogs.rowCogs"), money(result.cogs), true]
+  );
+
+  table.innerHTML = rows.map(([label, amount, strong]) => `<tr${strong ? ' class="statement-total"' : ""}>
+      <td>${esc(label)}</td>
+      <td>${strong ? `<strong>${esc(amount)}</strong>` : esc(amount)}</td>
+    </tr>`).join("");
+
+  // Everything the figure cannot stand behind, said plainly. A COGS number
+  // goes into a P&L, so an incomplete one has to arrive labelled.
+  const warnings = [];
+  if (!result.ledgerReachesOpening) {
+    warnings.push(t("cogs.warnLedgerShort", {
+      date: result.oldestMovementMs ? new Date(result.oldestMovementMs).toLocaleDateString() : ""
+    }));
+  }
+  if (result.uncostedAtOpening || result.uncostedAtClosing) {
+    warnings.push(t("cogs.warnUncosted", {
+      count: String(Math.max(result.uncostedAtOpening, result.uncostedAtClosing))
+    }));
+  }
+  if (!result.discountsAreCaptured) warnings.push(t("cogs.warnNoDiscounts"));
+  // Said every time, not only when something is wrong: this method treats
+  // anything missing from the shelf as sold, and whoever reads the figure
+  // should know that before they file it.
+  warnings.push(t("cogs.warnShrinkage"));
+
+  if (caveat) {
+    caveat.hidden = false;
+    caveat.textContent = warnings.join(" ");
+  }
+}
+
 function renderCostReports() {
   const panel = qs("#costReportsPanel");
   if (!panel) return;
@@ -17179,6 +17349,173 @@ function invalidateControlPanelLoaders() {
   faultFetchKey = null;
 }
 
+// PERIODIC cost of goods sold, per AviaSmart_COGS_Prototype_Specification.docx.
+//
+//   Opening Stock + Net Purchases - Closing Stock = COGS
+//
+// This is a DIFFERENT METHOD from summariseCostOfGoods() below, not a tidier
+// version of it, and the two will not agree. That one prices each sold line at
+// the cost in force on its own sale date, so it reports what was actually sold.
+// This one infers it from the shelves: whatever is not there at the end is
+// treated as sold.
+//
+// The gap between them is shrinkage -- theft, breakage, expiry, miscounts. The
+// perpetual figure excludes it and reconcileProductStock() reports it
+// separately; the periodic figure absorbs it silently into cost of sales. That
+// is the accepted trade in the spec and it is the standard way an accountant
+// states COGS, but it is a real loss of a control, so the two are kept side by
+// side rather than one replacing the other until somebody decides.
+//
+// Pure, and takes its data rather than reading state, so the arithmetic can be
+// tested without a DOM or a database -- same reason summariseCostOfGoods() is.
+
+// What the shelves held at one moment.
+//
+// Quantity is walked BACK from what is on the product now, subtracting every
+// movement recorded after the moment asked about. The ledger also stores
+// quantityAfter, which would be cheaper, but an entry made offline deliberately
+// carries no quantityBefore (firestore.rules says it "cannot honestly carry the
+// chain"), so its quantityAfter reads as the delta alone. The delta is always
+// there and always true, so the walk is the honest route.
+//
+// An unknown unit cost is UNKNOWN, never zero -- the same rule costInForceAt()
+// enforces. A product with no recorded cost at that date is counted as
+// uncosted and left out of the value, so the caller can say the figure is
+// incomplete instead of quietly reporting a shop with free stock.
+function stockValueAt(atMs, { products, movements, costIndex, storeId }) {
+  const scoped = storeId && storeId !== "all";
+  let value = 0;
+  let costedProducts = 0;
+  let uncostedProducts = 0;
+
+  for (const product of products || []) {
+    if (scoped && product.storeId !== storeId) continue;
+
+    let quantity = safeNumber(product.quantity);
+    for (const movement of movements || []) {
+      if (movement.productId !== product.id) continue;
+      if (scoped && movement.storeId !== storeId) continue;
+      const at = movementTimeMs(movement);
+      // Strictly after: a movement landing exactly on the boundary belongs to
+      // the position being measured, not to what happened since.
+      if (at === null || at <= atMs) continue;
+      quantity -= safeNumber(movement.delta);
+    }
+
+    const unitCost = costInForceAt(costIndex, product.id, new Date(atMs));
+    if (unitCost === null) {
+      // Only counts against completeness if there was stock to value.
+      if (quantity !== 0) uncostedProducts += 1;
+      continue;
+    }
+    costedProducts += 1;
+    value += quantity * unitCost;
+  }
+
+  return { value, costedProducts, uncostedProducts };
+}
+
+function movementTimeMs(movement) {
+  const at = movement?.createdAt;
+  if (at?.toDate) return at.toDate().getTime();
+  if (at instanceof Date) return at.getTime();
+  const parsed = at ? new Date(at) : null;
+  return parsed && !Number.isNaN(parsed.getTime()) ? parsed.getTime() : null;
+}
+
+function computePeriodCogs({ fromMs, toMs, storeId, products, movements, costIndex, purchases, purchaseReturns }) {
+  const scoped = storeId && storeId !== "all";
+  const inWindow = (at) => at !== null && at >= fromMs && at <= toMs;
+
+  // Purchases are split in the data exactly as the spec splits them on the
+  // page: goodsCost is what the supplier charged, landedCost is freight, duty,
+  // clearing and transport -- DESIGN-landed-costs.md already capitalises the
+  // second into stock, which is what makes the subtraction of closing stock
+  // below come out right rather than double counting it.
+  let goods = 0;
+  let carriage = 0;
+  for (const purchase of purchases || []) {
+    if (scoped && purchase.storeId !== storeId) continue;
+    if (!inWindow(purchasedAt(purchase)?.getTime() ?? null)) continue;
+    // A purchase written before the landed-cost split carries only totalPaid,
+    // and all of it was goods.
+    const hasSplit = purchase.goodsCost !== undefined || purchase.landedCost !== undefined;
+    goods += hasSplit ? safeNumber(purchase.goodsCost) : safeNumber(purchase.totalPaid);
+    carriage += safeNumber(purchase.landedCost);
+  }
+
+  let returns = 0;
+  for (const entry of purchaseReturns || []) {
+    if (scoped && entry.storeId !== storeId) continue;
+    if (!inWindow(purchasedAt(entry)?.getTime() ?? null)) continue;
+    returns += safeNumber(entry.amount);
+  }
+
+  // The formula is implemented in full; the CAPTURE is what is missing.
+  //
+  // Nothing in the app currently asks for a supplier discount or for an
+  // acquisition cost outside the landed-cost set, so in live data both of these
+  // read zero today. They are summed from the purchase rather than hardcoded so
+  // that the day a field is added the engine already honours it, and so the
+  // spec's own worked example -- which includes a 200,000 discount -- can be
+  // reproduced exactly instead of being approximated.
+  //
+  // Zero from absence and zero from a shop that got no discount are the same
+  // number here. The caller is told which, through discountsAreCaptured below,
+  // because "no discounts" and "we never asked" are different claims.
+  let discounts = 0;
+  let otherDirect = 0;
+  let discountsAreCaptured = false;
+  for (const purchase of purchases || []) {
+    if (scoped && purchase.storeId !== storeId) continue;
+    if (!inWindow(purchasedAt(purchase)?.getTime() ?? null)) continue;
+    if (purchase.purchaseDiscount !== undefined) discountsAreCaptured = true;
+    discounts += safeNumber(purchase.purchaseDiscount);
+    otherDirect += safeNumber(purchase.otherDirectCost);
+  }
+
+  const opening = stockValueAt(fromMs, { products, movements, costIndex, storeId });
+  const closing = stockValueAt(toMs, { products, movements, costIndex, storeId });
+
+  const netPurchases = goods + carriage + otherDirect - returns - discounts;
+  const goodsAvailable = opening.value + netPurchases;
+  const cogs = goodsAvailable - closing.value;
+
+  // How far back the ledger actually reaches. Movements are fetched newest
+  // first under a limit, so a period starting before the oldest one loaded
+  // cannot have its opening position reconstructed -- the walk back would stop
+  // early and report today's shelves as the opening stock. Saying so is the
+  // whole difference between a report and a guess.
+  let oldestMovementMs = null;
+  for (const movement of movements || []) {
+    const at = movementTimeMs(movement);
+    if (at === null) continue;
+    if (oldestMovementMs === null || at < oldestMovementMs) oldestMovementMs = at;
+  }
+  const ledgerReachesOpening = oldestMovementMs === null || oldestMovementMs <= fromMs;
+
+  return {
+    openingStock: opening.value,
+    purchases: goods,
+    carriageInwards: carriage,
+    otherDirectCosts: otherDirect,
+    purchaseReturns: returns,
+    purchaseDiscounts: discounts,
+    netPurchases,
+    goodsAvailable,
+    closingStock: closing.value,
+    cogs,
+    // Everything the caller needs to refuse to state it as fact.
+    uncostedAtOpening: opening.uncostedProducts,
+    uncostedAtClosing: closing.uncostedProducts,
+    costedAtClosing: closing.costedProducts,
+    ledgerReachesOpening,
+    discountsAreCaptured,
+    oldestMovementMs,
+    complete: ledgerReachesOpening && opening.uncostedProducts === 0 && closing.uncostedProducts === 0
+  };
+}
+
 // Cost of goods for a set of sales, given the cost the catalogue currently
 // carries for each product. Extracted from renderAdminControl() so the
 // arithmetic can be tested without a DOM -- tests/control-panel-math.test.mjs
@@ -19935,6 +20272,7 @@ function renderAll() {
   renderInvoices();
   renderProfit();
   renderCostReports();
+  renderCogsReport();
   renderVatNav();
   renderVatRecord();
   renderManagerControl();
@@ -20265,6 +20603,11 @@ function bindEvents() {
     state.reportsCostMonth = event.currentTarget.value || state.reportsCostMonth;
     renderCostReports();
   });
+  // Guarded like every other write-shaped action, though this one only reads:
+  // the ledger fetch is slow enough on a handset for a second press to look
+  // like the first one did nothing.
+  qs("#generateCogsButton")?.addEventListener("click", (event) =>
+    guardedClick(event.currentTarget, generateCogsReport));
   qs("#openDeliveryDialog")?.addEventListener("click", () => openDeliveryDialog());
   qs("#newDeliveryRequestButton")?.addEventListener("click", () => openDeliveryRequestDialog());
   qs("#closeDeliveryRequestDialog")?.addEventListener("click", () => qs("#deliveryRequestDialog").close());

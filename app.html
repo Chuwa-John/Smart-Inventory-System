@@ -32,8 +32,8 @@
          before the browser discovers a font inside it, and on a 2G link that
          wait is visible as a flash of the fallback face. crossorigin is
          required even same-origin -- fonts are fetched in CORS mode. -->
-    <link rel="preload" href="./fonts/inter-latin.woff2?v=20260923a" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260923a" />
+    <link rel="preload" href="./fonts/inter-latin.woff2?v=20260923b" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="./styles.css?v=20260923b" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#f6f8fa" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -53,7 +53,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260923a"></script>
+    <script type="module" src="./boot.js?v=20260923b"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -1288,6 +1288,36 @@
             </div>
           </article>
 
+
+          <!-- Periodic cost of goods sold, per the COGS prototype spec. One
+               From/To engine, so monthly, quarterly, annual and custom are the
+               same report with different dates rather than four screens. -->
+          <article class="panel" id="cogsPanel" data-report="cogs" data-report-group="money" hidden>
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="cogs.sectionEyebrow">Cost of sales</p>
+                <h2 data-i18n="cogs.sectionTitle">Cost of Goods Sold</h2>
+              </div>
+              <div class="button-row" style="gap:8px;flex-wrap:wrap">
+                <label style="flex-direction:row;align-items:center;gap:6px;color:inherit"><span data-i18n="cogs.fromLabel">From</span><input id="cogsFromInput" type="date" autocomplete="off" /></label>
+                <label style="flex-direction:row;align-items:center;gap:6px;color:inherit"><span data-i18n="cogs.toLabel">To</span><input id="cogsToInput" type="date" autocomplete="off" /></label>
+                <button class="primary-button compact" id="generateCogsButton" type="button" data-i18n="cogs.generateButton">Generate Report</button>
+              </div>
+            </div>
+            <p class="muted" data-i18n="cogs.intro">What the goods you sold actually cost, worked out from the shelves rather than sale by sale: what you started the period with, plus what you bought, less what was still there at the end.</p>
+            <div class="table-panel" style="box-shadow:none;border:none">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="cogs.colLine">COGS calculation</th>
+                    <th data-i18n="cogs.colAmount">Amount</th>
+                  </tr>
+                </thead>
+                <tbody id="cogsTable"></tbody>
+              </table>
+            </div>
+            <p class="muted" id="cogsCaveat" hidden></p>
+          </article>
 
           <article class="panel" id="orderLookupPanel" data-report="orderLookup" data-report-group="sales">
             <div class="panel-head">
@@ -2825,6 +2855,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260923a"></script>
+    <script type="module" src="./app.js?v=20260923b"></script>
   </body>
 </html>
