@@ -474,6 +474,8 @@ const DICTIONARY = {
     "cogs.rowAvailable": "Cost of Goods Available for Sale",
     "cogs.rowClosing": "Less: Closing Stock",
     "cogs.rowCogs": "COGS",
+    "cogs.incompleteMark": "incomplete, {count} unpriced",
+    "cogs.notCaptured": "not captured",
     "cogs.working": "Working it out...",
     "cogs.datesRequired": "Choose a From date and a To date.",
     "cogs.datesBackwards": "The To date cannot be before the From date.",
@@ -2057,6 +2059,8 @@ const DICTIONARY = {
     "cogs.rowAvailable": "Gharama ya Bidhaa Zilizopo kwa Mauzo",
     "cogs.rowClosing": "Toa: Hisa ya Mwisho",
     "cogs.rowCogs": "COGS",
+    "cogs.incompleteMark": "haijakamilika, {count} hazina bei",
+    "cogs.notCaptured": "hairekodiwi",
     "cogs.working": "Inahesabu...",
     "cogs.datesRequired": "Chagua tarehe ya kuanzia na tarehe ya mwisho.",
     "cogs.datesBackwards": "Tarehe ya mwisho haiwezi kuwa kabla ya tarehe ya kuanzia.",
@@ -12669,24 +12673,52 @@ async function generateCogsReport() {
   // The spec's own table, in its order. Subtractions are shown in brackets
   // because that is how the spec prints them and how an accountant reads them.
   const bracket = (amount) => `(${money(amount)})`;
+
+  // A stock value that had to leave something out is still SHOWN, and never
+  // shown bare.
+  //
+  // The dash this file uses elsewhere -- the margin tile, stock at cost -- is
+  // the stricter answer and the wrong one here: cost data is patchy across real
+  // shops, so a report that refuses to state a figure until every product is
+  // priced would show nothing at all, most months, to everyone. Honest and
+  // useless.
+  //
+  // So the qualifier rides on the AMOUNT rather than living only in the note
+  // underneath. A figure lifted off this screen into a P&L then cannot arrive
+  // without the words that say what it left out. Found on the live data
+  // 2026-09-23: opening stock printed 0.00 not because the shelves were empty
+  // but because nothing had a cost in force that early, and nothing on the
+  // number itself said so.
+  const incomplete = (count) => count
+    ? `<span class="muted"> · ${esc(t("cogs.incompleteMark", { count: String(count) }))}</span>`
+    : "";
+  const openingMark = incomplete(result.uncostedAtOpening);
+  const closingMark = incomplete(result.uncostedAtClosing);
+  const derivedMark = incomplete(Math.max(result.uncostedAtOpening, result.uncostedAtClosing));
+
   const rows = [
-    [t("cogs.rowOpening"), money(result.openingStock), false],
-    [t("cogs.rowPurchases"), money(result.purchases), false],
-    [t("cogs.rowCarriage"), money(result.carriageInwards), false]
+    [t("cogs.rowOpening"), money(result.openingStock), false, openingMark],
+    [t("cogs.rowPurchases"), money(result.purchases), false, ""],
+    [t("cogs.rowCarriage"), money(result.carriageInwards), false, ""]
   ];
-  if (result.otherDirectCosts) rows.push([t("cogs.rowOtherDirect"), money(result.otherDirectCosts), false]);
+  if (result.otherDirectCosts) rows.push([t("cogs.rowOtherDirect"), money(result.otherDirectCosts), false, ""]);
   rows.push(
-    [t("cogs.rowReturns"), bracket(result.purchaseReturns), false],
-    [t("cogs.rowDiscounts"), bracket(result.purchaseDiscounts), false],
-    [t("cogs.rowNetPurchases"), money(result.netPurchases), true],
-    [t("cogs.rowAvailable"), money(result.goodsAvailable), true],
-    [t("cogs.rowClosing"), bracket(result.closingStock), false],
-    [t("cogs.rowCogs"), money(result.cogs), true]
+    [t("cogs.rowReturns"), bracket(result.purchaseReturns), false, ""],
+    // Zero because nothing asks, not because nobody gave one. Said on the line
+    // rather than only in the note, for the same reason as the stock marks.
+    [t("cogs.rowDiscounts"), bracket(result.purchaseDiscounts), false,
+      result.discountsAreCaptured ? "" : `<span class="muted"> · ${esc(t("cogs.notCaptured"))}</span>`],
+    [t("cogs.rowNetPurchases"), money(result.netPurchases), true, ""],
+    [t("cogs.rowAvailable"), money(result.goodsAvailable), true, openingMark],
+    [t("cogs.rowClosing"), bracket(result.closingStock), false, closingMark],
+    // COGS inherits the doubt from both ends of the period, because it is the
+    // difference between them.
+    [t("cogs.rowCogs"), money(result.cogs), true, derivedMark]
   );
 
-  table.innerHTML = rows.map(([label, amount, strong]) => `<tr${strong ? ' class="statement-total"' : ""}>
+  table.innerHTML = rows.map(([label, amount, strong, mark]) => `<tr${strong ? ' class="statement-total"' : ""}>
       <td>${esc(label)}</td>
-      <td>${strong ? `<strong>${esc(amount)}</strong>` : esc(amount)}</td>
+      <td>${strong ? `<strong>${esc(amount)}</strong>` : esc(amount)}${mark}</td>
     </tr>`).join("");
 
   // Everything the figure cannot stand behind, said plainly. A COGS number

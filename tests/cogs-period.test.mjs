@@ -226,6 +226,39 @@ console.log("\n=== scoping and boundaries ===");
     near(onBoundary.value, 200000), `got ${onBoundary.value}`);
 }
 
+console.log("\n=== a partial figure is shown, and never shown bare ===");
+{
+  // Found on live data 2026-09-23: opening stock printed 0.00 not because the
+  // shelves were empty but because no cost was in force that early, and nothing
+  // on the number itself said so. The decision was to keep showing the figure
+  // -- cost data is patchy, and a report that refuses to state anything until
+  // every product is priced would show nothing most months -- but to carry the
+  // qualification on the amount, so a figure lifted into a P&L cannot arrive
+  // without it.
+  const render = src.slice(src.indexOf("async function generateCogsReport("));
+  const body = render.slice(0, render.indexOf("\n}\n"));
+
+  check("the qualifier is attached to the amount cell",
+    /\$\{strong \? `<strong>\$\{esc\(amount\)\}<\/strong>` : esc\(amount\)\}\$\{mark\}/.test(body),
+    "a caveat only in the note below is lost the moment the number is copied out");
+  check("opening stock carries its own count of unpriced products",
+    /rowOpening[\s\S]{0,80}openingMark/.test(body));
+  check("closing stock carries its own",
+    /rowClosing[\s\S]{0,80}closingMark/.test(body));
+  check("COGS inherits the doubt from both ends",
+    /derivedMark = incomplete\(Math\.max\(result\.uncostedAtOpening, result\.uncostedAtClosing\)\)/.test(body),
+    "it is the difference between the two, so it is only as sound as the weaker one");
+  check("a fully priced period carries no qualifier at all",
+    /const incomplete = \(count\) => count[\s\S]{0,40}\?/.test(body),
+    "the mark must be absent, not an empty badge, when nothing was left out");
+  check("the discounts line says it is not captured rather than implying a real zero",
+    /discountsAreCaptured \? "" :/.test(body));
+  for (const key of ["cogs.incompleteMark", "cogs.notCaptured"]) {
+    check(`${key} exists in both languages`,
+      (src.match(new RegExp(`"${key.replace(".", "\\.")}":`, "g")) || []).length === 2);
+  }
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) {
