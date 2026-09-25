@@ -476,6 +476,14 @@ const DICTIONARY = {
     "cogs.rowCogs": "COGS",
     "cogs.incompleteMark": "incomplete, {count} unpriced",
     "cogs.notCaptured": "not captured",
+    "cogs.cogsUnstatable": "cannot be stated",
+    "cogs.warnNegativeIncomplete": "COGS is not shown because the figure came out negative, which cannot be true. The closing stock could be valued and the opening stock could not, so the subtraction is meaningless. Price the products listed above and generate again.",
+    "cogs.warnNegativeComplete": "COGS came out negative even though every product is priced. That means stock rose by more than was bought, which usually points to a stock adjustment made without a matching purchase.",
+    "cogs.unpricedAtOpening": "No buying price recorded as at {date}",
+    "cogs.unpricedAtClosing": "No buying price recorded as at {date}",
+    "cogs.unpricedColProduct": "Product",
+    "cogs.unpricedColQty": "Units held",
+    "cogs.unpricedHint": "These are left out of the stock value above. Record what they cost on their next restock and the figure completes itself from that date on.",
     "cogs.working": "Working it out...",
     "cogs.datesRequired": "Choose a From date and a To date.",
     "cogs.datesBackwards": "The To date cannot be before the From date.",
@@ -2061,6 +2069,14 @@ const DICTIONARY = {
     "cogs.rowCogs": "COGS",
     "cogs.incompleteMark": "haijakamilika, {count} hazina bei",
     "cogs.notCaptured": "hairekodiwi",
+    "cogs.cogsUnstatable": "haiwezi kutolewa",
+    "cogs.warnNegativeIncomplete": "COGS haionyeshwi kwa sababu takwimu imetoka hasi, jambo lisilowezekana. Hisa ya mwisho iliweza kupimwa lakini hisa ya kuanzia haikuweza, hivyo utoaji hauna maana. Weka bei za bidhaa zilizoorodheshwa hapo juu kisha tengeneza tena.",
+    "cogs.warnNegativeComplete": "COGS imetoka hasi ingawa kila bidhaa ina bei. Hii ina maana hisa iliongezeka zaidi ya ilivyonunuliwa, ambayo mara nyingi inaashiria marekebisho ya hisa yaliyofanyika bila manunuzi yanayolingana.",
+    "cogs.unpricedAtOpening": "Hakuna bei ya ununuzi iliyorekodiwa hadi {date}",
+    "cogs.unpricedAtClosing": "Hakuna bei ya ununuzi iliyorekodiwa hadi {date}",
+    "cogs.unpricedColProduct": "Bidhaa",
+    "cogs.unpricedColQty": "Vipimo vilivyopo",
+    "cogs.unpricedHint": "Hizi hazikujumuishwa katika thamani ya hisa hapo juu. Rekodi gharama yake wakati wa kuongeza hisa tena na takwimu itakamilika kuanzia tarehe hiyo.",
     "cogs.working": "Inahesabu...",
     "cogs.datesRequired": "Chagua tarehe ya kuanzia na tarehe ya mwisho.",
     "cogs.datesBackwards": "Tarehe ya mwisho haiwezi kuwa kabla ya tarehe ya kuanzia.",
@@ -12689,12 +12705,54 @@ async function generateCogsReport() {
   // 2026-09-23: opening stock printed 0.00 not because the shelves were empty
   // but because nothing had a cost in force that early, and nothing on the
   // number itself said so.
-  const incomplete = (count) => count
-    ? `<span class="muted"> · ${esc(t("cogs.incompleteMark", { count: String(count) }))}</span>`
+  //
+  // The badge is a BUTTON, not a label. A count tells an owner there is a
+  // problem; the names tell them what to do about it, and the answer is a list
+  // they would otherwise have to reconstruct by hand from four screens.
+  const incomplete = (count, which) => count
+    ? ` · <button type="button" class="link-button" data-cogs-unpriced="${which}">`
+      + `${esc(t("cogs.incompleteMark", { count: String(count) }))}</button>`
     : "";
-  const openingMark = incomplete(result.uncostedAtOpening);
-  const closingMark = incomplete(result.uncostedAtClosing);
-  const derivedMark = incomplete(Math.max(result.uncostedAtOpening, result.uncostedAtClosing));
+  const openingMark = incomplete(result.uncostedAtOpening, "opening");
+  const closingMark = incomplete(result.uncostedAtClosing, "closing");
+  // COGS inherits the doubt from whichever end carries more of it, and its
+  // badge opens that end's list rather than a merged one that would belong to
+  // no date in particular.
+  const derivedWhich = result.uncostedAtOpening >= result.uncostedAtClosing ? "opening" : "closing";
+  const derivedMark = incomplete(
+    Math.max(result.uncostedAtOpening, result.uncostedAtClosing), derivedWhich);
+
+  // A negative COGS is not a partial answer. It is an impossible one.
+  //
+  // "Incomplete" means understated -- something was left out and the figure is
+  // worth less than it should be. Negative means the goods sold cost less than
+  // nothing, which no amount of missing data makes true, and it arrives
+  // whenever the closing stock is valued and the opening is not. That is not an
+  // edge case: it is what backfilling a cost ALWAYS produces, because
+  // effectiveFrom is stamped now, so any period beginning before the cost was
+  // recorded values one end and not the other. Seen on live data 2026-09-23 at
+  // minus 13,010,450.
+  //
+  // So the number is withheld rather than badged. A reader who trusts this
+  // screen would have no way to tell "understated" from "wrong", and the badge
+  // says the first while the figure means the second.
+  //
+  // Negative WITH everything priced is a different thing and is still shown:
+  // it means stock rose by more than was bought, which is a real event -- an
+  // upward adjustment with no matching purchase -- and the owner should see the
+  // figure that reveals it.
+  const cogsUnstatable = result.cogs < 0 && !result.complete;
+
+  // Held for the badge handler. Cleared and rebuilt on every generate, so a
+  // list can never belong to a period the owner has since changed.
+  state.cogsUnpriced = {
+    opening: result.uncostedOpeningList || [],
+    closing: result.uncostedClosingList || [],
+    fromLabel: qs("#cogsFromInput")?.value || "",
+    toLabel: qs("#cogsToInput")?.value || ""
+  };
+  const unpricedHost = qs("#cogsUnpricedList");
+  if (unpricedHost) { unpricedHost.hidden = true; unpricedHost.innerHTML = ""; }
 
   const rows = [
     [t("cogs.rowOpening"), money(result.openingStock), false, openingMark],
@@ -12713,7 +12771,14 @@ async function generateCogsReport() {
     [t("cogs.rowClosing"), bracket(result.closingStock), false, closingMark],
     // COGS inherits the doubt from both ends of the period, because it is the
     // difference between them.
-    [t("cogs.rowCogs"), money(result.cogs), true, derivedMark]
+    // Withheld rather than badged when it came out impossible. See
+    // cogsUnstatable above.
+    [t("cogs.rowCogs"),
+      cogsUnstatable ? "—" : money(result.cogs),
+      true,
+      cogsUnstatable
+        ? `<span class="muted"> · ${esc(t("cogs.cogsUnstatable"))}</span>`
+        : derivedMark]
   );
 
   table.innerHTML = rows.map(([label, amount, strong, mark]) => `<tr${strong ? ' class="statement-total"' : ""}>
@@ -12724,6 +12789,10 @@ async function generateCogsReport() {
   // Everything the figure cannot stand behind, said plainly. A COGS number
   // goes into a P&L, so an incomplete one has to arrive labelled.
   const warnings = [];
+  // Leads the list: it explains why a figure is MISSING, which a reader needs
+  // before any explanation of why the others are approximate.
+  if (cogsUnstatable) warnings.push(t("cogs.warnNegativeIncomplete"));
+  else if (result.cogs < 0) warnings.push(t("cogs.warnNegativeComplete"));
   if (!result.ledgerReachesOpening) {
     warnings.push(t("cogs.warnLedgerShort", {
       date: result.oldestMovementMs ? new Date(result.oldestMovementMs).toLocaleDateString() : ""
@@ -12744,6 +12813,41 @@ async function generateCogsReport() {
     caveat.hidden = false;
     caveat.textContent = warnings.join(" ");
   }
+}
+
+// What sits behind an "incomplete" badge: the products that had no cost in
+// force at that date, and the stock being carried for each.
+//
+// On demand rather than always on screen. When the period IS fully priced
+// there is nothing to say, and a permanently empty box under a correct report
+// is noise that teaches people to ignore the space.
+function renderCogsUnpricedList(which) {
+  const host = qs("#cogsUnpricedList");
+  if (!host) return;
+  const held = state.cogsUnpriced || {};
+  const rows = held[which] || [];
+  if (!rows.length) {
+    host.hidden = true;
+    host.innerHTML = "";
+    return;
+  }
+  const when = which === "opening" ? held.fromLabel : held.toLabel;
+  const heading = which === "opening" ? "cogs.unpricedAtOpening" : "cogs.unpricedAtClosing";
+  host.hidden = false;
+  host.innerHTML = `<p class="muted"><strong>${esc(t(heading, { date: when }))}</strong></p>
+    <div class="table-panel" style="box-shadow:none;border:none">
+      <table>
+        <thead><tr>
+          <th>${esc(t("cogs.unpricedColProduct"))}</th>
+          <th>${esc(t("cogs.unpricedColQty"))}</th>
+        </tr></thead>
+        <tbody>${rows.map((row) => `<tr>
+            <td>${esc(row.name)}</td>
+            <td>${esc(String(row.quantity))}</td>
+          </tr>`).join("")}</tbody>
+      </table>
+    </div>
+    <p class="muted">${esc(t("cogs.unpricedHint"))}</p>`;
 }
 
 function renderCostReports() {
@@ -17418,7 +17522,10 @@ function stockValueAt(atMs, { products, movements, costIndex, storeId }) {
   const scoped = storeId && storeId !== "all";
   let value = 0;
   let costedProducts = 0;
-  let uncostedProducts = 0;
+  // Named, not just counted. "3 unpriced" tells an owner there is a problem;
+  // the names tell them what to do about it, and they are the products that
+  // need a cost recorded before this figure means anything.
+  const uncosted = [];
 
   for (const product of products || []) {
     if (scoped && product.storeId !== storeId) continue;
@@ -17437,14 +17544,16 @@ function stockValueAt(atMs, { products, movements, costIndex, storeId }) {
     const unitCost = costInForceAt(costIndex, product.id, new Date(atMs));
     if (unitCost === null) {
       // Only counts against completeness if there was stock to value.
-      if (quantity !== 0) uncostedProducts += 1;
+      if (quantity !== 0) {
+        uncosted.push({ id: product.id, name: product.name || product.id, quantity });
+      }
       continue;
     }
     costedProducts += 1;
     value += quantity * unitCost;
   }
 
-  return { value, costedProducts, uncostedProducts };
+  return { value, costedProducts, uncostedProducts: uncosted.length, uncosted };
 }
 
 function movementTimeMs(movement) {
@@ -17540,6 +17649,8 @@ function computePeriodCogs({ fromMs, toMs, storeId, products, movements, costInd
     // Everything the caller needs to refuse to state it as fact.
     uncostedAtOpening: opening.uncostedProducts,
     uncostedAtClosing: closing.uncostedProducts,
+    uncostedOpeningList: opening.uncosted,
+    uncostedClosingList: closing.uncosted,
     costedAtClosing: closing.costedProducts,
     ledgerReachesOpening,
     discountsAreCaptured,
@@ -20640,6 +20751,12 @@ function bindEvents() {
   // like the first one did nothing.
   qs("#generateCogsButton")?.addEventListener("click", (event) =>
     guardedClick(event.currentTarget, generateCogsReport));
+  // Delegated: the badges are rebuilt on every generate, so binding them
+  // individually would leave a listener on each discarded one.
+  qs("#cogsTable")?.addEventListener("click", (event) => {
+    const badge = event.target.closest("[data-cogs-unpriced]");
+    if (badge) renderCogsUnpricedList(badge.dataset.cogsUnpriced);
+  });
   qs("#openDeliveryDialog")?.addEventListener("click", () => openDeliveryDialog());
   qs("#newDeliveryRequestButton")?.addEventListener("click", () => openDeliveryRequestDialog());
   qs("#closeDeliveryRequestDialog")?.addEventListener("click", () => qs("#deliveryRequestDialog").close());

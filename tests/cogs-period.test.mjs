@@ -246,16 +246,148 @@ console.log("\n=== a partial figure is shown, and never shown bare ===");
   check("closing stock carries its own",
     /rowClosing[\s\S]{0,80}closingMark/.test(body));
   check("COGS inherits the doubt from both ends",
-    /derivedMark = incomplete\(Math\.max\(result\.uncostedAtOpening, result\.uncostedAtClosing\)\)/.test(body),
+    /derivedMark = incomplete\([\s\S]{0,140}Math\.max\(result\.uncostedAtOpening, result\.uncostedAtClosing\)/.test(body),
     "it is the difference between the two, so it is only as sound as the weaker one");
   check("a fully priced period carries no qualifier at all",
-    /const incomplete = \(count\) => count[\s\S]{0,40}\?/.test(body),
+    /const incomplete = \(count, which\) => count[\s\S]{0,40}\?/.test(body),
     "the mark must be absent, not an empty badge, when nothing was left out");
   check("the discounts line says it is not captured rather than implying a real zero",
     /discountsAreCaptured \? "" :/.test(body));
   for (const key of ["cogs.incompleteMark", "cogs.notCaptured"]) {
     check(`${key} exists in both languages`,
       (src.match(new RegExp(`"${key.replace(".", "\\.")}":`, "g")) || []).length === 2);
+  }
+}
+
+console.log("\n=== an impossible figure is withheld, not badged ===");
+{
+  const render = src.slice(src.indexOf("async function generateCogsReport("));
+  const body = render.slice(0, render.indexOf("\n}\n"));
+
+  // Seen on live data 2026-09-23 at minus 13,010,450, after backfilling costs
+  // priced the closing stock and left the opening at zero. Not an edge case:
+  // effectiveFrom is always stamped now, so ANY period beginning before a cost
+  // was recorded values one end and not the other.
+  check("negative AND incomplete is what withholds it",
+    /const cogsUnstatable = result\.cogs < 0 && !result\.complete;/.test(body),
+    "incomplete means understated; negative means impossible, and only the second is unusable");
+  // — is the em dash ITSELF in a regex literal, not the four characters
+  // "—". app.js writes the character directly, as the stock-at-cost and
+  // margin placeholders next to it do.
+  check("the figure is replaced by a dash rather than printed",
+    /cogsUnstatable \? "—" : money\(result\.cogs\)/.test(body),
+    "a badge saying incomplete on a number that means impossible tells the reader the wrong thing");
+  check("...and the cell says it cannot be stated",
+    /cogs\.cogsUnstatable/.test(body));
+  check("the explanation leads the caveats",
+    body.indexOf("warnNegativeIncomplete") < body.indexOf("warnLedgerShort"),
+    "why a figure is MISSING comes before why the others are approximate");
+
+  // A negative with everything priced is a real event, not a broken sum: stock
+  // rose by more than was bought. The owner should see the figure that reveals
+  // it.
+  check("negative WITH everything priced is still shown",
+    /else if \(result\.cogs < 0\) warnings\.push\(t\("cogs\.warnNegativeComplete"\)\)/.test(body),
+    "an upward stock adjustment with no matching purchase is worth surfacing, not hiding");
+  for (const key of ["cogs.cogsUnstatable", "cogs.warnNegativeIncomplete", "cogs.warnNegativeComplete"]) {
+    check(`${key} exists in both languages`,
+      (src.match(new RegExp(`"${key.replace(/\./g, "\\.")}":`, "g")) || []).length === 2);
+  }
+}
+
+console.log("\n=== the engine still reports the raw figure either way ===");
+{
+  // The withholding is a PRESENTATION decision. The engine keeps returning the
+  // arithmetic, so the rule can be changed in one place without the number
+  // going missing from the model as well.
+  const products = [{ id: "p1", name: "Priced", storeId: "s1", quantity: 1000 }];
+  const idx = buildCostIndex([
+    { productId: "p1", costPrice: 5000, effectiveFrom: new Date("2020-01-01T00:00:00Z") }
+  ]);
+  const r = computePeriodCogs({
+    fromMs: JAN_FROM, toMs: JAN_TO, storeId: "s1",
+    products, movements: [{ productId: "p1", storeId: "s1", delta: 1000, createdAt: new Date("2026-01-10T00:00:00Z") }],
+    costIndex: idx, purchases: [], purchaseReturns: []
+  });
+  check("stock arriving with no purchase drives COGS negative", r.cogs < 0,
+    `got ${r.cogs}`);
+  check("...and the engine reports it rather than clamping to zero",
+    typeof r.cogs === "number" && Number.isFinite(r.cogs),
+    "clamping in the engine would hide the anomaly from every caller, not just this screen");
+}
+
+console.log("\n=== the badge names the products, it does not just count them ===");
+{
+  // A count tells an owner there is a problem. The names tell them what to do
+  // about it -- and without this they would reconstruct the list by hand,
+  // across Inventory and the cost history, to find which products to price.
+  const products = [
+    { id: "p1", name: "Nivea massage oil", storeId: "s1", quantity: 391 },
+    { id: "p2", name: "Hair Oil 200ml", storeId: "s1", quantity: 3 },
+    { id: "p3", name: "Nail Polish", storeId: "s1", quantity: 300 }
+  ];
+  const idx = buildCostIndex([
+    { productId: "p3", costPrice: 16933, effectiveFrom: new Date("2020-01-01T00:00:00Z") }
+  ]);
+  const r = computePeriodCogs({
+    fromMs: JAN_FROM, toMs: JAN_TO, storeId: "s1",
+    products, movements: [], costIndex: idx, purchases: [], purchaseReturns: []
+  });
+
+  check("the unpriced products are returned by name",
+    r.uncostedClosingList.map((row) => row.name).sort().join("|")
+      === "Hair Oil 200ml|Nivea massage oil",
+    JSON.stringify(r.uncostedClosingList));
+  check("...with the stock being carried for each",
+    r.uncostedClosingList.every((row) => typeof row.quantity === "number"),
+    "an owner deciding what to price first needs to know how much is sitting there");
+  check("the count still agrees with the list",
+    r.uncostedAtClosing === r.uncostedClosingList.length);
+  check("a priced product is not in the list",
+    !r.uncostedClosingList.some((row) => row.name === "Nail Polish"));
+
+  // A product with no stock at that date is not a problem to solve: it needs no
+  // cost because it contributes nothing to the value either way.
+  const noStock = computePeriodCogs({
+    fromMs: JAN_FROM, toMs: JAN_TO, storeId: "s1",
+    products: [{ id: "p9", name: "Discontinued", storeId: "s1", quantity: 0 }],
+    movements: [], costIndex: idx, purchases: [], purchaseReturns: []
+  });
+  check("a product holding no stock is not reported as unpriced",
+    noStock.uncostedAtClosing === 0,
+    "it would be a chore with no effect on the figure");
+}
+
+console.log("\n=== the badge is a control, not a label ===");
+{
+  const render = src.slice(src.indexOf("async function generateCogsReport("));
+  const body = render.slice(0, render.indexOf("\n}\n"));
+  check("the mark is rendered as a button",
+    /<button type="button" class="link-button" data-cogs-unpriced="\$\{which\}">/.test(body),
+    "a span cannot be reached by keyboard and says nothing to a screen reader");
+  check("the held list is rebuilt on every generate",
+    /state\.cogsUnpriced = \{/.test(body),
+    "a list left over from a previous period would name the wrong products");
+  check("...and any open list is cleared with it",
+    /unpricedHost\.hidden = true;/.test(body));
+
+  const listFn = src.slice(src.indexOf("function renderCogsUnpricedList("));
+  const listBody = listFn.slice(0, listFn.indexOf("\n}\n"));
+  check("an empty list hides the box rather than showing an empty table",
+    /if \(!rows\.length\)[\s\S]{0,80}host\.hidden = true;/.test(listBody));
+  check("product names are escaped",
+    /esc\(row\.name\)/.test(listBody),
+    "a product name is user text and this builds HTML");
+  check("the heading says which date the list belongs to",
+    /which === "opening" \? held\.fromLabel : held\.toLabel/.test(listBody),
+    "opening and closing can differ, and an undated list belongs to neither");
+
+  check("the handler is delegated from the table",
+    /data-cogs-unpriced\]"\)/.test(src),
+    "the badges are rebuilt on every generate; per-badge listeners would leak");
+  for (const key of ["cogs.unpricedAtOpening", "cogs.unpricedColProduct", "cogs.unpricedHint"]) {
+    check(`${key} exists in both languages`,
+      (src.match(new RegExp(`"${key.replace(/\./g, "\\.")}":`, "g")) || []).length === 2);
   }
 }
 
