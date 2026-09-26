@@ -26,7 +26,7 @@
   font-weight: 400 700;
   font-style: normal;
   font-display: swap;
-  src: url("./fonts/inter-latin.woff2?v=20260926b") format("woff2");
+  src: url("./fonts/inter-latin.woff2?v=20260926c") format("woff2");
 }
 
 :root {
@@ -2740,3 +2740,43 @@ table.statement-figures td.danger { color: var(--red); }
 /* Today's takings at the till. */
 .pos-today-row { display: flex; justify-content: space-between; gap: var(--space-3); padding: var(--space-1) 0; }
 .pos-today-row + .pos-today-row { border-top: 1px solid var(--line); }
+
+/* What changed, per release. The version and its badge sit on one line so a
+   shop can see at a glance which block is the one they are about to get, and
+   the list below it reads as prose rather than as a settings table. */
+.whats-new-release + .whats-new-release {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.whats-new-release h3 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.whats-new-release h3 .muted {
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.whats-new-release ul {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.whats-new-release li {
+  line-height: 1.5;
+}
+
+#whatsNewContent {
+  max-height: 55vh;
+  overflow-y: auto;
+}

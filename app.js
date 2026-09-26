@@ -1543,6 +1543,19 @@ const DICTIONARY = {
     "offline.unsyncedMany": "{count} sales are saved on this device and have not reached the server yet. Keep this app installed until they sync.",
     "update.readyText": "A new version of the app is ready. Reload when you are not mid-sale.",
     "update.reloadButton": "Reload now",
+    "update.whatsNewLink": "See what has changed",
+    "update.whatsNewTitle": "What has changed",
+    "update.whatsNewClose": "Close",
+    "update.whatsNewLoading": "Loading what changed...",
+    "update.whatsNewUnavailable": "The list of changes could not be loaded. Nothing is wrong with your data, and reloading is still safe.",
+    "update.whatsNewNone": "No changes have been recorded for this version.",
+    "update.whatsNewIncoming": "Coming when you reload",
+    "update.whatsNewCurrent": "You are running this version",
+    "update.whatsNewEarlier": "Earlier",
+    "settings.aboutEyebrow": "This app",
+    "settings.versionLabel": "Version",
+    "settings.whatsNewButton": "See what has changed",
+    "settings.whatsNewIntro": "The changes in this version and the ones before it, in plain language.",
     "dashboard.vatSettings": "VAT",
     "vat.dialogTitle": "VAT registration",
     "vat.classStandard": "Standard rated", "vat.classZeroRated": "Zero rated", "vat.classExempt": "Exempt",
@@ -3142,6 +3155,19 @@ const DICTIONARY = {
     "offline.unsyncedMany": "Mauzo {count} yamehifadhiwa kwenye kifaa hiki na bado hayajafika kwenye seva. Usiondoe programu hii hadi yasawazishwe.",
     "update.readyText": "Toleo jipya la programu lipo tayari. Pakia upya wakati hauko katikati ya mauzo.",
     "update.reloadButton": "Pakia upya sasa",
+    "update.whatsNewLink": "Ona kilichobadilika",
+    "update.whatsNewTitle": "Kilichobadilika",
+    "update.whatsNewClose": "Funga",
+    "update.whatsNewLoading": "Inapakia kilichobadilika...",
+    "update.whatsNewUnavailable": "Orodha ya mabadiliko haikuweza kupakiwa. Hakuna tatizo na taarifa zako, na kupakia upya bado ni salama.",
+    "update.whatsNewNone": "Hakuna mabadiliko yaliyorekodiwa kwa toleo hili.",
+    "update.whatsNewIncoming": "Yanakuja ukipakia upya",
+    "update.whatsNewCurrent": "Unatumia toleo hili",
+    "update.whatsNewEarlier": "Ya awali",
+    "settings.aboutEyebrow": "Programu hii",
+    "settings.versionLabel": "Toleo",
+    "settings.whatsNewButton": "Ona kilichobadilika",
+    "settings.whatsNewIntro": "Mabadiliko ya toleo hili na yaliyotangulia, kwa lugha rahisi.",
     "dashboard.vatSettings": "VAT",
     "vat.dialogTitle": "Usajili wa VAT",
     "vat.classStandard": "Kiwango cha kawaida", "vat.classZeroRated": "Kiwango sifuri", "vat.classExempt": "Imesamehewa",
@@ -19845,6 +19871,11 @@ function updateAuthUi() {
   }
   const settingsEmail = qs("#settingsUserEmail");
   if (settingsEmail) settingsEmail.textContent = state.user?.email || "";
+  // The stamp the running bundle was loaded under. Worth showing plainly: when
+  // a shop reports something over the phone, this is the one fact that says
+  // which build they are actually looking at.
+  const settingsVersion = qs("#settingsVersion");
+  if (settingsVersion) settingsVersion.textContent = APP_VERSION;
   // Staff names come from the invitation they accepted and are the owner's
   // record, not theirs to edit here.
   const changeNameButton = qs("#changeOwnerNameButton");
@@ -21068,7 +21099,22 @@ function bindEvents() {
   window.addEventListener("online", refreshEmailVerification);
   qs("#overridePasswordSettingsButton")?.addEventListener("click", openOverridePasswordDialog);
   qs("#overridePasswordNudgeSetButton")?.addEventListener("click", openOverridePasswordDialog);
-  qs("#updateReloadButton")?.addEventListener("click", () => location.reload());
+  // ONE reload in the whole app, offered from two places and taken from
+  // neither. Somebody who has just read "coming when you reload" wants to act
+  // on it without hunting for the banner behind the dialog, but a second call
+  // site would be a second thing to audit -- and the rule this obeys is that
+  // a till is never refreshed out from under a cart. Shared
+  // rather than duplicated so tests/deployment-validation.test.mjs can still
+  // count the call sites and get one.
+  const reloadForUpdate = () => location.reload();
+  qs("#updateReloadButton")?.addEventListener("click", reloadForUpdate);
+  qs("#whatsNewReloadButton")?.addEventListener("click", reloadForUpdate);
+  // incoming: true -- the banner is up, so the notes that come back describe
+  // the build waiting to be reloaded into, not the one running.
+  qs("#updateWhatsNewButton")?.addEventListener("click", () => openWhatsNew({ incoming: true }));
+  qs("#settingsWhatsNewButton")?.addEventListener("click", () => openWhatsNew({ incoming: state.updateReady }));
+  qs("#whatsNewDialogClose")?.addEventListener("click", () => qs("#whatsNewDialog")?.close());
+  qs("#whatsNewDialogDismiss")?.addEventListener("click", () => qs("#whatsNewDialog")?.close());
   qs("#overridePasswordNudgeDismissButton")?.addEventListener("click", dismissOverridePasswordNudge);
   qs("#closeOverridePasswordDialog")?.addEventListener("click", () => qs("#overridePasswordDialog").close());
   qs("#cancelOverridePasswordDialog")?.addEventListener("click", () => qs("#overridePasswordDialog").close());
@@ -22201,6 +22247,84 @@ function watchForAppUpdate(registration) {
 function renderUpdateReadyBanner() {
   const banner = qs("#updateReadyBanner");
   if (banner) banner.hidden = !state.updateReady;
+}
+
+// ---------------------------------------------------------------------------
+// What changed, for a shop that has no app store to read it in.
+//
+// The notes are FETCHED, never bundled into the dictionary, and that is the
+// whole trick. When the update banner shows, this page is still running the
+// build it loaded this morning -- its dictionary cannot possibly contain the
+// notes for a version it has never seen. But sw.js calls skipWaiting() and
+// clients.claim(), so the NEW worker is already answering fetches by then and
+// has pre-cached the new release-notes.json under the new CACHE_NAME. A fetch
+// for the stable, unversioned URL therefore returns the INCOMING version's
+// notes, which is exactly what somebody deciding whether to reload wants.
+//
+// Offline it still works: the file is in APP_SHELL, so the worker installed it
+// alongside the rest of the build.
+let releaseNotesCache = null;
+
+async function loadReleaseNotes() {
+  if (releaseNotesCache) return releaseNotesCache;
+  const response = await fetch("./release-notes.json", { credentials: "omit" });
+  if (!response.ok) throw new Error(`release notes ${response.status}`);
+  const data = await response.json();
+  if (!Array.isArray(data?.releases)) throw new Error("release notes malformed");
+  releaseNotesCache = data.releases;
+  return releaseNotesCache;
+}
+
+// One release, in the language on screen. Falls back to English rather than
+// showing nothing: a Swahili shop reading an English line still learns what
+// changed, and an empty panel teaches people the feature is broken.
+function releaseNoteLines(release) {
+  const lines = release?.[state.lang] || release?.en || [];
+  return Array.isArray(lines) ? lines.filter((line) => typeof line === "string" && line.trim()) : [];
+}
+
+function renderWhatsNew(releases, { incoming }) {
+  const host = qs("#whatsNewContent");
+  if (!host) return;
+  if (!releases.length) {
+    host.innerHTML = `<p class="muted">${esc(t("update.whatsNewNone"))}</p>`;
+    return;
+  }
+  // The newest entry is the one being offered or the one running, depending on
+  // whether a reload is pending. Everything below it is history, and is shown
+  // so a shop that skipped several releases is not told only about the last.
+  host.innerHTML = releases.slice(0, 6).map((release, index) => {
+    const lines = releaseNoteLines(release);
+    if (!lines.length) return "";
+    const badge = index === 0
+      ? (incoming ? t("update.whatsNewIncoming") : t("update.whatsNewCurrent"))
+      : t("update.whatsNewEarlier");
+    return `<section class="whats-new-release">
+      <h3>${esc(release.version || "")} <span class="muted">${esc(badge)}</span></h3>
+      <ul>${lines.map((line) => `<li>${esc(line)}</li>`).join("")}</ul>
+    </section>`;
+  }).join("");
+}
+
+async function openWhatsNew({ incoming }) {
+  const dialog = qs("#whatsNewDialog");
+  const host = qs("#whatsNewContent");
+  if (!dialog || !host) return;
+  // Opened first, with a loading line. On a bad link the fetch is slow and a
+  // dialog that appears only afterwards reads as a dead button.
+  host.innerHTML = `<p class="muted">${esc(t("update.whatsNewLoading"))}</p>`;
+  const reload = qs("#whatsNewReloadButton");
+  if (reload) reload.hidden = !incoming;
+  if (!dialog.open) dialog.showModal();
+  try {
+    const releases = await loadReleaseNotes();
+    if (dialog.open) renderWhatsNew(releases, { incoming });
+  } catch (error) {
+    // Said plainly, and with the reassurance that matters: a shop that cannot
+    // read the notes must not conclude the update itself is unsafe.
+    console.warn("[releaseNotes]", error);
+    if (dialog.open) host.innerHTML = `<p class="muted">${esc(t("update.whatsNewUnavailable"))}</p>`;
+  }
 }
 
 if ("serviceWorker" in navigator) {

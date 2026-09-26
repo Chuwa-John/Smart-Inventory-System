@@ -1,0 +1,77 @@
+{
+  "_comment": "What changed in each release, in the words a shopkeeper would use. Unversioned on purpose: the running app fetches this by a stable URL to show what the INCOMING version brings, so a ?v= here would be a URL the old build cannot know. Newest first. tests/release-notes.test.mjs fails the build if the top entry does not match the stamp in app.html.",
+  "releases": [
+    {
+      "version": "20260926c",
+      "date": "2026-09-26",
+      "en": [
+        "When a new version is ready, you can now tap that message to see exactly what changed before you reload.",
+        "What changed in each update is also kept in Settings, so you can read it whenever you like."
+      ],
+      "sw": [
+        "Toleo jipya likiwa tayari, sasa unaweza kugusa ujumbe ule ili uone hasa kilichobadilika kabla ya kupakia upya.",
+        "Kilichobadilika katika kila sasisho pia kinahifadhiwa kwenye Mipangilio, ili uweze kusoma wakati wowote."
+      ]
+    },
+    {
+      "version": "20260926b",
+      "date": "2026-09-26",
+      "en": [
+        "Your stock value now updates the moment you record a delivery. Before this it could keep pricing the new quantity at the old buying price.",
+        "The Stock Valuation report no longer claims your products have no buying price when they do.",
+        "A customer history now shows what they were sold on credit at the till, not only invoices and payments, so the balance they owe can be followed.",
+        "The Cost of Goods Sold report now says how much stock left on invoices, so the difference against the profit on your dashboard is not mistaken for theft.",
+        "The Profit Report now says which branch it is showing."
+      ],
+      "sw": [
+        "Thamani ya hisa yako sasa inasasishwa mara tu unaporekodi bidhaa zilizowasili. Kabla ya hapa iliweza kuendelea kupanga kiasi kipya kwa bei ya zamani ya ununuzi.",
+        "Ripoti ya Thamani ya Hisa haisemi tena kwamba bidhaa zako hazina bei ya ununuzi wakati zinayo.",
+        "Historia ya mteja sasa inaonyesha alichouziwa kwa mkopo kaunta, si ankara na malipo pekee, ili deni analodaiwa liweze kufuatiliwa.",
+        "Ripoti ya Gharama ya Bidhaa Zilizouzwa sasa inasema hisa kiasi gani ilitoka kwa ankara, ili tofauti na faida ya dashibodi yako isichukuliwe kama wizi.",
+        "Ripoti ya Faida sasa inasema tawi gani inaloonyesha."
+      ]
+    },
+    {
+      "version": "20260926a",
+      "date": "2026-09-26",
+      "en": [
+        "The Cost of Goods Sold report now explains that supplier discounts are already inside what you paid, instead of leaving a blank figure that looked like missing data."
+      ],
+      "sw": [
+        "Ripoti ya Gharama ya Bidhaa Zilizouzwa sasa inaeleza kwamba punguzo la muuzaji tayari limo ndani ya ulicholipa, badala ya kuacha nafasi tupu iliyoonekana kama taarifa zilizokosekana."
+      ]
+    },
+    {
+      "version": "20260925a",
+      "date": "2026-09-25",
+      "en": [
+        "The Cost of Goods Sold report now names the products that have no buying price, so you can go and fill them in.",
+        "It will not show a cost figure that cannot be true. If the sums come out impossible, it says so instead."
+      ],
+      "sw": [
+        "Ripoti ya Gharama ya Bidhaa Zilizouzwa sasa inataja bidhaa zisizo na bei ya ununuzi, ili uende ukazijaze.",
+        "Haitaonyesha takwimu ya gharama isiyoweza kuwa kweli. Hesabu zikitoka zisizowezekana, inasema hivyo badala yake."
+      ]
+    },
+    {
+      "version": "20260923c",
+      "date": "2026-09-23",
+      "en": [
+        "The Cost of Goods Sold report now shows a partial figure clearly marked incomplete, rather than showing you nothing at all."
+      ],
+      "sw": [
+        "Ripoti ya Gharama ya Bidhaa Zilizouzwa sasa inaonyesha takwimu ya sehemu iliyowekewa alama wazi kuwa haijakamilika, badala ya kutokuonyesha chochote."
+      ]
+    },
+    {
+      "version": "20260923b",
+      "date": "2026-09-23",
+      "en": [
+        "New report: Cost of Goods Sold. It works out what the goods you sold over a period actually cost you, from your opening stock, what you bought, and your closing stock."
+      ],
+      "sw": [
+        "Ripoti mpya: Gharama ya Bidhaa Zilizouzwa. Inahesabu bidhaa ulizouza katika kipindi zilikugharimu kiasi gani hasa, kutokana na hisa ya kuanzia, ulichonunua, na hisa ya mwisho."
+      ]
+    }
+  ]
+}

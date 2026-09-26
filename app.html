@@ -32,8 +32,8 @@
          before the browser discovers a font inside it, and on a 2G link that
          wait is visible as a flash of the fallback face. crossorigin is
          required even same-origin -- fonts are fetched in CORS mode. -->
-    <link rel="preload" href="./fonts/inter-latin.woff2?v=20260926b" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260926b" />
+    <link rel="preload" href="./fonts/inter-latin.woff2?v=20260926c" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="./styles.css?v=20260926c" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#f6f8fa" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -53,7 +53,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260926b"></script>
+    <script type="module" src="./boot.js?v=20260926c"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -220,6 +220,13 @@
              one being rolled back. -->
         <div class="verify-banner" id="updateReadyBanner" hidden role="status">
           <span data-i18n="update.readyText">A new version of the app is ready. Reload when you are not mid-sale.</span>
+          <!-- The message itself is the way in. sw.js calls skipWaiting() and
+               clients.claim(), so by the time this banner shows, the NEW worker
+               is already answering fetches -- which is what makes it possible
+               to show what the incoming version brings BEFORE reloading into
+               it. A link rather than a solid button so it does not compete with
+               Reload, which is still the action being offered. -->
+          <button class="link-button" id="updateWhatsNewButton" type="button" data-i18n="update.whatsNewLink">See what has changed</button>
           <button class="ghost-button compact" id="updateReloadButton" type="button" data-i18n="update.reloadButton">Reload now</button>
         </div>
 
@@ -1614,6 +1621,23 @@
             </div>
           </article>
 
+          <!-- Reachable after the banner is gone. Whoever hit Reload without
+               looking, and whoever was not at the till when it appeared, can
+               still read what the shop received. -->
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow" data-i18n="settings.aboutEyebrow">This app</p>
+                <h2 data-i18n="update.whatsNewTitle">What has changed</h2>
+              </div>
+            </div>
+            <p class="muted" data-i18n="settings.whatsNewIntro">The changes in this version and the ones before it, in plain language.</p>
+            <p class="muted"><span data-i18n="settings.versionLabel">Version</span> <strong id="settingsVersion"></strong></p>
+            <div class="button-row">
+              <button class="ghost-button compact" id="settingsWhatsNewButton" type="button" data-i18n="settings.whatsNewButton">See what has changed</button>
+            </div>
+          </article>
+
           <article class="panel" id="settingsBranchPanel">
             <div class="panel-head">
               <div>
@@ -1989,6 +2013,22 @@
           <button class="primary-button" type="submit" id="promptDialogAccept" data-i18n="prompt.accept">OK</button>
         </div>
       </form>
+    </dialog>
+
+    <!-- What changed, in the words a shop would use. Filled from
+         release-notes.json rather than from the i18n dictionary, because the
+         page that opens this is running the OLD build: its dictionary cannot
+         contain the notes for a version it has never seen. -->
+    <dialog id="whatsNewDialog">
+      <div class="dialog-head">
+        <h2 data-i18n="update.whatsNewTitle">What has changed</h2>
+        <button class="icon-button" type="button" id="whatsNewDialogClose" aria-label="Close">&times;</button>
+      </div>
+      <div id="whatsNewContent"></div>
+      <div class="button-row end">
+        <button class="ghost-button" type="button" id="whatsNewDialogDismiss" data-i18n="update.whatsNewClose">Close</button>
+        <button class="primary-button" type="button" id="whatsNewReloadButton" hidden data-i18n="update.reloadButton">Reload now</button>
+      </div>
     </dialog>
 
     <dialog id="confirmDialog">
@@ -2865,6 +2905,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260926b"></script>
+    <script type="module" src="./app.js?v=20260926c"></script>
   </body>
 </html>

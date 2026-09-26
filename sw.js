@@ -3,33 +3,39 @@
 // instantly on repeat visits. This does NOT cache Firestore/Firebase
 // traffic or any cross-origin requests \u2014 those always go to the network.
 // Bump this on every deploy so old clients pick up new files.
-const CACHE_NAME = "savia-shell-v177";
+const CACHE_NAME = "savia-shell-v178";
 
 const APP_SHELL = [
   "./",
   "./index.html",
   "./app.html",
-  "./styles.css?v=20260926b",
+  "./styles.css?v=20260926c",
   // The font, or the first offline load has none and every shop reads the
   // fallback face -- which is the state this app was in before it shipped one.
-  "./fonts/inter-latin.woff2?v=20260926b",
+  "./fonts/inter-latin.woff2?v=20260926c",
   // Must carry the same ?v= as app.html requests: a cache key includes the
   // query string, so a bare "./app.js" here is a second, unread entry and the
   // 406 KB file gets fetched twice per install. tests/asset-versions.test.mjs
   // fails if this drifts from app.html again.
-  "./app.js?v=20260926b",
-  "./boot.js?v=20260926b",
+  "./app.js?v=20260926c",
+  "./boot.js?v=20260926c",
   // The landing page's language switch. Versioned and pre-cached for the
   // same reason the bundle is: without an entry here it is fetched from the
   // network on every visit and is simply absent offline, which would leave
   // the page stuck in English behind a dead button.
-  "./landing.js?v=20260926b",
+  "./landing.js?v=20260926c",
   // Unversioned by design -- these are pointers, like app.html and sw.js, not
   // versioned payload. Pre-cached so the app can still boot offline, and
   // served network-first below so a rotated Firebase project or proxy URL
   // reaches a device that already has them.
   "./firebase-config.js",
   "./ai-config.js",
+  // What changed in this release, read by the update banner. Unversioned for
+  // the same reason the two configs above are, and for one more: the page that
+  // reads it is running the OLD build and cannot know the new stamp, so the URL
+  // has to be stable across releases. Pre-cached so a shop with no connection
+  // can still see what it just received.
+  "./release-notes.json",
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
@@ -90,7 +96,8 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Configuration is network-first, unlike everything else here.
+  // Configuration and the release notes are network-first, unlike everything
+  // else here.
   //
   // firebase-config.js and ai-config.js decide which Firebase project the app
   // talks to and where the AI proxy lives. They carry no ?v=, so cache-first
@@ -101,7 +108,7 @@ self.addEventListener("fetch", (event) => {
   // Cache is kept as the OFFLINE fallback, not as the preferred copy: without
   // it the app cannot boot with no connection, which would take the offline
   // till down with it.
-  if (/\/(firebase-config|ai-config)\.js$/.test(new URL(request.url).pathname)) {
+  if (/\/(firebase-config|ai-config)\.js$|\/release-notes\.json$/.test(new URL(request.url).pathname)) {
     event.respondWith(
       // `cache: "reload"` is what makes this a fix rather than a fix for future
       // installs only. Every device that loaded these files while hosting was
