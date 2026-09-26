@@ -475,7 +475,7 @@ const DICTIONARY = {
     "cogs.rowClosing": "Less: Closing Stock",
     "cogs.rowCogs": "COGS",
     "cogs.incompleteMark": "incomplete, {count} unpriced",
-    "cogs.notCaptured": "not captured",
+    "cogs.notCaptured": "already in what you paid",
     "cogs.cogsUnstatable": "cannot be stated",
     "cogs.warnNegativeIncomplete": "COGS is not shown because the figure came out negative, which cannot be true. The closing stock could be valued and the opening stock could not, so the subtraction is meaningless. Price the products listed above and generate again.",
     "cogs.warnNegativeComplete": "COGS came out negative even though every product is priced. That means stock rose by more than was bought, which usually points to a stock adjustment made without a matching purchase.",
@@ -490,7 +490,7 @@ const DICTIONARY = {
     "cogs.ledgerFailed": "Could not read the stock history, so this period cannot be worked out.",
     "cogs.warnLedgerShort": "The stock history loaded only reaches back to {date}, so the opening stock is not reliable for a period starting before that.",
     "cogs.warnUncosted": "{count} product(s) have no recorded buying price at these dates, so they are left out of the stock values.",
-    "cogs.warnNoDiscounts": "Purchase discounts are not recorded anywhere yet, so that line is zero because nothing asks for it.",
+    "cogs.warnNoDiscounts": "Purchase discounts are not deducted separately because this shop records what it actually paid for stock, which is already less any discount the supplier gave. Taking it off again here would understate what the goods cost.",
     "cogs.warnShrinkage": "This method treats anything missing from the shelf as sold, so theft, breakage and miscounts are inside this figure rather than shown separately.",
     "reports.hint.salesPayments": "What came in, and how it was paid",
     "reports.hint.customerCredit": "Who owes you, and how much",
@@ -2068,7 +2068,7 @@ const DICTIONARY = {
     "cogs.rowClosing": "Toa: Hisa ya Mwisho",
     "cogs.rowCogs": "COGS",
     "cogs.incompleteMark": "haijakamilika, {count} hazina bei",
-    "cogs.notCaptured": "hairekodiwi",
+    "cogs.notCaptured": "imo ndani ya ulicholipa",
     "cogs.cogsUnstatable": "haiwezi kutolewa",
     "cogs.warnNegativeIncomplete": "COGS haionyeshwi kwa sababu takwimu imetoka hasi, jambo lisilowezekana. Hisa ya mwisho iliweza kupimwa lakini hisa ya kuanzia haikuweza, hivyo utoaji hauna maana. Weka bei za bidhaa zilizoorodheshwa hapo juu kisha tengeneza tena.",
     "cogs.warnNegativeComplete": "COGS imetoka hasi ingawa kila bidhaa ina bei. Hii ina maana hisa iliongezeka zaidi ya ilivyonunuliwa, ambayo mara nyingi inaashiria marekebisho ya hisa yaliyofanyika bila manunuzi yanayolingana.",
@@ -2083,7 +2083,7 @@ const DICTIONARY = {
     "cogs.ledgerFailed": "Imeshindwa kusoma historia ya hisa, hivyo kipindi hiki hakiwezi kuhesabiwa.",
     "cogs.warnLedgerShort": "Historia ya hisa iliyopakiwa inafika hadi {date} pekee, hivyo hisa ya kuanzia si ya kuaminika kwa kipindi kinachoanza kabla ya hapo.",
     "cogs.warnUncosted": "Bidhaa {count} hazina bei ya ununuzi iliyorekodiwa katika tarehe hizi, hivyo hazikujumuishwa katika thamani ya hisa.",
-    "cogs.warnNoDiscounts": "Punguzo la manunuzi halirekodiwi popote bado, hivyo mstari huo ni sifuri kwa sababu hakuna kinachouliza.",
+    "cogs.warnNoDiscounts": "Punguzo la manunuzi halitolewi peke yake kwa sababu duka hili linarekodi kiasi halisi kilicholipwa kwa hisa, ambacho tayari kimepunguzwa punguzo lolote alilotoa muuzaji. Kulitoa tena hapa kutapunguza gharama halisi ya bidhaa.",
     "cogs.warnShrinkage": "Njia hii inahesabu chochote kinachokosekana kwenye rafu kama kilichouzwa, hivyo wizi, uharibifu na makosa ya kuhesabu yamo ndani ya takwimu hii badala ya kuonyeshwa peke yake.",
     "reports.hint.salesPayments": "Kilichoingia, na kililipwaje",
     "reports.hint.customerCredit": "Nani anakudai, na kiasi gani",
@@ -17592,18 +17592,27 @@ function computePeriodCogs({ fromMs, toMs, storeId, products, movements, costInd
     returns += safeNumber(entry.amount);
   }
 
-  // The formula is implemented in full; the CAPTURE is what is missing.
+  // These read zero in live data, and capture is NOT what is missing.
   //
-  // Nothing in the app currently asks for a supplier discount or for an
-  // acquisition cost outside the landed-cost set, so in live data both of these
-  // read zero today. They are summed from the purchase rather than hardcoded so
-  // that the day a field is added the engine already honours it, and so the
-  // spec's own worked example -- which includes a 200,000 discount -- can be
-  // reproduced exactly instead of being approximated.
+  // The spec's formula deducts purchase discounts because it assumes purchases
+  // are recorded at the supplier's GROSS invoice value. This app records the
+  // opposite: totalPaid is "Total paid for this delivery", the cash that left
+  // the till, already less any discount the supplier gave -- and unitCost is
+  // totalPaid/quantity, so stock is valued from the net figure too. Deducting a
+  // discount again here would count it twice and UNDERSTATE what the goods
+  // cost.
   //
-  // Zero from absence and zero from a shop that got no discount are the same
-  // number here. The caller is told which, through discountsAreCaptured below,
-  // because "no discounts" and "we never asked" are different claims.
+  // Considered on 2026-09-26 and deliberately not built. Recording gross would
+  // change what totalPaid has meant on every purchase the eight live shops have
+  // ever written, and would inflate every stock valuation through unitCost. Net
+  // and gross are both sound conventions; mixing them is not.
+  //
+  // Summed from the purchase rather than hardcoded anyway, for two reasons: the
+  // spec's own worked example carries a 200,000 discount and reproduces exactly
+  // in the tests, and if the convention is ever revisited the engine already
+  // honours the field. discountsAreCaptured reports which kind of zero this is,
+  // so the screen can explain rather than leaving a bare 0.00 to look like a
+  // gap in the data.
   let discounts = 0;
   let otherDirect = 0;
   let discountsAreCaptured = false;
