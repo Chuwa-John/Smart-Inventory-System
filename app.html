@@ -32,8 +32,8 @@
          before the browser discovers a font inside it, and on a 2G link that
          wait is visible as a flash of the fallback face. crossorigin is
          required even same-origin -- fonts are fetched in CORS mode. -->
-    <link rel="preload" href="./fonts/inter-latin.woff2?v=20260926a" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260926a" />
+    <link rel="preload" href="./fonts/inter-latin.woff2?v=20260926b" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="./styles.css?v=20260926b" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#f6f8fa" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -53,7 +53,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260926a"></script>
+    <script type="module" src="./boot.js?v=20260926b"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -460,6 +460,12 @@
             <div>
               <p class="eyebrow" data-i18n="profit.eyebrow">What the shop kept</p>
               <h1 data-i18n="profit.title">Profit Report</h1>
+              <!-- This screen is scoped by the store switcher; the owner
+                   control tiles on the dashboard never are, and say "All
+                   stores" on their face. Without this line the two show
+                   different revenue for the same month with nothing on
+                   either one explaining which branch is which. -->
+              <p class="muted control-scope" id="profitScope"></p>
             </div>
             <label style="flex-direction:row;align-items:center;gap:6px;color:inherit">
               <span data-i18n="profit.monthLabel">Month</span>
@@ -2859,6 +2865,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260926a"></script>
+    <script type="module" src="./app.js?v=20260926b"></script>
   </body>
 </html>

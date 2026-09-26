@@ -491,7 +491,9 @@ const DICTIONARY = {
     "cogs.warnLedgerShort": "The stock history loaded only reaches back to {date}, so the opening stock is not reliable for a period starting before that.",
     "cogs.warnUncosted": "{count} product(s) have no recorded buying price at these dates, so they are left out of the stock values.",
     "cogs.warnNoDiscounts": "Purchase discounts are not deducted separately because this shop records what it actually paid for stock, which is already less any discount the supplier gave. Taking it off again here would understate what the goods cost.",
-    "cogs.warnShrinkage": "This method treats anything missing from the shelf as sold, so theft, breakage and miscounts are inside this figure rather than shown separately.",
+    "cogs.warnShrinkage": "This method treats anything missing from the shelf as sold, so theft, breakage and miscounts are inside this figure rather than shown separately. Do not read the difference against the dashboard margin as loss on its own.",
+    "cogs.warnInvoiced": "{count} invoice(s) issued in this period took {value} of goods off the shelf. Those goods are inside this figure but are not in the dashboard margin, because an issued invoice records the debt rather than a sale.",
+    "cogs.warnInvoicedUncosted": "{count} invoice line(s) had no recorded buying price when they were issued, so that stock is missing from the invoiced total above.",
     "reports.hint.salesPayments": "What came in, and how it was paid",
     "reports.hint.customerCredit": "Who owes you, and how much",
     "reports.hint.expensesByCategory": "What the shop spent, grouped by kind",
@@ -1756,9 +1758,13 @@ const DICTIONARY = {
     "customersScreen.historyLoading": "Loading...",
     "customersScreen.historyOwed": "Owed now",
     "customersScreen.historyInvoicesTitle": "Invoices",
+    "customersScreen.historyCreditSalesTitle": "Sold on credit at the till",
     "customersScreen.historyPaymentsTitle": "Payments",
     "customersScreen.historyNoInvoices": "No invoices raised for this customer yet.",
+    "customersScreen.historyNoCreditSales": "Nothing sold to this customer on credit at the till.",
     "customersScreen.historyNoPayments": "No payments recorded yet.",
+    "customersScreen.historyColOrder": "Order",
+    "customersScreen.historyColBalance": "Still owed",
     "customersScreen.historyColNumber": "Number",
     "customersScreen.historyColDate": "Date",
     "customersScreen.historyColAmount": "Amount",
@@ -2084,7 +2090,9 @@ const DICTIONARY = {
     "cogs.warnLedgerShort": "Historia ya hisa iliyopakiwa inafika hadi {date} pekee, hivyo hisa ya kuanzia si ya kuaminika kwa kipindi kinachoanza kabla ya hapo.",
     "cogs.warnUncosted": "Bidhaa {count} hazina bei ya ununuzi iliyorekodiwa katika tarehe hizi, hivyo hazikujumuishwa katika thamani ya hisa.",
     "cogs.warnNoDiscounts": "Punguzo la manunuzi halitolewi peke yake kwa sababu duka hili linarekodi kiasi halisi kilicholipwa kwa hisa, ambacho tayari kimepunguzwa punguzo lolote alilotoa muuzaji. Kulitoa tena hapa kutapunguza gharama halisi ya bidhaa.",
-    "cogs.warnShrinkage": "Njia hii inahesabu chochote kinachokosekana kwenye rafu kama kilichouzwa, hivyo wizi, uharibifu na makosa ya kuhesabu yamo ndani ya takwimu hii badala ya kuonyeshwa peke yake.",
+    "cogs.warnShrinkage": "Njia hii inahesabu chochote kinachokosekana kwenye rafu kama kilichouzwa, hivyo wizi, uharibifu na makosa ya kuhesabu yamo ndani ya takwimu hii badala ya kuonyeshwa peke yake. Usisome tofauti kati ya hii na faida ya dashibodi kama hasara pekee.",
+    "cogs.warnInvoiced": "Ankara {count} zilizotolewa katika kipindi hiki zilitoa bidhaa za {value} rafuni. Bidhaa hizo zimo ndani ya takwimu hii lakini hazimo kwenye faida ya dashibodi, kwa sababu ankara iliyotolewa inarekodi deni badala ya mauzo.",
+    "cogs.warnInvoicedUncosted": "Mistari {count} ya ankara haikuwa na bei ya ununuzi iliyorekodiwa wakati ilipotolewa, hivyo hisa hiyo haipo kwenye jumla ya ankara hapo juu.",
     "reports.hint.salesPayments": "Kilichoingia, na kililipwaje",
     "reports.hint.customerCredit": "Nani anakudai, na kiasi gani",
     "reports.hint.expensesByCategory": "Duka lilitumia nini, kwa makundi",
@@ -3349,9 +3357,13 @@ const DICTIONARY = {
     "customersScreen.historyLoading": "Inapakia...",
     "customersScreen.historyOwed": "Anadaiwa sasa",
     "customersScreen.historyInvoicesTitle": "Ankara",
+    "customersScreen.historyCreditSalesTitle": "Zilizouzwa kwa mkopo kaunta",
     "customersScreen.historyPaymentsTitle": "Malipo",
     "customersScreen.historyNoInvoices": "Bado hakuna ankara iliyotengenezwa kwa mteja huyu.",
+    "customersScreen.historyNoCreditSales": "Hakuna kilichouzwa kwa mteja huyu kwa mkopo kaunta.",
     "customersScreen.historyNoPayments": "Bado hakuna malipo yaliyorekodiwa.",
+    "customersScreen.historyColOrder": "Oda",
+    "customersScreen.historyColBalance": "Bado anadaiwa",
     "customersScreen.historyColNumber": "Namba",
     "customersScreen.historyColDate": "Tarehe",
     "customersScreen.historyColAmount": "Kiasi",
@@ -7370,6 +7382,32 @@ function buildCustomerHistoryHtml(customer, payments, invoices) {
         </tr>`).join("")
       : `<tr><td colspan="3" class="empty-state">${t("customersScreen.historyNoPayments")}</td></tr>`);
 
+  // Sold on credit at the till. Without this the dialog shows payments against
+  // a balance with nothing that explains the CHARGE: a till credit sale raises
+  // balanceOwed but writes no invoice, so a customer could show a 20,000
+  // payment against a 17,500 balance and no line saying where the 37,500 came
+  // from. Read from local state rather than fetched -- the sales listener is
+  // already subscribed, and a where(customerId) query here would need a
+  // composite index that only breaks for staff.
+  const creditSales = (state.sales || [])
+    .filter((sale) => sale.paymentMethod === "credit"
+      && sale.customerId === customer.id
+      && !sale.voided)
+    .sort((a, b) => (saleTimestamp(b)?.getTime() || 0) - (saleTimestamp(a)?.getTime() || 0))
+    .slice(0, ACCOUNTS_HISTORY_LIMIT);
+
+  const creditSaleRows = creditSales.length
+    ? creditSales.map((sale) => {
+        const at = saleTimestamp(sale);
+        return `<tr>
+          <td>${at ? esc(at.toLocaleDateString()) : "-"}</td>
+          <td>${esc(sale.orderNumber || "-")}</td>
+          <td>${money(sale.total)}</td>
+          <td>${money(sale.balanceDue)}</td>
+        </tr>`;
+      }).join("")
+    : `<tr><td colspan="4" class="empty-state">${t("customersScreen.historyNoCreditSales")}</td></tr>`;
+
   const invoiceRows = invoices === null
     ? `<tr><td colspan="4" class="empty-state">${t("customersScreen.historyLoading")}</td></tr>`
     : (invoices.length
@@ -7407,6 +7445,18 @@ function buildCustomerHistoryHtml(customer, payments, invoices) {
           <th>${t("customersScreen.historyColStatus")}</th>
         </tr></thead>
         <tbody>${invoiceRows}</tbody>
+      </table>
+    </div>
+    <h3>${t("customersScreen.historyCreditSalesTitle")}</h3>
+    <div class="table-panel" style="box-shadow:none;border:none">
+      <table>
+        <thead><tr>
+          <th>${t("customersScreen.historyColDate")}</th>
+          <th>${t("customersScreen.historyColOrder")}</th>
+          <th>${t("customersScreen.historyColAmount")}</th>
+          <th>${t("customersScreen.historyColBalance")}</th>
+        </tr></thead>
+        <tbody>${creditSaleRows}</tbody>
       </table>
     </div>
     <h3>${t("customersScreen.historyPaymentsTitle")}</h3>
@@ -9678,6 +9728,14 @@ function openReport(key) {
   if (!panel || panel.dataset.reportHiddenByRole === "1") return;
   state.selectedReport = key;
   applyReportSelection();
+  // Selecting a report is a state change like any other, and one report fetches
+  // on demand: renderCostReports() is the only caller of ensureProductCosts()
+  // for the Stock Valuation screen, and it runs inside renderAll(). Without a
+  // render here nothing ever asked for the cost map, so that screen sat on
+  // "6 products have no recorded cost" -- a claim about the shop, not a
+  // loading state -- until an unrelated snapshot happened to repaint it.
+  // The fetch's own scheduleRenderAll() then fills in the figures.
+  scheduleRenderAll();
   qs("#reports")?.scrollIntoView({ block: "start" });
 }
 
@@ -10709,10 +10767,15 @@ async function receiveDelivery(input = {}) {
     return { ok: false, error: "transactionFailed", errorIndex: -1, cause: error };
   }
 
-  return { ok: true, error: "", errorIndex: -1, deliveryId: deliveryRef.id };
   // A delivery rewrites the weighted average for every line it carries, so the
-  // fetched cost map is stale the moment it commits.
+  // fetched cost map is stale the moment it commits. BEFORE the return, not
+  // after it: sitting below the return this never ran, and the stock value
+  // tile then multiplied the NEW quantity by the OLD unit cost. Measured on
+  // 2026-09-26 -- a 100-unit delivery at a dearer price reported 25,351,450
+  // where the shelf was worth 25,391,450, and the Stock Valuation report was
+  // wrong the same way, until some unrelated action happened to drop the cache.
   invalidateProductCosts();
+  return { ok: true, error: "", errorIndex: -1, deliveryId: deliveryRef.id };
 }
 
 async function awaitDeliveryTransaction(attempt) {
@@ -12683,7 +12746,8 @@ async function generateCogsReport() {
     movements,
     costIndex: buildCostIndex(state.productCostHistory),
     purchases: state.purchases,
-    purchaseReturns: state.purchaseReturns
+    purchaseReturns: state.purchaseReturns,
+    invoices: state.invoices
   });
 
   // The spec's own table, in its order. Subtractions are shown in brackets
@@ -12804,6 +12868,18 @@ async function generateCogsReport() {
     }));
   }
   if (!result.discountsAreCaptured) warnings.push(t("cogs.warnNoDiscounts"));
+  // Before the shrinkage line, because it CHANGES what that line means: an
+  // owner comparing this figure with the dashboard margin is otherwise told
+  // the whole difference is theft and breakage when part of it was invoiced.
+  if (result.invoicedCount > 0) {
+    warnings.push(t("cogs.warnInvoiced", {
+      count: String(result.invoicedCount),
+      value: money(result.invoicedCost)
+    }));
+    if (result.invoicedUncosted > 0) {
+      warnings.push(t("cogs.warnInvoicedUncosted", { count: String(result.invoicedUncosted) }));
+    }
+  }
   // Said every time, not only when something is wrong: this method treats
   // anything missing from the shelf as sold, and whoever reads the figure
   // should know that before they file it.
@@ -12985,6 +13061,19 @@ function renderProfit() {
   const scopedSales = state.currentStoreId === "all"
     ? state.sales
     : (state.sales || []).filter((sale) => saleStoreId(sale) === state.currentStoreId);
+
+  // Say which branch this is. renderAdminControl() never scopes its tiles and
+  // its panel is captioned "All stores"; this screen DOES scope, so the same
+  // month legitimately reads differently on the two screens. Unlabelled that
+  // looks like one of them is wrong -- observed 2026-09-26, 829,500 here
+  // against 8,329,500 on the dashboard, the difference being one branch.
+  const profitScope = qs("#profitScope");
+  if (profitScope) {
+    profitScope.textContent = state.currentStoreId === "all"
+      ? t("staff.allStoresLabel")
+      : (state.stores.find((store) => store.id === state.currentStoreId)?.name
+         || t("storeSwitcher.fallbackName"));
+  }
 
   const p = summariseProfit({
     sales: scopedSales,
@@ -17564,9 +17653,44 @@ function movementTimeMs(movement) {
   return parsed && !Number.isNaN(parsed.getTime()) ? parsed.getTime() : null;
 }
 
-function computePeriodCogs({ fromMs, toMs, storeId, products, movements, costIndex, purchases, purchaseReturns }) {
+function computePeriodCogs({ fromMs, toMs, storeId, products, movements, costIndex, purchases, purchaseReturns, invoices }) {
   const scoped = storeId && storeId !== "all";
   const inWindow = (at) => at !== null && at >= fromMs && at <= toMs;
+
+  // Goods that left on an INVOICE rather than a sale.
+  //
+  // issueInvoice() deliberately writes no sale document for a fresh invoice
+  // ("the same goods must never leave twice", DESIGN-invoicing.md 4). It moves
+  // the stock and raises the debt directly. So invoiced goods are INSIDE this
+  // periodic figure -- the shelf is short by exactly them -- and OUTSIDE
+  // summariseCostOfGoods(), which prices sale documents that do not exist.
+  //
+  // Measured 2026-09-26: one 36,000 invoice made the two methods differ by
+  // 31,250 when only 6,250 had actually been lost. The gap between them is
+  // documented as shrinkage, and without this it silently is not.
+  let invoicedCost = 0;
+  let invoicedCount = 0;
+  let invoicedUncosted = 0;
+  for (const invoice of invoices || []) {
+    if (scoped && invoice.storeId !== storeId) continue;
+    // Drafts moved nothing and voids put it back; both are already reflected
+    // in the closing stock, so neither belongs here.
+    if (invoice.status !== "issued") continue;
+    // An invoice raised against a sale that already happened has a sale
+    // document behind it, so it is in BOTH figures and is not part of the gap.
+    if (invoice.saleId) continue;
+    const at = purchasedAt(invoice)?.getTime() ?? null;
+    if (!inWindow(at)) continue;
+    invoicedCount += 1;
+    for (const line of invoice.lines || []) {
+      if (!line.productId) continue;
+      // Priced at the cost in force when it was ISSUED, the moment the goods
+      // left -- the same rule the sale path uses, so the two are comparable.
+      const unit = costInForceAt(costIndex, line.productId, at);
+      if (unit === null) { invoicedUncosted += 1; continue; }
+      invoicedCost += safeNumber(unit) * safeNumber(line.quantity);
+    }
+  }
 
   // Purchases are split in the data exactly as the spec splits them on the
   // page: goodsCost is what the supplier charged, landedCost is freight, duty,
@@ -17663,6 +17787,9 @@ function computePeriodCogs({ fromMs, toMs, storeId, products, movements, costInd
     costedAtClosing: closing.costedProducts,
     ledgerReachesOpening,
     discountsAreCaptured,
+    invoicedCost,
+    invoicedCount,
+    invoicedUncosted,
     oldestMovementMs,
     complete: ledgerReachesOpening && opening.uncostedProducts === 0 && closing.uncostedProducts === 0
   };

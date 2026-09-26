@@ -391,6 +391,119 @@ console.log("\n=== the badge is a control, not a label ===");
   }
 }
 
+console.log("=== an issued invoice is inside the periodic figure and named ===");
+{
+  // issueInvoice() writes no sale for a fresh invoice, so invoiced goods land
+  // in periodic COGS (the shelf is short by them) and never in the perpetual
+  // figure. The gap between the two is documented as shrinkage; without this
+  // it silently is not.
+  const products = [{ id: "p1", storeId: "s1", quantity: 100 }];
+  const movements = [
+    { productId: "p1", storeId: "s1", delta: -20, createdAt: new Date("2026-01-10T00:00:00Z") }
+  ];
+  const base = {
+    fromMs: JAN_FROM, toMs: JAN_TO, storeId: "s1",
+    products, movements, costIndex, purchases: [], purchaseReturns: []
+  };
+
+  const none = computePeriodCogs(base);
+  check("no invoices reports nothing to explain", none.invoicedCount === 0 && none.invoicedCost === 0);
+
+  const issued = computePeriodCogs({
+    ...base,
+    invoices: [{
+      storeId: "s1", status: "issued", createdAt: new Date("2026-01-10T00:00:00Z"),
+      lines: [{ productId: "p1", quantity: 20 }]
+    }]
+  });
+  check("an issued invoice is counted", issued.invoicedCount === 1);
+  check("...and priced at the cost in force when it was issued",
+    near(issued.invoicedCost, 40000), `got ${issued.invoicedCost}`);
+  check("...and the COGS total is unchanged by naming it",
+    near(issued.cogs, none.cogs), `${issued.cogs} vs ${none.cogs}`);
+
+  const draft = computePeriodCogs({
+    ...base,
+    invoices: [{
+      storeId: "s1", status: "draft", createdAt: new Date("2026-01-10T00:00:00Z"),
+      lines: [{ productId: "p1", quantity: 20 }]
+    }]
+  });
+  check("a draft moved nothing, so it is not counted", draft.invoicedCount === 0);
+
+  const voided = computePeriodCogs({
+    ...base,
+    invoices: [{
+      storeId: "s1", status: "void", createdAt: new Date("2026-01-10T00:00:00Z"),
+      lines: [{ productId: "p1", quantity: 20 }]
+    }]
+  });
+  check("a void put the stock back, so it is not counted", voided.invoicedCount === 0);
+
+  const fromSale = computePeriodCogs({
+    ...base,
+    invoices: [{
+      storeId: "s1", status: "issued", saleId: "sale-1",
+      createdAt: new Date("2026-01-10T00:00:00Z"),
+      lines: [{ productId: "p1", quantity: 20 }]
+    }]
+  });
+  check("an invoice raised against a sale is in BOTH figures, so not part of the gap",
+    fromSale.invoicedCount === 0);
+
+  const otherMonth = computePeriodCogs({
+    ...base,
+    invoices: [{
+      storeId: "s1", status: "issued", createdAt: new Date("2026-02-10T00:00:00Z"),
+      lines: [{ productId: "p1", quantity: 20 }]
+    }]
+  });
+  check("an invoice outside the window is not counted", otherMonth.invoicedCount === 0);
+
+  const otherStore = computePeriodCogs({
+    ...base,
+    invoices: [{
+      storeId: "s2", status: "issued", createdAt: new Date("2026-01-10T00:00:00Z"),
+      lines: [{ productId: "p1", quantity: 20 }]
+    }]
+  });
+  check("another branch's invoice is not counted when scoped", otherStore.invoicedCount === 0);
+
+  const unpriced = computePeriodCogs({
+    ...base,
+    invoices: [{
+      storeId: "s1", status: "issued", createdAt: new Date("2026-01-10T00:00:00Z"),
+      lines: [{ productId: "ghost", quantity: 20 }]
+    }]
+  });
+  check("a line with no cost in force is reported, not valued at zero",
+    unpriced.invoicedUncosted === 1 && unpriced.invoicedCost === 0);
+
+  const nonStock = computePeriodCogs({
+    ...base,
+    invoices: [{
+      storeId: "s1", status: "issued", createdAt: new Date("2026-01-10T00:00:00Z"),
+      lines: [{ description: "Labour", quantity: 1 }]
+    }]
+  });
+  check("a free-text line moved no stock, so it adds no cost",
+    nonStock.invoicedCost === 0 && nonStock.invoicedUncosted === 0);
+}
+
+console.log("=== the caveat stops claiming the gap is only loss ===");
+{
+  for (const key of ["cogs.warnInvoiced", "cogs.warnInvoicedUncosted"]) {
+    check(`${key} exists in both languages`,
+      (src.match(new RegExp(`"${key.replace(/\./g, "\.")}":`, "g")) || []).length === 2);
+  }
+  check("the shrinkage warning no longer stands alone as the whole story",
+    /dashboard margin/.test(src.match(/"cogs\.warnShrinkage": "([^"]*)"/)?.[1] || ""));
+  check("the invoiced warning is pushed before the shrinkage one",
+    src.indexOf('t("cogs.warnInvoiced"') < src.indexOf('warnings.push(t("cogs.warnShrinkage"))'));
+  check("the report passes invoices to the engine",
+    /invoices: state\.invoices/.test(src));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) {
