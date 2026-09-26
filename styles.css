@@ -26,7 +26,7 @@
   font-weight: 400 700;
   font-style: normal;
   font-display: swap;
-  src: url("./fonts/inter-latin.woff2?v=20260926c") format("woff2");
+  src: url("./fonts/inter-latin.woff2?v=20260926d") format("woff2");
 }
 
 :root {
@@ -2079,6 +2079,44 @@ label textarea {
 
 .verify-banner[hidden] {
   display: none;
+}
+
+/* A new build is good news, not a warning. Amber is right for the banners that
+   want something fixed -- an unverified email, an unsynced sale -- and wrong
+   here, where nothing is broken and nothing is owed. The accent puts it in the
+   product's own colour instead, with the mark beside it, so it reads as the
+   app speaking rather than as a fault being reported. */
+.update-banner {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+}
+
+.update-banner-lead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* Takes the slack so the two controls stay together on the right, and wraps
+     as one block rather than orphaning the mark on its own line. */
+  margin-right: auto;
+  min-width: 0;
+}
+
+.update-banner-mark {
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+
+/* .link-button is --blue everywhere else, which on an accent-tinted banner is
+   a third hue fighting the other two. The link keeps its underline so it still
+   reads as a link, but takes the text colour and hangs the underline off the
+   accent. */
+.update-banner .link-button {
+  color: var(--text-strong);
+  text-decoration-color: color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.update-banner .link-button:hover {
+  text-decoration-color: currentColor;
 }
 
 /* Pending account deletion is not a nudge -- it is a countdown to
