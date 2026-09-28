@@ -32,8 +32,8 @@
          before the browser discovers a font inside it, and on a 2G link that
          wait is visible as a flash of the fallback face. crossorigin is
          required even same-origin -- fonts are fetched in CORS mode. -->
-    <link rel="preload" href="./fonts/inter-latin.woff2?v=20260926e" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260926e" />
+    <link rel="preload" href="./fonts/inter-latin.woff2?v=20260926f" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="./styles.css?v=20260926f" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#f6f8fa" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -53,7 +53,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260926e"></script>
+    <script type="module" src="./boot.js?v=20260926f"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -177,6 +177,7 @@
         </header>
 
         <div class="verify-banner" id="verifyBanner" hidden role="status">
+          <span class="banner-brand">SaviaSmart</span>
           <span data-i18n="verifyEmail.bannerText">Please verify your email address to keep full access to your account.</span>
           <button class="ghost-button compact" id="resendVerificationButton" type="button" data-i18n="verifyEmail.resendButton">Resend verification email</button>
         </div>
@@ -188,6 +189,7 @@
              claimed refusal would be read as truth for the moment before
              translation applies. Credit and card still need the network. -->
         <div class="verify-banner danger-banner" id="offlineBanner" hidden role="status">
+          <span class="banner-brand">SaviaSmart</span>
           <span data-i18n="offline.bannerText">No internet connection. Cash sales are saved on this device and will sync when you reconnect.</span>
         </div>
 
@@ -197,15 +199,18 @@
              wonders whether the sale took. This stays up until the count is
              zero, online or not (L-9 phase D). -->
         <div class="verify-banner danger-banner" id="unsyncedSalesBanner" hidden role="status">
+          <span class="banner-brand">SaviaSmart</span>
           <span id="unsyncedSalesText"></span>
         </div>
 
         <div class="verify-banner danger-banner" id="deletionPendingBanner" hidden role="alert">
+          <span class="banner-brand">SaviaSmart</span>
           <span id="deletionPendingText">This account is scheduled for permanent deletion.</span>
           <button class="ghost-button compact" id="cancelDeletionButton" type="button" data-i18n="deleteAccount.restoreButton">Restore my account</button>
         </div>
 
         <div class="verify-banner" id="overridePasswordNudgeBanner" hidden role="status">
+          <span class="banner-brand">SaviaSmart</span>
           <span data-i18n="nudge.overridePasswordText">Set a password for price discounts and overrides so only trusted staff can use them.</span>
           <button class="ghost-button compact" id="overridePasswordNudgeSetButton" type="button" data-i18n="nudge.overridePasswordSetButton">Set it now</button>
           <button class="ghost-button compact" id="overridePasswordNudgeDismissButton" type="button" data-i18n="nudge.overridePasswordDismissButton">Dismiss</button>
@@ -219,20 +224,10 @@
              on screen and a customer waiting, would be a worse fault than the
              one being rolled back. -->
         <div class="verify-banner update-banner" id="updateReadyBanner" hidden role="status">
-          <span class="update-banner-lead">
-            <!-- The mark, not the app-icon tile: icons/savia-mark.svg carries
-                 its own dark background for a home screen, which inside a
-                 banner would read as a sticker. Just the channel stroke here,
-                 taking currentColor so it is the accent in both themes and
-                 needs no second request to render offline. Decorative -- the
-                 sentence beside it already says everything. -->
-            <svg class="update-banner-mark" viewBox="0 0 512 512" width="22" height="22" aria-hidden="true" focusable="false">
-              <path d="M 330 170 A 74 74 0 1 0 256 244 A 74 74 0 1 1 182 318"
-                    fill="none" stroke="currentColor" stroke-width="52"
-                    stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            <span data-i18n="update.readyText">A new version of the app is ready. Reload when you are not mid-sale.</span>
-          </span>
+          <span class="banner-brand">SaviaSmart</span>
+          <!-- The mark now comes from .banner-brand above, which every banner
+               carries, so this no longer draws its own. -->
+          <span class="banner-message" data-i18n="update.readyText">A new version of the app is ready. Reload when you are not mid-sale.</span>
           <!-- The message itself is the way in. sw.js calls skipWaiting() and
                clients.claim(), so by the time this banner shows, the NEW worker
                is already answering fetches -- which is what makes it possible
@@ -2909,7 +2904,14 @@
       </form>
     </div>
 
-    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <!-- Same sender chip as the banners, so a confirmation and a standing
+         notice read as one system rather than two. The message goes in its own
+         span: showToast() must not overwrite the chip, which setting
+         textContent on the toast itself would do. -->
+    <div class="toast" id="toast" role="status" aria-live="polite">
+      <span class="banner-brand">SaviaSmart</span>
+      <span class="toast-message" id="toastMessage"></span>
+    </div>
 
     <div class="command-palette" id="commandPalette" aria-hidden="true">
       <div class="command-box">
@@ -2918,6 +2920,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260926e"></script>
+    <script type="module" src="./app.js?v=20260926f"></script>
   </body>
 </html>

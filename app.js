@@ -5130,9 +5130,22 @@ function computeMethodBreakdown(sales, method) {
   return { method, total, count, average, topItems };
 }
 
+// Every tender the till offers, named once, because leaving one out does not
+// make a small error -- it makes money vanish from a total that still counts
+// the transaction. The staff report learned this already ("money taken by the
+// one left out simply stops appearing in Collected"); this report was left on
+// three methods and dropped every bank sale from its combined total while
+// still counting the sale in transactionCount. Measured 2026-09-28: six sales
+// worth 847,500 reported as 590,000 against a transaction count of six.
+//
+// Credit is deliberately NOT here. saleAmountForMethod() puts only the deposit
+// into whichever bucket received it; the unpaid balance is a receivable and
+// belongs in Customer Accounts, not in "revenue by method".
+const TENDER_METHODS = ["cash", "mobile", "card", "bank"];
+
 function computePaymentReport() {
   const sales = filteredSales();
-  const breakdown = ["cash", "mobile", "card"].map((method) => computeMethodBreakdown(sales, method));
+  const breakdown = TENDER_METHODS.map((method) => computeMethodBreakdown(sales, method));
   const grandTotal = breakdown.reduce((sum, entry) => sum + entry.total, 0);
   return { breakdown, grandTotal, transactionCount: sales.length };
 }
@@ -5848,7 +5861,7 @@ function computeStaffBreakdown() {
     // credit sale while its cash/mobile/card columns held only the deposit, so
     // the row visibly did not add up. It is a real distinction -- sold is not
     // collected -- so it is now two columns rather than one ambiguous number.
-    for (const method of ["cash", "mobile", "card", "bank"]) {
+    for (const method of TENDER_METHODS) {
       entry[method] += saleAmountForMethod(sale, method);
     }
     // Every method the till offers, or money taken by the one left out simply
@@ -6883,7 +6896,11 @@ function watchServerConnection() {
 
 function showToast(message) {
   const toast = qs("#toast");
-  toast.textContent = message;
+  // Into the span. Writing textContent on the toast itself would delete the
+  // brand chip beside it the first time anything was ever shown, and every
+  // toast after that would be unbranded with nothing to suggest why.
+  const body = qs("#toastMessage") || toast;
+  body.textContent = message;
   toast.classList.add("show");
   window.setTimeout(() => toast.classList.remove("show"), 2600);
 }

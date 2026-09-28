@@ -194,6 +194,56 @@ console.log("\n=== the landing page is a real page, not a mock ===");
     "an external font or script would be blocked by the production CSP");
 }
 
+console.log("=== every alert says who is speaking ===");
+{
+  const html = readFileSync(new URL("../app.html", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+
+  // A banner with no sender reads as a stray bit of page, not as the system
+  // telling the shop something. Every one of them carries the chip, and this
+  // fails if a new banner is added without it.
+  const bannerIds = [...html.matchAll(/id="(\w*[Bb]anner)"/g)].map((m) => m[1]);
+  const banners = bannerIds.map((id) => {
+    const at = html.indexOf(`id="${id}"`);
+    return [html.slice(at, at + 1400), id];
+  });
+  check("the banners were found", banners.length >= 5, `found ${banners.length}`);
+  for (const [block, id] of banners) {
+    check(`${id} carries the brand chip`, /class="banner-brand">SaviaSmart</.test(block));
+  }
+
+  // The toast is the same system speaking, so it wears the same chip -- and
+  // its message has to live in its own span, or showToast() would delete the
+  // chip the first time it ever ran.
+  check("the toast carries it too", /id="toast"[\s\S]{0,240}class="banner-brand">SaviaSmart</.test(html));
+  check("...and writes its message into a span, not over the chip",
+    /<span class="toast-message" id="toastMessage">/.test(html));
+  const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+  check("...which showToast actually targets",
+    /qs\("#toastMessage"\)/.test(app) && !/toast\.textContent = message/.test(app));
+
+  // One hue token drives border, glow and chip. Restating colours per banner is
+  // how the three severities drifted apart in the first place.
+  check("severity is one token, not three sets of colours",
+    /--banner-hue: var\(--amber\)/.test(css)
+      && /--banner-hue: var\(--red\)/.test(css)
+      && /--banner-hue: var\(--accent\)/.test(css));
+  check("the border and the glow both come from it",
+    /border: 1px solid var\(--banner-hue\)/.test(css)
+      && /box-shadow:[\s\S]{0,160}var\(--banner-hue\)/.test(css));
+  check("the mark is a mask, so it takes the hue with everything else",
+    /--savia-mark: url\("data:image\/svg\+xml/.test(css)
+      && /mask: var\(--savia-mark\)/.test(css));
+  // CSP allows data: for images; anything else here would be blocked silently.
+  // The xmlns inside the data URI is literally "http://www.w3.org/2000/svg",
+  // so a bare search for http here matches the thing it is meant to allow.
+  // What must not appear is a url() pointing off-origin, which the CSP would
+  // block and the mark would silently vanish.
+  const markValue = css.match(/--savia-mark:([^;]+);/)?.[1] || "";
+  check("...and is inline, so a degraded app still draws it",
+    markValue.includes('url("data:image/svg+xml') && !/url\(\s*["']?https?:/.test(markValue));
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 process.exit(failed.length ? 1 : 0);

@@ -26,7 +26,7 @@
   font-weight: 400 700;
   font-style: normal;
   font-display: swap;
-  src: url("./fonts/inter-latin.woff2?v=20260926e") format("woff2");
+  src: url("./fonts/inter-latin.woff2?v=20260926f") format("woff2");
 }
 
 :root {
@@ -61,6 +61,13 @@
      which is where this app runs.
      Controls only. Dividers and dashed decoration keep the quiet hairline. */
   --control-border: #6b7789;
+
+  /* The Savia mark as a mask, so any element can stamp it in whatever colour
+     it already has. The channel stroke only -- icons/savia-mark.svg wraps this
+     in a dark app-icon tile, which is right on a home screen and reads as a
+     sticker inside a banner. Theme-independent: a mask has no colour of its
+     own, so this is declared once and never restated for light. */
+  --savia-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cpath d='M 330 170 A 74 74 0 1 0 256 244 A 74 74 0 1 1 182 318' fill='none' stroke='%23000' stroke-width='52' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 
   --accent: #3ddc97;
   --accent-strong: #2bb87b;
@@ -2010,13 +2017,28 @@ label textarea {
   transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), opacity 160ms ease;
   background: var(--surface);
   color: var(--text);
-  border: 1px solid var(--line-strong);
-  border-left: 3px solid var(--accent);
+  --banner-hue: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--banner-hue) 45%, var(--line-strong));
   border-radius: var(--radius);
   padding: var(--space-3) var(--space-4);
   font-size: 0.875rem;
-  box-shadow: var(--shadow-lg);
+  /* The lift it always had, plus the same radiance the banners carry, so a
+     confirmation and a standing notice look like the same system speaking.
+     The left bar is gone: the chip above now says who is talking, and the two
+     together read as a stripe plus a badge rather than one mark. */
+  box-shadow:
+    var(--shadow-lg),
+    0 0 0 1px color-mix(in srgb, var(--banner-hue) 25%, transparent),
+    0 0 26px -6px color-mix(in srgb, var(--banner-hue) 50%, transparent);
   z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+}
+
+.toast-message {
+  color: var(--text);
 }
 
 .toast.show {
@@ -2062,7 +2084,17 @@ label textarea {
   color: var(--text-strong);
 }
 
+/* Banners are SYSTEM NOTIFICATIONS, and they say who is speaking.
+ *
+ * One hue token drives the whole thing -- border, glow, and the brand chip --
+ * so a banner picks its severity by setting --banner-hue and nothing else has
+ * to be restated. Three levels, and they mean three different things:
+ *   amber  something wants attending to
+ *   red    data or money is at risk
+ *   accent the app itself, with nothing wrong
+ */
 .verify-banner {
+  --banner-hue: var(--amber);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2070,11 +2102,49 @@ label textarea {
   flex-wrap: wrap;
   margin: 0 0 16px;
   padding: 12px 16px;
-  border: 1px solid var(--amber);
+  border: 1px solid var(--banner-hue);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--amber) 16%, var(--panel));
+  background: color-mix(in srgb, var(--banner-hue) 14%, var(--panel));
+  /* The radiance: a tight ring plus a soft bloom, both from the same hue. Kept
+     low and negative-spread so it reads as a lit edge rather than a drop
+     shadow, which on a cheap handset at midday is the difference between
+     "notification" and "smudge". */
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--banner-hue) 30%, transparent),
+    0 0 26px -5px color-mix(in srgb, var(--banner-hue) 55%, transparent);
   color: var(--text);
   font-size: 0.9rem;
+}
+
+/* Who is speaking. The mark is a CSS mask rather than inline SVG so one rule
+   covers every banner and the glyph takes --banner-hue with the border, and so
+   a banner that has to render while the app is degraded needs no extra
+   request. The name is not translated: it is a proper noun. */
+.banner-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  color: var(--banner-hue);
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.banner-brand::before {
+  content: "";
+  width: 15px;
+  height: 15px;
+  background: currentColor;
+  -webkit-mask: var(--savia-mark) center / contain no-repeat;
+  mask: var(--savia-mark) center / contain no-repeat;
+}
+
+/* Takes the slack, so the brand sits left and the controls stay right. */
+.banner-message {
+  flex: 1 1 260px;
+  min-width: 0;
 }
 
 .verify-banner[hidden] {
@@ -2087,23 +2157,7 @@ label textarea {
    product's own colour instead, with the mark beside it, so it reads as the
    app speaking rather than as a fault being reported. */
 .update-banner {
-  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
-  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
-}
-
-.update-banner-lead {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  /* Takes the slack so the two controls stay together on the right, and wraps
-     as one block rather than orphaning the mark on its own line. */
-  margin-right: auto;
-  min-width: 0;
-}
-
-.update-banner-mark {
-  color: var(--accent);
-  flex: 0 0 auto;
+  --banner-hue: var(--accent);
 }
 
 /* .link-button is --blue everywhere else, which on an accent-tinted banner is
@@ -2122,8 +2176,7 @@ label textarea {
 /* Pending account deletion is not a nudge -- it is a countdown to
    irreversible data loss, so it reads as an alert rather than a suggestion. */
 .danger-banner {
-  border-color: var(--red);
-  background: color-mix(in srgb, var(--red) 15%, var(--panel));
+  --banner-hue: var(--red);
   font-weight: 550;
 }
 

@@ -138,7 +138,21 @@ console.log("\n=== the staff row adds up (QA-123) ===");
   // exactly the ones added into `collected`. A method added to the till and
   // forgotten here would drop that money out of Collected -- which is the
   // failure this guards, and which a literal three-term regex would miss.
-  const accumulated = (fn.match(/for \(const method of \[([^\]]*)\]/) || [, ""])[1]
+  // The loop may iterate a literal or the shared TENDER_METHODS constant --
+  // the payment report and this one were given one list so a tender could not
+  // be added to the till and reach only one of them. Either form is resolved
+  // to its members, because what is being guarded is the MEMBERS matching
+  // `collected`, not how they are spelled at the loop.
+  const looped = (fn.match(/for \(const method of ([^)]*)\)/) || [, ""])[1].trim();
+  // No regex here on purpose: the declaration is found by line, so there are
+  // no escapes to get wrong inside a template literal.
+  const declLine = looped.startsWith("[")
+    ? ""
+    : (app.split(String.fromCharCode(10)).find((l) => l.trim().startsWith("const " + looped + " = [")) || "");
+  const listSource = looped.startsWith("[") ? looped : declLine.slice(declLine.indexOf("["), declLine.indexOf("]") + 1);
+  check("the loop iterates a list this test can resolve", Boolean(listSource),
+    `loop iterates "${looped}", which was not found as a literal or a declared constant`);
+  const accumulated = String(listSource).replace(/[[\]]/g, "")
     .split(",").map((m) => m.trim().replace(/["']/g, "")).filter(Boolean);
   const collectedExpr = (fn.match(/entry\.collected = ([^;]*);/) || [, ""])[1];
   check("every method the loop accumulates is added into collected",

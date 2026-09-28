@@ -2,6 +2,18 @@
   "_comment": "What changed in each release, in the words a shopkeeper would use. Unversioned on purpose: the running app fetches this by a stable URL to show what the INCOMING version brings, so a ?v= here would be a URL the old build cannot know. Newest first. tests/release-notes.test.mjs fails the build if the top entry does not match the stamp in app.html.",
   "releases": [
     {
+      "version": "20260926f",
+      "date": "2026-09-28",
+      "en": [
+        "Every notice the app shows you now carries the SaviaSmart name and mark, with a glowing edge in one of three colours: green when it is just the app talking, amber when something wants your attention, red when money or data is at risk.",
+        "The payment report was leaving bank sales out of its combined total while still counting them in the number of sales. Bank now appears with the other ways you get paid."
+      ],
+      "sw": [
+        "Kila taarifa programu inayokuonyesha sasa ina jina na alama ya SaviaSmart, ikiwa na ukingo unaong aa wa rangi moja kati ya tatu: kijani programu inapoongea tu, njano kitu kinapohitaji uangalizi wako, nyekundu fedha au taarifa zikiwa hatarini.",
+        "Ripoti ya malipo ilikuwa ikiacha mauzo ya benki nje ya jumla yake huku ikiyahesabu katika idadi ya mauzo. Benki sasa inaonekana pamoja na njia nyingine unazolipwa."
+      ]
+    },
+    {
       "version": "20260926e",
       "date": "2026-09-28",
       "en": [

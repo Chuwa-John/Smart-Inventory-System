@@ -151,6 +151,42 @@ console.log("\n=== both languages ===");
   }
 }
 
+console.log("=== the payment report counts every tender the till takes ===");
+{
+  // The bug this guards made money disappear from a total that still counted
+  // the transaction: six sales worth 847,500 were reported as 590,000 with a
+  // transaction count of six, because bank sales were not in the breakdown.
+  // The staff report had already been fixed for exactly this and said so in a
+  // comment; the payment report had not. One list now, shared.
+  const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../app.html", import.meta.url), "utf8");
+
+  const declared = app.match(/const TENDER_METHODS = \[([^\]]+)\]/)?.[1];
+  const methods = declared ? declared.split(",").map((m) => m.trim().replace(/"/g, "")) : [];
+  check("there is one named tender list", methods.length > 0, declared || "not found");
+
+  // What the till actually offers, read from the markup rather than retyped.
+  const offered = [...html.matchAll(/data-payment="(\w+)"/g)].map((m) => m[1]);
+  const missing = offered.filter((m) => m !== "credit" && !methods.includes(m));
+  check("...covering every tender button on the till", missing.length === 0,
+    `the till offers ${offered.join(", ")}; the list is missing ${missing.join(", ") || "nothing"}`);
+
+  // Credit is a receivable until it is paid. saleAmountForMethod() already puts
+  // only the deposit into a bucket, so listing credit here would double count.
+  check("...and deliberately not credit, which is a receivable",
+    !methods.includes("credit"));
+
+  check("both surfaces use the shared list rather than their own",
+    (app.match(/TENDER_METHODS/g) || []).length >= 3
+      && !/\["cash", "mobile", "card"\]\.map/.test(app)
+      && !/for \(const method of \["cash"/.test(app));
+
+  for (const m of methods) {
+    check(`pos.${m} is labelled in both languages`,
+      (app.match(new RegExp(`"pos\.${m}":`, "g")) || []).length === 2);
+  }
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 process.exit(failed.length ? 1 : 0);
