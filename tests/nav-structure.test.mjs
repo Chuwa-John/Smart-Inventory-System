@@ -157,6 +157,36 @@ console.log("\n=== Inventory no longer asks for a cost ===");
     /data-i18n="inventory\.intro"/.test(html), true);
 }
 
+console.log("\n=== every screen says which branch it is showing ===");
+{
+  // The asymmetry this guards is real and deliberate: the owner control tiles
+  // are NOT scoped by the switcher and say "All stores" on their face, while
+  // every report IS scoped to it. Unlabelled, the same month reads 829,500 on
+  // one screen and 8,329,500 on the other, which looks like an error rather
+  // than two different questions. Observed on 2026-09-28.
+  check("the reports screen has a scope line", /id="reportsScope"/.test(html), true);
+  check("the profit report has one too", /id="profitScope"/.test(html), true);
+  check("the owner tiles still declare themselves all-stores",
+    /data-i18n="control.allStoresScope"/.test(html), true);
+
+  // One helper, because three surfaces were each spelling the lookup out and a
+  // fourth was about to. A copy that drifts is how two screens start naming
+  // the same branch differently.
+  check("the branch name comes from one helper",
+    /function currentStoreLabel\(\)/.test(src), true);
+  const uses = (src.match(/currentStoreLabel\(\)/g) || []).length;
+  check("...used by the reports screen, the profit report and the tiles",
+    uses >= 4, true);
+  check("...and nothing looks the store name up by hand any more",
+    !/\?\.name \|\| t\("storeSwitcher\.fallbackName"\)\)\s*\n\s*: t\("staff\.allStoresLabel"\)/.test(src), true);
+
+  // Set during the normal render, so switching branch updates it. Setting it
+  // in openReport() alone would leave the chooser unlabelled and would go
+  // stale the moment somebody changed branch with a report already open.
+  check("the reports label is set on render, not only when a report opens",
+    /function renderSpecReports\(\)[\s\S]{0,400}reportsScope/.test(src), true);
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) { console.log(failed.map((f) => "  FAILED: " + f.name).join("\n")); process.exit(1); }

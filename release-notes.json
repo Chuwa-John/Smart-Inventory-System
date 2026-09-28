@@ -2,6 +2,16 @@
   "_comment": "What changed in each release, in the words a shopkeeper would use. Unversioned on purpose: the running app fetches this by a stable URL to show what the INCOMING version brings, so a ?v= here would be a URL the old build cannot know. Newest first. tests/release-notes.test.mjs fails the build if the top entry does not match the stamp in app.html.",
   "releases": [
     {
+      "version": "20260926g",
+      "date": "2026-09-28",
+      "en": [
+        "Every report now says which branch its figures come from. The totals on your dashboard cover all your branches; the reports cover the one picked in the switcher at the top. The two can differ for a good reason, and now you can see which is which."
+      ],
+      "sw": [
+        "Kila ripoti sasa inasema takwimu zake zinatoka tawi gani. Jumla zilizo kwenye dashibodi yako zinahusu matawi yako yote; ripoti zinahusu lile lililochaguliwa kwenye kibadilishaji cha juu. Mbili hizo zinaweza kutofautiana kwa sababu nzuri, na sasa unaweza kuona ipi ni ipi."
+      ]
+    },
+    {
       "version": "20260926f",
       "date": "2026-09-28",
       "en": [

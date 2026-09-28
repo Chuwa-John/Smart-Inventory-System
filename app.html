@@ -32,8 +32,8 @@
          before the browser discovers a font inside it, and on a 2G link that
          wait is visible as a flash of the fallback face. crossorigin is
          required even same-origin -- fonts are fetched in CORS mode. -->
-    <link rel="preload" href="./fonts/inter-latin.woff2?v=20260926f" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260926f" />
+    <link rel="preload" href="./fonts/inter-latin.woff2?v=20260926g" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="./styles.css?v=20260926g" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#f6f8fa" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -53,7 +53,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260926f"></script>
+    <script type="module" src="./boot.js?v=20260926g"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -1071,6 +1071,15 @@
             <div>
               <p class="eyebrow" data-i18n="reports.eyebrow">Business intelligence</p>
               <h1 data-i18n="reports.title">Reports</h1>
+              <!-- Named ONCE for the whole screen rather than on each of the
+                   eighteen panels. Every report below is scoped by the store
+                   switcher -- filteredSales(), storeProducts(), storePurchases()
+                   and storeExpenses() all filter on it -- while the owner
+                   control tiles on the dashboard are not scoped at all and say
+                   "All stores" on their face. Unlabelled, the same month reads
+                   829,500 here and 8,329,500 there, and that looks like one of
+                   them is wrong rather than like two different questions. -->
+              <p class="muted control-scope" id="reportsScope"></p>
             </div>
           </div>
 
@@ -2920,6 +2929,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260926f"></script>
+    <script type="module" src="./app.js?v=20260926g"></script>
   </body>
 </html>

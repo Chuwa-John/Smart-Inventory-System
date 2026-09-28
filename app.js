@@ -3842,6 +3842,20 @@ function storeServices() {
   return scoped.filter((service) => service.active !== false);
 }
 
+// Which branch the figures on screen belong to.
+//
+// Named once because three surfaces were each spelling it out, and a fourth was
+// about to. It matters more than a label usually does: the owner control tiles
+// are NOT scoped and say "All stores" on their face, while every report IS
+// scoped to the switcher -- so the same month legitimately reads 829,500 on one
+// screen and 8,329,500 on the other, and with nothing naming the branch that
+// reads as one of them being broken.
+function currentStoreLabel() {
+  if (!state.currentStoreId || state.currentStoreId === "all") return t("staff.allStoresLabel");
+  return state.stores.find((store) => store.id === state.currentStoreId)?.name
+    || t("storeSwitcher.fallbackName");
+}
+
 function storeProducts() {
   if (!state.db) return state.products;
   if (!state.currentStoreId) return [];
@@ -9797,6 +9811,12 @@ function renderSpecReports() {
   const canSee = isManagerOrOwnerRole();
   const costVisible = isOwnerRole();
 
+  // Which branch every figure on this screen belongs to. Set here rather than
+  // in openReport(), so it is right on the chooser as well as on a report, and
+  // so switching branch updates it through the normal render.
+  const reportsScope = qs("#reportsScope");
+  if (reportsScope) reportsScope.textContent = currentStoreLabel();
+
   const setPanel = (id, hidden) => {
     setReportRoleVisibility(qs(id), hidden);
   };
@@ -13117,12 +13137,7 @@ function renderProfit() {
   // looks like one of them is wrong -- observed 2026-09-26, 829,500 here
   // against 8,329,500 on the dashboard, the difference being one branch.
   const profitScope = qs("#profitScope");
-  if (profitScope) {
-    profitScope.textContent = state.currentStoreId === "all"
-      ? t("staff.allStoresLabel")
-      : (state.stores.find((store) => store.id === state.currentStoreId)?.name
-         || t("storeSwitcher.fallbackName"));
-  }
+  if (profitScope) profitScope.textContent = currentStoreLabel();
 
   const p = summariseProfit({
     sales: scopedSales,
@@ -17329,10 +17344,7 @@ function renderManagerControl() {
   });
   const s = summariseSales(sales);
 
-  const storeName = scopedToStore
-    ? (state.stores.find((store) => store.id === state.currentStoreId)?.name || t("storeSwitcher.fallbackName"))
-    : t("staff.allStoresLabel");
-  qs("#managerControlScope").textContent = `${storeName} · ${t("control.todayScope")}`;
+  qs("#managerControlScope").textContent = `${currentStoreLabel()} · ${t("control.todayScope")}`;
 
   const products = scopedToStore ? state.products.filter((p) => p.storeId === state.currentStoreId) : state.products;
   const outOfStock = products.filter((p) => safeNumber(p.quantity) <= 0).length;
