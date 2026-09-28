@@ -122,7 +122,15 @@ console.log("=== it fails honestly ===");
   check("a slow fetch shows a loading line, so the button is not dead",
     /update\.whatsNewLoading/.test(src));
   check("a missing language falls back rather than rendering nothing",
-    /release\?\.\[state\.lang\] \|\| release\?\.en/.test(src));
+    /release\?\.\[state\.\w+\] \|\| release\?\.en/.test(src));
+  // The fallback makes a wrong property name INVISIBLE: no error, just English
+  // served to every Swahili shop forever. It shipped that way once. So assert
+  // the name is the one state actually declares, not merely that some lookup
+  // is there.
+  const langProp = src.match(/const lines = release\?\.\[state\.(\w+)\]/)?.[1];
+  check("...and the language property is the real one",
+    Boolean(langProp) && src.includes(`${langProp}: localStorage`),
+    `release notes read state.${langProp}, which state does not declare`);
   check("malformed notes are rejected rather than half-rendered",
     /Array\.isArray\(data\?\.releases\)/.test(src));
   check("note text is escaped", /esc\(line\)/.test(src));

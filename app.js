@@ -1777,7 +1777,7 @@ const DICTIONARY = {
     "customersScreen.historyNoCreditSales": "Nothing sold to this customer on credit at the till.",
     "customersScreen.historyNoPayments": "No payments recorded yet.",
     "customersScreen.historyColOrder": "Order",
-    "customersScreen.historyColBalance": "Still owed",
+    "customersScreen.historyColOnCredit": "On credit",
     "customersScreen.historyColNumber": "Number",
     "customersScreen.historyColDate": "Date",
     "customersScreen.historyColAmount": "Amount",
@@ -3389,7 +3389,7 @@ const DICTIONARY = {
     "customersScreen.historyNoCreditSales": "Hakuna kilichouzwa kwa mteja huyu kwa mkopo kaunta.",
     "customersScreen.historyNoPayments": "Bado hakuna malipo yaliyorekodiwa.",
     "customersScreen.historyColOrder": "Oda",
-    "customersScreen.historyColBalance": "Bado anadaiwa",
+    "customersScreen.historyColOnCredit": "Kwa mkopo",
     "customersScreen.historyColNumber": "Namba",
     "customersScreen.historyColDate": "Tarehe",
     "customersScreen.historyColAmount": "Kiasi",
@@ -7429,6 +7429,12 @@ function buildCustomerHistoryHtml(customer, payments, invoices) {
           <td>${at ? esc(at.toLocaleDateString()) : "-"}</td>
           <td>${esc(sale.orderNumber || "-")}</td>
           <td>${money(sale.total)}</td>
+          <!-- How much of THIS sale went on credit, which is a fact about the
+               sale and stays true. NOT a live balance: balanceDue is written
+               once when the sale is rung up and no payment path reduces it, so
+               labelling the column "still owed" would keep claiming 37,500 long
+               after the customer had paid. What is still owed is the running
+               figure at the top of this dialog. -->
           <td>${money(sale.balanceDue)}</td>
         </tr>`;
       }).join("")
@@ -7480,7 +7486,7 @@ function buildCustomerHistoryHtml(customer, payments, invoices) {
           <th>${t("customersScreen.historyColDate")}</th>
           <th>${t("customersScreen.historyColOrder")}</th>
           <th>${t("customersScreen.historyColAmount")}</th>
-          <th>${t("customersScreen.historyColBalance")}</th>
+          <th>${t("customersScreen.historyColOnCredit")}</th>
         </tr></thead>
         <tbody>${creditSaleRows}</tbody>
       </table>
@@ -22279,7 +22285,13 @@ async function loadReleaseNotes() {
 // showing nothing: a Swahili shop reading an English line still learns what
 // changed, and an empty panel teaches people the feature is broken.
 function releaseNoteLines(release) {
-  const lines = release?.[state.lang] || release?.en || [];
+  // state.language, NOT state.lang -- there is no such property, and because
+  // the English fallback below never errors, the wrong name silently served
+  // English to every Swahili shop forever. Caught only by switching the app to
+  // Swahili and looking; the test that asserted this line existed passed
+  // happily, because it checked the shape of the code rather than whether the
+  // property was real.
+  const lines = release?.[state.language] || release?.en || [];
   return Array.isArray(lines) ? lines.filter((line) => typeof line === "string" && line.trim()) : [];
 }
 
