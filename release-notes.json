@@ -2,6 +2,16 @@
   "_comment": "What changed in each release, in the words a shopkeeper would use. Unversioned on purpose: the running app fetches this by a stable URL to show what the INCOMING version brings, so a ?v= here would be a URL the old build cannot know. Newest first. tests/release-notes.test.mjs fails the build if the top entry does not match the stamp in app.html.",
   "releases": [
     {
+      "version": "20261007e",
+      "date": "2026-10-07",
+      "en": [
+        "The reference you type on a delivery now shows in the purchases breakdown. It was being looked for in the wrong place and the column came out blank."
+      ],
+      "sw": [
+        "Kumbukumbu unayoandika kwenye bidhaa zilizowasili sasa inaonekana kwenye mchanganuo wa manunuzi. Ilikuwa ikitafutwa mahali pasipo sahihi na safu ikatoka tupu."
+      ]
+    },
+    {
       "version": "20261007d",
       "date": "2026-10-07",
       "en": [

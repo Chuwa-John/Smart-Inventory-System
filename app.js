@@ -489,6 +489,7 @@ const DICTIONARY = {
     "cogs.drillOnHand": "{count} on hand",
     "cogs.drillAssumed": "· assumed price",
     "cogs.drillNoSupplier": "No supplier recorded",
+    "cogs.drillEmpty": "Nothing was recorded for this line in the dates you chose.",
     "cogs.rowOpening": "Opening Stock",
     "cogs.rowPurchases": "Add: Purchases",
     "cogs.rowCarriage": "Add: Carriage Inwards",
@@ -2146,6 +2147,7 @@ const DICTIONARY = {
     "cogs.drillOnHand": "{count} zipo",
     "cogs.drillAssumed": "· bei iliyokadiriwa",
     "cogs.drillNoSupplier": "Hakuna muuzaji aliyerekodiwa",
+    "cogs.drillEmpty": "Hakuna kilichorekodiwa kwa mstari huu katika tarehe ulizochagua.",
     "cogs.rowOpening": "Hisa ya Kuanzia",
     "cogs.rowPurchases": "Jumlisha: Manunuzi",
     "cogs.rowCarriage": "Jumlisha: Gharama za Usafirishaji",
@@ -13517,7 +13519,7 @@ function renderCogsDrill() {
           <td>${esc(t("profit.drillTotal"))}</td>${dated ? "<td></td>" : ""}<td></td>
           <td><strong>${money(listed)}</strong></td>
         </tr></tbody>
-      </table></div>` : `<p class="muted">${esc(t("profit.drillEmpty"))}</p>`}
+      </table></div>` : `<p class="muted">${esc(t("cogs.drillEmpty"))}</p>`}
       <p class="muted">${esc(tallies
         ? t("profit.drillTallies", { value: money(expected) })
         : t("profit.drillGap", { listed: money(listed), line: money(expected), gap: money(Math.abs(listed - safeNumber(expected))) }))}</p>
@@ -18510,7 +18512,12 @@ function computePeriodCogs({ fromMs, toMs, storeId, products, movements, costInd
     purchaseLines.push({
       at,
       supplier: purchase.supplierName || "",
-      reference: purchase.reference || "",
+      // receiptNumber on the purchase line, `reference` on the delivery header
+      // that groups them -- firestore.rules allowlists the first and not the
+      // second, so reading only `reference` left this blank on every delivery
+      // that had one. Seen on the preview 2026-10-07 with OCT-001 entered and
+      // nothing shown.
+      reference: purchase.receiptNumber || purchase.reference || "",
       goods: lineGoods,
       carriage: lineCarriage
     });
