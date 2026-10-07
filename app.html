@@ -37,13 +37,13 @@
          Must carry the SAME ?v= as the script tag below: a different query is a
          different cache key and would fetch the bundle twice.
          tests/deployment-validation.test.mjs fails if they drift apart. -->
-    <link rel="modulepreload" href="./app.js?v=20261007e" />
+    <link rel="modulepreload" href="./app.js?v=20261007f" />
     <!-- Preloaded, not merely referenced: the stylesheet has to be parsed
          before the browser discovers a font inside it, and on a 2G link that
          wait is visible as a flash of the fallback face. crossorigin is
          required even same-origin -- fonts are fetched in CORS mode. -->
-    <link rel="preload" href="./fonts/inter-latin.woff2?v=20261007e" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20261007e" />
+    <link rel="preload" href="./fonts/inter-latin.woff2?v=20261007f" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="./styles.css?v=20261007f" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#f6f8fa" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -63,7 +63,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20261007e"></script>
+    <script type="module" src="./boot.js?v=20261007f"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -572,22 +572,21 @@
             <p class="muted" id="profitProductNote"></p>
           </article>
 
-          <!-- Spec 9 asks for five Financial reports. Four of them -- Balance
-               Sheet, Trial Balance, General Ledger, Cash Flow -- are statements
-               OF a double-entry ledger, and this system does not keep one yet
-               (DESIGN-suppliers-purchases.md 2.1). They are named here rather
-               than rendered from something that merely resembles them: a report
-               that shows a plausible figure it cannot support is worse than an
-               absent one, and this project has shipped that defect once. -->
-          <article class="panel" id="ledgerPendingPanel">
-            <div class="panel-head">
-              <div>
-                <p class="eyebrow" data-i18n="reports.groupFinancial">Financial</p>
-                <h2 data-i18n="reports.ledgerPendingTitle">Balance Sheet, Trial Balance, Cash Flow &amp; General Ledger</h2>
-              </div>
-            </div>
-            <p class="muted" data-i18n="reports.ledgerPendingBody">These four are statements of a double-entry ledger, which this system does not keep yet. They will appear under Accounts, which is why that tab is there but not yet open. Profit &amp; Loss is available now, on its own tab, because it is built from the transactions themselves.</p>
-          </article>
+          <!-- Balance Sheet, Trial Balance, Cash Flow and General Ledger were
+               NAMED here, with a note saying the system keeps no double-entry
+               ledger yet. Removed 2026-10-07 at the owner's request: the panel
+               will come back when the Accounts work starts, and until then the
+               dormant Accounts tab in the nav carries the same signal without
+               occupying a panel on a screen people use every week.
+
+               WHAT MUST NOT COME BACK is a RENDERED one. Those four are
+               statements OF a ledger this system does not keep
+               (DESIGN-suppliers-purchases.md 2.1), and a report showing a
+               plausible figure it cannot support is worse than an absent one --
+               this project has shipped that defect once already.
+               tests/stock-and-reports.test.mjs still fails if a table for any
+               of the four ever appears in this file; it scans for their ids, so
+               this note deliberately does not spell them out. -->
         </section>
 
         <section class="view" id="vat">
@@ -2996,6 +2995,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20261007e"></script>
+    <script type="module" src="./app.js?v=20261007f"></script>
   </body>
 </html>

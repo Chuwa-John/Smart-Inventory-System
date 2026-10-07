@@ -254,25 +254,36 @@ console.log("\n=== inventory and expense reporting (spec 9) ===");
 
 console.log("\n=== the reports that CANNOT be built are named, not faked ===");
 {
-  // The whole point of §2.2.
-  check("the ledger-dependent group is disclosed", html.includes('id="ledgerPendingPanel"'), true);
-  check("...naming all four statements",
-    html.includes('data-i18n="reports.ledgerPendingTitle"'), true);
+  // THE ASSERTION THAT MATTERS, and it is unchanged. Balance Sheet, Trial
+  // Balance, Cash Flow and General Ledger are statements OF a double-entry
+  // ledger this system does not keep, and a report showing a plausible figure
+  // it cannot support is worse than an absent one. This project has shipped
+  // that defect once.
   for (const absent of ["balanceSheetTable", "trialBalanceTable", "cashFlowTable", "generalLedgerTable"]) {
     check(`there is no fake ${absent}`, html.includes(absent), false);
   }
+
+  // The panel that NAMED the four was removed on 2026-10-07 at the owner's
+  // request, to come back when the Accounts work starts. Asserted gone rather
+  // than left unmentioned, so putting it back is a deliberate act and not an
+  // accident -- and so this block still says why the four are missing.
+  check("the ledger-pending panel is deliberately absent",
+    html.includes('id="ledgerPendingPanel"'), false);
+  // What still carries the signal: the nav tab, present and dormant.
+  check("the Accounts tab still says they are coming",
+    /data-nav-placeholder="accounts"/.test(html), true);
+  check("...and is not reachable yet", /data-nav-placeholder="accounts"[^>]*disabled/.test(html), true);
   // P&L is real and reachable, because it is built from transactions. Since the
   // nav was flattened on 2026-09-10 the two sit on the SAME screen -- Accounts
   // opens the Profit view, and the unavailable statements are disclosed beneath
   // the statement that does work -- so no cross-screen button is needed.
-  const profitView = html.slice(html.indexOf('<section class="view" id="profit"'));
-  const profitOnly = profitView.slice(0, profitView.indexOf("</section>"));
-  check("the disclosure sits with the statement that does work",
-    profitOnly.includes('id="ledgerPendingPanel"'), true);
-  check("...and the nav reaches it", html.includes('data-i18n="nav.accounts"'), true);
+  check("the nav still names Accounts", html.includes('data-i18n="nav.accounts"'), true);
 
   // Reports are grouped the way §9 groups them.
-  for (const group of ["reports.groupFinancial", "reports.groupSales", "reports.groupPurchases",
+  // groupFinancial went with the panel it labelled -- it was that panel's
+  // only user, and a dictionary entry nothing renders drifts out of date
+  // unread while still demanding a Swahili translation.
+  for (const group of ["reports.groupSales", "reports.groupPurchases",
                        "reports.groupInventory", "reports.groupExpenses"]) {
     check(`${group} labels a section`, html.includes(`data-i18n="${group}"`), true);
   }
@@ -335,7 +346,7 @@ console.log("\n=== both languages ===");
 {
   for (const key of ["adjust.title", "adjust.reason.theft", "adjust.reason.opening", "adjust.noChange",
                      "movement.ledgerSectionTitle", "movement.balanceUnknown", "movement.reason.supplier-return",
-                     "reports.ledgerPendingTitle", "reports.walkIn", "reports.purchaseNet",
+                     "reports.walkIn", "reports.purchaseNet",
                      "reports.supplierBalancesTotal", "reports.noAdjustments",
                      "product.unitLabel", "product.activeNo", "product.quantityLocked",
                      "kpi.receivable", "kpi.payable", "toast.adjustmentRecorded"]) {

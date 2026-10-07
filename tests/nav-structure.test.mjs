@@ -130,17 +130,14 @@ console.log("\n=== Profit & Loss is not parked behind it ===");
   check("...and it can be got back out of", /id="profitBackButton"/.test(html), true);
   // Owner-strict, decided 2026-08-21: it exposes buying prices by inference.
   check("still owner-strict", /if \(viewId === "profit"\) return isOwnerRole\(\)/.test(src), true);
-  // The four statements this system cannot yet produce are NAMED rather than
-  // faked, and sit beside the statement that does work.
-  const p0 = html.indexOf('<section class="view" id="profit">');
-  const p1 = html.indexOf("\n        </section>", p0);
-  const panel = html.indexOf('id="ledgerPendingPanel"');
-  check("the disclosure sits with the statement that does work", p0 < panel && panel < p1, true);
-  check("...and it says where the four will appear",
-    /They will appear under Accounts/.test(html), true);
-  check("...in both languages",
-    (src.match(/They will appear under Accounts/g) || []).length === 1
-    && (src.match(/Zitaonekana chini ya Hesabu/g) || []).length === 1, true);
+  // The panel naming the four statements this system cannot yet produce was
+  // removed on 2026-10-07, to return with the Accounts work. Its strings went
+  // with it: a dictionary entry nothing renders is a string that drifts out of
+  // date unread, and i18n-dictionary.test.mjs would keep demanding a Swahili
+  // translation for a panel nobody can see.
+  check("the ledger-pending strings went with the panel",
+    /ledgerPending/.test(src), false);
+  check("...and so did its markup", /ledgerPending/.test(html), false);
 }
 
 console.log("\n=== Inventory no longer asks for a cost ===");
