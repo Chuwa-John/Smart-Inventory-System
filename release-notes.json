@@ -2,6 +2,18 @@
   "_comment": "What changed in each release, in the words a shopkeeper would use. Unversioned on purpose: the running app fetches this by a stable URL to show what the INCOMING version brings, so a ?v= here would be a URL the old build cannot know. Newest first. tests/release-notes.test.mjs fails the build if the top entry does not match the stamp in app.html.",
   "releases": [
     {
+      "version": "20261007d",
+      "date": "2026-10-07",
+      "en": [
+        "On the Cost of Goods Sold report you can now tap Opening stock, Purchases, Carriage or Closing stock to see what each one is made of. As on the Profit Report, the list adds itself up and tells you whether it reaches the figure on the line.",
+        "The owner dashboard now leads with how the shop is doing. Voids, refunds, discounts, faults and mismatched sales have moved under a Checks heading below. Nothing was removed, and they still turn red when they have something to say."
+      ],
+      "sw": [
+        "Kwenye ripoti ya Gharama ya Bidhaa Zilizouzwa sasa unaweza kugusa Hisa ya kuanzia, Manunuzi, Usafirishaji au Hisa ya mwisho ili uone kila moja imeundwa na nini. Kama ilivyo kwenye Ripoti ya Faida, orodha inajijumlisha na kukuambia kama inafikia takwimu ya mstari.",
+        "Dashibodi ya mmiliki sasa inaanza na hali ya duka. Mauzo yaliyofutwa, marejesho, punguzo, hitilafu na mauzo yasiyolingana yamehamia chini ya kichwa cha Ukaguzi. Hakuna kilichoondolewa, na bado vinageuka vyekundu vikiwa na la kusema."
+      ]
+    },
+    {
       "version": "20261007c",
       "date": "2026-10-07",
       "en": [

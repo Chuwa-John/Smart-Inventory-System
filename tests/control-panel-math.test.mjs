@@ -487,6 +487,40 @@ console.log("\n=== a denied read does not cache a dash for the whole session ===
   }
 }
 
+console.log("\n=== the owner sees trading figures first, checks second ===");
+{
+  const html = readFileSync(new URL("../app.html", import.meta.url), "utf8");
+  const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+
+  // Ten tiles went up in one grid and five of them were audit controls. An
+  // owner read ten numbers to find three. Split on 2026-10-07 after a
+  // competitor called the UI "too professional" -- which was a fair hit at the
+  // density, not at the rigour.
+  check("there is a separate grid for the checks", /id="adminChecksGrid"/.test(html), true);
+  check("...with its own heading", /control\.checksHeading/.test(html), true);
+
+  const headline = app.slice(app.indexOf('qs("#adminControlGrid").innerHTML'),
+                             app.indexOf('qs("#adminChecksGrid").innerHTML'));
+  const checks = app.slice(app.indexOf('qs("#adminChecksGrid").innerHTML'));
+
+  // NOTHING was removed. Every tile still renders, just not all in one place.
+  for (const key of ["control.voidsMonth", "control.refundsMonth", "control.discountsMonth",
+                     "control.faults", "control.totalMismatches"]) {
+    check(`${key} moved to the checks`, checks.slice(0, 1800).includes(key), true);
+    check(`...and is no longer in the headline grid`, headline.includes(key), false);
+  }
+  for (const key of ["control.revenueToday", "control.revenueMonth", "control.grossMargin",
+                     "control.stockAtCost", "control.creditOwed"]) {
+    check(`${key} stays in the headline grid`, headline.includes(key), true);
+  }
+
+  // A check with something to say must still shout. The quiet styling is a
+  // default, not a cap.
+  check("a fault still renders as danger", /state\.faults\?\.length \? "danger" : ""/.test(checks.slice(0, 1800)), true);
+  check("a mismatch still renders as danger",
+    /totalMismatches\.length \? "danger" : ""/.test(checks.slice(0, 1800)), true);
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 process.exit(failed.length ? 1 : 0);

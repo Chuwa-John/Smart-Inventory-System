@@ -37,13 +37,13 @@
          Must carry the SAME ?v= as the script tag below: a different query is a
          different cache key and would fetch the bundle twice.
          tests/deployment-validation.test.mjs fails if they drift apart. -->
-    <link rel="modulepreload" href="./app.js?v=20261007c" />
+    <link rel="modulepreload" href="./app.js?v=20261007d" />
     <!-- Preloaded, not merely referenced: the stylesheet has to be parsed
          before the browser discovers a font inside it, and on a 2G link that
          wait is visible as a flash of the fallback face. crossorigin is
          required even same-origin -- fonts are fetched in CORS mode. -->
-    <link rel="preload" href="./fonts/inter-latin.woff2?v=20261007c" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20261007c" />
+    <link rel="preload" href="./fonts/inter-latin.woff2?v=20261007d" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="./styles.css?v=20261007d" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#f6f8fa" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -63,7 +63,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20261007c"></script>
+    <script type="module" src="./boot.js?v=20261007d"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -317,6 +317,17 @@
               <span class="muted control-scope" data-i18n="control.allStoresScope">All stores · month to date</span>
             </div>
             <div class="control-grid" id="adminControlGrid"></div>
+
+            <!-- The audit controls, under their own heading rather than mixed
+                 into the trading figures above. Voids, refunds, discounts,
+                 crashes and sales that disagree with their own line items are
+                 all worth watching, and none of them is what an owner opens the
+                 app to find out. Still on the page, still turning red when they
+                 have something to say. -->
+            <div class="control-subhead">
+              <h3 data-i18n="control.checksHeading">Checks</h3>
+            </div>
+            <div class="control-grid control-grid-quiet" id="adminChecksGrid"></div>
             <div class="control-subhead">
               <h3 data-i18n="control.byStore">Performance by store</h3>
             </div>
@@ -1389,6 +1400,10 @@
             <!-- Filled when the owner presses an "incomplete" badge: the
                  products that had no cost in force at that date, which are
                  exactly the ones to go and price. -->
+            <!-- What a line is made of, opened from the line itself. Same
+                 contract as the Profit Report drawer: list the rows and say
+                 whether they reach the figure above. -->
+            <div id="cogsDrill" hidden></div>
             <div id="cogsUnpricedList" hidden></div>
             <p class="muted" id="cogsCaveat" hidden></p>
           </article>
@@ -2981,6 +2996,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20261007c"></script>
+    <script type="module" src="./app.js?v=20261007d"></script>
   </body>
 </html>

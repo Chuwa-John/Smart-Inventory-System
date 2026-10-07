@@ -129,6 +129,11 @@ const state = {
   language: localStorage.getItem("savia:lang") || localStorage.getItem("sanitaryflow:lang") || "en",
   // Which statement line is open underneath the profit report, or null.
   profitDrill: null,
+  // The same, for the cost of goods sold statement, plus the result it belongs
+  // to -- held so opening a line does not regenerate the report and refetch the
+  // whole stock ledger.
+  cogsDrill: null,
+  cogsResult: null,
   stockLedger: [],
   stockLedgerLoaded: false,
   stockLedgerLoading: false,
@@ -474,6 +479,16 @@ const DICTIONARY = {
     "cogs.fromLabel": "From", "cogs.toLabel": "To",
     "cogs.generateButton": "Generate Report",
     "cogs.colLine": "COGS calculation", "cogs.colAmount": "Amount",
+    "cogs.drillTitle.opening": "What was on the shelf when the period started",
+    "cogs.drillTitle.closing": "What was on the shelf when the period ended",
+    "cogs.drillTitle.purchases": "What you paid for stock in this period",
+    "cogs.drillTitle.carriage": "What it cost to get that stock here",
+    "cogs.drillColOnHand": "On hand",
+    "cogs.drillColSupplier": "Supplier",
+    "cogs.drillColReference": "Reference",
+    "cogs.drillOnHand": "{count} on hand",
+    "cogs.drillAssumed": "· assumed price",
+    "cogs.drillNoSupplier": "No supplier recorded",
     "cogs.rowOpening": "Opening Stock",
     "cogs.rowPurchases": "Add: Purchases",
     "cogs.rowCarriage": "Add: Carriage Inwards",
@@ -718,6 +733,7 @@ const DICTIONARY = {
     "control.adminEyebrow": "Business control",
     "control.adminTitle": "Owner control",
     "control.todayScope": "today",
+    "control.checksHeading": "Checks",
     "control.allStoresScope": "All stores · month to date",
     "control.expectedCash": "Cash taken today",
     "control.expectedCashNote": "Cash sales plus cash deposits, less refunds",
@@ -2120,6 +2136,16 @@ const DICTIONARY = {
     "cogs.fromLabel": "Kuanzia", "cogs.toLabel": "Hadi",
     "cogs.generateButton": "Tengeneza Ripoti",
     "cogs.colLine": "Hesabu ya COGS", "cogs.colAmount": "Kiasi",
+    "cogs.drillTitle.opening": "Kilichokuwa rafuni kipindi kilipoanza",
+    "cogs.drillTitle.closing": "Kilichokuwa rafuni kipindi kilipoisha",
+    "cogs.drillTitle.purchases": "Ulicholipia hisa katika kipindi hiki",
+    "cogs.drillColOnHand": "Zilizopo",
+    "cogs.drillTitle.carriage": "Iligharimu nini kuleta hisa hiyo hapa",
+    "cogs.drillColSupplier": "Muuzaji",
+    "cogs.drillColReference": "Kumbukumbu",
+    "cogs.drillOnHand": "{count} zipo",
+    "cogs.drillAssumed": "· bei iliyokadiriwa",
+    "cogs.drillNoSupplier": "Hakuna muuzaji aliyerekodiwa",
     "cogs.rowOpening": "Hisa ya Kuanzia",
     "cogs.rowPurchases": "Jumlisha: Manunuzi",
     "cogs.rowCarriage": "Jumlisha: Gharama za Usafirishaji",
@@ -2364,6 +2390,7 @@ const DICTIONARY = {
     "control.adminEyebrow": "Udhibiti wa biashara",
     "control.adminTitle": "Udhibiti wa mmiliki",
     "control.todayScope": "leo",
+    "control.checksHeading": "Ukaguzi",
     "control.allStoresScope": "Maduka yote · mwezi hadi leo",
     "control.expectedCash": "Fedha iliyopokelewa leo",
     "control.expectedCashNote": "Mauzo ya taslimu na malipo, ukiondoa marejesho",
@@ -13305,10 +13332,14 @@ async function generateCogsReport() {
   const unpricedHost = qs("#cogsUnpricedList");
   if (unpricedHost) { unpricedHost.hidden = true; unpricedHost.innerHTML = ""; }
 
+  // The fifth element opens the line. Only the lines with something UNDERNEATH
+  // them get one: net purchases, goods available and COGS are sums of lines
+  // already openable, so a control on them would promise something new and
+  // show the same rows again.
   const rows = [
-    [t("cogs.rowOpening"), money(result.openingStock), false, openingMark],
-    [t("cogs.rowPurchases"), money(result.purchases), false, ""],
-    [t("cogs.rowCarriage"), money(result.carriageInwards), false, ""]
+    [t("cogs.rowOpening"), money(result.openingStock), false, openingMark, "opening"],
+    [t("cogs.rowPurchases"), money(result.purchases), false, "", "purchases"],
+    [t("cogs.rowCarriage"), money(result.carriageInwards), false, "", "carriage"]
   ];
   if (result.otherDirectCosts) rows.push([t("cogs.rowOtherDirect"), money(result.otherDirectCosts), false, ""]);
   rows.push(
@@ -13319,7 +13350,7 @@ async function generateCogsReport() {
       result.discountsAreCaptured ? "" : `<span class="muted"> · ${esc(t("cogs.notCaptured"))}</span>`],
     [t("cogs.rowNetPurchases"), money(result.netPurchases), true, ""],
     [t("cogs.rowAvailable"), money(result.goodsAvailable), true, openingMark],
-    [t("cogs.rowClosing"), bracket(result.closingStock), false, closingMark],
+    [t("cogs.rowClosing"), bracket(result.closingStock), false, closingMark, "closing"],
     // COGS inherits the doubt from both ends of the period, because it is the
     // difference between them.
     // Withheld rather than badged when it came out impossible. See
@@ -13332,10 +13363,18 @@ async function generateCogsReport() {
         : derivedMark]
   );
 
-  table.innerHTML = rows.map(([label, amount, strong, mark]) => `<tr${strong ? ' class="statement-total"' : ""}>
-      <td>${esc(label)}</td>
+  table.innerHTML = rows.map(([label, amount, strong, mark, drill]) => `<tr${strong ? ' class="statement-total"' : ""}>
+      <td>${drill
+        ? `<button type="button" class="link-button statement-drill" data-cogs-drill="${esc(drill)}"
+             aria-expanded="${state.cogsDrill === drill ? "true" : "false"}">${esc(label)}</button>`
+        : esc(label)}</td>
       <td>${strong ? `<strong>${esc(amount)}</strong>` : esc(amount)}${mark}</td>
     </tr>`).join("");
+
+  // Held so the handler can rebuild the drawer without regenerating the whole
+  // report, which refetches the stock ledger.
+  state.cogsResult = result;
+  renderCogsDrill();
 
   // Everything the figure cannot stand behind, said plainly. A COGS number
   // goes into a P&L, so an incomplete one has to arrive labelled.
@@ -13380,6 +13419,109 @@ async function generateCogsReport() {
     caveat.hidden = false;
     caveat.textContent = warnings.join(" ");
   }
+}
+
+// What a line of the cost of goods statement is made of.
+//
+// Same contract as the Profit Report drawer: list the rows, add them up AGAIN
+// independently, and say whether the two agree. The point is that an owner can
+// check the arithmetic instead of trusting it, so a drawer that printed a
+// different total without saying so would be worse than none.
+function cogsDrillRows(which, result) {
+  if (which === "opening" || which === "closing") {
+    const rows = (which === "opening" ? result.openingRows : result.closingRows) || [];
+    return {
+      rows: rows
+        .filter((row) => row.unitCost !== null)
+        .map((row) => ({
+          what: row.name,
+          who: t("cogs.drillOnHand", { count: String(row.quantity) }),
+          amount: row.value,
+          flag: row.assumed ? t("cogs.drillAssumed") : ""
+        })),
+      expected: which === "opening" ? result.openingStock : result.closingStock,
+      colWhat: t("profit.drillColProduct"),
+      colWho: t("cogs.drillColOnHand")
+    };
+  }
+
+  // Purchases and carriage come from the same delivery lines, split the way the
+  // statement splits them -- so the two rows cannot drift apart.
+  const lines = result.purchaseLines || [];
+  const goodsSide = which === "purchases";
+  return {
+    rows: lines
+      .map((line) => ({
+        when: line.at,
+        what: line.supplier || t("cogs.drillNoSupplier"),
+        who: line.reference || "",
+        amount: goodsSide ? line.goods : line.carriage
+      }))
+      .filter((row) => row.amount !== 0),
+    expected: goodsSide ? result.purchases : result.carriageInwards,
+    colWhat: t("cogs.drillColSupplier"),
+    colWho: t("cogs.drillColReference")
+  };
+}
+
+function renderCogsDrill() {
+  const host = qs("#cogsDrill");
+  if (!host) return;
+  const which = state.cogsDrill;
+  const result = state.cogsResult;
+  if (!which || !result) {
+    host.hidden = true;
+    host.innerHTML = "";
+    return;
+  }
+
+  let built;
+  try {
+    built = cogsDrillRows(which, result);
+  } catch (error) {
+    // A throw would otherwise leave the PREVIOUS drawer on screen under the new
+    // heading -- one line's title over another line's numbers. Seen on the
+    // Profit Report drawer on 2026-10-07.
+    console.warn("[cogsDrill]", which, error);
+    host.hidden = false;
+    host.innerHTML = `<div class="table-panel drill-panel"><p class="muted">${esc(t("profit.drillFailed"))}</p></div>`;
+    return;
+  }
+
+  const { rows, expected, colWhat, colWho } = built;
+  const listed = rows.reduce((sum, row) => sum + safeNumber(row.amount), 0);
+  const tallies = Math.abs(listed - safeNumber(expected)) < 0.5;
+  const dated = rows.some((row) => row.when);
+
+  host.hidden = false;
+  host.innerHTML = `
+    <div class="table-panel drill-panel">
+      <div class="panel-head">
+        <h3>${esc(t(`cogs.drillTitle.${which}`))}</h3>
+        <button type="button" class="ghost-button compact" id="cogsDrillClose">${esc(t("profit.drillClose"))}</button>
+      </div>
+      ${rows.length ? `<div class="table-scroll"><table class="statement-figures">
+        <thead><tr>
+          ${dated ? `<th>${esc(t("profit.drillColWhen"))}</th>` : ""}
+          <th>${esc(colWhat)}</th>
+          <th>${esc(colWho)}</th>
+          <th>${esc(t("profit.drillColAmount"))}</th>
+        </tr></thead>
+        <tbody>${rows.map((row) => `<tr>
+          ${dated ? `<td>${row.when ? esc(row.when.toLocaleDateString()) : "—"}</td>` : ""}
+          <td>${esc(row.what)}${row.flag ? ` <span class="muted">${esc(row.flag)}</span>` : ""}</td>
+          <td>${esc(row.who)}</td>
+          <td>${money(row.amount)}</td>
+        </tr>`).join("")}
+        <tr class="statement-total">
+          <td>${esc(t("profit.drillTotal"))}</td>${dated ? "<td></td>" : ""}<td></td>
+          <td><strong>${money(listed)}</strong></td>
+        </tr></tbody>
+      </table></div>` : `<p class="muted">${esc(t("profit.drillEmpty"))}</p>`}
+      <p class="muted">${esc(tallies
+        ? t("profit.drillTallies", { value: money(expected) })
+        : t("profit.drillGap", { listed: money(listed), line: money(expected), gap: money(Math.abs(listed - safeNumber(expected))) }))}</p>
+    </div>`;
 }
 
 // What sits behind an "incomplete" badge: the products that had no cost in
@@ -18353,14 +18495,25 @@ function computePeriodCogs({ fromMs, toMs, storeId, products, movements, costInd
   // below come out right rather than double counting it.
   let goods = 0;
   let carriage = 0;
+  const purchaseLines = [];
   for (const purchase of purchases || []) {
     if (scoped && purchase.storeId !== storeId) continue;
-    if (!inWindow(purchasedAt(purchase)?.getTime() ?? null)) continue;
+    const at = purchasedAt(purchase);
+    if (!inWindow(at?.getTime() ?? null)) continue;
     // A purchase written before the landed-cost split carries only totalPaid,
     // and all of it was goods.
     const hasSplit = purchase.goodsCost !== undefined || purchase.landedCost !== undefined;
-    goods += hasSplit ? safeNumber(purchase.goodsCost) : safeNumber(purchase.totalPaid);
-    carriage += safeNumber(purchase.landedCost);
+    const lineGoods = hasSplit ? safeNumber(purchase.goodsCost) : safeNumber(purchase.totalPaid);
+    const lineCarriage = safeNumber(purchase.landedCost);
+    goods += lineGoods;
+    carriage += lineCarriage;
+    purchaseLines.push({
+      at,
+      supplier: purchase.supplierName || "",
+      reference: purchase.reference || "",
+      goods: lineGoods,
+      carriage: lineCarriage
+    });
   }
 
   let returns = 0;
@@ -18424,6 +18577,13 @@ function computePeriodCogs({ fromMs, toMs, storeId, products, movements, costInd
 
   return {
     openingStock: opening.value,
+    // The products behind each end of the period, and the deliveries behind the
+    // middle. Carried so a reader can open a line and see what it was added up
+    // from -- the figures already exist, and recomputing them in the renderer
+    // would be a second engine that could disagree with this one.
+    openingRows: opening.rows,
+    closingRows: closing.rows,
+    purchaseLines: purchaseLines,
     purchases: goods,
     carriageInwards: carriage,
     otherDirectCosts: otherDirect,
@@ -18623,6 +18783,22 @@ function renderAdminControl() {
           <button class="ghost-button compact" type="button" id="showStockValueButton"${state.productCostsLoading ? " disabled" : ""}>${esc(t("control.showStockValue"))}</button>
         </div>`),
     controlTile(t("control.creditOwed"), money(creditOwed), creditOwed > 0 ? "warn" : ""),
+  ].join("");
+
+  // THE CHECKS, moved out of the headline grid on 2026-10-07.
+  //
+  // Ten tiles went up together, and five of them answered a question nobody
+  // opens a till to ask: how many sales were voided, how many refunded, how
+  // much was discounted, has anything crashed, does any sale disagree with its
+  // own line items. Those are audit controls and they matter -- a fault nobody
+  // can see is a fault reported by an angry phone call -- but putting them
+  // beside "what did I take today" meant the owner read ten numbers to find
+  // three.
+  //
+  // Nothing is removed and nothing is hidden behind a click. They sit under
+  // their own heading, below the trading figures, and they still go red when
+  // they have something to say.
+  qs("#adminChecksGrid").innerHTML = [
     controlTile(t("control.voidsMonth"), `${month.voidCount} · ${money(month.voidValue)}`,
       month.voidCount > 0 ? "warn" : ""),
     controlTile(t("control.refundsMonth"), `${month.refundCount} · ${money(month.refundValue)}`,
@@ -18630,7 +18806,6 @@ function renderAdminControl() {
     controlTile(t("control.discountsMonth"), money(month.discounts), month.discounts > 0 ? "warn" : ""),
     // Nothing server-side can prove a total matches its line items, so this
     // reports the ones that do not rather than pretending the check exists.
-    // A fault nobody can see is a fault reported by an angry phone call.
     controlTile(t("control.faults"),
       state.faults === null ? "—" : String(state.faults.length),
       state.faults?.length ? "danger" : "",
@@ -21620,9 +21795,26 @@ function bindEvents() {
     guardedClick(event.currentTarget, generateCogsReport));
   // Delegated: the badges are rebuilt on every generate, so binding them
   // individually would leave a listener on each discarded one.
+  // One handler for the table: the unpriced badge and the line drawers both
+  // live in it, and two listeners on the same element is two places to look
+  // when a click does nothing.
   qs("#cogsTable")?.addEventListener("click", (event) => {
     const badge = event.target.closest("[data-cogs-unpriced]");
-    if (badge) renderCogsUnpricedList(badge.dataset.cogsUnpriced);
+    if (badge) {
+      renderCogsUnpricedList(badge.dataset.cogsUnpriced);
+      return;
+    }
+    const button = event.target.closest("[data-cogs-drill]");
+    if (!button) return;
+    const which = button.dataset.cogsDrill;
+    state.cogsDrill = state.cogsDrill === which ? null : which;
+    // The drawer only, NOT a regenerate: generating refetches the whole stock
+    // ledger, and opening a line is a question about a report already on
+    // screen rather than a request for a fresh one.
+    renderCogsDrill();
+    for (const control of qsa("[data-cogs-drill]")) {
+      control.setAttribute("aria-expanded", control.dataset.cogsDrill === state.cogsDrill ? "true" : "false");
+    }
   });
   qs("#openDeliveryDialog")?.addEventListener("click", () => openDeliveryDialog());
   qs("#newDeliveryRequestButton")?.addEventListener("click", () => openDeliveryRequestDialog());
@@ -21827,6 +22019,12 @@ function bindEvents() {
     if (!event.target.closest("#profitDrillClose")) return;
     state.profitDrill = null;
     renderProfit();
+  });
+  qs("#cogsDrill")?.addEventListener("click", (event) => {
+    if (!event.target.closest("#cogsDrillClose")) return;
+    state.cogsDrill = null;
+    renderCogsDrill();
+    for (const control of qsa("[data-cogs-drill]")) control.setAttribute("aria-expanded", "false");
   });
   qs("#idleSignOutToggle")?.addEventListener("change", (event) => {
     setIdleSignOutEnabled(Boolean(event.target.checked));

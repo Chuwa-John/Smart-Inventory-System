@@ -26,7 +26,7 @@
   font-weight: 400 700;
   font-style: normal;
   font-display: swap;
-  src: url("./fonts/inter-latin.woff2?v=20261007c") format("woff2");
+  src: url("./fonts/inter-latin.woff2?v=20261007d") format("woff2");
 }
 
 :root {
@@ -2892,4 +2892,16 @@ table.statement-figures td.danger { color: var(--red); }
 
 .period-picker input {
   min-width: 9.5rem;
+}
+
+/* The audit tiles. Same grid, dialled down: they are worth watching and they
+   are not what the owner came to find out, so they read as a second voice
+   rather than competing with the trading figures above them. A tile that has
+   something to say still sets its own warn/danger tone, which overrides this. */
+.control-grid-quiet .control-tile {
+  background: var(--panel-soft);
+}
+
+.control-grid-quiet .control-tile-value {
+  font-size: 1.05rem;
 }

@@ -622,6 +622,59 @@ console.log("=== an oversell still costs the period ===");
   check("...and it is not reported as unpriced", r.uncostedProducts === 0);
 }
 
+console.log("=== every line of the statement opens ===");
+{
+  const html = readFileSync(new URL("../app.html", import.meta.url), "utf8");
+
+  for (const which of ["opening", "purchases", "carriage", "closing"]) {
+    check(`the ${which} line is openable`, new RegExp(`"${which}"\\]`).test(src) || src.includes(`"${which}"`));
+    check(`...and has a heading`, new RegExp(`"cogs\\.drillTitle\\.${which}":`).test(src));
+  }
+
+  // The sums are NOT openable: net purchases, goods available and COGS are
+  // totals of lines already openable, so a control on them would promise
+  // something new and show the same rows again.
+  check("net purchases is not openable", /rowNetPurchases"\), money\(result\.netPurchases\), true, ""\]/.test(src));
+  check("goods available is not openable", /rowAvailable"\), money\(result\.goodsAvailable\), true, openingMark\]/.test(src));
+
+  check("there is somewhere to render it", /id="cogsDrill"/.test(html));
+  check("the handler is delegated from the table", /#cogsTable"\)\?\.addEventListener\("click"/.test(src));
+  check("clicking the open line closes it", /state\.cogsDrill === which \? null : which/.test(src));
+
+  // Opening a line must not regenerate: generating refetches the whole stock
+  // ledger, and the question is about a report already on screen.
+  const handler = src.slice(src.indexOf('#cogsTable")?.addEventListener'));
+  check("opening a line redraws the drawer, not the report",
+    /renderCogsDrill\(\)/.test(handler.slice(0, 700))
+      && !/generateCogsReport\(\)/.test(handler.slice(0, 700)));
+
+  // Same contract as the profit drawer.
+  check("the rows are added up independently",
+    /rows\.reduce\(\(sum, row\) => sum \+ safeNumber\(row\.amount\), 0\)/.test(src));
+  check("...and compared with the line they explain",
+    (src.match(/Math\.abs\(listed - safeNumber\(expected\)\) < 0\.5/g) || []).length >= 2);
+  check("a failed breakdown cannot show the previous one",
+    /\[cogsDrill\]/.test(src));
+
+  // Purchases and carriage are split from ONE set of delivery lines, so the
+  // two rows cannot drift from each other or from the statement.
+  check("purchases and carriage come from the same lines",
+    /goodsSide \? line\.goods : line\.carriage/.test(src));
+  check("the engine carries those lines", /purchaseLines: purchaseLines/.test(src));
+  check("...and the stock rows behind both ends",
+    /openingRows: opening\.rows/.test(src) && /closingRows: closing\.rows/.test(src));
+
+  // An assumed price is marked in the list, not just counted in the caveat.
+  check("an assumed price is flagged on its row",
+    /row\.assumed \? t\("cogs\.drillAssumed"\)/.test(src));
+
+  for (const key of ["cogs.drillColOnHand", "cogs.drillColSupplier", "cogs.drillOnHand",
+                     "cogs.drillAssumed", "cogs.drillNoSupplier"]) {
+    check(`${key} is in both languages`,
+      (src.match(new RegExp('"' + key.replace(/\./g, "\\.") + '":', "g")) || []).length === 2);
+  }
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) {
