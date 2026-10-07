@@ -2,6 +2,44 @@
   "_comment": "What changed in each release, in the words a shopkeeper would use. Unversioned on purpose: the running app fetches this by a stable URL to show what the INCOMING version brings, so a ?v= here would be a URL the old build cannot know. Newest first. tests/release-notes.test.mjs fails the build if the top entry does not match the stamp in app.html.",
   "releases": [
     {
+      "version": "20261007c",
+      "date": "2026-10-07",
+      "en": [
+        "The Profit Report now takes a date range instead of a single month. Pick any two dates, across months or years, or use This month to go back to the default.",
+        "Direct costs of selling, such as commission, delivery and packaging, have moved up into cost of sales where a trading account puts them. Gross profit now shows what you kept after everything it took to sell the goods. Your net profit is unchanged.",
+        "Opening the cost of sales line lists those direct costs beside the products, so the breakdown still adds up to the figure on the line."
+      ],
+      "sw": [
+        "Ripoti ya Faida sasa inachukua kipindi cha tarehe badala ya mwezi mmoja. Chagua tarehe zozote mbili, kuvuka miezi au miaka, au tumia Mwezi huu kurudi kwenye hali ya kawaida.",
+        "Gharama za moja kwa moja za kuuza, kama kamisheni, usafirishaji na vifungashio, zimehamia juu kwenye gharama ya mauzo ambapo hesabu ya biashara inaziweka. Faida ghafi sasa inaonyesha ulichobakiza baada ya kila kilichohitajika kuuza bidhaa. Faida yako halisi haijabadilika.",
+        "Kufungua mstari wa gharama ya mauzo kunaorodhesha gharama hizo za moja kwa moja kando ya bidhaa, ili mchanganuo uendelee kufikia takwimu ya mstari."
+      ]
+    },
+    {
+      "version": "20261007b",
+      "date": "2026-10-07",
+      "en": [
+        "On the Profit Report you can now tap Revenue, Cost of goods sold, or either expense line to see exactly what went into it. The list adds itself up and tells you whether it reaches the figure on the line, so you can check the maths rather than take it on trust."
+      ],
+      "sw": [
+        "Kwenye Ripoti ya Faida sasa unaweza kugusa Mapato, Gharama ya bidhaa zilizouzwa, au mstari wowote wa matumizi ili uone hasa kilichoingia humo. Orodha inajijumlisha yenyewe na kukuambia kama inafikia takwimu ya mstari, ili uweze kukagua hesabu badala ya kuiamini tu."
+      ]
+    },
+    {
+      "version": "20261007a",
+      "date": "2026-10-07",
+      "en": [
+        "Cost of goods sold can now be worked out for months before you started recording buying prices. Where a price was not yet recorded, the earliest one you later entered is used, and the report says how many products that applied to.",
+        "Stock Valuation now has a date. Pick any day and it shows what was on the shelf then, and what it was worth. Before this the month box beside it never changed the figure at all.",
+        "The app opens faster. The security check that used to hold everything up now loads alongside the app instead of in front of it."
+      ],
+      "sw": [
+        "Gharama ya bidhaa zilizouzwa sasa inaweza kupigwa hesabu kwa miezi kabla hujaanza kurekodi bei za ununuzi. Pale bei ilipokuwa haijarekodiwa, bei ya kwanza uliyoingiza baadaye ndiyo inatumika, na ripoti inasema bidhaa ngapi zilihusika.",
+        "Thamani ya Hisa sasa ina tarehe. Chagua siku yoyote nayo itaonyesha kilichokuwa rafuni wakati huo, na kilikuwa na thamani gani. Kabla ya hapa kisanduku cha mwezi hakikubadilisha takwimu hata kidogo.",
+        "Programu inafunguka haraka zaidi. Ukaguzi wa usalama uliokuwa ukizuia kila kitu sasa unapakia sambamba na programu badala ya mbele yake."
+      ]
+    },
+    {
       "version": "20260926g",
       "date": "2026-09-28",
       "en": [

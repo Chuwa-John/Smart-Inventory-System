@@ -212,10 +212,25 @@ console.log("\n=== nothing claims 'no costs recorded' while they are merely unfe
   // and into a render, which is how this fix could have quietly achieved
   // nothing. Found by opening the dashboard and seeing the tile already say
   // "Loading" before anyone had asked for a cost.
+  // Asserted by what is INSIDE the guard rather than by its exact spelling:
+  // the valuation needs a second on-demand fetch now (the stock ledger, to walk
+  // the shelf back to a chosen date) and pinning the one-line form made adding
+  // it look like a regression. What must hold is that neither fetch happens
+  // unless this report is the one on screen.
+  const guard = src.match(/if \(state\.selectedReport === "stockValuation"\) \{([\s\S]*?)\n  \}/);
+  check("the valuation report has an on-screen guard", Boolean(guard), true);
   check("the valuation report asks for costs when it is open",
-    /if \(state\.selectedReport === "stockValuation"\) ensureProductCosts\(\);/.test(src), true);
-  check("...and not on every render",
-    /\n  ensureProductCosts\(\);\n\s*const valuation/.test(src), false);
+    /ensureProductCosts\(\);/.test(guard?.[1] || ""), true);
+  check("...and for the stock ledger it walks back over",
+    /ensureStockLedger\(\);/.test(guard?.[1] || ""), true);
+
+  // The failure this guards: moving a fetch out of a listener and into a render
+  // achieves nothing if the render runs on every session anyway.
+  const body = src.slice(src.indexOf("function renderCostReports()"));
+  const unguarded = body.slice(0, body.indexOf("const valuation"))
+    .split("if (state.selectedReport")[0];
+  check("...and neither is called before that guard",
+    /ensureProductCosts\(\);|ensureStockLedger\(\);/.test(unguarded), false);
 }
 
 console.log("\n=== a written cost drops the cached map ===");

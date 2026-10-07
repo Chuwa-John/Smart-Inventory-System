@@ -226,6 +226,151 @@ console.log("\n=== the panel says what it is, in both languages ===");
   }
 }
 
+console.log("\n=== every statement line can be opened to show what is in it ===");
+{
+  const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../app.html", import.meta.url), "utf8");
+
+  // Asked for because an owner looking at "cost of goods sold, 467,314" has no
+  // way to tell a right number from a wrong one.
+  // "direct" is no longer a statement line: the cost moved into cost of sales
+  // above gross profit, and the cost-of-sales breakdown lists those expenses
+  // alongside the products so the drawer still reaches the line.
+  for (const which of ["revenue", "cogs", "indirect"]) {
+    check(`the ${which} line is openable`,
+      new RegExp(`drill: "${which}"`).test(app), true);
+    check(`...and has a heading`,
+      new RegExp(`"profit\\.drillTitle\\.${which}":`).test(app), true);
+  }
+
+  // The DERIVED lines deliberately have none: gross and net are the subtraction
+  // of two lines that are both already openable, so there is nothing
+  // underneath them that is not already reachable.
+  const rowsBlock = app.slice(app.indexOf("const rows = [\n    { label: t(\"profit.stRevenue\")"));
+  const statement = rowsBlock.slice(0, rowsBlock.indexOf("\n  ];"));
+  check("gross profit is not openable", /stGross[\s\S]{0,200}drill:/.test(statement), false);
+  check("net profit is not openable", /stNet[\s\S]{0,200}drill:/.test(statement), false);
+
+  // A button, so it is reachable by keyboard and announces its state.
+  check("the label is a real button", /data-profit-drill="\$\{esc\(row\.drill\)\}"/.test(app), true);
+  check("...that reports whether it is open", /aria-expanded=/.test(app), true);
+
+  // Delegated, because the statement is rebuilt on every render.
+  check("the handler is delegated from the grid",
+    /#profitGrid"\)\?\.addEventListener\("click"/.test(app), true);
+  check("clicking the open line closes it",
+    /state\.profitDrill === which \? null : which/.test(app), true);
+  check("there is somewhere to render it", /id="profitDrill"/.test(html), true);
+
+  // THE POINT. A breakdown that did not add up to the line would be worse than
+  // none, because it would look like proof.
+  check("the rows are added up independently",
+    /rows\.reduce\(\(sum, row\) => sum \+ safeNumber\(row\.amount\), 0\)/.test(app), true);
+  check("...and compared with the line they explain",
+    /Math\.abs\(listed - safeNumber\(expected\)\) < 0\.5/.test(app), true);
+  check("...with the disagreement stated, not hidden",
+    /profit\.drillGap/.test(app), true);
+  for (const key of ["profit.drillTallies", "profit.drillGap"]) {
+    const n = (app.match(new RegExp('"' + key.replace(/\./g, "\\.") + '":', "g")) || []).length;
+    check(`${key} is in both languages`, n, 2);
+  }
+
+  // Cost of sales is goods PLUS the direct costs of selling them, so the
+  // breakdown has to carry both or it falls short by exactly the direct
+  // expenses -- which the tally line would then correctly report as a gap.
+  check("the cost-of-sales breakdown is measured against cost of sales",
+    /expected: p\.costOfSales/.test(app), true);
+  check("...and lists the direct expenses beside the products",
+    /expenseNature\(expense\) !== "direct"/.test(app), true);
+
+  // A product with no recorded cost must not be listed at zero: that would make
+  // the drawer tally while hiding the very thing that is missing.
+  check("uncosted products are excluded rather than listed at zero",
+    /\.filter\(\(row\) => row\.costKnown\)/.test(app), true);
+
+  // EVERY function the drill calls must exist.
+  //
+  // profitDrillRows() called expenseDate(), which does not exist -- the helper
+  // is expenseSpentAt(). Nothing caught it: the file parses, the other three
+  // lines worked, and the throw left the PREVIOUS drawer on screen under the
+  // new heading, so it looked like the wrong line had opened rather than like
+  // an error. Reached the preview on 2026-10-07.
+  const drillSrc = app.slice(app.indexOf("function profitDrillRows("),
+                             app.indexOf("function renderProductProfit("));
+  // Comments stripped, and method calls skipped. The fix's own comment names
+  // expenseDate() while explaining that it does NOT exist, and a bare word
+  // scan reads that as a live call -- the fourth time a comment has tripped a
+  // source-scanning test here. Leading [^.] drops .warn( .abs( .join( too.
+  const code = drillSrc.replace(/\/\/[^\n]*/g, "");
+  const called = [...code.matchAll(/(^|[^.\w])([a-z][A-Za-z0-9]*)\(/g)].map((m) => m[2]);
+  const builtins = new Set(["if", "for", "while", "switch", "catch", "return", "typeof",
+                            "filter", "map", "sort", "reduce", "slice", "String", "Number",
+                            "t", "esc", "money", "getTime", "toLocaleDateString", "push"]);
+  const missing = [...new Set(called)]
+    .filter((name) => !builtins.has(name))
+    .filter((name) => !new RegExp(`^(async )?function ${name}\\(|^const ${name} = `, "m").test(app))
+    // Locals defined inside the function itself.
+    .filter((name) => !new RegExp(`(const|let) ${name} =`).test(drillSrc));
+  if (missing.length) console.log(`      undefined: ${missing.join(", ")}`);
+  check("every helper the drill calls is defined", missing.length === 0, true);
+
+  // And a throw must not leave one line's heading over another line's numbers.
+  check("a failed breakdown says so rather than showing stale rows",
+    /catch \(error\) \{[\s\S]{0,260}profit\.drillFailed/.test(app), true);
+
+  // Revenue must be priced the way the statement prices it, not a second copy
+  // of the rule.
+  check("revenue rows net refunds through the shared helper",
+    /const gross = saleNetTotal\(sale\);/.test(app), true);
+  check("...and take VAT off only when the shop is registered",
+    /registered \? gross - safeNumber\(sale\.taxTotal\) : gross/.test(app), true);
+}
+
+console.log("\n=== the profit report runs on a period, not a month ===");
+{
+  const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../app.html", import.meta.url), "utf8");
+
+  // Asked for twice: month to month, with years, and specific dates.
+  check("the month picker is gone", /id="profitMonthInput"/.test(html), false);
+  check("there is a from date", /id="profitFromInput"/.test(html), true);
+  check("there is a to date", /id="profitToInput"/.test(html), true);
+  check("...and a shortcut back to the current month", /id="profitThisMonth"/.test(html), true);
+
+  // periodBounds() must not destructure in its signature: several harnesses
+  // extract a function by counting braces from the first `{`, which for a
+  // destructured parameter is the parameter list, so they capture no body and
+  // the sandbox fails to parse. expenses.test.mjs broke exactly this way.
+  check("periodBounds takes a plain object", /function periodBounds\(input\)/.test(app), true);
+
+  // A month key still works, so every caller that thinks in months is unchanged.
+  check("a month key still derives a period",
+    /const \[year, month\] = String\(monthKey \|\| ""\)\.split/.test(app), true);
+  check("...and an explicit range wins when given",
+    /if \(Number\.isFinite\(fromMs\) && Number\.isFinite\(toMs\)\) return \{ fromMs, toMs \};/.test(app), true);
+
+  // The statement, the drill and the per-product table must share ONE period.
+  check("the period is resolved in one place", /function profitPeriodBounds\(\)/.test(app), true);
+  check("the drill uses it", /const bounds = profitPeriodBounds\(\);/.test(app), true);
+  check("the product table uses the same bounds",
+    /fromMs: bounds\.fromMs,\s*\n\s*toMs: bounds\.toMs/.test(app), true);
+
+  // Changing the period must close an open drill, or one period's rows sit
+  // under another period's figure -- the disagreement the drill exists to rule
+  // out.
+  const fromHandler = app.slice(app.indexOf('#profitFromInput")?.addEventListener'));
+  check("changing the period closes an open breakdown",
+    /state\.profitDrill = null;/.test(fromHandler.slice(0, 900)), true);
+
+  // Backwards dates must say so rather than totalling to nothing, which reads
+  // as a shop that sold nothing.
+  check("a backwards range is refused by name", /profit\.datesBackwards/.test(app), true);
+  for (const key of ["profit.fromLabel", "profit.toLabel", "profit.thisMonth", "profit.datesBackwards"]) {
+    const n = (app.match(new RegExp('"' + key.replace(/\./g, "\\.") + '":', "g")) || []).length;
+    check(`${key} is in both languages`, n, 2);
+  }
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) { console.log(failed.map((f) => "  FAILED: " + f.name).join("\n")); process.exit(1); }

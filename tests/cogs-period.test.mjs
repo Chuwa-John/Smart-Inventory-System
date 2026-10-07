@@ -45,6 +45,7 @@ function extract(name) {
 const { computePeriodCogs, stockValueAt, buildCostIndex } = new Function(
   `${extract("safeNumber")}
    ${extract("costInForceAt")}
+   ${extract("costInForceAtOrEarliest")}
    ${extract("buildCostIndex")}
    ${extract("purchasedAt")}
    ${extract("movementTimeMs")}
@@ -502,6 +503,123 @@ console.log("=== the caveat stops claiming the gap is only loss ===");
     src.indexOf('t("cogs.warnInvoiced"') < src.indexOf('warnings.push(t("cogs.warnShrinkage"))'));
   check("the report passes invoices to the engine",
     /invoices: state\.invoices/.test(src));
+}
+
+console.log("=== a period before the shop recorded any prices is still statable ===");
+{
+  // The live complaint, 2026-10-07: cost of goods sold for earlier months
+  // could not be seen at all. effectiveFrom is always stamped now and costs
+  // cannot be backdated, so a period starting before the first recorded price
+  // valued the closing stock and not the opening, the subtraction went
+  // negative, and the figure was withheld. Correct, and permanently unhelpful.
+  const lateCost = buildCostIndex([
+    { productId: "p1", costPrice: 2000, effectiveFrom: new Date("2026-02-10T00:00:00Z") }
+  ]);
+  const products = [{ id: "p1", storeId: "s1", quantity: 100 }];
+  const movements = [
+    { productId: "p1", storeId: "s1", delta: -20, createdAt: new Date("2026-01-20T00:00:00Z") }
+  ];
+
+  const jan = computePeriodCogs({
+    fromMs: JAN_FROM, toMs: JAN_TO, storeId: "s1",
+    products, movements, costIndex: lateCost, purchases: [], purchaseReturns: []
+  });
+
+  // January is entirely before the price existed. Both ends now value on the
+  // earliest price ever recorded, so the period reconciles instead of refusing.
+  check("the opening stock is valued", jan.openingStock > 0, `got ${jan.openingStock}`);
+  check("...at the earliest price ever recorded",
+    near(jan.openingStock, 120 * 2000), `got ${jan.openingStock}`);
+  check("the closing stock is valued too", near(jan.closingStock, 100 * 2000), `got ${jan.closingStock}`);
+  check("and COGS comes out of the subtraction, not withheld",
+    near(jan.cogs, 40000), `got ${jan.cogs}`);
+  check("nothing is reported as unpriced", jan.uncostedAtOpening === 0 && jan.uncostedAtClosing === 0);
+
+  // The whole point: the reader is told what it rests on.
+  check("the assumption is counted at both ends",
+    jan.assumedAtOpening === 1 && jan.assumedAtClosing === 1);
+  check("...and the products are named",
+    jan.assumedOpeningList.length === 1 && jan.assumedOpeningList[0].name === "p1");
+  check("an assumed period is NOT reported complete", jan.complete === false,
+    "complete drives the negative guard; a guessed opening must not satisfy it");
+
+  // February STRADDLES the price: it opens on the 1st, the price lands on the
+  // 10th, so the opening is assumed and the closing is not. Worth asserting --
+  // it is the ordinary case for the month a shop starts recording costs.
+  const feb = computePeriodCogs({
+    fromMs: FEB_FROM, toMs: FEB_TO, storeId: "s1",
+    products, movements, costIndex: lateCost, purchases: [], purchaseReturns: []
+  });
+  check("a period straddling the first price assumes at the opening only",
+    feb.assumedAtOpening === 1 && feb.assumedAtClosing === 0);
+
+  // March is wholly after it and assumes nothing.
+  const mar = computePeriodCogs({
+    fromMs: ms("2026-03-01T00:00:00Z"), toMs: ms("2026-03-31T23:59:59Z"), storeId: "s1",
+    products, movements, costIndex: lateCost, purchases: [], purchaseReturns: []
+  });
+  check("a period wholly after the price assumes nothing",
+    mar.assumedAtOpening === 0 && mar.assumedAtClosing === 0);
+  check("...and is reported complete", mar.complete === true);
+
+  // A product with no price ANYWHERE is still unknown, not guessed at zero.
+  const noneAtAll = computePeriodCogs({
+    fromMs: JAN_FROM, toMs: JAN_TO, storeId: "s1",
+    products: [{ id: "ghost", storeId: "s1", quantity: 5 }],
+    movements: [], costIndex: lateCost, purchases: [], purchaseReturns: []
+  });
+  check("a product with no recorded price at all stays unpriced",
+    noneAtAll.uncostedAtClosing === 1 && noneAtAll.assumedAtClosing === 0,
+    "an absent price is unknown, and unknown is not zero");
+}
+
+console.log("=== the fallback never reaches a sale ===");
+{
+  // Valuing a SHELF may assume; pricing a SALE may not. Doing so would rewrite
+  // a margin already reported, using a price discovered afterwards.
+  // The BODY of each one, not a window of source around its name -- the
+  // fallback's own comment explains why a sale must not use it, and a loose
+  // window matches that explanation and reports the opposite of the truth.
+  //
+  // Every function that prices goods ALREADY SOLD is listed. Adding a fourth
+  // and forgetting it here is the failure this guards: it would quietly start
+  // restating past margins using prices discovered afterwards.
+  for (const name of ["summariseCostOfGoods", "summariseProductProfit", "computePeriodCogs"]) {
+    const body = extract(name);
+    check(`${name} was found`, body.length > 0);
+    check(`${name} prices sold goods with the honest lookup`,
+      /costInForceAt\(/.test(body), "the perpetual figures must keep their null");
+    check(`${name} never falls back to a later price`,
+      !/costInForceAtOrEarliest/.test(body));
+  }
+
+  // And the one that may.
+  check("stockValueAt is the only caller that falls back",
+    /costInForceAtOrEarliest/.test(extract("stockValueAt")));
+  check("only the valuation path falls back",
+    (src.match(/costInForceAtOrEarliest\(/g) || []).length === 2,
+    "one definition, one caller -- stockValueAt");
+  check("the warning exists in both languages",
+    (src.match(/"cogs\.warnAssumed":/g) || []).length === 2);
+}
+
+console.log("=== an oversell still costs the period ===");
+{
+  // stockValueAt lets negative stock carry negative value. summariseStockValuation()
+  // clamps it at zero. That is two questions, not a bug: "what did the goods
+  // that left cost" against "what is this shelf worth". Pinned so neither gets
+  // quietly changed to match the other.
+  const r = stockValueAt(ms("2026-01-31T23:59:59Z"), {
+    products: [{ id: "p1", storeId: "s1", quantity: -5 }],
+    movements: [],
+    costIndex,
+    storeId: "s1"
+  });
+  check("negative stock carries negative value in the COGS engine",
+    near(r.value, -5 * 2000), `got ${r.value}`);
+  check("...and the row agrees with the total",
+    r.rows.length === 1 && near(r.rows[0].value, r.value));
+  check("...and it is not reported as unpriced", r.uncostedProducts === 0);
 }
 
 const failed = results.filter((r) => !r.pass);

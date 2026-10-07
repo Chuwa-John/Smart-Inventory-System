@@ -26,7 +26,7 @@
   font-weight: 400 700;
   font-style: normal;
   font-display: swap;
-  src: url("./fonts/inter-latin.woff2?v=20260926g") format("woff2");
+  src: url("./fonts/inter-latin.woff2?v=20261007c") format("woff2");
 }
 
 :root {
@@ -2870,4 +2870,26 @@ table.statement-figures td.danger { color: var(--red); }
 #whatsNewContent {
   max-height: 55vh;
   overflow-y: auto;
+}
+
+/* From / To / This month, on one line. The Profit Report asks for a period the
+   same way the Cost of Goods Sold report does, so the two screens do not ask
+   the same question in two different shapes. Wraps rather than squashing on a
+   narrow handset, which is most of them. */
+.period-picker {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.period-picker > label {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  color: inherit;
+}
+
+.period-picker input {
+  min-width: 9.5rem;
 }

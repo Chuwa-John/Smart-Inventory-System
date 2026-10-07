@@ -162,6 +162,8 @@ ${extract("renderDeliveryCostFields")}
 ${extract("renderDeliveryPreview")}
 ${extract("renderDeliveryDialog")}
 ${extract("localMonthKey")}
+   ${extract("periodBounds")}
+   ${extract("inPeriod")}
 ${extract("deliveryReceivedAt")}
 ${extract("summariseLandedForMonth")}
 ${extract("renderLandedCostSection")}

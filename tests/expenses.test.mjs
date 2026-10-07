@@ -40,6 +40,8 @@ const { summariseExpenses, expenseSpentAt, localDateInputValue, localMonthKey, m
   `${extract("safeNumber")}
    ${extract("expenseSpentAt")}
    ${extract("localMonthKey")}
+   ${extract("periodBounds")}
+   ${extract("inPeriod")}
    ${objectLiteral("EXPENSE_NATURE_BY_CATEGORY")}
    ${extract("expenseNature")}
    ${extract("summariseExpenses")}

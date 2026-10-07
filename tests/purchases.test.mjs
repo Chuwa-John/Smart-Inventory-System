@@ -75,6 +75,8 @@ const { nextUnitCost, productCostKnown, summarisePurchases, purchasedAt, localMo
         summariseSalesByProduct } = new Function(
   `${extract("safeNumber")}
    ${extract("localMonthKey")}
+   ${extract("periodBounds")}
+   ${extract("inPeriod")}
    ${extract("nextUnitCost")}
    ${extract("productCostKnown")}
    ${extract("purchasedAt")}
@@ -972,15 +974,18 @@ console.log("\n=== Phase E: the surface, and who may see it ===");
     /profit\.stCogs"\)/.test(render), true);
   // ...and the docx section 9 split, which is the whole reason phase 5 captured
   // a nature.
-  check("direct operating expenses are their own line",
-    /profit\.stDirect"\)/.test(render), true);
+  // No longer its own line: the cost sits inside cost of sales above gross
+  // profit. The money is still deducted and still openable -- the Cost of
+  // sales breakdown lists the direct costs alongside the products.
+  check("direct costs are not a separate statement line",
+    /profit\.stDirect"\), value: deduct/.test(src), false);
   check("indirect operating expenses are their own line",
     /profit\.stIndirect"\)/.test(render), true);
   // UNKNOWN COST BLANKS THREE ROWS, not one. Cost of goods, gross and net are
   // all derived from it; printing revenue against a zero cost reports the whole
   // of revenue as profit, which is the defect DESIGN-purchases.md 2 found live.
   check("cost of goods shows nothing until a cost is known",
-    /p\.anyCostKnown \? deduct\(p\.cogs\) : unknown/.test(render), true);
+    /p\.anyCostKnown \? deduct\(p\.costOfSales\) : unknown/.test(render), true);
   // The CONDITION, not the formatting beside it. Both margins now render
   // through withMargin(), which drops the percentage rather than printing
   // "undefined%" when it is absent; what this test is about is that gross is
@@ -1149,29 +1154,46 @@ console.log("\n=== phase 6: the docx section 9 statement adds up ===");
                               coverageFromMs: null, vatRegistered: false });
 
   check("sales revenue", p.revenue, 45000000);
-  check("cost of goods sold", p.cogs, 27000000);
-  check("GROSS PROFIT", p.grossProfit, 18000000);
+  check("what the goods cost", p.cogs, 27000000);
+  // Direct costs moved ABOVE gross profit on 2026-10-07, into cost of sales,
+  // where a trading account puts them. The goods figure is unchanged; the line
+  // the statement prints is the two together.
+  check("cost of sales is goods plus direct costs", p.costOfSales, 29000000);
+  check("GROSS PROFIT", p.grossProfit, 16000000);
   check("direct operating expenses", p.directExpenses, 2000000);
   check("indirect operating expenses", p.indirectExpenses, 8000000);
   check("NET PROFIT", p.netProfit, 8000000);
 
   // The two arithmetic identities the statement is: each total is the lines
   // above it, and nothing is counted twice.
-  check("gross === revenue - cogs", p.grossProfit, p.revenue - p.cogs);
-  check("net === gross - direct - indirect",
-    p.netProfit, p.grossProfit - p.directExpenses - p.indirectExpenses);
+  check("gross === revenue - cost of sales", p.grossProfit, p.revenue - p.costOfSales);
+  check("net === gross - indirect", p.netProfit, p.grossProfit - p.indirectExpenses);
+  check("direct is counted once, above the line",
+    p.costOfSales - p.cogs, p.directExpenses);
   check("direct + indirect === the expense total",
     p.directExpenses + p.indirectExpenses, p.expenses);
 
-  // THE PROPERTY THAT MAKES THE SPLIT SAFE. Reclassify every expense the other
-  // way and the bottom line does not move -- which is why the box is editable
-  // and why a shop cannot damage its own profit figure with it.
+  // THE PROPERTY THAT MAKES THE SPLIT SAFE, and what is left of it.
+  //
+  // Reclassifying an expense used to move NOTHING: direct and indirect were two
+  // lines below gross profit, so the split was presentation only and a shop
+  // could not damage its own figures by getting it wrong.
+  //
+  // Moving direct costs above gross profit on 2026-10-07 gave that box teeth.
+  // NET profit is still untouchable -- every expense is still deducted exactly
+  // once -- but GROSS profit and the gross margin now depend on the
+  // classification. Pinned both ways round so the trade is recorded rather
+  // than discovered later by a shop whose margin moved when it recategorised
+  // a delivery charge.
   const flipped = summariseProfit({
     sales, costIndex, monthKey, coverageFromMs: null, vatRegistered: false,
     expenses: expenses.map((e) => ({ ...e, nature: e.nature === "direct" ? "indirect" : "direct" }))
   });
   check("flipping every classification leaves net profit alone", flipped.netProfit, p.netProfit);
-  check("...and gross profit alone", flipped.grossProfit, p.grossProfit);
+  check("...but gross profit now follows the classification",
+    flipped.grossProfit, 10000000);
+  check("...by exactly the amount that moved",
+    p.grossProfit - flipped.grossProfit, p.indirectExpenses - p.directExpenses);
   check("...while the two lines swap", `${flipped.directExpenses}/${flipped.indirectExpenses}`,
     "8000000/2000000");
 }

@@ -28,12 +28,22 @@
          app.js). Warming the connection here keeps that first click quick
          without paying to download 552 KB nobody may ever use. -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
+    <!-- The bundle is referenced at the very END of this file, 2900 lines down,
+         because it must run after the markup it drives exists. Without this the
+         browser does not even DISCOVER it until it has parsed 178 KB of HTML,
+         and only then starts a 228 KB download. modulepreload starts that
+         download now, in parallel with the parse, and changes nothing about
+         when it executes.
+         Must carry the SAME ?v= as the script tag below: a different query is a
+         different cache key and would fetch the bundle twice.
+         tests/deployment-validation.test.mjs fails if they drift apart. -->
+    <link rel="modulepreload" href="./app.js?v=20261007c" />
     <!-- Preloaded, not merely referenced: the stylesheet has to be parsed
          before the browser discovers a font inside it, and on a 2G link that
          wait is visible as a flash of the fallback face. crossorigin is
          required even same-origin -- fonts are fetched in CORS mode. -->
-    <link rel="preload" href="./fonts/inter-latin.woff2?v=20260926g" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20260926g" />
+    <link rel="preload" href="./fonts/inter-latin.woff2?v=20261007c" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="./styles.css?v=20261007c" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#f6f8fa" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -53,7 +63,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20260926g"></script>
+    <script type="module" src="./boot.js?v=20261007c"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -482,10 +492,22 @@
                    either one explaining which branch is which. -->
               <p class="muted control-scope" id="profitScope"></p>
             </div>
-            <label style="flex-direction:row;align-items:center;gap:6px;color:inherit">
-              <span data-i18n="profit.monthLabel">Month</span>
-              <input id="profitMonthInput" type="month" autocomplete="off" />
-            </label>
+            <!-- A RANGE, not a month. "The whole of October" and "the 3rd to
+                 the 19th" are the same question asked twice, and a month picker
+                 can only answer the first. Dates rather than two month pickers
+                 because that answers both, and because the Cost of Goods Sold
+                 report next door already asks this way -- two report screens
+                 asking for a period in two different shapes is its own small
+                 tax on the reader. Defaults to the current month. -->
+            <div class="period-picker">
+              <label><span data-i18n="profit.fromLabel">From</span>
+                <input id="profitFromInput" type="date" autocomplete="off" />
+              </label>
+              <label><span data-i18n="profit.toLabel">To</span>
+                <input id="profitToInput" type="date" autocomplete="off" />
+              </label>
+              <button class="ghost-button compact" type="button" id="profitThisMonth" data-i18n="profit.thisMonth">This month</button>
+            </div>
           </div>
 
           <p class="muted" data-i18n="profit.intro">Revenue less what the stock cost, less what the shop spent. The first two are worked out from your records; the last one is only as complete as what you have entered.</p>
@@ -496,6 +518,14 @@
                so nothing else that reaches for it has to change. -->
           <div class="statement-wrap" id="profitGrid"></div>
           <p class="muted" id="profitNote"></p>
+
+          <!-- What a line is made of, opened from the line itself.
+               Deliberately BELOW the statement rather than replacing it: the
+               question is "where did that number come from", so the number has
+               to stay on screen beside the answer. Empty and hidden until a row
+               is opened, because a permanently empty box under a correct report
+               teaches people to ignore the space. -->
+          <div id="profitDrill" hidden></div>
 
           <!-- The docx section 10 drill-down, under the statement it explains.
                Owner-strict by inheritance: this lives inside #profit, which
@@ -1229,6 +1259,16 @@
                 <p class="eyebrow" data-i18n="reports.costEyebrow">Cost and supply</p>
                 <h2 data-i18n="reports.stockValuationTitle">Stock Valuation</h2>
               </div>
+              <!-- Two controls because this panel answers two questions. The
+                   month drives the Supplier Report and the expense split below,
+                   which are monthly by nature. The stock valuation is a
+                   SNAPSHOT and needs a day: a shelf has a value on a date, not
+                   across a month. Before this the month input did not touch the
+                   valuation at all, which read as a filter that did nothing. -->
+              <label style="flex-direction:row;align-items:center;gap:6px;color:inherit">
+                <span data-i18n="reports.stockAsAtLabel">Stock as at</span>
+                <input id="stockAsAtInput" type="date" autocomplete="off" />
+              </label>
               <label style="flex-direction:row;align-items:center;gap:6px;color:inherit">
                 <span data-i18n="reports.costMonthLabel">Month</span>
                 <input id="costReportMonthInput" type="month" autocomplete="off" />
@@ -1653,6 +1693,18 @@
             <div class="button-row">
               <button class="ghost-button compact" id="settingsWhatsNewButton" type="button" data-i18n="settings.whatsNewButton">See what has changed</button>
             </div>
+
+            <!-- A DEVICE setting, not a business one: the same shop may have a
+                 counter till that wants this and an owner's phone that does
+                 not. Kept here rather than under the branch panel for that
+                 reason. -->
+            <h3 data-i18n="settings.idleSignOutTitle">Sign out when idle</h3>
+            <label class="checkbox-row">
+              <input type="checkbox" id="idleSignOutToggle" />
+              <span data-i18n="settings.idleSignOutLabel">Sign me out on this device after 30 minutes of no use</span>
+            </label>
+            <p class="muted" data-i18n="settings.idleSignOutHint">Off by default, so the app opens straight into your account. Turn it on for a till that sits on a counter, where whoever picks it up would otherwise be signed in as you.</p>
+            <p class="muted" id="idleSignOutState"></p>
           </article>
 
           <article class="panel" id="settingsBranchPanel">
@@ -2929,6 +2981,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20260926g"></script>
+    <script type="module" src="./app.js?v=20261007c"></script>
   </body>
 </html>

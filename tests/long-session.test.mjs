@@ -243,6 +243,74 @@ console.log("\n=== date boundaries are not frozen at load ===");
   }
 }
 
+console.log("\n=== an installed app opens into the account it was left in ===");
+{
+  // check() here is (name, pass, detail) -- a boolean, not an expected value.
+  // Written against the other convention first, which made the language counts
+  // pass on ANY non-zero number and inverted the persistence assertion.
+  const app2 = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../app.html", import.meta.url), "utf8");
+
+  // The complaint, 2026-10-07: an installed app asked for email and password
+  // again every time it was opened. Firebase persistence was never the cause --
+  // there is no setPersistence call, so sessions already survive a restart --
+  // it was a 30 minute idle timeout signing people out of their own till.
+  check("nothing narrows Firebase auth persistence",
+    !/setPersistence|browserSessionPersistence|inMemoryPersistence/.test(app2),
+    "the default is local persistence, which is what keeps an installed app signed in");
+
+  // Off unless the device has been told otherwise. The guard must come FIRST,
+  // before the session is even looked at, so the feature is genuinely inert
+  // rather than merely usually inert.
+  const fn = app2.slice(app2.indexOf("async function checkIdleTimeout()"));
+  const body = fn.slice(0, fn.indexOf("\n}"));
+  check("idle sign-out is gated", /if \(!idleSignOutEnabled\(\)\) return;/.test(body));
+  check("...before anything else in the function",
+    body.indexOf("idleSignOutEnabled") < body.indexOf("state.lastActivityAt"));
+  check("...and it still signs out when switched on", /signOut\(state\.auth\)/.test(body));
+
+  // Default off. A storage read that throws -- private window, blocked site
+  // data -- must not lock a shopkeeper out of their own till either.
+  const reader = app2.slice(app2.indexOf("function idleSignOutEnabled()"), app2.indexOf("function setIdleSignOutEnabled"));
+  check("the stored value must say \"on\" to enable it", /=== "on"/.test(reader));
+  check("...and a storage failure defaults to staying signed in",
+    /catch \(error\) \{[\s\S]*?return false;/.test(reader));
+
+  // Reachable, or it may as well not exist.
+  check("there is a switch for it", /id="idleSignOutToggle"/.test(html));
+  check("...that is wired", /#idleSignOutToggle"\)\?\.addEventListener/.test(app2));
+  check("...and the screen says which way it is set", /id="idleSignOutState"/.test(html));
+
+  // The line and the toggle must be painted by ONE function with TWO callers.
+  // It lived only inside updateAuthUi(), which renderAll() does not call, so
+  // flipping the switch left the line reading "stays signed in" while the toast
+  // said the opposite -- two statements about the same thing, disagreeing on
+  // screen. Caught on the preview 2026-10-07.
+  check("the line is painted by its own function",
+    /function renderIdleSignOutSetting\(\)/.test(app2));
+  const painters = (app2.match(/renderIdleSignOutSetting\(\)/g) || []).length;
+  check("...called from both the session paint and the toggle", painters >= 3,
+    `found ${painters} references (definition + 2 callers expected)`);
+  const handler = app2.slice(app2.indexOf('#idleSignOutToggle")?.addEventListener'));
+  check("...and the toggle repaints it rather than relying on renderAll",
+    /renderIdleSignOutSetting\(\)/.test(handler.slice(0, 500)));
+  check("...reading the stored value, not the event",
+    /const on = idleSignOutEnabled\(\)/.test(app2));
+
+  // Device-scoped on purpose: one shop may have a shared counter till and a
+  // private owner phone. Also means no rules change and no write that can fail
+  // offline.
+  check("the preference is kept on the device",
+    /localStorage\.setItem\(IDLE_SIGN_OUT_KEY/.test(app2));
+
+  for (const key of ["settings.idleSignOutTitle", "settings.idleSignOutLabel",
+                     "settings.idleSignOutHint", "settings.idleSignOutOn",
+                     "settings.idleSignOutOff"]) {
+    const n = (app2.match(new RegExp('"' + key.replace(/\./g, "\\.") + '":', "g")) || []).length;
+    check(`${key} is in both languages`, n === 2, `found ${n}`);
+  }
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 process.exit(failed.length ? 1 : 0);

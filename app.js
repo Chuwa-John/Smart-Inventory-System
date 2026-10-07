@@ -127,6 +127,11 @@ const state = {
   stockAlertQueue: [],
   stockAlertPopupOpen: false,
   language: localStorage.getItem("savia:lang") || localStorage.getItem("sanitaryflow:lang") || "en",
+  // Which statement line is open underneath the profit report, or null.
+  profitDrill: null,
+  stockLedger: [],
+  stockLedgerLoaded: false,
+  stockLedgerLoading: false,
   monthlyReports: [],
   unsubscribeMonthlyReports: null,
   expenses: [],
@@ -147,6 +152,11 @@ const state = {
   unsubscribeProductCostHistory: null,
   profitMonthSelection: localMonthKey(new Date()),
   profitMonthTouched: false,
+  // The reporting period for the Profit Report, as "YYYY-MM-DD" strings so the
+  // date inputs can be driven straight from them. Null until first render,
+  // which then defaults them to the current month.
+  profitFrom: null,
+  profitTo: null,
   purchaseMonthSelection: localMonthKey(new Date()),
   purchaseMonthTouched: false,
   // localMonthKey(), not toISOString().slice(0, 7). Everything that reads
@@ -490,6 +500,7 @@ const DICTIONARY = {
     "cogs.ledgerFailed": "Could not read the stock history, so this period cannot be worked out.",
     "cogs.warnLedgerShort": "The stock history loaded only reaches back to {date}, so the opening stock is not reliable for a period starting before that.",
     "cogs.warnUncosted": "{count} product(s) have no recorded buying price at these dates, so they are left out of the stock values.",
+    "cogs.warnAssumed": "{count} product(s) had no buying price recorded yet at these dates, so the earliest price you later recorded for them was used. Without this the period could not be worked out at all, but treat the figure as an estimate for that reason.",
     "cogs.warnNoDiscounts": "Purchase discounts are not deducted separately because this shop records what it actually paid for stock, which is already less any discount the supplier gave. Taking it off again here would understate what the goods cost.",
     "cogs.warnShrinkage": "This method treats anything missing from the shelf as sold, so theft, breakage and miscounts are inside this figure rather than shown separately. Do not read the difference against the dashboard margin as loss on its own.",
     "cogs.warnInvoiced": "{count} invoice(s) issued in this period took {value} of goods off the shelf. Those goods are inside this figure but are not in the dashboard margin, because an issued invoice records the debt rather than a sale.",
@@ -769,6 +780,10 @@ const DICTIONARY = {
     "nav.profit": "Profit Report",
     "profit.eyebrow": "What the shop kept",
     "profit.title": "Profit Report",
+    "profit.fromLabel": "From",
+    "profit.toLabel": "To",
+    "profit.thisMonth": "This month",
+    "profit.datesBackwards": "The end of the period is before its start. Swap the two dates.",
     "profit.monthLabel": "Month",
     "profit.intro": "Revenue less what the stock cost, less what the shop spent. The first two are worked out from your records; the last one is only as complete as what you have entered.",
     "reports.costEyebrow": "Cost and supply",
@@ -783,6 +798,9 @@ const DICTIONARY = {
     "reports.sbpNote": "Units and revenue for the range above, with returns taken off and voided sales excluded. Ordered by what brought the most money in.",
     "reports.stockValuationTitle": "Stock Valuation",
     "reports.stockAtCost": "Stock at cost",
+    "reports.stockAsAtLabel": "Stock as at",
+    "reports.stockLedgerLoading": "Working out what was on the shelf that day...",
+    "reports.stockAssumed": "{count} product(s) had no buying price recorded yet on this date, so the earliest price you later recorded was used.",
     "reports.stockAtRetail": "If it all sold at list price",
     "reports.stockAtRetailNote": "What the shelves would bring in at today's prices. Not what the stock is worth.",
     "reports.stockComplete": "Every product on the shelf has a recorded cost.",
@@ -821,12 +839,33 @@ const DICTIONARY = {
     "profit.pdAttribution": "The goods and landed columns split each product's cost of sales in the same proportion as everything ever bought of it. They are an attribution, not a separate measurement.",
     "profit.stRevenue": "Sales revenue",
     "profit.stCogs": "Cost of goods sold",
-    "profit.stCogsNote": "What the goods you sold this month cost you, including freight and duty",
+    "profit.stCogsNote": "What the goods cost you, plus the direct costs of selling them",
     "profit.stGross": "GROSS PROFIT",
     "profit.stDirect": "Direct operating expenses",
     "profit.stDirectNote": "Costs that only happen because something was sold",
     "profit.stIndirect": "Indirect operating expenses",
     "profit.stNet": "NET PROFIT",
+    "profit.drillTitle.revenue": "The sales that made this revenue",
+    "profit.drillTitle.cogs": "What those goods cost you",
+    "profit.drillTitle.direct": "The direct expenses in this month",
+    "profit.drillTitle.indirect": "The indirect expenses in this month",
+    "profit.drillClose": "Close",
+    "profit.drillFailed": "This breakdown could not be worked out. The figure on the line above is unaffected.",
+    "profit.drillEmpty": "Nothing was recorded for this line in this month.",
+    "profit.drillTotal": "Added up",
+    "profit.drillTallies": "These add up to {value}, which is the figure on the line above.",
+    "profit.drillGap": "These add up to {listed}, but the line above says {line} \u2014 a difference of {gap}. The rows below the line are what could be listed; anything with no recorded cost is left out of both.",
+    "profit.drillColWhen": "Date",
+    "profit.drillColOrder": "Order",
+    "profit.drillColCustomer": "Customer",
+    "profit.drillColProduct": "Product",
+    "profit.drillColUnits": "Sold",
+    "profit.drillColCategory": "Category",
+    "profit.drillColNote": "Note",
+    "profit.drillColAmount": "Amount",
+    "profit.drillDirectCost": "Direct cost of selling",
+    "profit.drillUnits": "{count} sold",
+    "profit.drillNoOrder": "No order number",
     "profit.deduction": "({value})",
     "profit.revenue": "Revenue",
     "profit.revenueNote": "{count} sales, after refunds",
@@ -1555,6 +1594,11 @@ const DICTIONARY = {
     "settings.aboutEyebrow": "This app",
     "settings.versionLabel": "Version",
     "settings.whatsNewButton": "See what has changed",
+    "settings.idleSignOutTitle": "Sign out when idle",
+    "settings.idleSignOutLabel": "Sign me out on this device after 30 minutes of no use",
+    "settings.idleSignOutHint": "Off by default, so the app opens straight into your account. Turn it on for a till that sits on a counter, where whoever picks it up would otherwise be signed in as you.",
+    "settings.idleSignOutOn": "This device will sign out after 30 minutes of no use.",
+    "settings.idleSignOutOff": "This device stays signed in until you sign out.",
     "settings.whatsNewIntro": "The changes in this version and the ones before it, in plain language.",
     "dashboard.vatSettings": "VAT",
     "vat.dialogTitle": "VAT registration",
@@ -2102,6 +2146,7 @@ const DICTIONARY = {
     "cogs.ledgerFailed": "Imeshindwa kusoma historia ya hisa, hivyo kipindi hiki hakiwezi kuhesabiwa.",
     "cogs.warnLedgerShort": "Historia ya hisa iliyopakiwa inafika hadi {date} pekee, hivyo hisa ya kuanzia si ya kuaminika kwa kipindi kinachoanza kabla ya hapo.",
     "cogs.warnUncosted": "Bidhaa {count} hazina bei ya ununuzi iliyorekodiwa katika tarehe hizi, hivyo hazikujumuishwa katika thamani ya hisa.",
+    "cogs.warnAssumed": "Bidhaa {count} hazikuwa bado na bei ya ununuzi iliyorekodiwa katika tarehe hizi, hivyo bei ya kwanza uliyorekodi baadaye ndiyo iliyotumika. Bila hii kipindi hiki kisingeweza kupigwa hesabu kabisa, lakini kwa sababu hiyo ichukue takwimu kama makadirio.",
     "cogs.warnNoDiscounts": "Punguzo la manunuzi halitolewi peke yake kwa sababu duka hili linarekodi kiasi halisi kilicholipwa kwa hisa, ambacho tayari kimepunguzwa punguzo lolote alilotoa muuzaji. Kulitoa tena hapa kutapunguza gharama halisi ya bidhaa.",
     "cogs.warnShrinkage": "Njia hii inahesabu chochote kinachokosekana kwenye rafu kama kilichouzwa, hivyo wizi, uharibifu na makosa ya kuhesabu yamo ndani ya takwimu hii badala ya kuonyeshwa peke yake. Usisome tofauti kati ya hii na faida ya dashibodi kama hasara pekee.",
     "cogs.warnInvoiced": "Ankara {count} zilizotolewa katika kipindi hiki zilitoa bidhaa za {value} rafuni. Bidhaa hizo zimo ndani ya takwimu hii lakini hazimo kwenye faida ya dashibodi, kwa sababu ankara iliyotolewa inarekodi deni badala ya mauzo.",
@@ -2381,6 +2426,10 @@ const DICTIONARY = {
     "nav.profit": "Ripoti ya Faida",
     "profit.eyebrow": "Kilichobaki",
     "profit.title": "Ripoti ya Faida",
+    "profit.fromLabel": "Kuanzia",
+    "profit.toLabel": "Hadi",
+    "profit.thisMonth": "Mwezi huu",
+    "profit.datesBackwards": "Mwisho wa kipindi uko kabla ya mwanzo wake. Badilisha tarehe hizo mbili.",
     "profit.monthLabel": "Mwezi",
     "profit.intro": "Mapato ukiondoa gharama ya bidhaa, ukiondoa matumizi ya duka. Mbili za kwanza zinahesabiwa kutoka kwenye rekodi zako; ya mwisho ni kamili kadri ulivyoingiza.",
     "reports.costEyebrow": "Gharama na ugavi",
@@ -2395,6 +2444,9 @@ const DICTIONARY = {
     "reports.sbpNote": "Vipande na mapato kwa kipindi kilicho hapo juu, marejesho yameondolewa na mauzo yaliyotenguliwa hayajajumuishwa. Yamepangwa kwa yaliyoingiza fedha nyingi zaidi.",
     "reports.stockValuationTitle": "Thamani ya Hisa",
     "reports.stockAtCost": "Hisa kwa gharama",
+    "reports.stockAsAtLabel": "Hisa hadi tarehe",
+    "reports.stockLedgerLoading": "Inahesabu kilichokuwa rafuni siku hiyo...",
+    "reports.stockAssumed": "Bidhaa {count} hazikuwa na bei ya ununuzi iliyorekodiwa tarehe hii, hivyo bei ya kwanza uliyorekodi baadaye ndiyo iliyotumika.",
     "reports.stockAtRetail": "Ikiuzwa yote kwa bei ya orodha",
     "reports.stockAtRetailNote": "Kiasi ambacho rafu zingeingiza kwa bei za leo. Si thamani halisi ya hisa.",
     "reports.stockComplete": "Kila bidhaa iliyopo rafuni ina gharama iliyorekodiwa.",
@@ -2433,12 +2485,33 @@ const DICTIONARY = {
     "profit.pdAttribution": "Safu za bidhaa na gharama za ziada zinagawanya gharama ya mauzo ya kila bidhaa kwa uwiano sawa na kila kilichowahi kununuliwa. Ni ugawaji, si kipimo tofauti.",
     "profit.stRevenue": "Mapato ya mauzo",
     "profit.stCogs": "Gharama ya bidhaa zilizouzwa",
-    "profit.stCogsNote": "Gharama ya bidhaa ulizouza mwezi huu, pamoja na usafirishaji na ushuru",
+    "profit.stCogsNote": "Bidhaa zilikugharimu nini, pamoja na gharama za moja kwa moja za kuziuza",
     "profit.stGross": "FAIDA GHAFI",
     "profit.stDirect": "Gharama za uendeshaji za moja kwa moja",
     "profit.stDirectNote": "Gharama zinazotokea kwa sababu tu kitu kimeuzwa",
     "profit.stIndirect": "Gharama za uendeshaji zisizo za moja kwa moja",
     "profit.stNet": "FAIDA HALISI",
+    "profit.drillTitle.revenue": "Mauzo yaliyoleta mapato haya",
+    "profit.drillTitle.cogs": "Bidhaa hizo zilikugharimu nini",
+    "profit.drillTitle.direct": "Matumizi ya moja kwa moja mwezi huu",
+    "profit.drillTitle.indirect": "Matumizi yasiyo ya moja kwa moja mwezi huu",
+    "profit.drillClose": "Funga",
+    "profit.drillFailed": "Mchanganuo huu haukuweza kupigwa hesabu. Takwimu ya mstari ulio juu haijaathirika.",
+    "profit.drillEmpty": "Hakuna kilichorekodiwa kwa mstari huu mwezi huu.",
+    "profit.drillTotal": "Jumla",
+    "profit.drillTallies": "Hizi zinafikia {value}, ambayo ndiyo takwimu ya mstari ulio juu.",
+    "profit.drillGap": "Hizi zinafikia {listed}, lakini mstari ulio juu unasema {line} \u2014 tofauti ya {gap}. Mistari iliyo chini ni ile iliyoweza kuorodheshwa; chochote kisicho na gharama iliyorekodiwa kimeachwa nje ya vyote viwili.",
+    "profit.drillColWhen": "Tarehe",
+    "profit.drillColOrder": "Oda",
+    "profit.drillColCustomer": "Mteja",
+    "profit.drillColProduct": "Bidhaa",
+    "profit.drillColUnits": "Zilizouzwa",
+    "profit.drillColCategory": "Kundi",
+    "profit.drillColNote": "Maelezo",
+    "profit.drillColAmount": "Kiasi",
+    "profit.drillDirectCost": "Gharama ya moja kwa moja ya kuuza",
+    "profit.drillUnits": "{count} zimeuzwa",
+    "profit.drillNoOrder": "Hakuna namba ya oda",
     "profit.deduction": "({value})",
     "profit.revenue": "Mapato",
     "profit.revenueNote": "Mauzo {count}, baada ya marejesho",
@@ -3167,6 +3240,11 @@ const DICTIONARY = {
     "settings.aboutEyebrow": "Programu hii",
     "settings.versionLabel": "Toleo",
     "settings.whatsNewButton": "Ona kilichobadilika",
+    "settings.idleSignOutTitle": "Toka ikikaa bila kutumika",
+    "settings.idleSignOutLabel": "Nitoe kwenye kifaa hiki baada ya dakika 30 bila kutumika",
+    "settings.idleSignOutHint": "Imezimwa kwa kawaida, hivyo programu inafunguka moja kwa moja kwenye akaunti yako. Iwashe kwa mashine inayokaa kaunta, ambapo yeyote anayeichukua angeingia kama wewe.",
+    "settings.idleSignOutOn": "Kifaa hiki kitatoka baada ya dakika 30 bila kutumika.",
+    "settings.idleSignOutOff": "Kifaa hiki kinabaki kimeingia hadi utakapotoka mwenyewe.",
     "settings.whatsNewIntro": "Mabadiliko ya toleo hili na yaliyotangulia, kwa lugha rahisi.",
     "dashboard.vatSettings": "VAT",
     "vat.dialogTitle": "Usajili wa VAT",
@@ -5162,6 +5240,45 @@ function computePaymentReport() {
   const breakdown = TENDER_METHODS.map((method) => computeMethodBreakdown(sales, method));
   const grandTotal = breakdown.reduce((sum, entry) => sum + entry.total, 0);
   return { breakdown, grandTotal, transactionCount: sales.length };
+}
+
+// A reporting period, from either a month key or an explicit range.
+//
+// Added because "the whole of October" and "the 3rd to the 19th" are the same
+// question asked twice, and three summarisers each hard-coded the first form.
+// Taking a range and DERIVING it from the month key when none is given means
+// every existing caller and test keeps working unchanged while the screens that
+// want a range can pass one.
+//
+// Local midnight to local end-of-day, not UTC: a shop in Dar es Salaam asking
+// for the 3rd means their 3rd.
+// NOT destructured in the signature, deliberately. Several test harnesses
+// extract a function by finding `function name(` and then counting braces from
+// the first `{` -- which for a destructured parameter is the PARAMETER LIST, so
+// they capture the signature and none of the body and the sandbox fails to
+// parse. cogs-period.test.mjs carries its own parameter-aware extract for
+// exactly this; the rest do not, and a plain object argument here keeps all of
+// them working.
+function periodBounds(input) {
+  const monthKey = input ? input.monthKey : null;
+  const fromMs = input ? input.fromMs : null;
+  const toMs = input ? input.toMs : null;
+  if (Number.isFinite(fromMs) && Number.isFinite(toMs)) return { fromMs, toMs };
+  const [year, month] = String(monthKey || "").split("-").map(Number);
+  if (!year || !month) return { fromMs: null, toMs: null };
+  return {
+    fromMs: new Date(year, month - 1, 1, 0, 0, 0, 0).getTime(),
+    // Day 0 of the NEXT month is the last day of this one, which is how this
+    // avoids needing to know which months have 30 days.
+    toMs: new Date(year, month, 0, 23, 59, 59, 999).getTime()
+  };
+}
+
+function inPeriod(at, bounds) {
+  if (!at || !bounds || bounds.fromMs === null || bounds.toMs === null) return false;
+  const ms = at instanceof Date ? at.getTime() : Number(at);
+  if (!Number.isFinite(ms)) return false;
+  return ms >= bounds.fromMs && ms <= bounds.toMs;
 }
 
 function monthKeyToRange(monthKey) {
@@ -8542,7 +8659,9 @@ function storeExpenses() {
 
 // Totals for one month, from a list already scoped to a branch. Pure, so
 // tests/expenses.test.mjs can evaluate it rather than a copy of it.
-function summariseExpenses(expenses, monthKey) {
+// `bounds` is optional and wins when given, so the month key stays the default
+// for every caller that still thinks in months.
+function summariseExpenses(expenses, monthKey, bounds = null) {
   let total = 0;
   let fromTill = 0;
   let count = 0;
@@ -8555,7 +8674,7 @@ function summariseExpenses(expenses, monthKey) {
   for (const expense of expenses) {
     const at = expenseSpentAt(expense);
     if (!at) continue;
-    if (localMonthKey(at) !== monthKey) continue;
+    if (bounds ? !inPeriod(at, bounds) : localMonthKey(at) !== monthKey) continue;
     const amount = safeNumber(expense.amount);
     total += amount;
     count += 1;
@@ -11859,6 +11978,34 @@ function costInForceAt(index, productId, at) {
   return null;
 }
 
+// What a unit cost at that moment, falling back to the EARLIEST cost ever
+// recorded for the product when the date predates every record.
+//
+// Only the valuation path may use this, and that distinction is the whole
+// point. Pricing a SALE this way would rewrite a reported margin using a price
+// discovered afterwards, so summariseCostOfGoods() keeps costInForceAt() and
+// its honest null. Valuing a SHELF is a different question: the goods were
+// there and they cost something, and refusing to guess leaves the owner with
+// nothing at all.
+//
+// Why it is needed: effectiveFrom is always stamped now and costs cannot be
+// backdated, so every period that begins before a shop first recorded its
+// buying prices values the closing stock and not the opening. The subtraction
+// then goes negative and the report withholds it -- which is correct, and which
+// means historical cost of goods sold was permanently unavailable rather than
+// merely late. Reported by a live shop on 2026-10-07.
+//
+// `assumed` is returned, never swallowed: the caller counts these and the
+// screen says how many figures rest on an assumption.
+function costInForceAtOrEarliest(index, productId, at) {
+  const inForce = costInForceAt(index, productId, at);
+  if (inForce !== null) return { cost: inForce, assumed: false };
+  const list = index?.get(productId);
+  // buildCostIndex() sorts ascending, so [0] is the first price ever recorded.
+  if (!list || !list.length) return { cost: null, assumed: false };
+  return { cost: safeNumber(list[0].costPrice), assumed: true };
+}
+
 // productId -> unit cost, for the surfaces that report stock value and margin.
 // Quantity still comes from the product; only the money moved.
 function productCostMap() {
@@ -11963,6 +12110,53 @@ async function loadProductCosts() {
     state.productCostsLoading = false;
     scheduleRenderAll();
   }
+}
+
+// The stock ledger, fetched once for the surfaces that need to walk the shelf
+// backwards. Same shape as the cost map above and for the same reasons: it
+// grows without bound, only two screens read it, and a render must be able to
+// ask for it without awaiting.
+//
+// The COGS report keeps its own fetch deliberately -- it is a report the owner
+// GENERATES, so paying for the read at that moment is honest, and it can show a
+// failure in its own table. This cache is for the surfaces that render whether
+// or not anyone asked.
+async function loadStockLedger() {
+  if (!state.db || !state.user || !state.businessOwnerUid) return;
+  if (!isManagerOrOwnerRole()) {
+    state.stockLedger = [];
+    state.stockLedgerLoaded = false;
+    return;
+  }
+  if (state.stockLedgerLoading) return;
+  state.stockLedgerLoading = true;
+  try {
+    const { collection, getDocs, orderBy, query, limit } = state.firebaseApi.firestore;
+    const ref = collection(state.db, "users", state.businessOwnerUid, "stockMovements");
+    const snap = await getDocs(query(ref, orderBy("createdAt", "desc"), limit(ACCOUNTS_HISTORY_LIMIT)));
+    state.stockLedger = snap.docs.map((docSnap) => docSnap.data());
+    state.stockLedgerLoaded = true;
+  } catch (error) {
+    // Left unloaded rather than loaded-and-empty, the same distinction the cost
+    // map draws: empty would read as "this shop has never moved any stock".
+    console.warn("[stockLedger]", error.code || error);
+    state.stockLedgerLoaded = false;
+  } finally {
+    state.stockLedgerLoading = false;
+    scheduleRenderAll();
+  }
+}
+
+function ensureStockLedger() {
+  if (state.stockLedgerLoaded || state.stockLedgerLoading) return;
+  loadStockLedger();
+}
+
+// Dropped when something moves stock, so the next surface that walks the shelf
+// asks again.
+function invalidateStockLedger() {
+  state.stockLedgerLoaded = false;
+  state.stockLedger = [];
 }
 
 // Idempotent, and safe to call from a render. Returns nothing: the answer
@@ -12332,21 +12526,20 @@ function renderVatRecord() {
   if (blockedBody) blockedBody.innerHTML = blockedRows;
 }
 
-function summariseProfit({ sales, costIndex, expenses, monthKey, coverageFromMs, vatRegistered }) {
-  const monthSales = (sales || []).filter((sale) => {
-    const at = saleTimestamp(sale);
-    return at ? localMonthKey(at) === monthKey : false;
-  });
+function summariseProfit({ sales, costIndex, expenses, monthKey, fromMs, toMs, coverageFromMs, vatRegistered }) {
+  const bounds = periodBounds({ monthKey, fromMs, toMs });
+  // Still called monthSales because forty lines below read it, and renaming it
+  // across all of them is a worse risk than a name that is now slightly wide.
+  // It is the sales IN THE PERIOD, whatever the period is.
+  const monthSales = (sales || []).filter((sale) => inPeriod(saleTimestamp(sale), bounds));
 
   // L-11, applied before anything is computed rather than after. A period that
   // begins before the loaded sales window cannot be totalled at all, and a
   // confident partial figure on a profit statement is worse than a refusal --
   // the monthly report already refuses for exactly this reason.
-  const [year, month] = String(monthKey || "").split("-").map(Number);
-  const periodStart = (year && month) ? new Date(year, month - 1, 1, 0, 0, 0) : null;
   const outsideWindow = Boolean(
-    periodStart && coverageFromMs !== null && coverageFromMs !== undefined
-    && periodStart.getTime() < coverageFromMs
+    bounds.fromMs !== null && coverageFromMs !== null && coverageFromMs !== undefined
+    && bounds.fromMs < coverageFromMs
   );
 
   const takings = summariseSales(monthSales);
@@ -12364,10 +12557,23 @@ function summariseProfit({ sales, costIndex, expenses, monthKey, coverageFromMs,
     : takings.net;
 
   const goods = summariseCostOfGoods(monthSales, costIndex);
-  const spending = summariseExpenses(expenses || [], monthKey);
+  const spending = summariseExpenses(expenses || [], monthKey, bounds);
 
-  const grossProfit = revenue - goods.cogs;
-  const netProfit = grossProfit - spending.total;
+  // Direct costs sit ABOVE gross profit, in cost of sales, where a trading
+  // account puts them.
+  //
+  // They used to be a separate deduction BELOW gross profit, which made gross
+  // profit look like the margin on the goods when it was really the margin
+  // before the commission, delivery and packaging that only happened because
+  // those goods sold. Asked for on 2026-10-07 as "remove direct operating
+  // expenses from the profit report" -- removing the LINE, not the cost. The
+  // money is still deducted, in a place that changes what gross profit means
+  // and leaves net profit exactly where it was.
+  const costOfSales = goods.cogs + spending.direct;
+  const grossProfit = revenue - costOfSales;
+  // spending.total is direct + indirect, and direct is now above. Subtracting
+  // the total here would take it off twice.
+  const netProfit = grossProfit - spending.indirect;
 
   return {
     outsideWindow,
@@ -12375,6 +12581,10 @@ function summariseProfit({ sales, costIndex, expenses, monthKey, coverageFromMs,
     revenue,
     salesCount: takings.count,
     cogs: goods.cogs,
+    // What the goods cost PLUS the costs of selling them. The statement shows
+    // this; `cogs` stays available because the drill-down explains the goods
+    // half of it and the per-product table is built from the same figure.
+    costOfSales,
     costedLines: goods.costedLines,
     uncostedLines: goods.uncostedLines,
     anyCostKnown: goods.anyCostKnown,
@@ -12456,14 +12666,15 @@ function landedRatioByProduct(purchases) {
 // Owner-strict at the render, like the statement above it -- this is the
 // strongest disclosure in the app: it names a buying price against a selling
 // price, per product, in one table.
-function summariseProductProfit({ sales, costIndex, purchases, monthKey }) {
+function summariseProductProfit({ sales, costIndex, purchases, monthKey, fromMs, toMs }) {
+  const bounds = periodBounds({ monthKey, fromMs, toMs });
   const rows = new Map();
   const ratios = landedRatioByProduct(purchases);
 
   for (const sale of sales || []) {
     if (sale.voided) continue;
     const soldAt = saleTimestamp(sale);
-    if (!soldAt || localMonthKey(soldAt) !== monthKey) continue;
+    if (!inPeriod(soldAt, bounds)) continue;
     // Netted the same way summariseCostOfGoods() nets it, and for the same
     // reason -- see the long note there. BOTH sides are netted here, cost and
     // revenue, because this table shows them beside each other: netting only the
@@ -12569,6 +12780,184 @@ function summariseProductProfit({ sales, costIndex, purchases, monthKey }) {
 // that on isOwnerRole(). renderProfit() checks the role again before this is
 // reached, for the same reason it did before -- the nav is not the security
 // boundary.
+// What a statement line is made of.
+//
+// The point of this is NOT decoration. A shop owner looking at "cost of goods
+// sold, 467,314" has no way to tell a right number from a wrong one, and every
+// figure on this screen is derived from several others. Opening the line shows
+// the rows it was added up from, and -- the part that matters -- adds them up
+// again independently and says whether the two agree.
+//
+// A breakdown that did not tally would be worse than none, because it would
+// look like proof. So when the rows do not reach the line, the drawer says so
+// rather than quietly printing a different total. That gap is a real signal:
+// it is how an excluded sale, an uncosted line or a rounding error shows up.
+// The Profit Report period, from the two date inputs, in one place so the
+// statement, the drill and the product table cannot disagree about it.
+function profitPeriodBounds() {
+  const from = new Date(`${state.profitFrom}T00:00:00`);
+  const to = new Date(`${state.profitTo}T00:00:00`);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+    return periodBounds({ monthKey: state.profitMonthSelection });
+  }
+  return {
+    fromMs: from.getTime(),
+    toMs: new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 999).getTime()
+  };
+}
+
+function profitDrillRows(which, p) {
+  const scopedSales = state.currentStoreId === "all"
+    ? state.sales
+    : (state.sales || []).filter((sale) => saleStoreId(sale) === state.currentStoreId);
+  // The SAME range the statement used. A drill that quietly fell back to a
+  // month would list rows the line above never counted.
+  const bounds = profitPeriodBounds();
+  const inMonth = (at) => inPeriod(at, bounds);
+
+  if (which === "revenue") {
+    // Every sale that contributed, priced the way the statement prices it:
+    // through saleNetTotal() so a refund is netted, and net of VAT when the
+    // shop is registered -- the same two rules, not a second copy of them.
+    const registered = vatSettings().registered;
+    const rows = scopedSales
+      .filter((sale) => !sale.voided && inMonth(saleTimestamp(sale)))
+      .map((sale) => {
+        const gross = saleNetTotal(sale);
+        return {
+          when: saleTimestamp(sale),
+          what: sale.orderNumber ? `#${sale.orderNumber}` : t("profit.drillNoOrder"),
+          who: sale.customerName || t("reports.walkIn"),
+          amount: registered ? gross - safeNumber(sale.taxTotal) : gross
+        };
+      })
+      .sort((a, b) => (b.when?.getTime() || 0) - (a.when?.getTime() || 0));
+    return { rows, expected: p.revenue, colWhat: t("profit.drillColOrder"), colWho: t("profit.drillColCustomer") };
+  }
+
+  if (which === "cogs") {
+    // Per product, from the same summary that already renders underneath -- so
+    // the drawer cannot disagree with the table below it.
+    const d = summariseProductProfit({
+      sales: scopedSales,
+      costIndex: buildCostIndex(state.productCostHistory),
+      purchases: storePurchases(),
+      fromMs: bounds.fromMs,
+      toMs: bounds.toMs
+    });
+    // costKnown, not a truthy check on the figure: a product whose cost is
+    // genuinely unknown carries cogs 0 and costKnown false, and listing it at
+    // zero would make the drawer tally while hiding the thing that is missing.
+    // Left out of the rows, and the gap line below then reports the shortfall.
+    const rows = (d.rows || [])
+      .filter((row) => row.costKnown)
+      .map((row) => ({
+        when: null,
+        what: row.productName || row.productId,
+        who: t("profit.drillUnits", { count: String(row.unitsSold) }),
+        amount: row.cogs
+      }));
+
+    // Cost of sales is the goods PLUS the direct costs that only happened
+    // because those goods sold, since those moved above gross profit. Listing
+    // only the products would leave the drawer short by exactly the direct
+    // expenses -- and the tally line below would correctly call that a gap,
+    // which is a true report of a breakdown that is missing half its rows.
+    for (const expense of storeExpenses() || []) {
+      const at = expenseSpentAt(expense);
+      if (!inMonth(at) || expenseNature(expense) !== "direct") continue;
+      rows.push({
+        when: at,
+        what: expenseCategoryLabel(expense.category),
+        who: expense.note || t("profit.drillDirectCost"),
+        amount: safeNumber(expense.amount)
+      });
+    }
+
+    return { rows, expected: p.costOfSales, colWhat: t("profit.drillColProduct"), colWho: t("profit.drillColUnits") };
+  }
+
+  // direct | indirect
+  const nature = which === "direct" ? "direct" : "indirect";
+  const rows = (storeExpenses() || [])
+    .filter((expense) => {
+      const at = expenseSpentAt(expense);
+      return inMonth(at) && expenseNature(expense) === nature;
+    })
+    .map((expense) => ({
+      when: expenseSpentAt(expense),
+      what: expenseCategoryLabel(expense.category),
+      who: expense.note || "",
+      amount: safeNumber(expense.amount)
+    }))
+    .sort((a, b) => (b.when?.getTime() || 0) - (a.when?.getTime() || 0));
+  return {
+    rows,
+    expected: nature === "direct" ? p.directExpenses : p.indirectExpenses,
+    colWhat: t("profit.drillColCategory"),
+    colWho: t("profit.drillColNote")
+  };
+}
+
+function renderProfitDrill(p) {
+  const host = qs("#profitDrill");
+  if (!host) return;
+  const which = state.profitDrill;
+  if (!which) {
+    host.hidden = true;
+    host.innerHTML = "";
+    return;
+  }
+
+  // Guarded because this reads a dozen helpers and a throw leaves the PREVIOUS
+  // drawer on screen: the statement above has already repainted by then, so a
+  // failure showed one line's heading over another line's numbers. Seen on the
+  // preview 2026-10-07, when expenseDate() turned out not to exist.
+  let built;
+  try {
+    built = profitDrillRows(which, p);
+  } catch (error) {
+    console.warn("[profitDrill]", which, error);
+    host.hidden = false;
+    host.innerHTML = `<div class="table-panel drill-panel"><p class="muted">${esc(t("profit.drillFailed"))}</p></div>`;
+    return;
+  }
+  const { rows, expected, colWhat, colWho } = built;
+  const listed = rows.reduce((sum, row) => sum + safeNumber(row.amount), 0);
+  // Money, so a cent of float drift is not a disagreement worth shouting about.
+  const tallies = Math.abs(listed - safeNumber(expected)) < 0.5;
+
+  host.hidden = false;
+  host.innerHTML = `
+    <div class="table-panel drill-panel">
+      <div class="panel-head">
+        <h3>${esc(t(`profit.drillTitle.${which}`))}</h3>
+        <button type="button" class="ghost-button compact" id="profitDrillClose">${esc(t("profit.drillClose"))}</button>
+      </div>
+      ${rows.length ? `<div class="table-scroll"><table class="statement-figures">
+        <thead><tr>
+          <th>${esc(t("profit.drillColWhen"))}</th>
+          <th>${esc(colWhat)}</th>
+          <th>${esc(colWho)}</th>
+          <th>${esc(t("profit.drillColAmount"))}</th>
+        </tr></thead>
+        <tbody>${rows.map((row) => `<tr>
+          <td>${row.when ? esc(row.when.toLocaleDateString()) : "—"}</td>
+          <td>${esc(row.what)}</td>
+          <td>${esc(row.who)}</td>
+          <td>${money(row.amount)}</td>
+        </tr>`).join("")}
+        <tr class="statement-total">
+          <td>${esc(t("profit.drillTotal"))}</td><td></td><td></td>
+          <td><strong>${money(listed)}</strong></td>
+        </tr></tbody>
+      </table></div>` : `<p class="muted">${esc(t("profit.drillEmpty"))}</p>`}
+      <p class="muted">${esc(tallies
+        ? t("profit.drillTallies", { value: money(expected) })
+        : t("profit.drillGap", { listed: money(listed), line: money(expected), gap: money(Math.abs(listed - safeNumber(expected))) }))}</p>
+    </div>`;
+}
+
 function renderProductProfit(p, monthKey) {
   const panel = qs("#profitProductPanel");
   const table = qs("#profitProductTable");
@@ -12641,6 +13030,35 @@ function renderProductProfit(p, monthKey) {
 // Retail value is deliberately NOT the headline. A shop asked what its stock is
 // worth means what it paid, not what it hopes to sell for -- and reporting the
 // latter as "value" is how inventory gets overstated.
+// The same valuation, as at a chosen day.
+//
+// Deliberately a thin wrapper rather than a second implementation: it walks the
+// shelf back with stockValueAt() and then hands the result to
+// summariseStockValuation() unchanged, so the clamping of negative stock, the
+// retail total, the ordering and the counts all stay in ONE place. A rewrite
+// here is how the same shop ends up with two different stock values.
+//
+// One honest limitation, and it cannot be fixed from the data: "if it all sold
+// at list price" uses TODAY's selling price even for a past date, because no
+// price history is kept. The cost side is historical; the retail side is not.
+function stockValuationAsAt(asAtMs, { products, movements, costIndex, storeId }) {
+  const at = stockValueAt(asAtMs, { products, movements, costIndex, storeId });
+  const quantities = new Map(at.rows.map((row) => [row.id, row.quantity]));
+  const costs = new Map(at.rows
+    .filter((row) => row.unitCost !== null)
+    .map((row) => [row.id, row.unitCost]));
+  // Only the products stockValueAt() returned, which are already scoped to the
+  // branch -- so the scoping rule also lives in one place.
+  const asAtProducts = (products || [])
+    .filter((product) => quantities.has(product.id))
+    .map((product) => ({ ...product, quantity: quantities.get(product.id) }));
+  return {
+    ...summariseStockValuation(asAtProducts, costs),
+    assumedProducts: at.assumedProducts,
+    assumedList: at.assumedList
+  };
+}
+
 function summariseStockValuation(products, costById) {
   let atCost = 0;
   let atRetail = 0;
@@ -12936,6 +13354,10 @@ async function generateCogsReport() {
       count: String(Math.max(result.uncostedAtOpening, result.uncostedAtClosing))
     }));
   }
+  // Before the discount and shrinkage notes, because it qualifies the figure
+  // itself rather than explaining a line within it.
+  const assumedCount = Math.max(result.assumedAtOpening || 0, result.assumedAtClosing || 0);
+  if (assumedCount > 0) warnings.push(t("cogs.warnAssumed", { count: String(assumedCount) }));
   if (!result.discountsAreCaptured) warnings.push(t("cogs.warnNoDiscounts"));
   // Before the shrinkage line, because it CHANGES what that line means: an
   // owner comparing this figure with the dashboard margin is otherwise told
@@ -13019,8 +13441,34 @@ function renderCostReports() {
   // cost map on every session regardless -- the exact cost this change removes,
   // moved from a listener into a render. Caught by opening the dashboard and
   // finding the tile already saying "Loading".
-  if (state.selectedReport === "stockValuation") ensureProductCosts();
-  const valuation = summariseStockValuation(storeProducts(), productCostMap());
+  if (state.selectedReport === "stockValuation") {
+    ensureProductCosts();
+    ensureStockLedger();
+  }
+
+  // As at the chosen day, not "now". The month input beside it never touched
+  // this figure, which read as a filter that did nothing.
+  const asAtInput = qs("#stockAsAtInput");
+  const today = localDateInputValue(new Date());
+  if (asAtInput && !asAtInput.value) asAtInput.value = today;
+  const asAtValue = asAtInput?.value || today;
+  const asAtDate = new Date(`${asAtValue}T00:00:00`);
+  const asAtMs = Number.isNaN(asAtDate.getTime())
+    ? Date.now()
+    : new Date(asAtDate.getFullYear(), asAtDate.getMonth(), asAtDate.getDate(), 23, 59, 59, 999).getTime();
+
+  // TODAY needs no ledger -- the product already carries the quantity it holds
+  // now, and the walk subtracts nothing. Any EARLIER date does need it, and
+  // rendering before it lands would report today's shelves under a past date,
+  // which is a wrong number rather than a missing one.
+  const needsLedger = asAtValue !== today;
+  const ledgerReady = state.stockLedgerLoaded || !needsLedger;
+  const valuation = stockValuationAsAt(asAtMs, {
+    products: storeProducts(),
+    movements: ledgerReady ? (state.stockLedger || []) : [],
+    costIndex: buildCostIndex(state.productCostHistory),
+    storeId: state.currentStoreId
+  });
   const valuationTotals = qs("#stockValuationTotals");
   if (valuationTotals) {
     valuationTotals.innerHTML = [
@@ -13028,21 +13476,29 @@ function renderCostReports() {
       // what it hopes to sell for is a different question, and reporting the
       // second as "value" is how inventory gets overstated.
       controlTile(t("reports.stockAtCost"),
-        valuation.costedProducts > 0 ? money(valuation.atCost) : "—",
+        !ledgerReady ? "—" : (valuation.costedProducts > 0 ? money(valuation.atCost) : "—"),
         "",
-        valuation.uncostedProducts > 0
-          ? t("reports.stockPartial", {
-              missing: String(valuation.uncostedProducts),
-              units: String(valuation.uncostedUnits)
-            })
-          : t("reports.stockComplete")),
+        // Order matters: say it is still arriving BEFORE describing what it
+        // contains, or a figure in mid-flight reads as a finished one.
+        !ledgerReady
+          ? t("reports.stockLedgerLoading")
+          : valuation.uncostedProducts > 0
+            ? t("reports.stockPartial", {
+                missing: String(valuation.uncostedProducts),
+                units: String(valuation.uncostedUnits)
+              })
+            : valuation.assumedProducts > 0
+              ? t("reports.stockAssumed", { count: String(valuation.assumedProducts) })
+              : t("reports.stockComplete")),
       controlTile(t("reports.stockAtRetail"), money(valuation.atRetail), "",
         t("reports.stockAtRetailNote"))
     ].join("");
   }
   const valuationTable = qs("#stockValuationTable");
   if (valuationTable) {
-    valuationTable.innerHTML = valuation.rows.length
+    valuationTable.innerHTML = !ledgerReady
+      ? `<tr><td colspan="4" class="muted">${esc(t("reports.stockLedgerLoading"))}</td></tr>`
+      : valuation.rows.length
       ? valuation.rows.map((row) => `<tr>
           <td>${esc(row.name)}</td>
           <td>${row.quantity}</td>
@@ -13121,11 +13577,37 @@ function renderProfit() {
     return;
   }
 
-  const monthInput = qs("#profitMonthInput");
-  if (!state.profitMonthTouched) state.profitMonthSelection = localMonthKey(new Date());
-  if (monthInput && monthInput.value !== state.profitMonthSelection) {
-    monthInput.value = state.profitMonthSelection;
+  // Default to the current month, which is what a month picker used to give.
+  if (!state.profitFrom || !state.profitTo) {
+    const now = new Date();
+    state.profitFrom = localDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1));
+    state.profitTo = localDateInputValue(new Date(now.getFullYear(), now.getMonth() + 1, 0));
   }
+  const fromInput = qs("#profitFromInput");
+  const toInput = qs("#profitToInput");
+  if (fromInput && fromInput.value !== state.profitFrom) fromInput.value = state.profitFrom;
+  if (toInput && toInput.value !== state.profitTo) toInput.value = state.profitTo;
+
+  const fromDate = new Date(`${state.profitFrom}T00:00:00`);
+  const toDate = new Date(`${state.profitTo}T00:00:00`);
+  const periodFromMs = Number.isNaN(fromDate.getTime()) ? null : fromDate.getTime();
+  const periodToMs = Number.isNaN(toDate.getTime())
+    ? null
+    : new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate(), 23, 59, 59, 999).getTime();
+
+  // Backwards dates total to nothing, which reads as a shop that sold nothing
+  // rather than as a range entered the wrong way round.
+  if (periodFromMs !== null && periodToMs !== null && periodToMs < periodFromMs) {
+    grid.innerHTML = "";
+    note.textContent = t("profit.datesBackwards");
+    const drillHost = qs("#profitDrill");
+    if (drillHost) { drillHost.hidden = true; drillHost.innerHTML = ""; }
+    return;
+  }
+
+  // Kept in step for the per-product table and the drill, which still take a
+  // month key when no range is handed to them.
+  state.profitMonthSelection = state.profitFrom.slice(0, 7);
 
   const scopedSales = state.currentStoreId === "all"
     ? state.sales
@@ -13143,7 +13625,8 @@ function renderProfit() {
     sales: scopedSales,
     costIndex: buildCostIndex(state.productCostHistory),
     expenses: storeExpenses(),
-    monthKey: state.profitMonthSelection,
+    fromMs: periodFromMs,
+    toMs: periodToMs,
     coverageFromMs: salesCoverageFromMs(),
     vatRegistered: vatSettings().registered
   });
@@ -13191,7 +13674,7 @@ function renderProfit() {
   const deduct = (value) => t("profit.deduction", { value: money(value) });
 
   const rows = [
-    { label: t("profit.stRevenue"), value: money(p.revenue),
+    { label: t("profit.stRevenue"), value: money(p.revenue), drill: "revenue",
       note: t(p.salesCount === 1
         ? (vatSettings().registered ? "profit.revenueNoteVatOne" : "profit.revenueNoteOne")
         : (vatSettings().registered ? "profit.revenueNoteVat" : "profit.revenueNote"),
@@ -13199,8 +13682,8 @@ function renderProfit() {
     // Cost of goods is now a STATED LINE rather than an intermediate the reader
     // has to infer from revenue minus gross. It carries the completeness caption
     // because it is the figure the completeness is about.
-    { label: t("profit.stCogs"),
-      value: p.anyCostKnown ? deduct(p.cogs) : unknown,
+    { label: t("profit.stCogs"), drill: "cogs",
+      value: p.anyCostKnown ? deduct(p.costOfSales) : unknown,
       note: !p.anyCostKnown
         ? t("profit.grossNoCost")
         : p.allCostKnown
@@ -13213,9 +13696,7 @@ function renderProfit() {
       value: p.anyCostKnown ? withMargin(money(p.grossProfit), p.grossMarginPct) : unknown,
       tone: p.anyCostKnown && p.grossProfit <= 0 && p.revenue > 0 ? "danger" : "",
       note: p.anyCostKnown ? t("profit.grossNote") : "" },
-    { label: t("profit.stDirect"), value: deduct(p.directExpenses),
-      note: t("profit.stDirectNote") },
-    { label: t("profit.stIndirect"), value: deduct(p.indirectExpenses),
+    { label: t("profit.stIndirect"), value: deduct(p.indirectExpenses), drill: "indirect",
       note: p.anyExpensesRecorded
         ? t("profit.expensesNote", { count: String(p.expenseCount) })
         : t("profit.expensesNone") },
@@ -13234,10 +13715,17 @@ function renderProfit() {
   // A real <table>: this is tabular data with a row header and a figure, and a
   // screen reader should be able to say "Gross profit, 18,000,000" rather than
   // read two unrelated columns of text.
+  // A drillable label is a BUTTON, not a clickable cell: it is reachable by
+  // keyboard, it announces itself, and the derived lines (gross and net) stay
+  // plain text because there is nothing underneath them to show -- they are
+  // the subtraction of the two lines above, which are both already openable.
   grid.innerHTML = `<table class="statement">
     <tbody>${rows.map((row) => `<tr class="${row.total ? "statement-total" : ""}${
       row.bottom ? " statement-bottom" : ""}">
-      <th scope="row">${esc(row.label)}${
+      <th scope="row">${row.drill
+        ? `<button type="button" class="link-button statement-drill" data-profit-drill="${esc(row.drill)}"
+             aria-expanded="${state.profitDrill === row.drill ? "true" : "false"}">${esc(row.label)}</button>`
+        : esc(row.label)}${
         row.note ? `<span class="muted">${esc(row.note)}</span>` : ""}</th>
       <td class="${row.tone || ""}">${esc(row.value)}</td>
     </tr>`).join("")}</tbody>
@@ -13246,6 +13734,8 @@ function renderProfit() {
   note.textContent = p.anyCostKnown && p.allCostKnown && p.anyExpensesRecorded
     ? t("profit.complete")
     : t("profit.incomplete");
+
+  renderProfitDrill(p);
 
   // The docx section 10 drill-down, under the statement it explains.
   renderProductProfit(p, state.profitMonthSelection);
@@ -15937,9 +16427,67 @@ async function undoLastSale() {
   showToast(t("toast.saleUndone"));
 }
 
-// Idle/session timeout: signs the user out after a period of no interaction
-// so an unattended device (e.g. a shared POS terminal) doesn't stay logged
-// into a live account indefinitely. Pure client-side, Spark-plan compatible.
+// Idle/session timeout: signs the user out after a period of no interaction so
+// an unattended device (e.g. a shared POS terminal) doesn't stay logged into a
+// live account indefinitely. Pure client-side, Spark-plan compatible.
+//
+// OFF by default since 2026-10-07. An installed app that makes a shopkeeper
+// type their email and password again every time they come back to it is one
+// they stop installing, and 30 minutes is shorter than a quiet afternoon.
+// Signing out is now something a person does, not something that happens to
+// them.
+//
+// Kept, and switchable, because the hazard it was built for is real: a till on
+// a counter that the OWNER last used leaves cost prices, profit and the ability
+// to void a sale in front of whoever picks it up.
+//
+// Stored on the DEVICE, not in the business settings. "Is this machine shared?"
+// is a fact about the machine -- the same shop may have a counter till that
+// wants this and an owner's phone that does not -- and keeping it local means
+// no rules change and no write that can fail offline. The cost is that an owner
+// cannot enforce it across their staff's devices from one place; that would
+// need the field adding to the settings document and its rule allowlist.
+const IDLE_SIGN_OUT_KEY = "savia:idle-signout";
+
+function idleSignOutEnabled() {
+  // Wrapped: storage throws in a private window and reads empty with site data
+  // blocked, and the honest default there is the one that does not lock a
+  // shopkeeper out of their own till.
+  try {
+    return localStorage.getItem(IDLE_SIGN_OUT_KEY) === "on";
+  } catch (error) {
+    return false;
+  }
+}
+
+// Reflected from storage rather than set once at boot: the same account open
+// in two tabs must not show two different answers, and the value can be cleared
+// underneath us by the browser.
+//
+// Its own function because it has TWO callers and they are not related.
+// updateAuthUi() paints it when a session starts; the toggle paints it when
+// somebody flips the switch. It lived only in the first, and renderAll() does
+// not call updateAuthUi() -- so switching the setting on left the line
+// underneath still reading "stays signed in" while the toast said the
+// opposite. Two statements about the same thing, disagreeing on screen.
+function renderIdleSignOutSetting() {
+  const toggle = qs("#idleSignOutToggle");
+  const state = qs("#idleSignOutState");
+  const on = idleSignOutEnabled();
+  if (toggle) toggle.checked = on;
+  if (state) state.textContent = t(on ? "settings.idleSignOutOn" : "settings.idleSignOutOff");
+}
+
+function setIdleSignOutEnabled(enabled) {
+  try {
+    localStorage.setItem(IDLE_SIGN_OUT_KEY, enabled ? "on" : "off");
+  } catch (error) {
+    console.warn("Could not remember the idle sign-out preference.", error);
+  }
+  // Restart the clock, so switching it on does not sign out a shopkeeper who
+  // has been reading this very screen for the last half hour.
+  markActivity();
+}
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const IDLE_CHECK_INTERVAL_MS = 60 * 1000;
 const IDLE_ACTIVITY_EVENTS = ["mousemove", "mousedown", "keydown", "touchstart", "scroll"];
@@ -15955,6 +16503,7 @@ function initIdleActivityTracking() {
 }
 
 async function checkIdleTimeout() {
+  if (!idleSignOutEnabled()) return;
   if (!state.user || !state.auth) return;
   if (Date.now() - state.lastActivityAt < IDLE_TIMEOUT_MS) return;
   const { signOut } = state.firebaseApi.auth;
@@ -17676,6 +18225,11 @@ function stockValueAt(atMs, { products, movements, costIndex, storeId }) {
   // the names tell them what to do about it, and they are the products that
   // need a cost recorded before this figure means anything.
   const uncosted = [];
+  // Valued, but on a price first recorded AFTER the date being asked about.
+  const assumedProducts = [];
+  // Per product, so the Stock Valuation report can be driven by this walk
+  // rather than a second one that only knows how to value TODAY.
+  const rows = [];
 
   for (const product of products || []) {
     if (scoped && product.storeId !== storeId) continue;
@@ -17691,7 +18245,7 @@ function stockValueAt(atMs, { products, movements, costIndex, storeId }) {
       quantity -= safeNumber(movement.delta);
     }
 
-    const unitCost = costInForceAt(costIndex, product.id, new Date(atMs));
+    const { cost: unitCost, assumed } = costInForceAtOrEarliest(costIndex, product.id, new Date(atMs));
     if (unitCost === null) {
       // Only counts against completeness if there was stock to value.
       if (quantity !== 0) {
@@ -17699,11 +18253,50 @@ function stockValueAt(atMs, { products, movements, costIndex, storeId }) {
       }
       continue;
     }
+    // Counted separately from uncosted: this one IS valued, but on a price
+    // recorded after the date being asked about. The figure is usable and the
+    // reader is told what it rests on.
+    if (assumed && quantity !== 0) {
+      assumedProducts.push({ id: product.id, name: product.name || product.id, quantity });
+    }
     costedProducts += 1;
+    // Negative stock contributes NEGATIVE value here, and deliberately so.
+    //
+    // This is the COGS engine: an offline oversell means more goods left the
+    // shelf than were on it, and Opening + Purchases - Closing has to see that
+    // or the cost of those goods vanishes from the period. summariseStockValuation()
+    // clamps at zero instead, because a shelf cannot be worth less than nothing
+    // when the question is "what is this stock worth" -- a different question,
+    // honestly answered differently. Do not "fix" one to match the other
+    // without deciding which question is being asked.
     value += quantity * unitCost;
+    rows.push({
+      id: product.id,
+      name: product.name || product.id,
+      quantity,
+      unitCost,
+      value: quantity * unitCost,
+      assumed
+    });
   }
 
-  return { value, costedProducts, uncostedProducts: uncosted.length, uncosted };
+  // Unpriced products are rows too, so the table shows the whole shelf and says
+  // which lines it could not value, rather than quietly dropping them.
+  for (const entry of uncosted) {
+    rows.push({ id: entry.id, name: entry.name, quantity: entry.quantity,
+                unitCost: null, value: null, assumed: false });
+  }
+  rows.sort((a, b) => safeNumber(b.value) - safeNumber(a.value));
+
+  return {
+    value,
+    costedProducts,
+    uncostedProducts: uncosted.length,
+    uncosted,
+    assumedProducts: assumedProducts.length,
+    assumedList: assumedProducts,
+    rows
+  };
 }
 
 function movementTimeMs(movement) {
@@ -17846,13 +18439,28 @@ function computePeriodCogs({ fromMs, toMs, storeId, products, movements, costInd
     uncostedOpeningList: opening.uncosted,
     uncostedClosingList: closing.uncosted,
     costedAtClosing: closing.costedProducts,
+    // Valued on a price first recorded after the date asked about. These are
+    // what make a historical period statable at all, and the screen says how
+    // many there were -- the figure is usable, and the reader is told what it
+    // rests on rather than being handed a confident number.
+    assumedAtOpening: opening.assumedProducts,
+    assumedAtClosing: closing.assumedProducts,
+    assumedOpeningList: opening.assumedList,
+    assumedClosingList: closing.assumedList,
     ledgerReachesOpening,
     discountsAreCaptured,
     invoicedCost,
     invoicedCount,
     invoicedUncosted,
     oldestMovementMs,
-    complete: ledgerReachesOpening && opening.uncostedProducts === 0 && closing.uncostedProducts === 0
+    // Assumed figures count AGAINST completeness, deliberately. The fallback
+    // exists so a historical period can be stated at all, not so the report can
+    // claim to be sure of it -- and `complete` is what the negative-COGS guard
+    // reads. A negative total resting on a guessed opening stock must still be
+    // withheld rather than shown as a real event.
+    complete: ledgerReachesOpening
+      && opening.uncostedProducts === 0 && closing.uncostedProducts === 0
+      && opening.assumedProducts === 0 && closing.assumedProducts === 0
   };
 }
 
@@ -18350,11 +18958,32 @@ async function initFirebase() {
       const servedLocally = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
       if (servedLocally) self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
 
-      const { initializeAppCheck, ReCaptchaV3Provider } = await import("https://www.gstatic.com/firebasejs/10.12.4/firebase-app-check.js");
-      initializeAppCheck(app, {
-        provider: new ReCaptchaV3Provider("6LdtGFEtAAAAABK4HX_ufjUMskc7pix12Lz2NMGd"),
-        isTokenAutoRefreshEnabled: true
-      });
+      // STARTED here, not awaited.
+      //
+      // reCAPTCHA is the largest thing this app loads: 350 KB on the wire and
+      // 838 KB to parse, measured on production 2026-10-07. Awaiting it put all
+      // of that in front of getAuth() and initializeFirestore(), so nothing --
+      // not the till, not the sign-in form -- could be built until a cheap
+      // Android had parsed the lot. Starting it and carrying on moves it off
+      // the critical path while still having it in place within a few hundred
+      // milliseconds.
+      //
+      // THE TRADE, stated because it will matter later: requests made before
+      // this resolves carry no App Check token. That is safe only while
+      // enforcement is OFF -- it has been on Monitoring since 2026-09-19, after
+      // enforcement locked every shop out. Before anyone turns enforcement on,
+      // this must go back to being awaited, or early reads will be refused.
+      // state.appCheckReady is the handle to await for that.
+      state.appCheckReady = import("https://www.gstatic.com/firebasejs/10.12.4/firebase-app-check.js")
+        .then(({ initializeAppCheck, ReCaptchaV3Provider }) => {
+          initializeAppCheck(app, {
+            provider: new ReCaptchaV3Provider("6LdtGFEtAAAAABK4HX_ufjUMskc7pix12Lz2NMGd"),
+            isTokenAutoRefreshEnabled: true
+          });
+        })
+        .catch((appCheckError) => {
+          console.warn("App Check failed to initialize; continuing without it.", appCheckError);
+        });
     } catch (appCheckError) {
       console.warn("App Check failed to initialize; continuing without it.", appCheckError);
     }
@@ -18611,6 +19240,14 @@ async function subscribeToProducts() {
       (snapshot) => {
         const nextProducts = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
         detectStockAlertCrossings(state.products, nextProducts);
+        // Any stock movement writes the product document, so this snapshot is
+        // the one place that necessarily fires whenever the ledger has grown.
+        // Hung here rather than on each of the ten or so mutation sites --
+        // a sale, a refund, an adjustment, a delivery, a transfer, an invoice
+        // issued or voided -- because missing one would leave a past-date stock
+        // valuation walking back over an incomplete ledger and reporting a
+        // wrong figure rather than a missing one.
+        if (state.products.length && state.products !== nextProducts) invalidateStockLedger();
         state.products = nextProducts;
         state.productsInitialized = true;
         state.productsLoadFailed = false;
@@ -19911,6 +20548,8 @@ function updateAuthUi() {
   // which build they are actually looking at.
   const settingsVersion = qs("#settingsVersion");
   if (settingsVersion) settingsVersion.textContent = APP_VERSION;
+
+  renderIdleSignOutSetting();
   // Staff names come from the invitation they accepted and are the owner's
   // record, not theirs to edit here.
   const changeNameButton = qs("#changeOwnerNameButton");
@@ -20933,9 +21572,28 @@ function bindEvents() {
   qs("#doneSupplierStatementDialog")?.addEventListener("click", () => qs("#supplierStatementDialog").close());
   qs("#vatMonthInput")?.addEventListener("change", () => renderVatRecord());
   qs("#openVatRecordLink")?.addEventListener("click", () => openView("vat"));
-  qs("#profitMonthInput")?.addEventListener("change", (event) => {
-    state.profitMonthSelection = event.currentTarget.value || state.profitMonthSelection;
+  qs("#profitFromInput")?.addEventListener("change", (event) => {
+    state.profitFrom = event.currentTarget.value || state.profitFrom;
     state.profitMonthTouched = true;
+    // The open drill belongs to the period that was showing. Keeping it open
+    // across a period change would leave one period's rows under another
+    // period's figure -- which is the exact disagreement the drill exists to
+    // rule out.
+    state.profitDrill = null;
+    renderProfit();
+  });
+  qs("#profitToInput")?.addEventListener("change", (event) => {
+    state.profitTo = event.currentTarget.value || state.profitTo;
+    state.profitMonthTouched = true;
+    state.profitDrill = null;
+    renderProfit();
+  });
+  qs("#profitThisMonth")?.addEventListener("click", () => {
+    const now = new Date();
+    state.profitFrom = localDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1));
+    state.profitTo = localDateInputValue(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+    state.profitMonthTouched = true;
+    state.profitDrill = null;
     renderProfit();
   });
   qs("#purchaseMonthInput")?.addEventListener("change", (event) => {
@@ -20944,6 +21602,13 @@ function bindEvents() {
     renderPurchases();
   });
   // Deliveries -- DESIGN-landed-costs.md phase 4.
+  qs("#stockAsAtInput")?.addEventListener("change", () => {
+    // The ledger is only needed for a date that is not today, and asking here
+    // means the fetch starts the moment the owner picks one rather than after
+    // the next unrelated render.
+    ensureStockLedger();
+    renderCostReports();
+  });
   qs("#costReportMonthInput")?.addEventListener("change", (event) => {
     state.reportsCostMonth = event.currentTarget.value || state.reportsCostMonth;
     renderCostReports();
@@ -21148,6 +21813,28 @@ function bindEvents() {
   // the build waiting to be reloaded into, not the one running.
   qs("#updateWhatsNewButton")?.addEventListener("click", () => openWhatsNew({ incoming: true }));
   qs("#settingsWhatsNewButton")?.addEventListener("click", () => openWhatsNew({ incoming: state.updateReady }));
+  // Delegated: the statement is rebuilt on every render, so a handler bound to
+  // the buttons themselves would be lost the first time the month changed.
+  qs("#profitGrid")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-profit-drill]");
+    if (!button) return;
+    const which = button.dataset.profitDrill;
+    // Clicking the open line closes it, so the control is its own toggle.
+    state.profitDrill = state.profitDrill === which ? null : which;
+    renderProfit();
+  });
+  qs("#profitDrill")?.addEventListener("click", (event) => {
+    if (!event.target.closest("#profitDrillClose")) return;
+    state.profitDrill = null;
+    renderProfit();
+  });
+  qs("#idleSignOutToggle")?.addEventListener("change", (event) => {
+    setIdleSignOutEnabled(Boolean(event.target.checked));
+    // Directly, not through renderAll(): this line is painted by
+    // updateAuthUi(), which renderAll() does not call.
+    renderIdleSignOutSetting();
+    showToast(t(event.target.checked ? "settings.idleSignOutOn" : "settings.idleSignOutOff"));
+  });
   qs("#whatsNewDialogClose")?.addEventListener("click", () => qs("#whatsNewDialog")?.close());
   qs("#whatsNewDialogDismiss")?.addEventListener("click", () => qs("#whatsNewDialog")?.close());
   qs("#overridePasswordNudgeDismissButton")?.addEventListener("click", dismissOverridePasswordNudge);
