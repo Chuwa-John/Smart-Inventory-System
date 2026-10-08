@@ -18,9 +18,15 @@ const idButtons = [...htmlNoComments.matchAll(/<button\b[^>]*\bid="([^"]+)"[^>]*
 // --- 2. Controls addressed by a data- action attribute --------------------
 // Both in the static markup and in the row templates app.js builds.
 const dataActionRe = /data-([a-z]+(?:-[a-z]+)*)=/g;
+// Attributes that identify or describe an element rather than name an action
+// it performs, so there is nothing for them to be "wired" to.
 const IGNORE = new Set([
   "i18n", "i18n-placeholder", "view", "payment", "field", "cost", "theme",
-  "qty-input", "range", "role", "testid", "i18n-title", "i18n-aria-label"
+  "qty-input", "range", "role", "testid", "i18n-title", "i18n-aria-label",
+  // The nav groups are native <details>. They toggle themselves, which is the
+  // reason for using them -- a handler here would be a worse implementation,
+  // not a missing one. The attribute only names which group it is.
+  "nav-group"
 ]);
 const dataActions = new Set();
 for (const source of [htmlNoComments, app]) {

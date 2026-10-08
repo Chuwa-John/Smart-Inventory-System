@@ -26,7 +26,7 @@
   font-weight: 400 700;
   font-style: normal;
   font-display: swap;
-  src: url("./fonts/inter-latin.woff2?v=20261007f") format("woff2");
+  src: url("./fonts/inter-latin.woff2?v=20261008a") format("woff2");
 }
 
 :root {
@@ -2904,4 +2904,61 @@ table.statement-figures td.danger { color: var(--red); }
 
 .control-grid-quiet .control-tile-value {
   font-size: 1.05rem;
+}
+
+/* The nav, grouped. Five entries instead of fourteen: a flat list was right at
+   eight screens and a wall at fourteen, and a shopkeeper looking for the till
+   read past nine other things to find it.
+
+   <details> rather than a scripted accordion, so the open state is the
+   browser's own, the keyboard and screen-reader behaviour come free, and the
+   nav still works if the group script never runs. */
+.nav-group[hidden] {
+  display: none;
+}
+
+.nav-group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--muted-strong);
+  font-size: 0.82rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  list-style: none;
+  user-select: none;
+}
+
+/* The default triangle, replaced by our own so it sits on the right where a
+   disclosure belongs rather than crowding the icon on the left. */
+.nav-group-head::-webkit-details-marker { display: none; }
+
+.nav-group-head::after {
+  content: "";
+  margin-left: auto;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 140ms ease;
+  opacity: 0.7;
+}
+
+.nav-group[open] > .nav-group-head::after {
+  transform: rotate(-135deg) translate(-2px, -2px);
+}
+
+.nav-group-head:hover {
+  background: var(--panel-hover);
+  color: var(--text);
+}
+
+/* Indented, so a child reads as belonging to the group above it rather than as
+   another top-level destination. */
+.nav-group > .nav-item {
+  padding-left: 30px;
 }

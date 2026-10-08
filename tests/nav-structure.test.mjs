@@ -53,8 +53,19 @@ console.log("=== the order the owner asked for ===");
     // invoice is raised FOR a customer, so the two sit together. Manager and
     // owner, plus a cashier holding `issueInvoices` -- canOpenView() has an
     // explicit branch for it rather than falling through to the manager check.
-    ["dashboard", "inventory", "purchases", "arrivals", "pos", "services", "customers", "invoices", "expenses",
-     "reports", "ai", "vat", "settings"]);
+    // REGROUPED 2026-10-08, reversing the 2026-09-10 flattening. That decision
+    // was right for eight screens and wrong for fourteen: a shopkeeper looking
+    // for the till read past nine other things to find it. Grouped, not
+    // removed -- every screen is one tap further in and none was renamed.
+    // Selling first, because that is what the app is for.
+    ["dashboard", "pos", "services", "customers", "invoices",
+     "inventory", "purchases", "arrivals",
+     "reports", "expenses", "vat",
+     "ai", "settings"]);
+  check("five top-level entries, not fourteen",
+    (nav.match(/data-nav-group="/g) || []).length + 1, 5);
+  check("...and every screen is still reachable inside one",
+    [...nav.matchAll(/data-view="([a-z]+)"/g)].length, 13);
   check("arrivals is cashier-only, and only with the permission",
     /if \(viewId === "arrivals"\) return isCashierWith\("receiveDeliveries"\);/.test(src), true);
   check("...and it ships hidden, so nobody sees it before the role resolves",
@@ -74,9 +85,29 @@ console.log("=== the order the owner asked for ===");
     html.indexOf('id="deliveriesPanel"') > html.indexOf('<section class="view" id="purchases">')
     && html.indexOf('id="deliveriesPanel"') < html.indexOf('</section>', html.indexOf('<section class="view" id="purchases">')),
     true);
-  // The group that briefly held Purchases, Expenses and Profit behind one
-  // toggle is gone; a menu cost a tap and bought nothing.
-  check("no dropdown group remains", /nav-group|accountsGroupToggle/.test(html + src), false);
+  // The 2026-09-10 flattening removed a scripted accordion that held Purchases,
+  // Expenses and Profit. What replaced it on 2026-10-08 is not that: these are
+  // native <details>, so the open state, the keyboard handling and the screen
+  // reader behaviour are the browser's rather than ours.
+  check("the old scripted accordion stays gone", /accountsGroupToggle/.test(html + src), false);
+  check("the groups are native details", /<details class="nav-group"/.test(html), true);
+
+  // A GROUP WITH NOTHING IN IT MUST HIDE ITSELF, or a cashier with no money
+  // permissions sees a Money shelf that opens onto nothing -- which reads as
+  // the app being broken rather than as a permission they do not have.
+  check("an empty group hides itself",
+    /group\.hidden = items\.length > 0 && items\.every\(\(item\) => item\.hidden\)/.test(src), true);
+  check("...and the items still gate themselves one by one",
+    /item\.hidden = !canOpenView\(item\.dataset\.view\)/.test(src), true);
+  check("the group holding the open screen opens with it",
+    /activeGroup\.open = true/.test(src), true);
+
+  // A cashier lands on the till: ringing up sales is the whole of the job, and
+  // the dashboard is a screen they can read and not act on.
+  check("a cashier lands on the till", /!isManagerOrOwnerRole\(\) && canOpenView\("pos"\)/.test(src), true);
+  check("...once per session, not every render", /state\.landedOnRoleHome = true/.test(src), true);
+  check("...and only from the screen it booted to",
+    /qs\("\.view\.active"\)\?\.id === "dashboard"/.test(src), true);
 }
 
 console.log("\n=== every nav item points somewhere real ===");

@@ -127,6 +127,9 @@ const state = {
   stockAlertQueue: [],
   stockAlertPopupOpen: false,
   language: localStorage.getItem("savia:lang") || localStorage.getItem("sanitaryflow:lang") || "en",
+  // Set once the role has resolved and a cashier has been put on the till, so
+  // it happens at the start of a session and never again mid-use.
+  landedOnRoleHome: false,
   // Which statement line is open underneath the profit report, or null.
   profitDrill: null,
   // The same, for the cost of goods sold statement, plus the result it belongs
@@ -761,6 +764,10 @@ const DICTIONARY = {
     "control.noSalesToday": "No sales recorded yet today.",
     "control.revenueToday": "Revenue today",
     "control.revenueMonth": "Revenue month to date",
+    "nav.group.sell": "Sell",
+    "nav.group.stock": "Stock",
+    "nav.group.money": "Money",
+    "nav.group.more": "More",
     "nav.accounts": "Accounts",
     "nav.soon": "Soon",
     "nav.vat": "VAT",
@@ -2417,6 +2424,10 @@ const DICTIONARY = {
     "control.noSalesToday": "Hakuna mauzo yaliyorekodiwa leo.",
     "control.revenueToday": "Mapato leo",
     "control.revenueMonth": "Mapato mwezi hadi leo",
+    "nav.group.sell": "Uza",
+    "nav.group.stock": "Hisa",
+    "nav.group.money": "Fedha",
+    "nav.group.more": "Zaidi",
     "nav.accounts": "Hesabu",
     "nav.soon": "Inakuja",
     "nav.vat": "VAT",
@@ -21246,12 +21257,38 @@ function applyRoleViewVisibility() {
     }
     item.hidden = !canOpenView(item.dataset.view);
   });
+
+  // A GROUP WITH NOTHING IN IT HIDES ITSELF.
+  //
+  // The items gate themselves one by one, as they always have. A group does
+  // not: left alone, a cashier with no money permissions would see a "Money"
+  // shelf that opens onto nothing, which reads as the app being broken rather
+  // than as a permission they do not have.
+  qsa(".nav-group").forEach((group) => {
+    const items = [...group.querySelectorAll(".nav-item")];
+    group.hidden = items.length > 0 && items.every((item) => item.hidden);
+  });
   // Only redirect once the role has actually resolved. While it's still null
   // the nav stays hidden (fail closed, harmless), but redirecting here would
   // strand an owner on the POS tab after their real role arrives.
   if (!state.currentUserRole) return;
   const activeView = qs(".view.active");
   if (activeView && !canOpenView(activeView.id)) openView("pos");
+
+  // A CASHIER LANDS ON THE TILL, not the dashboard.
+  //
+  // Ringing up sales is the whole of the job, and the dashboard is a screen a
+  // cashier can read and not act on -- so opening there costs a tap at the
+  // start of every shift to reach the one screen they came for. Owners are
+  // left alone: for them the summary IS the task.
+  //
+  // Once per session, and only while the app is still sitting on the screen it
+  // booted to. Someone who has navigated has made a choice, and moving them
+  // after that would be the app arguing with them.
+  if (!state.landedOnRoleHome && !isManagerOrOwnerRole() && canOpenView("pos")) {
+    state.landedOnRoleHome = true;
+    if (qs(".view.active")?.id === "dashboard") openView("pos");
+  }
 }
 
 function openView(viewId) {
@@ -21264,6 +21301,13 @@ function openView(viewId) {
   // selected and the screen reads as having fallen out of the app.
   const navView = viewId === "profit" ? "reports" : viewId;
   qsa(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === navView));
+  // Open the group the current screen lives in, so arriving somewhere never
+  // leaves the nav pointing at a closed box. Other groups are left exactly as
+  // the person set them: collapsing them here would undo a deliberate choice
+  // every time they changed screen.
+  const activeItem = qs(".nav-item.active");
+  const activeGroup = activeItem?.closest(".nav-group");
+  if (activeGroup) activeGroup.open = true;
   qs(".sidebar").classList.remove("open");
   // Keep the Accounts menu honest about what is on screen. Reached from the
   // command palette and from the role redirect as well as from a nav click, so

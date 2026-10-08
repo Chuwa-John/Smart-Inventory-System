@@ -37,13 +37,13 @@
          Must carry the SAME ?v= as the script tag below: a different query is a
          different cache key and would fetch the bundle twice.
          tests/deployment-validation.test.mjs fails if they drift apart. -->
-    <link rel="modulepreload" href="./app.js?v=20261007f" />
+    <link rel="modulepreload" href="./app.js?v=20261008a" />
     <!-- Preloaded, not merely referenced: the stylesheet has to be parsed
          before the browser discovers a font inside it, and on a 2G link that
          wait is visible as a flash of the fallback face. crossorigin is
          required even same-origin -- fonts are fetched in CORS mode. -->
-    <link rel="preload" href="./fonts/inter-latin.woff2?v=20261007f" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20261007f" />
+    <link rel="preload" href="./fonts/inter-latin.woff2?v=20261008a" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="./styles.css?v=20261008a" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#f6f8fa" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -63,7 +63,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20261007f"></script>
+    <script type="module" src="./boot.js?v=20261008a"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -96,67 +96,48 @@
         </div>
 
         <nav class="nav-list">
-          <!-- Flat and in the order the owner asked for on 2026-09-10. The
-               Accounts group that briefly held Purchases, Expenses and Profit is
-               gone: with Deliveries folded into Purchases there are few enough
-               top-level items that a menu costs a tap and buys nothing.
+          <!-- FIVE entries, not fourteen. The flat list was the right answer
+               while there were eight screens; at fourteen it was a wall on a
+               phone, and a shopkeeper looking for the till read past nine other
+               things to find it.
 
-               Two items are conditional and so are absent from that list:
-               Services (only for a business type that sells them) and VAT (only
-               for a registered one). Both keep their own gating. -->
+               Grouped, NOT removed: every screen is still one tap further in,
+               and no screen was renamed. Each group is a <details>, so the open
+               state is the browser's own and the whole thing keeps working with
+               no JavaScript beyond what already gates it.
+
+               THE GATING IS UNTOUCHED. Each button is the same element it was,
+               with the same data-view, hidden attribute and id, because
+               applyRoleViewVisibility() still finds them with qsa(".nav-item")
+               -- a descendant selector, so nesting them changes nothing. What
+               IS new is that a group whose every child is hidden hides itself,
+               or a cashier would see an empty Money shelf. -->
           <button class="nav-item active" data-view="dashboard"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.6"/></svg><span data-i18n="nav.dashboard">Dashboard</span></button>
-          <button class="nav-item" data-view="inventory"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 8.2v7.6a1.8 1.8 0 0 1-.92 1.57l-7.2 3.9a1.8 1.8 0 0 1-1.76 0l-7.2-3.9A1.8 1.8 0 0 1 3 15.8V8.2a1.8 1.8 0 0 1 .92-1.57l7.2-3.9a1.8 1.8 0 0 1 1.76 0l7.2 3.9A1.8 1.8 0 0 1 21 8.2z"/><path d="M3.4 7.2 12 12l8.6-4.8"/><path d="M12 21.4V12"/></svg><span data-i18n="nav.inventory">Inventory</span></button>
-          <!-- Purchases now owns receiving a delivery as well. They were two
-               destinations answering one question -- "stock arrived, here is
-               what it cost" -- and a shop had to know which of them to open. -->
-          <button class="nav-item" data-view="purchases"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5.5 2.8h13v18.4l-2.6-1.5-2.4 1.5-2.5-1.5-2.4 1.5-3.1-1.5z"/><path d="M9 8.4h6M9 12.4h6"/></svg><span data-i18n="nav.purchases">Purchases</span></button>
-          <button class="nav-item" data-view="arrivals" hidden><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7.5h12v9H3z"/><path d="M15 10.5h3.6l2.4 3v3H15z"/><circle cx="7" cy="18.5" r="1.6"/><circle cx="17.5" cy="18.5" r="1.6"/></svg><span data-i18n="nav.arrivals">Deliveries</span></button>
-          <button class="nav-item" data-view="pos"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="9.5" cy="19.5" r="1.5"/><circle cx="18" cy="19.5" r="1.5"/><path d="M2.5 3.5H5l2.3 11.6a1.8 1.8 0 0 0 1.77 1.4h8.3a1.8 1.8 0 0 0 1.76-1.44L21 7.3H5.8"/></svg><span data-i18n="nav.pos">Point of Sale</span></button>
-          <!-- Sold by a salon or a bar; hidden for a duka. renderServices()
-               sets the label from the business type. -->
-          <button class="nav-item" data-view="services" id="servicesNavItem" hidden><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="6.5" cy="6.5" r="2.4"/><circle cx="6.5" cy="17.5" r="2.4"/><path d="M8.6 8.1 20 19.5M20 4.5 8.6 15.9"/></svg><span id="servicesNavLabel">Services</span></button>
-          <!-- Customers get a screen of their own (DESIGN-invoicing.md 8).
-               Until now a customer existed only as a name and a phone typed at
-               the till by findOrCreateCustomerForCredit(), with nowhere to edit
-               it and no way to see what one had bought. Sits with selling:
-               after the till and the services it sells, before what the shop
-               spends. Manager and owner only -- canOpenView() falls through to
-               the manager check, and `customers` is not in
-               CASHIER_ALLOWED_VIEWS. -->
-          <button class="nav-item" data-view="customers"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="9.2" cy="8.4" r="3.4"/><path d="M3.4 20.3a5.8 5.8 0 0 1 11.6 0"/><path d="M16.4 5.6a3.4 3.4 0 0 1 0 5.6"/><path d="M17.6 14.9a5.8 5.8 0 0 1 3 5.4"/></svg><span data-i18n="nav.customers">Customers</span></button>
-          <!-- Invoices. DESIGN-invoicing.md. A COMMERCIAL invoice: a formal
-               request for payment that records the debt. Sits next to Customers
-               because that is who it is raised for. Manager and owner, plus a
-               cashier holding `issueInvoices` -- canOpenView() decides. -->
-          <button class="nav-item" data-view="invoices"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 2.6h12v18.8l-2.4-1.4-2.4 1.4-2.4-1.4-2.4 1.4L6 21.4z"/><path d="M9.2 7.6h5.6M9.2 11.4h5.6M9.2 15.2h3.2"/></svg><span data-i18n="invoices.navLabel">Invoices</span></button>
-          <button class="nav-item" data-view="expenses"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7.6A2.1 2.1 0 0 1 5.1 5.5h12.4a1 1 0 0 1 1 1v2"/><path d="M3 7.6v9.3a2.1 2.1 0 0 0 2.1 2.1h13.4a1 1 0 0 0 1-1v-3.1"/><path d="M21 10.4v4.2h-4.1a2.1 2.1 0 0 1 0-4.2z"/></svg><span data-i18n="nav.expenses">Expenses</span></button>
-          <button class="nav-item" data-view="reports"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.2 20.8h17.6"/><path d="M7.4 20.8V10.6M12 20.8V4.2M16.6 20.8v-6.6"/></svg><span data-i18n="nav.reports">Reports</span></button>
-          <button class="nav-item" data-view="ai"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M11.4 3.2 13.1 8l4.8 1.7-4.8 1.7-1.7 4.8-1.7-4.8L4.9 9.7 9.7 8z"/><path d="M18.3 15.1l.63 1.72 1.72.63-1.72.63-.63 1.72-.63-1.72-1.72-.63 1.72-.63z"/></svg><span data-i18n="nav.ai">AI Advisor</span></button>
-          <!-- Hidden entirely unless the business is VAT registered --
-               renderVatNav(). Sits beside Accounts because it is the other
-               screen an accountant asks for. -->
-          <button class="nav-item" data-view="vat" hidden><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 5 5 19"/><circle cx="7.6" cy="7.6" r="2.4"/><circle cx="16.4" cy="16.4" r="2.4"/></svg><span data-i18n="nav.vat">VAT</span></button>
-          <!-- Opens the Profit & Loss view, which also carries the four ledger
-               statements this system cannot yet produce, named rather than
-               faked. Owner-strict: canOpenView() returns isOwnerRole() for it,
-               because profit exposes buying prices by inference. -->
-          <!-- Profit & Loss has NO nav item. It is opened from the Reports
-               chooser, which is where the owner asked for it, and it keeps its
-               own view so canOpenView("profit") stays the single owner-strict
-               gate on it -- profit exposes buying prices by inference, and that
-               gate is worth more than a tab. -->
-          <!-- Accounts is DELIBERATELY DORMANT. It is the shelf the double-entry
-               books will sit on -- Balance Sheet, Trial Balance, Cash Flow,
-               General Ledger -- and those wait on the s.35(7) data-residency
-               research, because where the ledger is kept is part of what a
-               ledger has to satisfy.
-
-               It is shown rather than hidden so the owner can see what is
-               coming, and disabled rather than wired to an empty screen: it
-               carries no data-view at all, so openView() can never be reached
-               with a view id that does not exist. -->
-          <button class="nav-item nav-item-dormant" data-nav-placeholder="accounts" type="button" disabled aria-disabled="true"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.2 5.1a15 15 0 0 1 8.8 2v13a15 15 0 0 0-8.8-2z"/><path d="M20.8 5.1a15 15 0 0 0-8.8 2v13a15 15 0 0 1 8.8-2z"/></svg><span data-i18n="nav.accounts">Accounts</span><span class="nav-soon" data-i18n="nav.soon">Soon</span></button>
-          <button class="nav-item" data-view="settings"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.4v3.1M12 18.5v3.1M21.6 12h-3.1M5.5 12H2.4M18.8 5.2l-2.2 2.2M7.4 16.6l-2.2 2.2M18.8 18.8l-2.2-2.2M7.4 7.4 5.2 5.2"/></svg><span data-i18n="nav.settings">Settings</span></button>
+          <details class="nav-group" data-nav-group="sell">
+            <summary class="nav-group-head"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2.5 3.5H5l2.3 11.6a1.8 1.8 0 0 0 1.77 1.4h8.3a1.8 1.8 0 0 0 1.76-1.44L21 7.3H5.8"/><circle cx="9.5" cy="19.5" r="1.5"/><circle cx="18" cy="19.5" r="1.5"/></svg><span data-i18n="nav.group.sell">Sell</span></summary>
+            <button class="nav-item" data-view="pos"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="9.5" cy="19.5" r="1.5"/><circle cx="18" cy="19.5" r="1.5"/><path d="M2.5 3.5H5l2.3 11.6a1.8 1.8 0 0 0 1.77 1.4h8.3a1.8 1.8 0 0 0 1.76-1.44L21 7.3H5.8"/></svg><span data-i18n="nav.pos">Point of Sale</span></button>
+            <button class="nav-item" data-view="services" id="servicesNavItem" hidden><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="6.5" cy="6.5" r="2.4"/><circle cx="6.5" cy="17.5" r="2.4"/><path d="M8.6 8.1 20 19.5M20 4.5 8.6 15.9"/></svg><span id="servicesNavLabel">Services</span></button>
+            <button class="nav-item" data-view="customers"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="9.2" cy="8.4" r="3.4"/><path d="M3.4 20.3a5.8 5.8 0 0 1 11.6 0"/><path d="M16.4 5.6a3.4 3.4 0 0 1 0 5.6"/><path d="M17.6 14.9a5.8 5.8 0 0 1 3 5.4"/></svg><span data-i18n="nav.customers">Customers</span></button>
+            <button class="nav-item" data-view="invoices"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 2.6h12v18.8l-2.4-1.4-2.4 1.4-2.4-1.4-2.4 1.4L6 21.4z"/><path d="M9.2 7.6h5.6M9.2 11.4h5.6M9.2 15.2h3.2"/></svg><span data-i18n="invoices.navLabel">Invoices</span></button>
+          </details>
+          <details class="nav-group" data-nav-group="stock">
+            <summary class="nav-group-head"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 8.2v7.6a1.8 1.8 0 0 1-.92 1.57l-7.2 3.9a1.8 1.8 0 0 1-1.76 0l-7.2-3.9A1.8 1.8 0 0 1 3 15.8V8.2a1.8 1.8 0 0 1 .92-1.57l7.2-3.9a1.8 1.8 0 0 1 1.76 0l7.2 3.9A1.8 1.8 0 0 1 21 8.2z"/><path d="M3.4 7.2 12 12l8.6-4.8"/></svg><span data-i18n="nav.group.stock">Stock</span></summary>
+            <button class="nav-item" data-view="inventory"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 8.2v7.6a1.8 1.8 0 0 1-.92 1.57l-7.2 3.9a1.8 1.8 0 0 1-1.76 0l-7.2-3.9A1.8 1.8 0 0 1 3 15.8V8.2a1.8 1.8 0 0 1 .92-1.57l7.2-3.9a1.8 1.8 0 0 1 1.76 0l7.2 3.9A1.8 1.8 0 0 1 21 8.2z"/><path d="M3.4 7.2 12 12l8.6-4.8"/><path d="M12 21.4V12"/></svg><span data-i18n="nav.inventory">Inventory</span></button>
+            <button class="nav-item" data-view="purchases"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5.5 2.8h13v18.4l-2.6-1.5-2.4 1.5-2.5-1.5-2.4 1.5-3.1-1.5z"/><path d="M9 8.4h6M9 12.4h6"/></svg><span data-i18n="nav.purchases">Purchases</span></button>
+            <button class="nav-item" data-view="arrivals" hidden><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7.5h12v9H3z"/><path d="M15 10.5h3.6l2.4 3v3H15z"/><circle cx="7" cy="18.5" r="1.6"/><circle cx="17.5" cy="18.5" r="1.6"/></svg><span data-i18n="nav.arrivals">Deliveries</span></button>
+          </details>
+          <details class="nav-group" data-nav-group="money">
+            <summary class="nav-group-head"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7.5h18v11H3z"/><circle cx="12" cy="13" r="2.6"/><path d="M6.5 11v4M17.5 11v4"/></svg><span data-i18n="nav.group.money">Money</span></summary>
+            <button class="nav-item" data-view="reports"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.2 20.8h17.6"/><path d="M7.4 20.8V10.6M12 20.8V4.2M16.6 20.8v-6.6"/></svg><span data-i18n="nav.reports">Reports</span></button>
+            <button class="nav-item" data-view="expenses"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 7.6A2.1 2.1 0 0 1 5.1 5.5h12.4a1 1 0 0 1 1 1v2"/><path d="M3 7.6v9.3a2.1 2.1 0 0 0 2.1 2.1h13.4a1 1 0 0 0 1-1v-3.1"/><path d="M21 10.4v4.2h-4.1a2.1 2.1 0 0 1 0-4.2z"/></svg><span data-i18n="nav.expenses">Expenses</span></button>
+            <button class="nav-item" data-view="vat" hidden><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 5 5 19"/><circle cx="7.6" cy="7.6" r="2.4"/><circle cx="16.4" cy="16.4" r="2.4"/></svg><span data-i18n="nav.vat">VAT</span></button>
+            <button class="nav-item nav-item-dormant" data-nav-placeholder="accounts" type="button" disabled aria-disabled="true"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.2 5.1a15 15 0 0 1 8.8 2v13a15 15 0 0 0-8.8-2z"/><path d="M20.8 5.1a15 15 0 0 0-8.8 2v13a15 15 0 0 1 8.8-2z"/></svg><span data-i18n="nav.accounts">Accounts</span><span class="nav-soon" data-i18n="nav.soon">Soon</span></button>
+          </details>
+          <details class="nav-group" data-nav-group="more">
+            <summary class="nav-group-head"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg><span data-i18n="nav.group.more">More</span></summary>
+            <button class="nav-item" data-view="ai"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M11.4 3.2 13.1 8l4.8 1.7-4.8 1.7-1.7 4.8-1.7-4.8L4.9 9.7 9.7 8z"/><path d="M18.3 15.1l.63 1.72 1.72.63-1.72.63-.63 1.72-.63-1.72-1.72-.63 1.72-.63z"/></svg><span data-i18n="nav.ai">AI Advisor</span></button>
+            <button class="nav-item" data-view="settings"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.4v3.1M12 18.5v3.1M21.6 12h-3.1M5.5 12H2.4M18.8 5.2l-2.2 2.2M7.4 16.6l-2.2 2.2M18.8 18.8l-2.2-2.2M7.4 7.4 5.2 5.2"/></svg><span data-i18n="nav.settings">Settings</span></button>
+          </details>
         </nav>
 
         <div class="sidebar-card">
@@ -2995,6 +2976,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20261007f"></script>
+    <script type="module" src="./app.js?v=20261008a"></script>
   </body>
 </html>

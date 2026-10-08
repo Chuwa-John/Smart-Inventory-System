@@ -2,6 +2,18 @@
   "_comment": "What changed in each release, in the words a shopkeeper would use. Unversioned on purpose: the running app fetches this by a stable URL to show what the INCOMING version brings, so a ?v= here would be a URL the old build cannot know. Newest first. tests/release-notes.test.mjs fails the build if the top entry does not match the stamp in app.html.",
   "releases": [
     {
+      "version": "20261008a",
+      "date": "2026-10-08",
+      "en": [
+        "The menu is five entries instead of fourteen: Dashboard, Sell, Stock, Money and More. Nothing was taken away and nothing was renamed, so every screen is still there, one tap further in.",
+        "If your job is serving customers, the app now opens straight on the till instead of a dashboard you cannot sell from."
+      ],
+      "sw": [
+        "Menyu sasa ina vitu vitano badala ya kumi na vinne: Dashibodi, Uza, Hisa, Fedha na Zaidi. Hakuna kilichoondolewa wala kubadilishwa jina, hivyo kila skrini bado ipo, mguso mmoja zaidi ndani.",
+        "Kama kazi yako ni kuhudumia wateja, programu sasa inafunguka moja kwa moja kwenye kaunta badala ya dashibodi usiyoweza kuuzia."
+      ]
+    },
+    {
       "version": "20261007f",
       "date": "2026-10-07",
       "en": [

@@ -448,19 +448,23 @@ console.log("\n=== roles and lifecycle ===");
   check("productCostMap reads the cost collection",
     /state\.productCosts \|\| \[\]/.test(body("function productCostMap(")), true);
 
-  // Purchases sat inside an Accounts dropdown for a fortnight. It is top-level
-  // again as of 2026-09-10: with Deliveries folded into it there are few enough
-  // entries that a menu cost a tap and bought nothing, and a screen a shop uses
-  // every time stock arrives should not be two clicks deep. The group machinery
-  // that hid and showed it is gone with it -- assertions about that container
-  // used to live here, and were removed rather than rewritten because there is
-  // no container left to make a claim about. nav-structure.test.mjs holds the
-  // whole nav contract now.
+  // Purchases sat inside an Accounts dropdown for a fortnight, came back to
+  // top level on 2026-09-10, and went under a group again on 2026-10-08. The
+  // argument made here for top level still stands and is worth keeping stated:
+  // a screen a shop uses every time stock arrives should not be two clicks
+  // deep. What changed is the other side of the trade -- at fourteen top-level
+  // entries the cost of FINDING anything outgrew the cost of one extra tap.
+  //
+  // So this is a judgement that was reversed knowingly, not an assertion that
+  // rotted. If Purchases turns out to be the screen that suffers for it, this
+  // comment is where to start.
   const navHtml = readFileSync(new URL("../app.html", import.meta.url), "utf8");
-  check("Purchases is a top-level destination",
+  check("Purchases is still its own destination, not folded into another screen",
     /<button class="nav-item" data-view="purchases">/.test(navHtml), true);
-  check("...and nothing hides it behind a group",
-    /nav-group|accountsGroupToggle/.test(navHtml + src), false);
+  check("...reachable under Stock, where stock arriving belongs",
+    /data-nav-group="stock"[\s\S]*?data-view="purchases"[\s\S]*?<\/details>/.test(navHtml), true);
+  check("...and the old scripted dropdown is still gone",
+    /accountsGroupToggle/.test(navHtml + src), false);
 }
 
 console.log("\n=== both languages ===");
