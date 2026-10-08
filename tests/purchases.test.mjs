@@ -469,7 +469,7 @@ console.log("\n=== roles and lifecycle ===");
 
 console.log("\n=== both languages ===");
 {
-  for (const key of ["nav.accounts", "nav.purchases", "purchases.monthTotal",
+  for (const key of ["nav.accounts", "nav.purchases", "purchases.periodTotal",
                      "purchases.noReceipt", "purchases.noReceiptNote",
                      "restock.totalPaidLabel", "restock.unitCostHint",
                      "restock.totalPaidInvalid", "restock.receiptHint"]) {

@@ -41,7 +41,23 @@ const camel = (s) => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 function idWired(id) {
   // A direct listener, or a form this button submits, or a dialog close.
   return new RegExp(`["'#]${id}["'\\)]`).test(app)
-    || new RegExp(`getElementById\\(["']${id}["']\\)`).test(app);
+    || new RegExp(`getElementById\\(["']${id}["']\\)`).test(app)
+    || periodPickerWired(id);
+}
+
+// The period pickers address their three controls through a name, not a
+// literal: bindPeriodPicker("purchase") reaches #purchaseFromInput,
+// #purchaseToInput and #purchaseThisMonth. Six report screens share the one
+// implementation, which is the point of it -- so every "This month" button read
+// as dead here.
+//
+// Checked against the NAME rather than waved through: a seventh report that
+// adds the markup and forgets the bindPeriodPicker call still fails, which is
+// the dead button this audit exists to catch. Listing the ids in IGNORE would
+// have given that one up.
+function periodPickerWired(id) {
+  const m = /^([a-z]+)(ThisMonth|FromInput|ToInput)$/.exec(id);
+  return Boolean(m) && app.includes(`bindPeriodPicker("${m[1]}"`);
 }
 
 function dataWired(action) {

@@ -2,6 +2,20 @@
   "_comment": "What changed in each release, in the words a shopkeeper would use. Unversioned on purpose: the running app fetches this by a stable URL to show what the INCOMING version brings, so a ?v= here would be a URL the old build cannot know. Newest first. tests/release-notes.test.mjs fails the build if the top entry does not match the stamp in app.html.",
   "releases": [
     {
+      "version": "20261008b",
+      "date": "2026-10-08",
+      "en": [
+        "Every report now asks for a date range instead of a single month. Pick the 3rd to the 19th, or July to September, or a whole year \u2014 the Profit Report, Purchases, Expenses, Deliveries and Stock Valuation all ask the same way, and there is a This month button when that is all you wanted.",
+        "The per-product table under the Profit Report was showing only the first month of a longer range. It now covers the whole period, so its rows add up to the figures above it.",
+        "The VAT record still asks for a month, deliberately: a VAT return is filed for a calendar month, so a figure covering anything else would match no return you will ever submit."
+      ],
+      "sw": [
+        "Kila ripoti sasa inauliza kipindi cha tarehe badala ya mwezi mmoja. Chagua tarehe 3 hadi 19, au Julai hadi Septemba, au mwaka mzima \u2014 Ripoti ya Faida, Manunuzi, Matumizi, Mizigo na Thamani ya Hisa zote zinauliza kwa njia moja, na kuna kitufe cha Mwezi huu kama hicho ni unachotaka.",
+        "Jedwali la bidhaa chini ya Ripoti ya Faida lilikuwa linaonyesha mwezi wa kwanza tu wa kipindi kirefu. Sasa linafunika kipindi chote, hivyo safu zake zinajumlika hadi takwimu zilizo juu yake.",
+        "Kumbukumbu ya VAT bado inauliza mwezi, kwa makusudi: marejesho ya VAT yanawasilishwa kwa mwezi wa kalenda, hivyo takwimu inayofunika kitu kingine haitalingana na marejesho yoyote utakayowasilisha."
+      ]
+    },
+    {
       "version": "20261008a",
       "date": "2026-10-08",
       "en": [

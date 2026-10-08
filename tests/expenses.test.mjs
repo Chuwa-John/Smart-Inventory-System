@@ -551,23 +551,31 @@ console.log("\n=== the wiring is where it is claimed to be ===");
   check("...alongside the other collections, not before the profile is loaded",
     signIn.indexOf("subscribeToExpenses()") > signIn.indexOf("subscribeToProducts()"), true);
 
-  // Changing the month must repaint, or the owner picks August and keeps
+  // Changing the period must repaint, or the owner picks August and keeps
   // reading September's figures.
-  check("changing the month re-renders",
-    /state\.expenseMonthSelection = event\.currentTarget\.value[\s\S]{0,80}renderExpenses\(\);/.test(noComments), true);
+  check("changing the period re-renders",
+    /bindPeriodPicker\("expense", \(\) => \{[\s\S]{0,120}renderExpenses\(\);/.test(noComments), true);
+  // ...and records that a period was chosen, which is what stops the screen
+  // re-anchoring itself to the current month on the next snapshot.
+  check("...and remembers that the shop chose it",
+    /bindPeriodPicker\("expense"[\s\S]{0,80}state\.expensePeriodTouched = true;/.test(noComments), true);
 
   // The rows and the tiles must be filtered by the same rule, or the total says
   // one thing and the rows visible underneath it add up to another.
   const render = body("function renderExpenses(");
   check("the tiles are built from summariseExpenses",
-    /const summary = summariseExpenses\(scoped, monthKey\);/.test(render), true);
+    /const summary = summariseExpenses\(scoped, null, period\);/.test(render), true);
   // Asserted as the property, not as one spelling of it. This originally pinned
   // the inline `${at.getFullYear()}-${String(at.getMonth() + 1)...}` expression
   // and went red when that arithmetic was pulled into localMonthKey() -- a test
   // failing on a fix rather than on a defect. What matters is that the rows and
   // the tiles bucket by the SAME rule; which function holds it is not the point.
-  check("the rows are filtered by the same local month key",
-    /localMonthKey\(at\) === monthKey/.test(render), true);
+  check("the rows are filtered by the same period as the tiles",
+    /return inPeriod\(expenseSpentAt\(expense\), period\);/.test(render), true);
+  // One period object, read once. A second periodFor("expense") call in the
+  // same render could not disagree today, but it is the shape that lets it.
+  check("...and the period is resolved once",
+    (render.match(/periodFor\("expense"\)/g) || []).length, 1);
   // Scoped to the two expense readers on purpose. Other parts of app.js build a
   // month key inline for their own reasons and predate this work; the property
   // here is that the expenses screen has exactly one month rule, not that the
@@ -678,10 +686,15 @@ console.log("\n=== the month rule has one definition ===");
   // were all compared against was a UTC slice. Between midnight and 03:00 EAT on
   // the 1st that is the previous month, so the screen opened on last month's
   // total and an expense recorded that morning was invisible.
-  check("the default month selection is built from local parts",
-    /expenseMonthSelection:\s*localMonthKey\(new Date\(\)\)/.test(noComments), true);
-  check("...and not from an ISO slice",
-    /expenseMonthSelection:\s*new Date\(\)\.toISOString\(\)/.test(noComments), false);
+  // The default period is built by periodDefaults() now rather than held as a
+  // month key on state, so that is where the rule has to hold.
+  const defaults = noComments.slice(
+    noComments.indexOf("function periodDefaults(name) {"),
+    noComments.indexOf("function periodFor(name) {"));
+  check("the default period block was located", defaults.length > 100 && defaults.length < 800, true);
+  check("the default period is built from local parts",
+    /localDateInputValue\(new Date\(now\.getFullYear\(\), now\.getMonth\(\), 1\)\)/.test(defaults), true);
+  check("...and not from an ISO slice", /toISOString/.test(defaults), false);
 
   // Three readers, one rule. Two copies of a date rule is how they drift.
   const uses = (noComments.match(/localMonthKey\(/g) || []).length;

@@ -26,7 +26,7 @@
   font-weight: 400 700;
   font-style: normal;
   font-display: swap;
-  src: url("./fonts/inter-latin.woff2?v=20261008a") format("woff2");
+  src: url("./fonts/inter-latin.woff2?v=20261008b") format("woff2");
 }
 
 :root {
@@ -2892,6 +2892,32 @@ table.statement-figures td.danger { color: var(--red); }
 
 .period-picker input {
   min-width: 9.5rem;
+}
+
+/* A panel head was built for a title and ONE month box. Six of them now hold a
+   three-part period picker, which on a handset is wider than the title beside
+   it -- and .panel-head is a non-wrapping flex row, so without this the dates
+   are pushed off the edge of the screen. Wrapping puts the picker on its own
+   line instead, which is where it was going to end up anyway. */
+.panel-head {
+  flex-wrap: wrap;
+}
+
+/* Below this the two date boxes cannot both keep their 9.5rem and still fit, so
+   they stop insisting on it and share the row. The min-width:0 matters: a flex
+   item will not shrink past its min-width however little room is left. */
+@media (max-width: 560px) {
+  .period-picker {
+    width: 100%;
+  }
+
+  .period-picker > label {
+    flex: 1 1 8rem;
+  }
+
+  .period-picker input {
+    min-width: 0;
+  }
 }
 
 /* The audit tiles. Same grid, dialled down: they are worth watching and they

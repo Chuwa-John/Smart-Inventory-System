@@ -358,14 +358,18 @@ console.log("\n=== the profit report runs on a period, not a month ===");
   // Changing the period must close an open drill, or one period's rows sit
   // under another period's figure -- the disagreement the drill exists to rule
   // out.
-  const fromHandler = app.slice(app.indexOf('#profitFromInput")?.addEventListener'));
+  // Bound through the shared helper, so one callback covers From, To and the
+  // shortcut rather than three copies that can drift apart.
+  const fromHandler = app.slice(app.indexOf('bindPeriodPicker("profit"'));
+  check("the profit picker is bound through the shared helper",
+    app.includes('bindPeriodPicker("profit"'), true);
   check("changing the period closes an open breakdown",
     /state\.profitDrill = null;/.test(fromHandler.slice(0, 900)), true);
 
   // Backwards dates must say so rather than totalling to nothing, which reads
   // as a shop that sold nothing.
-  check("a backwards range is refused by name", /profit\.datesBackwards/.test(app), true);
-  for (const key of ["profit.fromLabel", "profit.toLabel", "profit.thisMonth", "profit.datesBackwards"]) {
+  check("a backwards range is refused by name", /period\.datesBackwards/.test(app), true);
+  for (const key of ["period.fromLabel", "period.toLabel", "period.thisMonth", "period.datesBackwards"]) {
     const n = (app.match(new RegExp('"' + key.replace(/\./g, "\\.") + '":', "g")) || []).length;
     check(`${key} is in both languages`, n, 2);
   }

@@ -148,9 +148,12 @@ const state = {
   unsubscribePurchases: null,
   deliveries: [],
   unsubscribeDeliveries: null,
-  reportsCostMonth: localMonthKey(new Date()),
-  deliveryMonthSelection: localMonthKey(new Date()),
-  deliveryMonthTouched: false,
+  // Four screens used to hold a month key each. They hold a From/To pair now,
+  // created on first render by periodDefaults(), and the only thing kept here
+  // is whether the shop has chosen a period -- which decides whether the screen
+  // may still re-anchor itself to the current month.
+  costPeriodTouched: false,
+  deliveryPeriodTouched: false,
   // The dialog's working copy. Held on state rather than read out of the DOM on
   // every keystroke, because the preview recomputes from it and a half-typed
   // number in an input is not the same thing as the value the shop means.
@@ -158,22 +161,19 @@ const state = {
   productCosts: [],
   productCostHistory: [],
   unsubscribeProductCostHistory: null,
-  profitMonthSelection: localMonthKey(new Date()),
-  profitMonthTouched: false,
+  profitPeriodTouched: false,
   // The reporting period for the Profit Report, as "YYYY-MM-DD" strings so the
   // date inputs can be driven straight from them. Null until first render,
   // which then defaults them to the current month.
   profitFrom: null,
   profitTo: null,
-  purchaseMonthSelection: localMonthKey(new Date()),
-  purchaseMonthTouched: false,
-  // localMonthKey(), not toISOString().slice(0, 7). Everything that reads
-  // this bucket by local month, and a UTC slice disagrees with them between
-  // midnight and 03:00 EAT on the 1st -- so a shop opening this screen early
-  // on the first of the month would be shown the previous month's total, and
-  // an expense recorded that morning would not appear in the list.
-  expenseMonthSelection: localMonthKey(new Date()),
-  expenseMonthTouched: false,
+  purchasePeriodTouched: false,
+  // Local dates, never toISOString().slice(). A UTC slice disagrees with the
+  // shop between midnight and 03:00 EAT on the 1st, so a duka opening this
+  // screen early on the first of the month would be shown the previous month
+  // and an expense recorded that morning would not appear in the list.
+  // periodDefaults() builds from getFullYear/getMonth for that reason.
+  expensePeriodTouched: false,
   reportMonthSelection: new Date().toISOString().slice(0, 7),
   openMonthlyReportId: null,
   barcodeScanTarget: null,
@@ -479,7 +479,6 @@ const DICTIONARY = {
     "cogs.sectionEyebrow": "Cost of sales",
     "cogs.sectionTitle": "Cost of Goods Sold",
     "cogs.intro": "What the goods you sold actually cost, worked out from the shelves rather than sale by sale: what you started the period with, plus what you bought, less what was still there at the end.",
-    "cogs.fromLabel": "From", "cogs.toLabel": "To",
     "cogs.generateButton": "Generate Report",
     "cogs.colLine": "COGS calculation", "cogs.colAmount": "Amount",
     "cogs.drillTitle.opening": "What was on the shelf when the period started",
@@ -515,7 +514,6 @@ const DICTIONARY = {
     "cogs.unpricedHint": "These are left out of the stock value above. Record what they cost on their next restock and the figure completes itself from that date on.",
     "cogs.working": "Working it out...",
     "cogs.datesRequired": "Choose a From date and a To date.",
-    "cogs.datesBackwards": "The To date cannot be before the From date.",
     "cogs.ledgerFailed": "Could not read the stock history, so this period cannot be worked out.",
     "cogs.warnLedgerShort": "The stock history loaded only reaches back to {date}, so the opening stock is not reliable for a period starting before that.",
     "cogs.warnUncosted": "{count} product(s) have no recorded buying price at these dates, so they are left out of the stock values.",
@@ -802,14 +800,14 @@ const DICTIONARY = {
     "nav.profit": "Profit Report",
     "profit.eyebrow": "What the shop kept",
     "profit.title": "Profit Report",
-    "profit.fromLabel": "From",
-    "profit.toLabel": "To",
-    "profit.thisMonth": "This month",
-    "profit.datesBackwards": "The end of the period is before its start. Swap the two dates.",
-    "profit.monthLabel": "Month",
+    // ONE set of words for the one period picker every report uses. Four
+    // screens asking the same question must not ask it in four wordings.
+    "period.fromLabel": "From",
+    "period.toLabel": "To",
+    "period.thisMonth": "This month",
+    "period.datesBackwards": "The end of the period is before its start. Swap the two dates.",
     "profit.intro": "Revenue less what the stock cost, less what the shop spent. The first two are worked out from your records; the last one is only as complete as what you have entered.",
     "reports.costEyebrow": "Cost and supply",
-    "reports.costMonthLabel": "Month",
     "reports.sbpTitle": "Sales by Product",
     "reports.sbpThProduct": "Product",
     "reports.sbpThUnits": "Units sold",
@@ -833,7 +831,7 @@ const DICTIONARY = {
     "reports.svThUnitCost": "Unit cost",
     "reports.svThValue": "Value at cost",
     "reports.supplierTitle": "Supplier Report",
-    "reports.supplierEmpty": "No purchases recorded against a supplier this month.",
+    "reports.supplierEmpty": "No purchases recorded against a supplier in this period.",
     "reports.supThSupplier": "Supplier",
     "reports.supThLines": "Lines",
     "reports.supThDeliveries": "Deliveries",
@@ -841,7 +839,7 @@ const DICTIONARY = {
     "reports.supThLanded": "Landed",
     "reports.supThTotal": "Total paid",
     "reports.expenseNatureTitle": "Direct & Indirect Expense Report",
-    "reports.expenseNatureEmpty": "No expenses recorded this month.",
+    "reports.expenseNatureEmpty": "No expenses recorded in this period.",
     "reports.enThCategory": "Category",
     "reports.enThAmount": "Amount",
     "profit.pdEyebrow": "Where the profit came from",
@@ -869,11 +867,11 @@ const DICTIONARY = {
     "profit.stNet": "NET PROFIT",
     "profit.drillTitle.revenue": "The sales that made this revenue",
     "profit.drillTitle.cogs": "What those goods cost you",
-    "profit.drillTitle.direct": "The direct expenses in this month",
-    "profit.drillTitle.indirect": "The indirect expenses in this month",
+    "profit.drillTitle.direct": "The direct expenses in this period",
+    "profit.drillTitle.indirect": "The indirect expenses in this period",
     "profit.drillClose": "Close",
     "profit.drillFailed": "This breakdown could not be worked out. The figure on the line above is unaffected.",
-    "profit.drillEmpty": "Nothing was recorded for this line in this month.",
+    "profit.drillEmpty": "Nothing was recorded for this line in this period.",
     "profit.drillTotal": "Added up",
     "profit.drillTallies": "These add up to {value}, which is the figure on the line above.",
     "profit.drillGap": "These add up to {listed}, but the line above says {line} \u2014 a difference of {gap}. The rows below the line are what could be listed; anything with no recorded cost is left out of both.",
@@ -897,14 +895,14 @@ const DICTIONARY = {
     "profit.gross": "Gross profit",
     "profit.grossNote": "Revenue less what those goods cost you",
     "profit.grossPartial": "Incomplete, {missing} of {total} sold lines have no recorded cost",
-    "profit.grossNoCost": "No cost recorded for anything sold this month",
+    "profit.grossNoCost": "No cost recorded for anything sold in this period",
     "profit.expenses": "Expenses",
-    "profit.expensesNote": "{count} recorded this month",
+    "profit.expensesNote": "{count} recorded in this period",
     "profit.expensesNone": "Nothing recorded. This is not the same as nothing spent",
     "profit.net": "What you kept",
     "profit.netNote": "Gross profit less recorded expenses. Only as complete as what you entered.",
     "profit.netNoCost": "Needs a recorded cost before this means anything",
-    "profit.complete": "Every sold line has a recorded cost and expenses have been entered for this month.",
+    "profit.complete": "Every sold line has a recorded cost and expenses have been entered for this period.",
     "profit.incomplete": "Treat this as a guide, not a filed figure: it is only as good as the costs and expenses recorded for the month.",
     "profit.outsideWindow": "This month is older than the sales this device has loaded (back to {date}), so it cannot be totalled. Open a more recent month, or narrow to one branch.",
     "nav.purchases": "Purchases",
@@ -912,14 +910,13 @@ const DICTIONARY = {
     "purchases.title": "Purchases",
     "purchases.intro": "Every delivery, and what you paid for it. Recorded when you restock. You enter the total for the batch, and the cost per unit is worked out from it.",
     "purchases.listTitle": "Recorded",
-    "purchases.monthLabel": "Month",
     "purchases.thDate": "Date",
     "purchases.thProduct": "Product",
     "purchases.thQty": "Units",
     "purchases.thUnitCost": "Each",
     "purchases.thTotal": "Total paid",
     "purchases.thReceipt": "Fiscal receipt",
-    "purchases.monthTotal": "Spent on stock this month",
+    "purchases.periodTotal": "Spent on stock",
     "purchases.monthCount": "{count} {delivery}, {units} {unit}",
     "purchases.deliverySingular": "delivery",
     "purchases.deliveryPlural": "deliveries",
@@ -933,7 +930,7 @@ const DICTIONARY = {
     "purchases.confirmDelete": "Delete this delivery of {name} for {value}? The Purchase Book will no longer show it, and the product's average cost is not recalculated.",
     "toast.purchaseDeleted": "Delivery deleted",
     "toast.purchaseFailed": "Could not delete that delivery. Try again.",
-    "purchases.empty": "No deliveries recorded for this month yet.",
+    "purchases.empty": "No deliveries recorded for this period yet.",
     "purchases.emptyNoStore": "Pick a branch to see what it bought.",
     "nav.deliveries": "Deliveries",
     "deliveries.eyebrow": "Goods received",
@@ -941,14 +938,13 @@ const DICTIONARY = {
     "deliveries.intro": "One delivery, many products, and the costs of getting it here. Freight, duty, clearing and transport are spread across the goods they brought in, so each item carries what it truly cost, not just what the supplier charged.",
     "deliveries.receiveButton": "Receive delivery",
     "deliveries.listTitle": "Recorded",
-    "deliveries.monthLabel": "Month",
-    "deliveries.monthTotal": "Received this month",
+    "deliveries.periodTotal": "Received",
     "deliveries.monthCount": "{count} {delivery}, {units} {unit}",
     "deliveries.deliverySingular": "delivery",
     "deliveries.deliveryPlural": "deliveries",
     "deliveries.landedTotal": "Landed costs capitalised",
     "deliveries.landedNote": "Freight, duty, clearing and transport, added to what the stock is worth rather than charged as an expense.",
-    "deliveries.landedNone": "No additional costs recorded this month.",
+    "deliveries.landedNone": "No additional costs recorded in this period.",
     "deliveries.thDate": "Received",
     "deliveries.thReference": "Reference",
     "deliveries.thSupplier": "Supplier",
@@ -958,7 +954,7 @@ const DICTIONARY = {
     "deliveries.thTotal": "Total cost",
     "deliveries.thBasis": "Spread by",
     "deliveries.thActions": "Actions",
-    "deliveries.empty": "No deliveries recorded for this month yet.",
+    "deliveries.empty": "No deliveries recorded for this period yet.",
     "deliveries.emptyNoStore": "Pick a branch to record a delivery.",
     "deliveries.basisValue": "Product value",
     "deliveries.basisQuantity": "Quantity",
@@ -1052,7 +1048,6 @@ const DICTIONARY = {
     "expenses.addButton": "Record Expense",
     "expenses.intro": "What the shop spends, day by day. Rent, power, transport, wages, repairs. These are not stock purchases. They are the running costs that sit between what you sell for and what you keep.",
     "expenses.listTitle": "Recorded",
-    "expenses.monthLabel": "Month",
     "expenses.thDate": "Date",
     "expenses.thCategory": "Category",
     "expenses.thNote": "Note",
@@ -1071,12 +1066,12 @@ const DICTIONARY = {
     "expenses.noteLabel": "Note (optional)",
     "expenses.notePlaceholder": "e.g. Boda to the market",
     "expenses.saveButton": "Save Expense",
-    "expenses.monthTotal": "Spent this month",
+    "expenses.periodTotal": "Spent",
     "expenses.monthCount": "{count} recorded",
     "expenses.fromTill": "Paid from the till",
     "expenses.fromTillNote": "Counted separately. The drawer will be short by this much",
     "expenses.topCategory": "Biggest category",
-    "expenses.empty": "Nothing recorded for this month yet.",
+    "expenses.empty": "Nothing recorded for this period yet.",
     "expenses.emptyNoStore": "Pick a branch to record what it spends.",
     "expenses.amountRequired": "Enter an amount greater than zero.",
     "expenses.dateRequired": "Pick the date the money was spent.",
@@ -1100,7 +1095,7 @@ const DICTIONARY = {
     "expenses.indirectNote": "Costs of keeping the shop open, sale or no sale.",
     "expenses.landedEyebrow": "Not an expense",
     "expenses.landedTitle": "Landed costs, capitalised into stock",
-    "expenses.landedIntro": "Freight, duty, clearing and transport from {count} {delivery} received this month. This money is not spent. It is held in the value of your stock, and becomes cost of sales when those goods sell.",
+    "expenses.landedIntro": "Freight, duty, clearing and transport from {count} {delivery} received in this period. This money is not spent. It is held in the value of your stock, and becomes cost of sales when those goods sell.",
     "expenses.landedThType": "Cost",
     "expenses.landedThAmount": "Amount",
     "expenses.landedTotalRow": "TOTAL CAPITALISED",
@@ -2139,7 +2134,6 @@ const DICTIONARY = {
     "cogs.sectionEyebrow": "Gharama ya mauzo",
     "cogs.sectionTitle": "Gharama ya Bidhaa Zilizouzwa",
     "cogs.intro": "Gharama halisi ya bidhaa ulizouza, ikihesabiwa kutoka kwenye rafu badala ya mauzo moja baada ya jingine: ulichoanza nacho kipindi, pamoja na ulichonunua, ukitoa kilichobaki mwishoni.",
-    "cogs.fromLabel": "Kuanzia", "cogs.toLabel": "Hadi",
     "cogs.generateButton": "Tengeneza Ripoti",
     "cogs.colLine": "Hesabu ya COGS", "cogs.colAmount": "Kiasi",
     "cogs.drillTitle.opening": "Kilichokuwa rafuni kipindi kilipoanza",
@@ -2175,7 +2169,6 @@ const DICTIONARY = {
     "cogs.unpricedHint": "Hizi hazikujumuishwa katika thamani ya hisa hapo juu. Rekodi gharama yake wakati wa kuongeza hisa tena na takwimu itakamilika kuanzia tarehe hiyo.",
     "cogs.working": "Inahesabu...",
     "cogs.datesRequired": "Chagua tarehe ya kuanzia na tarehe ya mwisho.",
-    "cogs.datesBackwards": "Tarehe ya mwisho haiwezi kuwa kabla ya tarehe ya kuanzia.",
     "cogs.ledgerFailed": "Imeshindwa kusoma historia ya hisa, hivyo kipindi hiki hakiwezi kuhesabiwa.",
     "cogs.warnLedgerShort": "Historia ya hisa iliyopakiwa inafika hadi {date} pekee, hivyo hisa ya kuanzia si ya kuaminika kwa kipindi kinachoanza kabla ya hapo.",
     "cogs.warnUncosted": "Bidhaa {count} hazina bei ya ununuzi iliyorekodiwa katika tarehe hizi, hivyo hazikujumuishwa katika thamani ya hisa.",
@@ -2462,14 +2455,12 @@ const DICTIONARY = {
     "nav.profit": "Ripoti ya Faida",
     "profit.eyebrow": "Kilichobaki",
     "profit.title": "Ripoti ya Faida",
-    "profit.fromLabel": "Kuanzia",
-    "profit.toLabel": "Hadi",
-    "profit.thisMonth": "Mwezi huu",
-    "profit.datesBackwards": "Mwisho wa kipindi uko kabla ya mwanzo wake. Badilisha tarehe hizo mbili.",
-    "profit.monthLabel": "Mwezi",
+    "period.fromLabel": "Kuanzia",
+    "period.toLabel": "Hadi",
+    "period.thisMonth": "Mwezi huu",
+    "period.datesBackwards": "Mwisho wa kipindi uko kabla ya mwanzo wake. Badilisha tarehe hizo mbili.",
     "profit.intro": "Mapato ukiondoa gharama ya bidhaa, ukiondoa matumizi ya duka. Mbili za kwanza zinahesabiwa kutoka kwenye rekodi zako; ya mwisho ni kamili kadri ulivyoingiza.",
     "reports.costEyebrow": "Gharama na ugavi",
-    "reports.costMonthLabel": "Mwezi",
     "reports.sbpTitle": "Mauzo kwa Bidhaa",
     "reports.sbpThProduct": "Bidhaa",
     "reports.sbpThUnits": "Vipande vilivyouzwa",
@@ -2493,7 +2484,7 @@ const DICTIONARY = {
     "reports.svThUnitCost": "Gharama ya kipande",
     "reports.svThValue": "Thamani kwa gharama",
     "reports.supplierTitle": "Ripoti ya Wasambazaji",
-    "reports.supplierEmpty": "Hakuna manunuzi yaliyorekodiwa kwa msambazaji mwezi huu.",
+    "reports.supplierEmpty": "Hakuna manunuzi yaliyorekodiwa kwa msambazaji katika kipindi hiki.",
     "reports.supThSupplier": "Msambazaji",
     "reports.supThLines": "Safu",
     "reports.supThDeliveries": "Mizigo",
@@ -2501,7 +2492,7 @@ const DICTIONARY = {
     "reports.supThLanded": "Gharama za ziada",
     "reports.supThTotal": "Jumla iliyolipwa",
     "reports.expenseNatureTitle": "Ripoti ya Gharama za Moja kwa Moja na Zisizo",
-    "reports.expenseNatureEmpty": "Hakuna matumizi yaliyorekodiwa mwezi huu.",
+    "reports.expenseNatureEmpty": "Hakuna matumizi yaliyorekodiwa katika kipindi hiki.",
     "reports.enThCategory": "Kundi",
     "reports.enThAmount": "Kiasi",
     "profit.pdEyebrow": "Faida ilitoka wapi",
@@ -2529,11 +2520,11 @@ const DICTIONARY = {
     "profit.stNet": "FAIDA HALISI",
     "profit.drillTitle.revenue": "Mauzo yaliyoleta mapato haya",
     "profit.drillTitle.cogs": "Bidhaa hizo zilikugharimu nini",
-    "profit.drillTitle.direct": "Matumizi ya moja kwa moja mwezi huu",
-    "profit.drillTitle.indirect": "Matumizi yasiyo ya moja kwa moja mwezi huu",
+    "profit.drillTitle.direct": "Matumizi ya moja kwa moja katika kipindi hiki",
+    "profit.drillTitle.indirect": "Matumizi yasiyo ya moja kwa moja katika kipindi hiki",
     "profit.drillClose": "Funga",
     "profit.drillFailed": "Mchanganuo huu haukuweza kupigwa hesabu. Takwimu ya mstari ulio juu haijaathirika.",
-    "profit.drillEmpty": "Hakuna kilichorekodiwa kwa mstari huu mwezi huu.",
+    "profit.drillEmpty": "Hakuna kilichorekodiwa kwa mstari huu katika kipindi hiki.",
     "profit.drillTotal": "Jumla",
     "profit.drillTallies": "Hizi zinafikia {value}, ambayo ndiyo takwimu ya mstari ulio juu.",
     "profit.drillGap": "Hizi zinafikia {listed}, lakini mstari ulio juu unasema {line} \u2014 tofauti ya {gap}. Mistari iliyo chini ni ile iliyoweza kuorodheshwa; chochote kisicho na gharama iliyorekodiwa kimeachwa nje ya vyote viwili.",
@@ -2557,14 +2548,14 @@ const DICTIONARY = {
     "profit.gross": "Faida ghafi",
     "profit.grossNote": "Mapato ukiondoa gharama ya bidhaa hizo",
     "profit.grossPartial": "Haijakamilika, safu {missing} kati ya {total} zilizouzwa hazina gharama iliyorekodiwa",
-    "profit.grossNoCost": "Hakuna gharama iliyorekodiwa kwa kilichouzwa mwezi huu",
+    "profit.grossNoCost": "Hakuna gharama iliyorekodiwa kwa kilichouzwa katika kipindi hiki",
     "profit.expenses": "Matumizi",
-    "profit.expensesNote": "{count} yamerekodiwa mwezi huu",
+    "profit.expensesNote": "{count} yamerekodiwa katika kipindi hiki",
     "profit.expensesNone": "Hakuna kilichorekodiwa. Si sawa na kutokutumia chochote",
     "profit.net": "Ulichobakiza",
     "profit.netNote": "Faida ghafi ukiondoa matumizi yaliyorekodiwa. Ni kamili kadri ulivyoingiza.",
     "profit.netNoCost": "Inahitaji gharama iliyorekodiwa kabla haijamaanisha kitu",
-    "profit.complete": "Kila safu iliyouzwa ina gharama iliyorekodiwa na matumizi yameingizwa kwa mwezi huu.",
+    "profit.complete": "Kila safu iliyouzwa ina gharama iliyorekodiwa na matumizi yameingizwa kwa kipindi hiki.",
     "profit.incomplete": "Ichukulie kama mwongozo, si takwimu ya kuwasilisha: ni nzuri kadri ya gharama na matumizi yaliyorekodiwa mwezi huo.",
     "profit.outsideWindow": "Mwezi huu ni wa zamani kuliko mauzo yaliyopakiwa kwenye kifaa hiki (hadi {date}), hivyo hauwezi kujumlishwa. Fungua mwezi wa karibuni, au chagua tawi moja.",
     "nav.purchases": "Manunuzi",
@@ -2572,14 +2563,13 @@ const DICTIONARY = {
     "purchases.title": "Manunuzi",
     "purchases.intro": "Kila mzigo, na ulicholipa kwa ajili yake. Hurekodiwa unapojaza stoo. Unaweka jumla ya mzigo, na gharama ya kila kimoja inahesabiwa kutoka hapo.",
     "purchases.listTitle": "Yaliyorekodiwa",
-    "purchases.monthLabel": "Mwezi",
     "purchases.thDate": "Tarehe",
     "purchases.thProduct": "Bidhaa",
     "purchases.thQty": "Idadi",
     "purchases.thUnitCost": "Kila moja",
     "purchases.thTotal": "Jumla iliyolipwa",
     "purchases.thReceipt": "Risiti ya kodi",
-    "purchases.monthTotal": "Zilizotumika kwa bidhaa mwezi huu",
+    "purchases.periodTotal": "Zilizotumika kwa bidhaa",
     "purchases.monthCount": "{delivery} {count}, {unit} {units}",
     "purchases.deliverySingular": "Mzigo",
     "purchases.deliveryPlural": "Mizigo",
@@ -2593,7 +2583,7 @@ const DICTIONARY = {
     "purchases.confirmDelete": "Futa mzigo huu wa {name} wa {value}? Hautaonekana tena kwenye rekodi ya manunuzi, na gharama ya wastani ya bidhaa haitahesabiwa upya.",
     "toast.purchaseDeleted": "Mzigo umefutwa",
     "toast.purchaseFailed": "Imeshindwa kufuta mzigo huo. Jaribu tena.",
-    "purchases.empty": "Hakuna mzigo uliorekodiwa mwezi huu bado.",
+    "purchases.empty": "Hakuna mzigo uliorekodiwa katika kipindi hiki bado.",
     "purchases.emptyNoStore": "Chagua tawi ili kuona kilichonunuliwa.",
     "nav.deliveries": "Mizigo",
     "deliveries.eyebrow": "Bidhaa zilizopokelewa",
@@ -2601,14 +2591,13 @@ const DICTIONARY = {
     "deliveries.intro": "Mzigo mmoja, bidhaa nyingi, na gharama za kuufikisha hapa. Usafirishaji, ushuru, uondoshaji bandarini na usafiri vinagawanywa kwa bidhaa vilizoleta, ili kila kitu kibebe gharama yake halisi, si tu kile msambazaji alichotoza.",
     "deliveries.receiveButton": "Pokea mzigo",
     "deliveries.listTitle": "Iliyorekodiwa",
-    "deliveries.monthLabel": "Mwezi",
-    "deliveries.monthTotal": "Iliyopokelewa mwezi huu",
+    "deliveries.periodTotal": "Iliyopokelewa",
     "deliveries.monthCount": "{count} {delivery}, {units} {unit}",
     "deliveries.deliverySingular": "mzigo",
     "deliveries.deliveryPlural": "mizigo",
     "deliveries.landedTotal": "Gharama za ziada zilizoongezwa kwenye thamani",
     "deliveries.landedNote": "Usafirishaji, ushuru, uondoshaji na usafiri, vimeongezwa kwenye thamani ya bidhaa badala ya kutozwa kama matumizi.",
-    "deliveries.landedNone": "Hakuna gharama za ziada zilizorekodiwa mwezi huu.",
+    "deliveries.landedNone": "Hakuna gharama za ziada zilizorekodiwa katika kipindi hiki.",
     "deliveries.thDate": "Ilipokelewa",
     "deliveries.thReference": "Kumbukumbu",
     "deliveries.thSupplier": "Msambazaji",
@@ -2618,7 +2607,7 @@ const DICTIONARY = {
     "deliveries.thTotal": "Jumla ya gharama",
     "deliveries.thBasis": "Imegawanywa kwa",
     "deliveries.thActions": "Vitendo",
-    "deliveries.empty": "Hakuna mzigo uliorekodiwa mwezi huu bado.",
+    "deliveries.empty": "Hakuna mzigo uliorekodiwa katika kipindi hiki bado.",
     "deliveries.emptyNoStore": "Chagua tawi ili kurekodi mzigo.",
     "deliveries.basisValue": "Thamani ya bidhaa",
     "deliveries.basisQuantity": "Idadi",
@@ -2712,7 +2701,6 @@ const DICTIONARY = {
     "expenses.addButton": "Rekodi Matumizi",
     "expenses.intro": "Kile duka linatumia, siku hadi siku. Kodi, umeme, usafiri, mishahara, matengenezo. Haya si manunuzi ya bidhaa. Ni gharama za uendeshaji zilizo kati ya unachouza na unachobakiza.",
     "expenses.listTitle": "Yaliyorekodiwa",
-    "expenses.monthLabel": "Mwezi",
     "expenses.thDate": "Tarehe",
     "expenses.thCategory": "Aina",
     "expenses.thNote": "Maelezo",
@@ -2731,12 +2719,12 @@ const DICTIONARY = {
     "expenses.noteLabel": "Maelezo (si lazima)",
     "expenses.notePlaceholder": "mfano, Bodaboda sokoni",
     "expenses.saveButton": "Hifadhi Matumizi",
-    "expenses.monthTotal": "Yaliyotumika mwezi huu",
+    "expenses.periodTotal": "Yaliyotumika",
     "expenses.monthCount": "{count} yamerekodiwa",
     "expenses.fromTill": "Yaliyotolewa kwenye mashine",
     "expenses.fromTillNote": "Yanahesabiwa peke yake. Mashine itapungukiwa kwa kiasi hiki",
     "expenses.topCategory": "Aina kubwa zaidi",
-    "expenses.empty": "Hakuna kilichorekodiwa mwezi huu bado.",
+    "expenses.empty": "Hakuna kilichorekodiwa katika kipindi hiki bado.",
     "expenses.emptyNoStore": "Chagua tawi ili kurekodi matumizi yake.",
     "expenses.amountRequired": "Weka kiasi kikubwa kuliko sifuri.",
     "expenses.dateRequired": "Chagua tarehe fedha zilipotumika.",
@@ -2760,7 +2748,7 @@ const DICTIONARY = {
     "expenses.indirectNote": "Gharama za kuweka duka wazi, uuze au usiuze.",
     "expenses.landedEyebrow": "Si matumizi",
     "expenses.landedTitle": "Gharama za ziada, zimeongezwa kwenye thamani ya hisa",
-    "expenses.landedIntro": "Usafirishaji, ushuru, uondoshaji na usafiri kutoka {count} {delivery} iliyopokelewa mwezi huu. Fedha hizi hazijatumika. Zimehifadhiwa kwenye thamani ya hisa yako, na zitakuwa gharama ya mauzo bidhaa hizo zitakapouzwa.",
+    "expenses.landedIntro": "Usafirishaji, ushuru, uondoshaji na usafiri kutoka {count} {delivery} iliyopokelewa katika kipindi hiki. Fedha hizi hazijatumika. Zimehifadhiwa kwenye thamani ya hisa yako, na zitakuwa gharama ya mauzo bidhaa hizo zitakapouzwa.",
     "expenses.landedThType": "Gharama",
     "expenses.landedThAmount": "Kiasi",
     "expenses.landedTotalRow": "JUMLA ILIYOONGEZWA",
@@ -5295,6 +5283,64 @@ function computePaymentReport() {
 // parse. cogs-period.test.mjs carries its own parameter-aware extract for
 // exactly this; the rest do not, and a plain object argument here keeps all of
 // them working.
+// ONE period picker, used by every report that asks for a time frame.
+//
+// Four screens were about to grow their own From/To pair, and four copies of
+// "parse two date strings, default to this month, remember what was typed" is
+// four places for them to disagree about what a period means. The Profit
+// Report's own copy is gone: it uses this.
+//
+// Convention over configuration, deliberately. A picker called "purchase"
+// reads #purchaseFromInput and #purchaseToInput, keeps state.purchaseFrom and
+// state.purchaseTo, and is reset by #purchaseThisMonth. Nothing to register,
+// and a new report needs markup and one call.
+function periodDefaults(name) {
+  const now = new Date();
+  state[`${name}From`] = localDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1));
+  state[`${name}To`] = localDateInputValue(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+}
+
+// Reads the inputs, fills them from state, and returns the bounds the
+// summarisers take. Defaults to the current month, which is what the month
+// pickers these replaced always gave.
+function periodFor(name) {
+  if (!state[`${name}From`] || !state[`${name}To`]) periodDefaults(name);
+  const fromInput = qs(`#${name}FromInput`);
+  const toInput = qs(`#${name}ToInput`);
+  if (fromInput && fromInput.value !== state[`${name}From`]) fromInput.value = state[`${name}From`];
+  if (toInput && toInput.value !== state[`${name}To`]) toInput.value = state[`${name}To`];
+
+  const from = new Date(`${state[`${name}From`]}T00:00:00`);
+  const to = new Date(`${state[`${name}To`]}T00:00:00`);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return { fromMs: null, toMs: null };
+  return {
+    fromMs: from.getTime(),
+    // To the last millisecond of the closing day, or a report for the 3rd to
+    // the 19th would stop at midnight on the 19th and miss that day's trading.
+    toMs: new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 999).getTime()
+  };
+}
+
+// True when the period reads backwards. Said rather than silently totalling to
+// nothing, which looks like a shop that sold nothing.
+function periodIsBackwards(bounds) {
+  return bounds.fromMs !== null && bounds.toMs !== null && bounds.toMs < bounds.fromMs;
+}
+
+function bindPeriodPicker(name, onChange) {
+  const set = (suffix) => (event) => {
+    const key = `${name}${suffix}`;
+    state[key] = event.currentTarget.value || state[key];
+    onChange();
+  };
+  qs(`#${name}FromInput`)?.addEventListener("change", set("From"));
+  qs(`#${name}ToInput`)?.addEventListener("change", set("To"));
+  qs(`#${name}ThisMonth`)?.addEventListener("click", () => {
+    periodDefaults(name);
+    onChange();
+  });
+}
+
 function periodBounds(input) {
   const monthKey = input ? input.monthKey : null;
   const fromMs = input ? input.fromMs : null;
@@ -8738,13 +8784,17 @@ function summariseExpenses(expenses, monthKey, bounds = null) {
 // here as well would charge it twice and understate profit by the whole of it --
 // which is the error DESIGN-landed-costs.md 1 exists to prevent, arriving from
 // the opposite direction.
-function summariseLandedForMonth(deliveries, monthKey) {
+// `bounds` is optional and wins when given, so every caller that still
+// thinks in months is unchanged. A shop asking for "the 3rd to the 19th"
+// and one asking for "October" are the same question, and only the
+// screens had to learn that.
+function summariseLandedForMonth(deliveries, monthKey, bounds = null) {
   let total = 0;
   let count = 0;
   const byType = new Map();
   for (const delivery of deliveries) {
     const at = deliveryReceivedAt(delivery);
-    if (!at || localMonthKey(at) !== monthKey) continue;
+    if (bounds ? !inPeriod(at, bounds) : (!at || localMonthKey(at) !== monthKey)) continue;
     const additional = safeNumber(delivery.additionalTotal);
     if (additional <= 0) continue;
     total += additional;
@@ -8840,12 +8890,12 @@ function setExpenseError(slot, message) {
 // month's profit, and the only thing keeping the two apart would be a label in a
 // cell. A reader summing the screen by eye must not be able to reach a different
 // number from the one the screen reports.
-function renderLandedCostSection(monthKey) {
+function renderLandedCostSection(period) {
   const panel = qs("#expenseLandedPanel");
   const body = qs("#expenseLandedBody");
   if (!panel || !body) return;
 
-  const summary = summariseLandedForMonth(storeDeliveries(), monthKey);
+  const summary = summariseLandedForMonth(storeDeliveries(), null, period);
   // Hidden entirely when there is nothing to show. A shop that has never
   // recorded a landed cost should not be shown an empty panel explaining a
   // distinction it has not met yet.
@@ -10366,21 +10416,22 @@ function renderExpenses() {
     return;
   }
 
-  const monthInput = qs("#expenseMonthInput");
-  if (monthInput && monthInput.value !== state.expenseMonthSelection) {
-    monthInput.value = state.expenseMonthSelection;
-  }
-
-  const scoped = storeExpenses();
   // Re-anchored while the screen has never been touched, so a till left open
   // across midnight on the 1st does not keep showing last month -- and every
   // expense recorded that morning invisible until someone notices the box.
-  if (!state.expenseMonthTouched) state.expenseMonthSelection = localMonthKey(new Date());
-  const monthKey = state.expenseMonthSelection;
-  const summary = summariseExpenses(scoped, monthKey);
+  if (!state.expensePeriodTouched) periodDefaults("expense");
+  const period = periodFor("expense");
+  if (periodIsBackwards(period)) {
+    totals.innerHTML = "";
+    table.innerHTML = `<tr><td colspan="7" class="empty-state">${esc(t("period.datesBackwards"))}</td></tr>`;
+    return;
+  }
+
+  const scoped = storeExpenses();
+  const summary = summariseExpenses(scoped, null, period);
 
   const totalTiles = [
-    controlTile(t("expenses.monthTotal"), money(summary.total), summary.total > 0 ? "warn" : "",
+    controlTile(t("expenses.periodTotal"), money(summary.total), summary.total > 0 ? "warn" : "",
       t("expenses.monthCount", { count: String(summary.count) })),
     // The docx section 9 split. Two tiles rather than one, because they are two
     // lines of the statement -- and neither is a subtotal of the other: they add
@@ -10411,7 +10462,7 @@ function renderExpenses() {
     if (landedPanel) landedPanel.hidden = true;
   } else {
     totals.innerHTML = totalTiles;
-    renderLandedCostSection(monthKey);
+    renderLandedCostSection(period);
   }
   setDynamicText("#expensesIntro",
     t(ownEntriesOnly ? "expenses.ownIntro" : "expenses.intro"),
@@ -10419,8 +10470,7 @@ function renderExpenses() {
 
   const rows = scoped
     .filter((expense) => {
-      const at = expenseSpentAt(expense);
-      return at ? localMonthKey(at) === monthKey : false;
+      return inPeriod(expenseSpentAt(expense), period);
     })
     .sort((a, b) => {
       const bt = expenseSpentAt(b)?.getTime() || 0;
@@ -11196,14 +11246,18 @@ function deliveryPaymentStatus(delivery) {
   return { key: "deliveries.statusCredit", due, paid, total };
 }
 
-function summariseDeliveries(deliveries, monthKey) {
+// `bounds` is optional and wins when given, so every caller that still
+// thinks in months is unchanged. A shop asking for "the 3rd to the 19th"
+// and one asking for "October" are the same question, and only the
+// screens had to learn that.
+function summariseDeliveries(deliveries, monthKey, bounds = null) {
   let total = 0;
   let landed = 0;
   let units = 0;
   let count = 0;
   for (const delivery of deliveries) {
     const at = deliveryReceivedAt(delivery);
-    if (!at || localMonthKey(at) !== monthKey) continue;
+    if (bounds ? !inPeriod(at, bounds) : (!at || localMonthKey(at) !== monthKey)) continue;
     count++;
     total += safeNumber(delivery.totalCost);
     landed += safeNumber(delivery.additionalTotal);
@@ -11609,18 +11663,19 @@ function renderDeliveries() {
     return;
   }
 
-  if (!state.deliveryMonthTouched) state.deliveryMonthSelection = localMonthKey(new Date());
-  const monthInput = qs("#deliveryMonthInput");
-  if (monthInput && monthInput.value !== state.deliveryMonthSelection) {
-    monthInput.value = state.deliveryMonthSelection;
+  if (!state.deliveryPeriodTouched) periodDefaults("delivery");
+  const period = periodFor("delivery");
+  if (periodIsBackwards(period)) {
+    totals.innerHTML = "";
+    table.innerHTML = `<tr><td colspan="10" class="muted">${esc(t("period.datesBackwards"))}</td></tr>`;
+    return;
   }
 
   const scoped = storeDeliveries();
-  const monthKey = state.deliveryMonthSelection;
-  const summary = summariseDeliveries(scoped, monthKey);
+  const summary = summariseDeliveries(scoped, null, period);
 
   totals.innerHTML = [
-    controlTile(t("deliveries.monthTotal"), money(summary.total), "",
+    controlTile(t("deliveries.periodTotal"), money(summary.total), "",
       t("deliveries.monthCount", {
         count: String(summary.count),
         delivery: t(summary.count === 1 ? "deliveries.deliverySingular" : "deliveries.deliveryPlural"),
@@ -11637,8 +11692,7 @@ function renderDeliveries() {
   const canDelete = isOwnerRole();
   const rows = scoped
     .filter((delivery) => {
-      const at = deliveryReceivedAt(delivery);
-      return at ? localMonthKey(at) === monthKey : false;
+      return inPeriod(deliveryReceivedAt(delivery), period);
     })
     .sort((a, b) => (deliveryReceivedAt(b)?.getTime() || 0) - (deliveryReceivedAt(a)?.getTime() || 0));
 
@@ -12072,7 +12126,11 @@ function purchasedAt(purchase) {
 
 // Totals for one month, from a list already scoped to a branch. Pure, so
 // tests/purchases.test.mjs evaluates it rather than a copy of it.
-function summarisePurchases(purchases, monthKey) {
+// `bounds` is optional and wins when given, so every caller that still
+// thinks in months is unchanged. A shop asking for "the 3rd to the 19th"
+// and one asking for "October" are the same question, and only the
+// screens had to learn that.
+function summarisePurchases(purchases, monthKey, bounds = null) {
   let total = 0;
   let units = 0;
   let count = 0;
@@ -12080,7 +12138,7 @@ function summarisePurchases(purchases, monthKey) {
   for (const purchase of purchases) {
     const at = purchasedAt(purchase);
     if (!at) continue;
-    if (localMonthKey(at) !== monthKey) continue;
+    if (bounds ? !inPeriod(at, bounds) : localMonthKey(at) !== monthKey) continue;
     total += safeNumber(purchase.totalPaid);
     units += safeNumber(purchase.quantity);
     count += 1;
@@ -12831,15 +12889,7 @@ function summariseProductProfit({ sales, costIndex, purchases, monthKey, fromMs,
 // The Profit Report period, from the two date inputs, in one place so the
 // statement, the drill and the product table cannot disagree about it.
 function profitPeriodBounds() {
-  const from = new Date(`${state.profitFrom}T00:00:00`);
-  const to = new Date(`${state.profitTo}T00:00:00`);
-  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
-    return periodBounds({ monthKey: state.profitMonthSelection });
-  }
-  return {
-    fromMs: from.getTime(),
-    toMs: new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 999).getTime()
-  };
+  return periodFor("profit");
 }
 
 function profitDrillRows(which, p) {
@@ -12994,7 +13044,7 @@ function renderProfitDrill(p) {
     </div>`;
 }
 
-function renderProductProfit(p, monthKey) {
+function renderProductProfit(p, period) {
   const panel = qs("#profitProductPanel");
   const table = qs("#profitProductTable");
   const note = qs("#profitProductNote");
@@ -13008,7 +13058,8 @@ function renderProductProfit(p, monthKey) {
     sales: scopedSales,
     costIndex: buildCostIndex(state.productCostHistory),
     purchases: storePurchases(),
-    monthKey
+    fromMs: period.fromMs,
+    toMs: period.toMs
   });
 
   // Nothing sold, or a month the statement already refused: no table at all,
@@ -13136,7 +13187,11 @@ function summariseStockValuation(products, costById) {
 // supplier record to join to. Trimmed and case-folded so "Festive Ltd" and
 // "festive ltd " are one row rather than two, which is the whole of what can be
 // done without inventing a supplier collection.
-function summariseSuppliers(purchases, deliveries, monthKey) {
+// `bounds` is optional and wins when given, so every caller that still
+// thinks in months is unchanged. A shop asking for "the 3rd to the 19th"
+// and one asking for "October" are the same question, and only the
+// screens had to learn that.
+function summariseSuppliers(purchases, deliveries, monthKey, bounds = null) {
   const rows = new Map();
   const key = (name) => String(name || "").trim().toLowerCase();
   const add = (name, amount, kind) => {
@@ -13150,7 +13205,7 @@ function summariseSuppliers(purchases, deliveries, monthKey) {
 
   for (const purchase of purchases || []) {
     const at = purchasedAt(purchase);
-    if (!at || localMonthKey(at) !== monthKey) continue;
+    if (bounds ? !inPeriod(at, bounds) : (!at || localMonthKey(at) !== monthKey)) continue;
     // goodsCost where the line carries the split, totalPaid where it does not --
     // which is exactly true of a purchase recorded before landed costs existed.
     const goods = purchase.goodsCost === undefined
@@ -13162,7 +13217,7 @@ function summariseSuppliers(purchases, deliveries, monthKey) {
   // allocated share each, and summing both would count the freight twice.
   for (const delivery of deliveries || []) {
     const at = deliveryReceivedAt(delivery);
-    if (!at || localMonthKey(at) !== monthKey) continue;
+    if (bounds ? !inPeriod(at, bounds) : (!at || localMonthKey(at) !== monthKey)) continue;
     add(delivery.supplierName, safeNumber(delivery.additionalTotal), "delivery");
   }
 
@@ -13174,12 +13229,16 @@ function summariseSuppliers(purchases, deliveries, monthKey) {
 // Docx section 12: the Direct and Indirect Expense Reports. Phase 5 put the two
 // totals on the Expenses screen; this is the breakdown inside each of them,
 // which is what makes a total actionable rather than merely true.
-function summariseExpensesByNature(expenses, monthKey) {
+// `bounds` is optional and wins when given, so every caller that still
+// thinks in months is unchanged. A shop asking for "the 3rd to the 19th"
+// and one asking for "October" are the same question, and only the
+// screens had to learn that.
+function summariseExpensesByNature(expenses, monthKey, bounds = null) {
   const buckets = { direct: new Map(), indirect: new Map() };
   const totals = { direct: 0, indirect: 0 };
   for (const expense of expenses || []) {
     const at = expenseSpentAt(expense);
-    if (!at || localMonthKey(at) !== monthKey) continue;
+    if (bounds ? !inPeriod(at, bounds) : (!at || localMonthKey(at) !== monthKey)) continue;
     const nature = expenseNature(expense);
     const amount = safeNumber(expense.amount);
     totals[nature] += amount;
@@ -13243,7 +13302,7 @@ async function generateCogsReport() {
   // Local end of day, so a report To 31 January includes everything that
   // happened on the 31st rather than stopping at midnight on its first second.
   const toEnd = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate(), 23, 59, 59, 999);
-  if (toEnd.getTime() < fromDate.getTime()) return showToast(t("cogs.datesBackwards"));
+  if (toEnd.getTime() < fromDate.getTime()) return showToast(t("period.datesBackwards"));
 
   table.innerHTML = `<tr><td colspan="2" class="empty-state">${esc(t("cogs.working"))}</td></tr>`;
 
@@ -13582,9 +13641,8 @@ function renderCostReports() {
     return;
   }
 
-  const monthKey = state.reportsCostMonth || localMonthKey(new Date());
-  const monthInput = qs("#costReportMonthInput");
-  if (monthInput && monthInput.value !== monthKey) monthInput.value = monthKey;
+  if (!state.costPeriodTouched) periodDefaults("cost");
+  const period = periodFor("cost");
 
   // --- Stock valuation ---------------------------------------------------
   // Only when this report is the one actually on screen. renderCostReports()
@@ -13660,9 +13718,22 @@ function renderCostReports() {
   }
 
   // --- Supplier report ---------------------------------------------------
-  const suppliers = summariseSuppliers(storePurchases(), storeDeliveries(), monthKey);
+  const backwards = periodIsBackwards(period);
   const supplierTable = qs("#supplierReportTable");
-  if (supplierTable) {
+  if (supplierTable && backwards) {
+    supplierTable.innerHTML =
+      `<tr><td colspan="6" class="muted">${esc(t("period.datesBackwards"))}</td></tr>`;
+  }
+  const natureTable = qs("#expenseNatureTable");
+  if (natureTable && backwards) {
+    natureTable.innerHTML =
+      `<tr><td colspan="2" class="muted">${esc(t("period.datesBackwards"))}</td></tr>`;
+  }
+
+  const suppliers = backwards
+    ? null
+    : summariseSuppliers(storePurchases(), storeDeliveries(), null, period);
+  if (supplierTable && suppliers) {
     supplierTable.innerHTML = suppliers.rows.length
       ? suppliers.rows.map((row) => `<tr>
           <td>${esc(row.name)}</td>
@@ -13679,9 +13750,8 @@ function renderCostReports() {
   }
 
   // --- Direct and indirect expense reports -------------------------------
-  const byNature = summariseExpensesByNature(storeExpenses(), monthKey);
-  const natureTable = qs("#expenseNatureTable");
-  if (natureTable) {
+  const byNature = backwards ? null : summariseExpensesByNature(storeExpenses(), null, period);
+  if (natureTable && byNature) {
     const section = (nature, group) => {
       if (!group.rows.length) return "";
       return `<tr class="statement-total">
@@ -13728,37 +13798,22 @@ function renderProfit() {
     return;
   }
 
-  // Default to the current month, which is what a month picker used to give.
-  if (!state.profitFrom || !state.profitTo) {
-    const now = new Date();
-    state.profitFrom = localDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1));
-    state.profitTo = localDateInputValue(new Date(now.getFullYear(), now.getMonth() + 1, 0));
-  }
-  const fromInput = qs("#profitFromInput");
-  const toInput = qs("#profitToInput");
-  if (fromInput && fromInput.value !== state.profitFrom) fromInput.value = state.profitFrom;
-  if (toInput && toInput.value !== state.profitTo) toInput.value = state.profitTo;
-
-  const fromDate = new Date(`${state.profitFrom}T00:00:00`);
-  const toDate = new Date(`${state.profitTo}T00:00:00`);
-  const periodFromMs = Number.isNaN(fromDate.getTime()) ? null : fromDate.getTime();
-  const periodToMs = Number.isNaN(toDate.getTime())
-    ? null
-    : new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate(), 23, 59, 59, 999).getTime();
+  // The shared picker, the same one Purchases, Expenses, Deliveries and Stock
+  // Valuation use. This screen had its own copy until 2026-10-08.
+  if (!state.profitPeriodTouched) periodDefaults("profit");
+  const period = periodFor("profit");
+  const periodFromMs = period.fromMs;
+  const periodToMs = period.toMs;
 
   // Backwards dates total to nothing, which reads as a shop that sold nothing
   // rather than as a range entered the wrong way round.
-  if (periodFromMs !== null && periodToMs !== null && periodToMs < periodFromMs) {
+  if (periodIsBackwards(period)) {
     grid.innerHTML = "";
-    note.textContent = t("profit.datesBackwards");
+    note.textContent = t("period.datesBackwards");
     const drillHost = qs("#profitDrill");
     if (drillHost) { drillHost.hidden = true; drillHost.innerHTML = ""; }
     return;
   }
-
-  // Kept in step for the per-product table and the drill, which still take a
-  // month key when no range is handed to them.
-  state.profitMonthSelection = state.profitFrom.slice(0, 7);
 
   const scopedSales = state.currentStoreId === "all"
     ? state.sales
@@ -13794,7 +13849,7 @@ function renderProfit() {
     // The drill-down goes with it. A month the statement refuses to total must
     // not be shown a product table built from the same unloaded window -- it
     // would be a confident breakdown of an admittedly incomplete period.
-    renderProductProfit(p, state.profitMonthSelection);
+    renderProductProfit(p, period);
     return;
   }
 
@@ -13888,8 +13943,9 @@ function renderProfit() {
 
   renderProfitDrill(p);
 
-  // The docx section 10 drill-down, under the statement it explains.
-  renderProductProfit(p, state.profitMonthSelection);
+  // The docx section 10 drill-down, under the statement it explains -- on the
+  // SAME period, so the rows add up to the line above them.
+  renderProductProfit(p, period);
 }
 
 function renderPurchases() {
@@ -13903,18 +13959,22 @@ function renderPurchases() {
     return;
   }
 
-  const monthInput = qs("#purchaseMonthInput");
-  if (monthInput && monthInput.value !== state.purchaseMonthSelection) {
-    monthInput.value = state.purchaseMonthSelection;
+  // Re-anchored while the screen has never been touched, so a till left open
+  // across midnight on the 1st does not keep showing last month -- and every
+  // purchase recorded that morning outside the range until someone notices.
+  if (!state.purchasePeriodTouched) periodDefaults("purchase");
+  const period = periodFor("purchase");
+  if (periodIsBackwards(period)) {
+    totals.innerHTML = "";
+    table.innerHTML = `<tr><td colspan="7" class="empty-state">${esc(t("period.datesBackwards"))}</td></tr>`;
+    return;
   }
 
   const scoped = storePurchases();
-  if (!state.purchaseMonthTouched) state.purchaseMonthSelection = localMonthKey(new Date());
-  const monthKey = state.purchaseMonthSelection;
-  const summary = summarisePurchases(scoped, monthKey);
+  const summary = summarisePurchases(scoped, null, period);
 
   totals.innerHTML = [
-    controlTile(t("purchases.monthTotal"), money(summary.total), "",
+    controlTile(t("purchases.periodTotal"), money(summary.total), "",
       t("purchases.monthCount", {
         count: String(summary.count),
         delivery: t(summary.count === 1 ? "purchases.deliverySingular" : "purchases.deliveryPlural"),
@@ -13934,8 +13994,7 @@ function renderPurchases() {
   const canDelete = isOwnerRole();
   const rows = scoped
     .filter((purchase) => {
-      const at = purchasedAt(purchase);
-      return at ? localMonthKey(at) === monthKey : false;
+      return inPeriod(purchasedAt(purchase), period);
     })
     .sort((a, b) => (purchasedAt(b)?.getTime() || 0) - (purchasedAt(a)?.getTime() || 0));
 
@@ -21794,33 +21853,16 @@ function bindEvents() {
   qs("#doneSupplierStatementDialog")?.addEventListener("click", () => qs("#supplierStatementDialog").close());
   qs("#vatMonthInput")?.addEventListener("change", () => renderVatRecord());
   qs("#openVatRecordLink")?.addEventListener("click", () => openView("vat"));
-  qs("#profitFromInput")?.addEventListener("change", (event) => {
-    state.profitFrom = event.currentTarget.value || state.profitFrom;
-    state.profitMonthTouched = true;
+  bindPeriodPicker("profit", () => {
+    state.profitPeriodTouched = true;
     // The open drill belongs to the period that was showing. Keeping it open
     // across a period change would leave one period's rows under another
-    // period's figure -- which is the exact disagreement the drill exists to
-    // rule out.
+    // period's figure -- the exact disagreement the drill exists to rule out.
     state.profitDrill = null;
     renderProfit();
   });
-  qs("#profitToInput")?.addEventListener("change", (event) => {
-    state.profitTo = event.currentTarget.value || state.profitTo;
-    state.profitMonthTouched = true;
-    state.profitDrill = null;
-    renderProfit();
-  });
-  qs("#profitThisMonth")?.addEventListener("click", () => {
-    const now = new Date();
-    state.profitFrom = localDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1));
-    state.profitTo = localDateInputValue(new Date(now.getFullYear(), now.getMonth() + 1, 0));
-    state.profitMonthTouched = true;
-    state.profitDrill = null;
-    renderProfit();
-  });
-  qs("#purchaseMonthInput")?.addEventListener("change", (event) => {
-    state.purchaseMonthSelection = event.currentTarget.value || state.purchaseMonthSelection;
-    state.purchaseMonthTouched = true;
+  bindPeriodPicker("purchase", () => {
+    state.purchasePeriodTouched = true;
     renderPurchases();
   });
   // Deliveries -- DESIGN-landed-costs.md phase 4.
@@ -21831,8 +21873,8 @@ function bindEvents() {
     ensureStockLedger();
     renderCostReports();
   });
-  qs("#costReportMonthInput")?.addEventListener("change", (event) => {
-    state.reportsCostMonth = event.currentTarget.value || state.reportsCostMonth;
+  bindPeriodPicker("cost", () => {
+    state.costPeriodTouched = true;
     renderCostReports();
   });
   // Guarded like every other write-shaped action, though this one only reads:
@@ -21882,9 +21924,8 @@ function bindEvents() {
   qs("#saveStaffPermissionsButton")?.addEventListener("click", saveStaffPermissions);
   qs("#closeDeliveryDialog")?.addEventListener("click", () => qs("#deliveryDialog").close());
   qs("#cancelDeliveryDialog")?.addEventListener("click", () => qs("#deliveryDialog").close());
-  qs("#deliveryMonthInput")?.addEventListener("change", (event) => {
-    state.deliveryMonthSelection = event.currentTarget.value || state.deliveryMonthSelection;
-    state.deliveryMonthTouched = true;
+  bindPeriodPicker("delivery", () => {
+    state.deliveryPeriodTouched = true;
     renderDeliveries();
   });
   qs("#deliveriesTable")?.addEventListener("click", (event) => {
@@ -21948,9 +21989,8 @@ function bindEvents() {
   });
   qs("#restockTotalPaidInput")?.addEventListener("input", renderRestockUnitCostHint);
   qs("#restockQuantityInput")?.addEventListener("input", renderRestockUnitCostHint);
-  qs("#expenseMonthInput")?.addEventListener("change", (event) => {
-    state.expenseMonthSelection = event.currentTarget.value || state.expenseMonthSelection;
-    state.expenseMonthTouched = true;
+  bindPeriodPicker("expense", () => {
+    state.expensePeriodTouched = true;
     renderExpenses();
   });
   // Delegated: the rows are re-rendered on every snapshot, so per-row listeners

@@ -100,7 +100,7 @@ const drillMarkup = block(appHtml, '<article class="panel" id="profitProductPane
 // to exist to be emptied.
 const deliveriesListMarkup =
   '<div class="kpi-grid" id="deliveryTotals"></div>'
-  + '<input id="deliveryMonthInput" type="month">'
+  + '<input id="deliveryFromInput" type="date"><input id="deliveryToInput" type="date">'
   + '<table><tbody id="deliveriesTable"></tbody></table>';
 const costReportsMarkup = block(appHtml, '<article class="panel" id="costReportsPanel"', "</article>");
 const profitMarkup = '<section id="profit">'
