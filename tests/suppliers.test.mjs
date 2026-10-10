@@ -127,8 +127,16 @@ console.log("\n=== the write stays additive ===");
     /state\.currentStoreId === "all"/.test(save), true);
 
   // supplierId reaches the purchase, or the record is decorative.
+  //
+  // Asserted as the property, not as one spelling of it. This pinned
+  // `...supplierLinkFor(input.supplierName)` and went red when receiveDelivery
+  // started resolving the id ONCE -- matched by name, or minted when a credit
+  // delivery named a supplier with no record -- and spreading that one result.
+  // The link still reaches the purchase line, which is the whole point; it is
+  // now the id actually used rather than a second call that cannot see a
+  // record created moments earlier. See till-recovers-after-timeout.test.mjs.
   check("delivery purchase lines carry the link",
-    /\.\.\.supplierLinkFor\(input\.supplierName\)/.test(src), true);
+    /\.\.\.supplierLinkOut,/.test(body("receiveDelivery")), true);
   check("restock and product purchases carry it too",
     /\.\.\.supplierLinkFor\(costCapture\.supplierName\)/.test(src), true);
   // ...but supplierName is still written alongside it, unconditionally.

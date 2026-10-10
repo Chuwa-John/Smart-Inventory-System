@@ -123,9 +123,21 @@ console.log("\n=== the delivery write ===");
   check("only a shortfall moves the balance", /if \(supplierRef && amountDue > 0\)/.test(b), true);
   check("...and it is added to what was already stored",
     /balanceOwed: safeNumber\(supplierSnap\.data\(\)\.balanceOwed\) \+ amountDue/.test(b), true);
-  // A delivery with a typed-only supplier has nowhere to put a debt.
-  check("no supplier record means no balance write",
-    /const supplierRef = supplierLink\.supplierId/.test(b), true);
+  // REVERSED 2026-10-10, knowingly. This said "a delivery with a typed-only
+  // supplier has nowhere to put a debt" and pinned that as the rule. It was
+  // the defect: the delivery row read "On credit TZS 920,500" and the debt
+  // reached no balance, because the supplier field is free text and only a
+  // matched RECORD could hold one. 1,466,500 went missing on the preview.
+  //
+  // The original reasoning -- do not invent records nobody asked for -- still
+  // holds for a delivery paid in full, and that case still mints nothing. It
+  // is only a debt that forces a record, because a debt has to live somewhere.
+  check("a credit delivery to an unmatched name now mints a record",
+    /const newSupplier = !supplierLink\.supplierId && typedSupplier && amountDue > 0/.test(b), true);
+  check("...and a delivery paid in full still mints nothing",
+    /&& amountDue > 0/.test(b), true);
+  check("...and the balance it is created with is the whole debt",
+    /balanceOwed: amountDue,/.test(b), true);
   // The form must not send 0 for an empty box.
   check("the form passes the raw string, so blank stays blank",
     /amountPaid: String\(form\.elements\.amountPaid\?\.value \|\| ""\)\.trim\(\)/.test(src), true);

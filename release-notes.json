@@ -2,6 +2,18 @@
   "_comment": "What changed in each release, in the words a shopkeeper would use. Unversioned on purpose: the running app fetches this by a stable URL to show what the INCOMING version brings, so a ?v= here would be a URL the old build cannot know. Newest first. tests/release-notes.test.mjs fails the build if the top entry does not match the stamp in app.html.",
   "releases": [
     {
+      "version": "20261008c",
+      "date": "2026-10-10",
+      "en": [
+        "Fixed: after a sale that said \u201cthe connection did not answer\u201d, the next sale could be refused as already recorded \u2014 and was then not recorded at all. The till kept doing it until the app was reloaded. It now starts a fresh order number as soon as the basket is empty, and a repeat of the SAME basket is still protected against being rung up twice.",
+        "Fixed: stock received on credit from a supplier you had not added to the Suppliers list did not reach \u201cYou owe suppliers\u201d or the Supplier Balances report. The debt was on the delivery and nowhere else. Typing a new supplier name on a delivery that leaves money owing now creates that supplier with the balance on it. A delivery paid in full still creates nothing."
+      ],
+      "sw": [
+        "Imerekebishwa: baada ya mauzo yaliyosema \u201cmtandao haukujibu\u201d, mauzo yaliyofuata yangeweza kukataliwa kuwa tayari yamesajiliwa \u2014 na kisha yasisajiliwe kabisa. Kaunta ilikuwa ikiendelea hivyo hadi programu ipakiwe upya. Sasa inaanza namba mpya ya oda mara kikapu kinapokuwa tupu, na kurudia kikapu KILE KILE bado kunalindwa dhidi ya kuuzwa mara mbili.",
+        "Imerekebishwa: bidhaa zilizopokelewa kwa mkopo kutoka kwa msambazaji ambaye hukumuweka kwenye orodha ya Wasambazaji hazikufika kwenye \u201cUnachodaiwa na wasambazaji\u201d wala ripoti ya Salio la Wasambazaji. Deni lilikuwa kwenye mzigo peke yake. Sasa kuandika jina jipya la msambazaji kwenye mzigo unaoacha deni kunamtengenezea msambazaji huyo na salio lake. Mzigo uliolipwa wote bado hautengenezi chochote."
+      ]
+    },
+    {
       "version": "20261008b",
       "date": "2026-10-08",
       "en": [

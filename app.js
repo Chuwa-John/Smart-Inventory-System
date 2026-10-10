@@ -5040,6 +5040,26 @@ function renderCart() {
     renderCart();
     return;
   }
+
+  // AN EMPTY CART HOLDS NO ORDER NUMBER. The held number is what makes a
+  // retry idempotent -- the sale id is derived from it, so a double-tap
+  // resolves to the same document instead of selling the stock twice. It was
+  // released only when a sale LANDED, and that is the hole: when the write
+  // succeeds server-side but the client gives up waiting, the number is kept.
+  // The next cart then reuses it, resolves to the document that already
+  // exists, and is refused as a duplicate -- so after ONE timeout the till
+  // silently stops recording, and says "already recorded" about goods nobody
+  // has rung up. Only a reload cleared it.
+  //
+  // Here rather than in clearCart(), because the cart also empties by
+  // removing the last line, by decrementing it to zero, and by switching
+  // branch. This is the one point all of them pass through, and the rule is
+  // the same for every one of them.
+  //
+  // A RETRY IS UNAFFECTED, which is the whole point: the timeout path leaves
+  // the cart standing precisely so the cashier can press Complete again, and
+  // a cart with lines in it keeps its number.
+  if (!state.cart.length) state.pendingAutoOrderNumber = "";
   const totalQty = state.cart.reduce((sum, item) => sum + item.qty, 0);
   const subtotal = cartSubtotal();
   const discountAmount = computeDiscountAmount(subtotal);
@@ -10853,12 +10873,36 @@ async function receiveDelivery(input = {}) {
     : Math.min(Math.max(safeNumber(input.amountPaid), 0), totalCost);
   const amountDue = Math.max(totalCost - amountPaid, 0);
 
-  // Only a delivery linked to a supplier RECORD can move a balance. One with a
-  // typed name has nowhere to put the debt, and inventing a supplier here would
-  // create records nobody asked for.
+  // Only a delivery linked to a supplier RECORD can move a balance, and the
+  // supplier field is free text -- so a delivery taken ON CREDIT from a name
+  // that matches no record used to put the debt nowhere at all. The row said
+  // "On credit TZS 920,500" and "You owe suppliers" did not move, because that
+  // tile and the Supplier Balances report both read supplier.balanceOwed.
+  // Measured on the preview 2026-10-09: 1,466,500 of real debt invisible.
+  //
+  // REVERSING "inventing a supplier here would create records nobody asked
+  // for", which was right about the common case and wrong about this one.
+  // Buying on credit from a wholesaler is how a duka buys, and the path that
+  // lost the debt was the easy one -- typing a name, which is what the form
+  // invites. A debt that is not written down is worse than a record nobody
+  // asked for.
+  //
+  // Still only when money is owed. A delivery paid in full needs no balance,
+  // so it mints nothing and a typo stays a typo on one delivery rather than
+  // becoming a supplier. supplierLinkFor() matching an existing record by name
+  // is unchanged, and is still what happens whenever there is one to match.
+  const typedSupplier = String(input.supplierName || "").trim().slice(0, 80);
   const supplierLink = supplierLinkFor(input.supplierName);
-  const supplierRef = supplierLink.supplierId
-    ? doc(state.db, ...root, "suppliers", supplierLink.supplierId)
+  const newSupplier = !supplierLink.supplierId && typedSupplier && amountDue > 0
+    ? { name: typedSupplier, tin: String(input.supplierTin || "").trim().slice(0, 40) }
+    : null;
+  const supplierId = supplierLink.supplierId
+    || (newSupplier ? doc(collection(state.db, ...root, "suppliers")).id : null);
+  // What gets written onto the delivery and onto every purchase line, so a
+  // record created here is linked from the delivery that created it.
+  const supplierLinkOut = supplierId ? { supplierId } : {};
+  const supplierRef = supplierId
+    ? doc(state.db, ...root, "suppliers", supplierId)
     : null;
   const refs = prep.lines.map((line) => ({
     product: doc(state.db, ...root, "products", line.productId),
@@ -10950,7 +10994,7 @@ async function receiveDelivery(input = {}) {
           landedCost: line.landedCost,
           deliveryId: deliveryRef.id,
           ...(input.supplierName ? { supplierName: String(input.supplierName).slice(0, 120) } : {}),
-          ...supplierLinkFor(input.supplierName),
+          ...supplierLinkOut,
           ...(input.supplierTin ? { supplierTin: String(input.supplierTin).slice(0, 20) } : {}),
           recordedByUid: state.user?.uid || null,
           createdAt: serverTimestamp()
@@ -10981,7 +11025,7 @@ async function receiveDelivery(input = {}) {
         ...(input.supplierName ? { supplierName: String(input.supplierName).slice(0, 120) } : {}),
         ...(input.supplierTin ? { supplierTin: String(input.supplierTin).slice(0, 20) } : {}),
         ...(input.note ? { note: String(input.note).slice(0, 200) } : {}),
-        ...supplierLink,
+        ...supplierLinkOut,
         amountPaid,
         ...(input.paymentMethod ? { paymentMethod: String(input.paymentMethod) } : {}),
         recordedByUid: state.user?.uid || null,
@@ -10994,13 +11038,30 @@ async function receiveDelivery(input = {}) {
       // it happens to hold would understate the debt -- see the rules comment
       // on /suppliers/payments.
       if (supplierRef && amountDue > 0) {
-        if (!supplierSnap || !supplierSnap.exists()) {
+        if (supplierSnap && supplierSnap.exists()) {
+          transaction.update(supplierRef, {
+            balanceOwed: safeNumber(supplierSnap.data().balanceOwed) + amountDue,
+            updatedAt: serverTimestamp()
+          });
+        } else if (newSupplier) {
+          // Created INSIDE the transaction, so a delivery that fails leaves no
+          // supplier behind. openingBalance is zero and the whole debt is the
+          // balance: nothing was owed to this name before the delivery that
+          // just introduced it.
+          transaction.set(supplierRef, {
+            name: newSupplier.name,
+            storeId,
+            openingBalance: 0,
+            balanceOwed: amountDue,
+            active: true,
+            ...(newSupplier.tin ? { tin: newSupplier.tin } : {}),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+        } else {
+          // A record that was matched by name and has since been deleted.
           throw new Error(t("txerror.supplierGone"));
         }
-        transaction.update(supplierRef, {
-          balanceOwed: safeNumber(supplierSnap.data().balanceOwed) + amountDue,
-          updatedAt: serverTimestamp()
-        });
       }
 
       // ONE entry for the delivery, not one per line. Every write in a
@@ -19382,6 +19443,8 @@ async function initFirebase() {
         state.serverReachable = null;
         state.products = [];
         state.cart = [];
+        // Belongs to the session that minted it, like every money figure above.
+        state.pendingAutoOrderNumber = "";
         state.sales = [];
         // Cleared with the sales they described, or the banner outlives the
         // session it belonged to and greets the next sign-in with a warning
@@ -19961,6 +20024,8 @@ async function archiveStore() {
 function switchStore(storeId) {
   if (storeId === state.currentStoreId) return;
   state.currentStoreId = storeId;
+  // Another branch is another cart, and another cart is another order number.
+  state.pendingAutoOrderNumber = "";
   state.cart = [];
   state.cartHistory = [];
   clearDiscount();
