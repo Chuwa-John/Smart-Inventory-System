@@ -2,6 +2,20 @@
   "_comment": "What changed in each release, in the words a shopkeeper would use. Unversioned on purpose: the running app fetches this by a stable URL to show what the INCOMING version brings, so a ?v= here would be a URL the old build cannot know. Newest first. tests/release-notes.test.mjs fails the build if the top entry does not match the stamp in app.html.",
   "releases": [
     {
+      "version": "20261010a",
+      "date": "2026-10-10",
+      "en": [
+        "Adding a product no longer pops up a warning saying it has run out. A new product has no stock until you receive it under Purchases, so there was nothing to warn about \u2014 and typing in a long list of products meant dismissing one box per product.",
+        "Choosing a different branch no longer opens a warning for every low item in that branch.",
+        "A stock warning now waits until you have finished what you were doing. It used to appear on top of a form you were filling in and take the next tap with it."
+      ],
+      "sw": [
+        "Kuongeza bidhaa hakuleti tena onyo kwamba imeisha. Bidhaa mpya haina hisa hadi uipokee chini ya Manunuzi, hivyo hakukuwa na kitu cha kuonya \u2014 na kuandika orodha ndefu ya bidhaa kulimaanisha kufunga kisanduku kimoja kwa kila bidhaa.",
+        "Kuchagua tawi lingine hakufungui tena onyo kwa kila bidhaa yenye hisa ndogo katika tawi hilo.",
+        "Onyo la hisa sasa linasubiri hadi umalize unachofanya. Awali lilijitokeza juu ya fomu unayojaza na kuchukua mguso uliofuata."
+      ]
+    },
+    {
       "version": "20261008c",
       "date": "2026-10-10",
       "en": [

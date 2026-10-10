@@ -4342,8 +4342,21 @@ function detectStockAlertCrossings(previousProducts, nextProducts) {
     const status = stockStatus(product);
     if (status === "healthy") return;
     const previous = previousMap.get(product.id);
-    const previousStatus = previous ? stockStatus(previous) : "healthy";
-    if (previousStatus === "healthy") queueStockAlertPopup(product);
+    // A PRODUCT THAT DID NOT EXIST HAS NOT CROSSED ANYTHING. Absent used to
+    // read as "was healthy", so creating a product with no stock yet -- which
+    // is what Add Product does, since stock arrives later under Purchases --
+    // announced that it had just run out. A shop typing in its opening
+    // catalogue got one modal per product, on the first thing it ever does.
+    //
+    // It fired on a branch switch too: resubscribeCatalogue() replaces the
+    // list wholesale, so every low-stock product in the branch just chosen
+    // looked new, and choosing a branch opened an alert for each of them.
+    //
+    // An alert is for stock that FELL below the line while the shop was
+    // watching. There is nothing to announce about a row that has only just
+    // appeared -- the Low Stock tile and the alerts list already show it.
+    if (!previous) return;
+    if (stockStatus(previous) === "healthy") queueStockAlertPopup(product);
   });
 }
 
@@ -4358,8 +4371,26 @@ function queueStockAlertPopup(product) {
   showNextStockAlertPopup();
 }
 
+// True when the shopkeeper is in the middle of something modal -- receiving a
+// delivery, editing a product, confirming a sale.
+function anotherDialogIsOpen() {
+  return [...document.querySelectorAll("dialog[open]")]
+    .some((dialog) => dialog.id !== "stockAlertDialog");
+}
+
 function showNextStockAlertPopup() {
   if (state.stockAlertPopupOpen) return;
+  // HELD, NOT DROPPED. A stock alert arrives from a snapshot, so it lands at a
+  // moment the shopkeeper did not choose -- and showModal() on top of an open
+  // dialog takes the focus and the clicks off the form they were filling in.
+  // Seen on the preview: the alert landed between saving one product and
+  // opening the next, and ate the press that was meant to open the form.
+  //
+  // The queue is what makes deferring safe rather than lossy: it stays there
+  // and the capture-phase "close" listener flushes it as soon as whatever was
+  // open goes away. dialog "close" does not bubble, which is why that listener
+  // is on the capture phase and not an ordinary one.
+  if (anotherDialogIsOpen()) return;
   const next = state.stockAlertQueue.shift();
   if (!next) return;
   state.stockAlertPopupOpen = true;
@@ -21762,6 +21793,14 @@ function bindEvents() {
     event.preventDefault();
     closeStockAlertPopup();
   });
+  // Flushes alerts that were held back while something else was open. On the
+  // CAPTURE phase because a dialog's "close" event does not bubble, so an
+  // ordinary listener on document never sees it; on document rather than on
+  // each dialog because there are thirty-odd of them and a thirty-first added
+  // later must not have to remember this.
+  document.addEventListener("close", () => {
+    if (state.stockAlertQueue.length) showNextStockAlertPopup();
+  }, true);
   qs("#inventoryAddButton").addEventListener("click", () => openProductDialog());
   // The per-unit readout depends on BOTH boxes, so both have to feed it --
   // wiring only the amount would leave a stale figure on screen the moment
