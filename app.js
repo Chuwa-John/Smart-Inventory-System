@@ -5062,6 +5062,32 @@ function clearDiscountAndRender() {
   showToast(t("toast.discountCleared"));
 }
 
+// Everything about ONE sale, cleared together: the basket, the discount, the
+// customer it was for and the money offered for it.
+//
+// Shared by the two places a sale ends -- it landed, or it was abandoned --
+// because they were not clearing the same things. Completing a sale reset the
+// customer name and phone; Clear Cart did not, so the next walk-in inherited
+// the last customer's name and the sale was filed under someone who never
+// bought it. A credit sale would have gone on their account.
+//
+// The auto order number is NOT cleared here. It is released by renderCart()
+// when the basket is empty, which is a different rule for a different reason:
+// a retry of the same basket has to keep its number, and this is called at the
+// moment the basket stops existing.
+function resetSaleEntry() {
+  state.cart = [];
+  state.cartHistory = [];
+  clearDiscount();
+  const blank = ["#cashTendered", "#posOrderNumber", "#posCustomerName",
+                 "#posCustomerPhone", "#creditAmountPaidInput"];
+  for (const selector of blank) {
+    const field = qs(selector);
+    if (field) field.value = "";
+  }
+  if (qs("#creditAmountPaidMethod")) qs("#creditAmountPaidMethod").value = "cash";
+}
+
 function renderCart() {
   // Runs before the totals are read, so a discount that no longer fits the
   // basket is gone by the time anything is displayed or charged. Re-enters
@@ -13614,7 +13640,9 @@ function cogsDrillRows(which, result) {
       .map((line) => ({
         when: line.at,
         what: line.supplier || t("cogs.drillNoSupplier"),
-        who: line.reference || "",
+        // Resolved here rather than in the statement: this is the renderer, so
+        // this is where a lookup against the deliveries the client holds goes.
+        who: purchaseReferenceLabel(line),
         amount: goodsSide ? line.goods : line.carriage
       }))
       .filter((row) => row.amount !== 0),
@@ -14288,6 +14316,32 @@ function supplierById(supplierId) {
 function purchaseSupplierLabel(purchase) {
   const linked = supplierById(purchase?.supplierId);
   return linked?.name || purchase?.supplierName || "";
+}
+
+// The paperwork reference for a purchase line: the supplier's invoice number,
+// the one a shop quotes when it queries a bill.
+//
+// RESOLVED, not denormalised. receiptNumber is written by the restock and
+// product-form paths and is the FISCAL receipt -- the one VAT is reclaimed
+// against. A delivery's "Invoice or reference" is a different thing and lands
+// on the delivery document, not on the purchase lines it creates, so the
+// drill-down's Reference column was blank for every delivery ever recorded.
+//
+// Read back through deliveryId rather than copied onto each line, for two
+// reasons. firestore.rules pins the purchase keys with hasOnly() and does not
+// admit `reference`, so writing it would need a rules change; and every
+// purchase ALREADY written would stay blank, which is most of them. This way
+// the deliveries recorded this week show their reference too.
+//
+// Falls back to blank when the delivery is outside the window the client
+// holds (ACCOUNTS_HISTORY_LIMIT) -- exactly what the column showed before, so
+// an old purchase is no worse off than it was.
+function purchaseReferenceLabel(purchase) {
+  if (purchase?.receiptNumber) return purchase.receiptNumber;
+  if (purchase?.reference) return purchase.reference;
+  if (!purchase?.deliveryId) return "";
+  const delivery = (state.deliveries || []).find((item) => item.id === purchase.deliveryId);
+  return delivery?.reference || "";
 }
 
 async function subscribeToTransfers() {
@@ -18670,12 +18724,12 @@ function computePeriodCogs({ fromMs, toMs, storeId, products, movements, costInd
     purchaseLines.push({
       at,
       supplier: purchase.supplierName || "",
-      // receiptNumber on the purchase line, `reference` on the delivery header
-      // that groups them -- firestore.rules allowlists the first and not the
-      // second, so reading only `reference` left this blank on every delivery
-      // that had one. Seen on the preview 2026-10-07 with OCT-001 entered and
-      // nothing shown.
+      // What the purchase itself knows. The invoice reference lives on the
+      // DELIVERY that created this line, so the id comes along and the drill
+      // resolves the name -- keeping this function pure, which is what lets
+      // cogs-period.test.mjs run the spec's worked example straight through it.
       reference: purchase.receiptNumber || purchase.reference || "",
+      deliveryId: purchase.deliveryId || "",
       goods: lineGoods,
       carriage: lineCarriage
     });
@@ -21698,10 +21752,13 @@ function bindEvents() {
   qs("#posSearch").addEventListener("input", debounce(renderPosProducts, 250));
   qs("#undoCartButton").addEventListener("click", undoLastCartAction);
   qs("#clearCartButton").addEventListener("click", () => {
-    if (!state.cart.length) return;
-    pushCartHistory();
-    state.cart = [];
-    clearDiscount();
+    // The guard is on the UNDO, not on the clear. A cashier who typed a
+    // customer name and then changed their mind before adding anything still
+    // has a name on the screen to get rid of, and pressing Clear Cart is how
+    // they would expect to do it; there is just nothing to push onto the undo
+    // stack in that case.
+    if (state.cart.length) pushCartHistory();
+    resetSaleEntry();
     renderCart();
   });
   qs("#applyDiscountButton")?.addEventListener("click", applyDiscount);
@@ -23127,17 +23184,11 @@ function bindEvents() {
     });
 
     // The sale landed, so the held auto-number has done its job. The next cart
-    // gets a fresh one.
+    // gets a fresh one. Said here as well as left to renderCart()'s empty-cart
+    // rule: that rule is the safety net for the paths a sale does NOT take,
+    // and this is the one path where releasing the number is the whole point.
     state.pendingAutoOrderNumber = "";
-    state.cart = [];
-    state.cartHistory = [];
-    clearDiscount();
-    if (qs("#cashTendered")) qs("#cashTendered").value = "";
-    if (qs("#posOrderNumber")) qs("#posOrderNumber").value = "";
-    if (qs("#posCustomerName")) qs("#posCustomerName").value = "";
-    if (qs("#posCustomerPhone")) qs("#posCustomerPhone").value = "";
-    if (qs("#creditAmountPaidInput")) qs("#creditAmountPaidInput").value = "";
-    if (qs("#creditAmountPaidMethod")) qs("#creditAmountPaidMethod").value = "cash";
+    resetSaleEntry();
       renderAll();
       // A services-only sale moves no stock, so saying "inventory updated"
       // describes something that did not happen. Small, but the till is where

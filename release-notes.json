@@ -2,6 +2,18 @@
   "_comment": "What changed in each release, in the words a shopkeeper would use. Unversioned on purpose: the running app fetches this by a stable URL to show what the INCOMING version brings, so a ?v= here would be a URL the old build cannot know. Newest first. tests/release-notes.test.mjs fails the build if the top entry does not match the stamp in app.html.",
   "releases": [
     {
+      "version": "20261012a",
+      "date": "2026-10-12",
+      "en": [
+        "Clearing the till now clears the customer name and phone with it. Before, the next customer could be served under the name of the one before them \u2014 and on credit the debt would have gone onto that person's account.",
+        "The invoice reference you type on a delivery now shows in the Cost of Goods Sold breakdown, against every line that delivery brought in. Deliveries you have already recorded show theirs too."
+      ],
+      "sw": [
+        "Kufuta kaunta sasa kunafuta jina la mteja na namba yake pia. Awali, mteja aliyefuata angeweza kuhudumiwa kwa jina la aliyemtangulia \u2014 na kwa mkopo deni lingeenda kwenye akaunti ya mtu huyo.",
+        "Namba ya ankara unayoandika kwenye mzigo sasa inaonekana kwenye mchanganuo wa Gharama ya Mauzo, kwa kila safu iliyoletwa na mzigo huo. Mizigo uliyokwisha kurekodi nayo inaonyesha zake."
+      ]
+    },
+    {
       "version": "20261010a",
       "date": "2026-10-10",
       "en": [
