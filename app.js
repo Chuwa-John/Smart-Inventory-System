@@ -11177,6 +11177,10 @@ async function receiveDelivery(input = {}) {
             // object it spreads -- so this is what every other product in the
             // catalogue already carries, not a new convention.
             id: line.productId,
+            // Without this the product cannot be transferred between branches:
+            // confirmTransfer() matches the destination copy on sku, and the
+            // query rejects outright when it is absent. See productSkuFor().
+            sku: productSkuFor(line.newProduct.name),
             name: line.newProduct.name,
             category: line.newProduct.category,
             brand: "",
@@ -11408,6 +11412,25 @@ function deliveryErrorMessage(result, lines) {
     }
     default: return t("deliveries.errTransactionFailed");
   }
+}
+
+// The SKU a product gets when nobody typed one. Shared, because it is NOT
+// cosmetic: confirmTransfer() finds the destination copy of a product with
+//
+//     where("storeId", "==", destination), where("sku", "==", product.sku)
+//
+// so a product with no sku cannot be transferred between branches at all. The
+// failure is silent -- the query rejects, the dialog stays open, and no toast
+// explains it -- which is how it reached the preview on 2026-10-28 unnoticed.
+//
+// Extracted from the #productForm submit handler, which has always generated
+// one. A delivery that creates a product has to generate the SAME shape, and
+// one expression in two places is exactly the drift that produced this bug's
+// twin (the missing `id` field) a day earlier.
+function productSkuFor(name) {
+  const slug = String(name || "ITEM").trim().toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 18) || "ITEM";
+  return `${slug}-${Date.now().toString().slice(-6)}`;
 }
 
 function productNameById(productId) {
@@ -23507,7 +23530,7 @@ function bindEvents() {
       product[field] = value;
     }
     product.category = String(product.category || "").trim();
-    product.sku = product.sku || `${String(product.name || "ITEM").trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 18) || "ITEM"}-${Date.now().toString().slice(-6)}`;
+    product.sku = product.sku || productSkuFor(product.name);
     product.barcode = product.barcode || "";
     product.description = product.description || "";
     product.warehouse = product.warehouse || "";

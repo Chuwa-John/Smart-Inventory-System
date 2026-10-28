@@ -378,6 +378,41 @@ group("the created product can afterwards be SOLD by its owner", () => {
     "...and spreads it into the document it writes, which is why every other product has the field");
 });
 
+group("the created product can afterwards be TRANSFERRED between branches", () => {
+  // THE SECOND DEFECT OF THE SAME FAMILY, found on the preview 2026-10-28 by
+  // transferring the product and watching nothing happen. confirmTransfer()
+  // locates the destination copy with
+  //
+  //     where("storeId", "==", destination), where("sku", "==", product.sku)
+  //
+  // and a product created without a sku cannot satisfy that query, so the
+  // transfer dies inside the handler: the dialog stays open, no toast appears,
+  // and the console stays clean. A pre-existing product transferred fine in the
+  // same session, which is what localised it.
+  const at = receive.indexOf("transaction.set(refs[i].product, {");
+  const payload = receive.slice(at, receive.indexOf("});", at));
+  ok(/\bsku: productSkuFor\(/.test(payload), "the payload generates a sku");
+
+  // Read the transfer query out of app.js rather than restating it: if the
+  // match ever moves to another field, this fails instead of the shop's
+  // branch transfer.
+  const transfer = extract("confirmTransfer");
+  const matched = [...transfer.matchAll(/where\("(\w+)",\s*"==",\s*product\.(\w+)\)/g)].map((m) => m[2]);
+  ok(matched.includes("sku"), `confirmTransfer() matches on product.sku (matches: ${matched.join(", ") || "none"})`);
+  for (const field of matched) {
+    ok(new RegExp(`\\b${field}\\s*[:,]`).test(payload),
+      `the payload carries ${field}, which confirmTransfer() queries the destination by`);
+  }
+
+  // One generator, two callers. Two copies of this expression is precisely the
+  // drift that produced the missing-id defect, so the form must use it too.
+  ok(/function productSkuFor\(/.test(src), "there is one shared sku generator");
+  const callers = (src.match(/productSkuFor\(/g) || []).length;
+  ok(callers >= 3, `it is called from both the form and the delivery (${callers} references incl. definition)`);
+  ok(!/sku = product\.sku \|\| `/.test(src),
+    "and the form no longer carries its own inline copy of the expression");
+});
+
 group("the stock ledger still explains the new units", () => {
   // Units on a shelf with nothing explaining them cannot be reconciled, and the
   // reason has to come from the closed allowlist the rules enforce.

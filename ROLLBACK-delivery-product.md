@@ -47,9 +47,9 @@ which is faster in an incident and needs no working checkout.
 that stamp has always meant, so no browser ends up holding one stamp for two
 different builds.
 
-**Two stamps are already burned and must never be reissued.** `20261027a` was
-deployed to the preview channel and then superseded; `20261028a` is the current
-build. If this work is fixed and re-shipped again it needs a new stamp.
+**Three stamps are already burned and must never be reissued.** `20261027a` and
+`20261028a` each carried a defective build to the preview channel and were
+superseded; `20261028b` is the current build. Any further fix needs a new stamp.
 
 ## What there is to undo, and what there is not
 
@@ -85,7 +85,7 @@ Adding a product in Inventory now prefills Quantity as `0` and explains that the
 box is opening stock. That is a form default and a note; there is nothing to
 undo beyond the code.
 
-## One defect this work already hit, and what it means for old records
+## Two defects this work already hit, and what they mean for old records
 
 Found on the preview on 2026-10-28, before any of this reached production.
 
@@ -106,3 +106,27 @@ and can be deleted by the owner, but the owner cannot sell or edit it. Only one
 such record exists -- "Sunlight Dishwash 400ml" on the test tenant -- because the
 broken build never left the preview channel. Deleting and re-receiving it is the
 remedy if one is ever found.
+
+### Second defect: no sku, so the product could not be transferred
+
+Found the same way, on 2026-10-28, by transferring the created product between
+branches and watching nothing happen -- no toast, no console error, the dialog
+simply staying open.
+
+`confirmTransfer()` locates the destination copy of a product with
+
+    where("storeId", "==", destination), where("sku", "==", product.sku)
+
+so a product with no `sku` cannot be transferred at all. The `#productForm`
+submit handler has always generated one; the delivery payload did not.
+
+Fixed by extracting `productSkuFor(name)` and calling it from BOTH places, so
+the two cannot drift -- which is the same drift that produced the missing-id
+defect, one expression copied in two places.
+
+**A product created by either broken build stays broken** in the corresponding
+way: no `id` means the owner cannot sell or edit it, no `sku` means it cannot be
+transferred between branches. Neither field is added retroactively. Only the
+test tenant holds such records ("Sunlight Dishwash 400ml" lacks both; "Blue Band
+Margarine 250g" has `id` but no `sku`), because neither broken build left the
+preview channel. Deleting and re-receiving is the remedy.
