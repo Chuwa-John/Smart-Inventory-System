@@ -37,13 +37,13 @@
          Must carry the SAME ?v= as the script tag below: a different query is a
          different cache key and would fetch the bundle twice.
          tests/deployment-validation.test.mjs fails if they drift apart. -->
-    <link rel="modulepreload" href="./app.js?v=20261012a" />
+    <link rel="modulepreload" href="./app.js?v=20261028a" />
     <!-- Preloaded, not merely referenced: the stylesheet has to be parsed
          before the browser discovers a font inside it, and on a 2G link that
          wait is visible as a flash of the fallback face. crossorigin is
          required even same-origin -- fonts are fetched in CORS mode. -->
-    <link rel="preload" href="./fonts/inter-latin.woff2?v=20261012a" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="./styles.css?v=20261012a" />
+    <link rel="preload" href="./fonts/inter-latin.woff2?v=20261028a" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="./styles.css?v=20261028a" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="theme-color" content="#f6f8fa" />
     <link rel="icon" href="./icons/favicon-64.png" sizes="64x64" />
@@ -63,7 +63,7 @@
          with no unsafe-inline, so an inline version is blocked and the notice
          never clears. Separate from app.js so it does not wait on a 360 KB
          download to decide. -->
-    <script type="module" src="./boot.js?v=20261012a"></script>
+    <script type="module" src="./boot.js?v=20261028a"></script>
 
     <!-- Shown when the app cannot run: JavaScript disabled, blocked by a
          data-saver proxy, or a browser too old for ES modules. Opera Mini's
@@ -1844,6 +1844,11 @@
           <label><span data-i18n="product.quantityLabel">Quantity</span>
             <input name="quantity" type="number" min="0" required max="1000000" />
             <span class="muted" id="productQuantityLockNote" hidden data-i18n="product.quantityLocked">Use Adjust on the inventory row to correct the shelf count, so the change is recorded with a reason.</span>
+            <!-- Shown only when ADDING. The box is opening stock, and nothing
+                 here used to say so: an owner whose goods were arriving on a
+                 delivery typed the arriving quantity, recorded the delivery,
+                 and the shelf then held twice what the shop had. -->
+            <span class="muted" id="productQuantityOpeningNote" hidden data-i18n="product.quantityOpeningHint">Stock you already have. If these goods are arriving on a delivery, leave this at 0 and record the delivery.</span>
           </label>
           <label><span data-i18n="product.priceLabel">Selling price (TZS)</span> <input name="sellingPrice" type="number" min="0" step="1" required max="1000000000" /></label>
           <!-- Spec 4.1. The unit is what a quantity MEANS -- 12 of something is
@@ -3000,6 +3005,6 @@
       </div>
     </div>
 
-    <script type="module" src="./app.js?v=20261012a"></script>
+    <script type="module" src="./app.js?v=20261028a"></script>
   </body>
 </html>

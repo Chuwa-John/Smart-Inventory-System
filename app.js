@@ -597,6 +597,7 @@ const DICTIONARY = {
     "reports.noSupplierBalances": "You do not owe any supplier right now.",
     "reports.noAdjustments": "No stock adjustments recorded.",
     "product.quantityLocked": "Use Adjust on the inventory row to correct the shelf count, so the change is recorded with a reason.",
+    "product.quantityOpeningHint": "Stock you already have. If these goods are arriving on a delivery, leave this at 0 and record the delivery.",
     "adjust.action": "Adjust", "adjust.title": "Adjust Stock",
     "adjust.currentLabel": "Currently on the shelf", "adjust.newLabel": "Counted / corrected to",
     "adjust.reasonLabel": "Why", "adjust.noteLabel": "Note (optional)",
@@ -976,6 +977,11 @@ const DICTIONARY = {
     "deliveries.lineQuantity": "Quantity",
     "deliveries.lineGoodsCost": "Total paid for these",
     "deliveries.linePickProduct": "Choose a product…",
+    "deliveries.lineNewProduct": "+ New product (not in stock yet)",
+    "deliveries.newProductHint": "This product will be created when you save the delivery. You can add the brand, barcode and reorder level later from Inventory.",
+    "deliveries.lineNewName": "New product name",
+    "deliveries.lineNewCategory": "Category (optional)",
+    "deliveries.lineNewPrice": "Selling price",
     "deliveries.goodsTotal": "Goods cost: {value}",
     "deliveries.costsTitle": "Additional costs",
     "deliveries.costsIntro": "What it cost to get the goods here and ready to sell. These are added to the value of the stock, not charged as an expense. They become cost of sales when the goods sell.",
@@ -1006,6 +1012,11 @@ const DICTIONARY = {
     "deliveries.errTooManyLines": "A delivery can carry at most {max} products. Record the rest as a second delivery.",
     "deliveries.errDuplicateProduct": "{name} is on this delivery twice. Put it on one line with the full quantity.",
     "deliveries.errMissingProduct": "Choose a product for every line.",
+    "deliveries.errMissingNewName": "Line {line}: type a name for the new product.",
+    "deliveries.errNewProductExists": "You already stock “{name}”. Choose it from the list instead of creating it again.",
+    "deliveries.errDuplicateNewName": "Two lines are both creating “{name}”. Put the whole quantity on one line.",
+    "deliveries.errBadNewCategory": "Line {line}: that category is too long.",
+    "deliveries.errBadNewPrice": "Line {line}: give the new product a selling price, so the till knows what to charge.",
     "deliveries.errBadQuantity": "Line {line}: enter how many units arrived, as a whole number.",
     "deliveries.errBadGoodsCost": "Line {line}: enter what you paid for those units.",
     "deliveries.errLineCostsNothing": "{name} would cost nothing at all. Give it a price, or spread the additional costs by quantity so it carries a share.",
@@ -2252,6 +2263,7 @@ const DICTIONARY = {
     "reports.noSupplierBalances": "Huna deni kwa msambazaji yeyote sasa.",
     "reports.noAdjustments": "Hakuna marekebisho ya hisa yaliyorekodiwa.",
     "product.quantityLocked": "Tumia Rekebisha kwenye safu ya bidhaa kusahihisha hesabu ya rafu, ili mabadiliko yarekodiwe na sababu.",
+    "product.quantityOpeningHint": "Hisa uliyonayo tayari. Kama bidhaa hizi zinakuja kwa usafirishaji, acha hapa 0 na urekodi usafirishaji.",
     "adjust.action": "Rekebisha", "adjust.title": "Rekebisha Hisa",
     "adjust.currentLabel": "Zilizopo rafuni sasa", "adjust.newLabel": "Zilizohesabiwa / sahihi ni",
     "adjust.reasonLabel": "Kwa nini", "adjust.noteLabel": "Maelezo (hiari)",
@@ -2629,6 +2641,11 @@ const DICTIONARY = {
     "deliveries.lineQuantity": "Idadi",
     "deliveries.lineGoodsCost": "Jumla uliyolipa kwa hizi",
     "deliveries.linePickProduct": "Chagua bidhaa…",
+    "deliveries.lineNewProduct": "+ Bidhaa mpya (haipo kwenye hisa)",
+    "deliveries.newProductHint": "Bidhaa hii itaundwa utakapohifadhi risiti ya bidhaa. Unaweza kuongeza chapa, barcode na kiwango cha kuagiza baadaye kwenye Hisa.",
+    "deliveries.lineNewName": "Jina la bidhaa mpya",
+    "deliveries.lineNewCategory": "Aina (si lazima)",
+    "deliveries.lineNewPrice": "Bei ya kuuza",
     "deliveries.goodsTotal": "Gharama ya bidhaa: {value}",
     "deliveries.costsTitle": "Gharama za ziada",
     "deliveries.costsIntro": "Gharama za kufikisha bidhaa hapa na kuziandaa kuuzwa. Hizi zinaongezwa kwenye thamani ya hisa, hazitozwi kama matumizi. Zinakuwa gharama ya mauzo bidhaa zinapouzwa.",
@@ -2659,6 +2676,11 @@ const DICTIONARY = {
     "deliveries.errTooManyLines": "Mzigo mmoja unaweza kubeba bidhaa {max} pekee. Rekodi zilizobaki kama mzigo wa pili.",
     "deliveries.errDuplicateProduct": "{name} imo kwenye mzigo huu mara mbili. Iweke kwenye safu moja na idadi kamili.",
     "deliveries.errMissingProduct": "Chagua bidhaa kwa kila safu.",
+    "deliveries.errMissingNewName": "Safu {line}: andika jina la bidhaa mpya.",
+    "deliveries.errNewProductExists": "Unauza “{name}” tayari. Ichague kwenye orodha badala ya kuiunda tena.",
+    "deliveries.errDuplicateNewName": "Safu mbili zinaunda “{name}”. Weka idadi yote kwenye safu moja.",
+    "deliveries.errBadNewCategory": "Safu {line}: aina hiyo ni ndefu kupita kiasi.",
+    "deliveries.errBadNewPrice": "Safu {line}: ipe bidhaa mpya bei ya kuuza, ili till ijue kiasi cha kutoza.",
     "deliveries.errBadQuantity": "Safu {line}: weka idadi ya vipande vilivyofika, kwa namba kamili.",
     "deliveries.errBadGoodsCost": "Safu {line}: weka ulicholipa kwa vipande hivyo.",
     "deliveries.errLineCostsNothing": "{name} isingegharimu chochote. Ipe bei, au gawanya gharama za ziada kwa idadi ili ibebe sehemu.",
@@ -10796,12 +10818,27 @@ const DELIVERY_TRANSACTION_TIMEOUT_MS = 45000;
 //
 // Returns { ok, error, errorIndex, header, lines }. `error` is a code, not a
 // sentence: the screen in phase 4 owns the wording.
-function prepareDelivery({ lines, costs, basis, manualAmounts } = {}) {
+function prepareDelivery({ lines, costs, basis, manualAmounts, existingNames } = {}) {
   const rows = Array.isArray(lines) ? lines : [];
   const fail = (error, errorIndex = -1) => ({ ok: false, error, errorIndex, header: null, lines: [] });
 
   if (!rows.length) return fail("noLines");
   if (rows.length > DELIVERY_MAX_LINES) return fail("tooManyLines");
+
+  // The catalogue this delivery is landing in, lowercased, so a product typed as
+  // NEW can be refused when the shop already stocks it. Passed in rather than
+  // read from state: this function is the one part of the delivery path that can
+  // be tested without a browser, and it stays that way.
+  //
+  // Store-scoped by the caller, deliberately. A product document names ONE
+  // branch, so the same item in two branches is two documents and refusing the
+  // second would make the feature unusable for a two-shop owner.
+  const existing = new Set(
+    (Array.isArray(existingNames) ? existingNames : [])
+      .map((name) => String(name || "").trim().toLowerCase())
+      .filter(Boolean)
+  );
+  const newNames = new Set();
 
   // Two lines for the same product would each read the same shelf, and the
   // second write would land on top of the first -- so one of the two deliveries
@@ -10814,6 +10851,29 @@ function prepareDelivery({ lines, costs, basis, manualAmounts } = {}) {
     if (!productId) return fail("missingProduct", i);
     if (seen.has(productId)) return fail("duplicateProduct", i);
     seen.add(productId);
+
+    // A line creating its own product. Checked HERE, with everything else the
+    // form can get wrong, so it is refused on the screen the shop is typing into
+    // rather than from inside the transaction -- where it would arrive as a bare
+    // permission error, because an invalid product document takes the WHOLE
+    // delivery down at the rules layer, stock and costs and all.
+    if (rows[i]?.isNew) {
+      const name = String(rows[i]?.newName || "").trim();
+      if (!name || name.length > 120) return fail("missingNewName", i);
+      const key = name.toLowerCase();
+      // Both directions. Creating a second "Cement" would leave the shop with
+      // two of everything to count, reconcile and price -- a worse problem than
+      // the double entry this whole path exists to remove.
+      if (existing.has(key)) return fail("newProductExists", i);
+      if (newNames.has(key)) return fail("duplicateNewName", i);
+      newNames.add(key);
+      if (String(rows[i]?.newCategory || "").trim().length > 60) return fail("badNewCategory", i);
+      // Required, not optional. A product in the catalogue with no selling price
+      // cannot be sold, so the shop would be sent straight back to Inventory to
+      // put one on -- which is the second entry, arriving one step later.
+      const sellingPrice = safeNumber(rows[i]?.newSellingPrice);
+      if (!(sellingPrice > 0) || sellingPrice > MAX_MONEY) return fail("badNewPrice", i);
+    }
 
     const quantity = safeNumber(rows[i]?.quantity);
     if (!(quantity > 0) || Math.floor(quantity) !== quantity || quantity > MAX_COUNT) {
@@ -10839,7 +10899,18 @@ function prepareDelivery({ lines, costs, basis, manualAmounts } = {}) {
     const totalPaid = goodsCost + landedCost;
     return {
       productId: String(line.productId),
-      productName: String(line.productName || "").slice(0, 120),
+      // newName is the fallback, not the first choice: the form fills productName
+      // in for new lines too, and a direct caller (every test) should not have to.
+      productName: String(line.productName || line.newName || "").trim().slice(0, 120),
+      // Present ONLY on a line that creates its product, and the only thing that
+      // tells receiveDelivery() to write a document instead of expecting one.
+      ...(line.isNew ? {
+        newProduct: {
+          name: String(line.newName || "").trim().slice(0, 120),
+          category: String(line.newCategory || "").trim().slice(0, 60),
+          sellingPrice: safeNumber(line.newSellingPrice)
+        }
+      } : {}),
       quantity,
       goodsCost,
       landedCost,
@@ -10992,14 +11063,21 @@ async function receiveDelivery(input = {}) {
       // Every existence check before any write, so a delivery naming a product
       // that has since been deleted refuses whole rather than half-applying.
       for (let i = 0; i < productSnaps.length; i++) {
-        if (!productSnaps[i].exists()) {
-          throw new Error(t("txerror.itemGone", { name: prep.lines[i].productName }));
-        }
+        if (productSnaps[i].exists()) continue;
+        // A line the shop typed as a NEW product has no document yet -- that is
+        // the point of it, and the id it carries was minted on the form. Every
+        // other missing product still takes the whole delivery down.
+        if (prep.lines[i].newProduct) continue;
+        throw new Error(t("txerror.itemGone", { name: prep.lines[i].productName }));
       }
 
       for (let i = 0; i < prep.lines.length; i++) {
         const line = prep.lines[i];
-        const before = productSnaps[i].data();
+        // A new product has no snapshot to read. Its shelf holds nothing, which
+        // is what safeNumber() makes of the absent quantity -- so the weighted
+        // average below starts from an empty shelf rather than being special-cased.
+        const existed = productSnaps[i].exists();
+        const before = existed ? productSnaps[i].data() : {};
         const currentQuantity = safeNumber(before.quantity);
         const existingCost = costSnaps[i].exists() ? costSnaps[i].data() : null;
 
@@ -11056,15 +11134,62 @@ async function receiveDelivery(input = {}) {
           recordedByUid: state.user?.uid || null,
           createdAt: serverTimestamp()
         });
-        transaction.update(refs[i].product, {
-          quantity: currentQuantity + line.quantity,
-          updatedAt: serverTimestamp(),
-          // The existing reason, deliberately. A delivery line IS a restock, and
-          // validStockMovementUpdate()'s closed reason list already carries it --
-          // inventing a "delivery" reason would be a rules change on the one
-          // allowlist DESIGN-purchases.md 9 calls the trap.
-          movementReason: "restock"
-        });
+        if (existed) {
+          transaction.update(refs[i].product, {
+            quantity: currentQuantity + line.quantity,
+            updatedAt: serverTimestamp(),
+            // The existing reason, deliberately. A delivery line IS a restock, and
+            // validStockMovementUpdate()'s closed reason list already carries it --
+            // inventing a "delivery" reason would be a rules change on the one
+            // allowlist DESIGN-purchases.md 9 calls the trap.
+            movementReason: "restock"
+          });
+        } else {
+          // THE DELIVERY IS THE ONLY ENTRY. A shop taking delivery of something
+          // it has never stocked before had to type it into Inventory first and
+          // then type the delivery -- the double entry a client complained about.
+          // set(), not update(), because there is nothing there yet.
+          //
+          // Every field validProduct() REQUIRES and nothing it refuses, because
+          // an invalid product document does not fail by itself: it fails the
+          // whole transaction, and the shop loses the stock and the costs too.
+          //   - category, brand and supplier must be PRESENT strings even when
+          //     empty; absent fails `d.brand is string`.
+          //   - costPrice and costKnownFrom are refused outright (stage 2). The
+          //     cost of these goods went to /productCosts a few lines above,
+          //     which is the only place it is allowed to live.
+          //   - supplier is sliced to 60, not the 80 the delivery header allows.
+          //     A longer supplier name would take the delivery down at the rules
+          //     layer, and the name on the HEADER is unaffected either way.
+          transaction.set(refs[i].product, {
+            // The id is a FIELD as well as the document path, because
+            // productImmutableFieldsUnchanged() compares
+            // request.resource.data.id against resource.data.id on every owner
+            // update. A product without it cannot be read by that comparison,
+            // so the rule fails and the OWNER can never sell or edit it --
+            // while a cashier still can, because memberMayUpdateProduct() does
+            // not call it. That is the exact "the owner cannot sell but the
+            // till can" split DESIGN-purchases.md and the stage-2 note in
+            // firestore.rules both warn about, and it is invisible until
+            // someone tries to sell the thing.
+            //
+            // saveProduct() has always written it -- product.id is inside the
+            // object it spreads -- so this is what every other product in the
+            // catalogue already carries, not a new convention.
+            id: line.productId,
+            name: line.newProduct.name,
+            category: line.newProduct.category,
+            brand: "",
+            supplier: String(input.supplierName || "").trim().slice(0, 60),
+            quantity: line.quantity,
+            storeId,
+            sellingPrice: line.newProduct.sellingPrice,
+            active: true,
+            movementReason: "restock",
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+        }
         // The fifth write a line pays for, and the one the DELIVERY_MAX_LINES
         // arithmetic forgot in phase 2. Without it the stock ledger cannot
         // reconcile -- units would appear on a shelf with nothing explaining them.
@@ -11239,14 +11364,24 @@ async function deleteDelivery(deliveryId) {
 // failure rather than printing a key.
 function deliveryErrorMessage(result, lines) {
   const index = Number.isInteger(result?.errorIndex) ? result.errorIndex : -1;
+  // productName first. A line creating its own product is not in state.products
+  // yet, so productNameById() would come up empty and every message naming the
+  // product would read "pick a product" instead of the name just typed.
   const named = index >= 0 && lines?.[index]
-    ? (productNameById(lines[index].productId) || t("deliveries.linePickProduct"))
+    ? (String(lines[index].productName || "").trim()
+       || productNameById(lines[index].productId)
+       || t("deliveries.linePickProduct"))
     : "";
   switch (result?.error) {
     case "noLines": return t("deliveries.errNoLines");
     case "tooManyLines": return t("deliveries.errTooManyLines", { max: String(DELIVERY_MAX_LINES) });
     case "duplicateProduct": return t("deliveries.errDuplicateProduct", { name: named });
     case "missingProduct": return t("deliveries.errMissingProduct");
+    case "missingNewName": return t("deliveries.errMissingNewName", { line: String(index + 1) });
+    case "newProductExists": return t("deliveries.errNewProductExists", { name: named });
+    case "duplicateNewName": return t("deliveries.errDuplicateNewName", { name: named });
+    case "badNewCategory": return t("deliveries.errBadNewCategory", { line: String(index + 1) });
+    case "badNewPrice": return t("deliveries.errBadNewPrice", { line: String(index + 1) });
     case "badQuantity": return t("deliveries.errBadQuantity", { line: String(index + 1) });
     case "badGoodsCost": return t("deliveries.errBadGoodsCost", { line: String(index + 1) });
     case "lineCostsNothing": return t("deliveries.errLineCostsNothing", { name: named });
@@ -11279,11 +11414,38 @@ function productNameById(productId) {
   return state.products.find((item) => item.id === productId)?.name || "";
 }
 
+// The value the product picker carries for "+ New product". Not a product id and
+// never written anywhere: the handler swaps it for a real minted id the moment it
+// is chosen, so every layer below the form sees an ordinary line.
+const DELIVERY_NEW_PRODUCT = "__new";
+
+// One line shape in one place. A line can now carry a product that does not
+// exist yet, and three call sites used to spell the empty line out by hand --
+// so a field added here would have been missing from two of them.
+function emptyDeliveryLine() {
+  return {
+    productId: "", quantity: "", goodsCost: "", manual: "",
+    isNew: false, newName: "", newCategory: "", newSellingPrice: ""
+  };
+}
+
+// Minted on the FORM, not in the transaction. Product ids are client-generated
+// everywhere in this app (saveProduct does the same), and minting it here is what
+// lets a brand-new product travel through prepareDelivery() as an ordinary line:
+// the duplicate check, the allocation and the cost arithmetic never learn that
+// the document does not exist yet. The alternative -- a sentinel that survives
+// into the write path -- would have put a branch in every one of them.
+function newDeliveryProductId() {
+  return typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `p-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function emptyDeliveryDraft() {
   const costs = {};
   for (const type of DELIVERY_COST_TYPES) costs[type] = "";
   return {
-    lines: [{ productId: "", quantity: "", goodsCost: "", manual: "" }],
+    lines: [emptyDeliveryLine()],
     costs,
     basis: "value"
   };
@@ -11731,7 +11893,10 @@ function approveDeliveryRequest(requestId) {
   if (!dialog?.open) return;
   state.approvingDeliveryRequestId = requestId;
   const lines = (request.lines || []).slice(0, DELIVERY_MAX_LINES)
-    .map((line) => ({ productId: String(line.productId || ""), quantity: safeNumber(line.qty), goodsCost: "", manual: "" }));
+    // Spread from emptyDeliveryLine() so the approver's rows carry the same
+    // fields every other row has. A cashier's request can only name products
+    // that already exist, so none of them is ever a new-product line.
+    .map((line) => ({ ...emptyDeliveryLine(), productId: String(line.productId || ""), quantity: safeNumber(line.qty) }));
   if (lines.length) state.deliveryDraft.lines = lines;
   const form = qs("#deliveryForm");
   if (form) {
@@ -11853,10 +12018,26 @@ function deliveryDraftLines() {
   // what the shop typed.
   return state.deliveryDraft.lines.map((line) => ({
     productId: line.productId,
-    productName: productNameById(line.productId),
+    // A new product is not in state.products yet, so productNameById() has
+    // nothing to find. Without this the purchase line, the preview row and every
+    // error message naming the product would all come out blank.
+    productName: line.isNew
+      ? String(line.newName || "").trim()
+      : productNameById(line.productId),
     quantity: safeNumber(line.quantity),
-    goodsCost: safeNumber(line.goodsCost)
+    goodsCost: safeNumber(line.goodsCost),
+    isNew: Boolean(line.isNew),
+    newName: line.newName,
+    newCategory: line.newCategory,
+    newSellingPrice: line.newSellingPrice
   }));
+}
+
+// What prepareDelivery() checks a new product's name against. Current store only
+// -- a product document names one branch, so the same item in two branches is
+// legitimately two documents.
+function deliveryExistingNames() {
+  return storeProducts().map((product) => String(product.name || ""));
 }
 
 function renderDeliveryLines() {
@@ -11870,9 +12051,35 @@ function renderDeliveryLines() {
   container.innerHTML = state.deliveryDraft.lines.map((line, index) => {
     const options = [`<option value="">${t("deliveries.linePickProduct")}</option>`]
       .concat(products.map((product) =>
-        `<option value="${esc(product.id)}"${product.id === line.productId ? " selected" : ""}>${esc(product.name)}</option>`))
+        `<option value="${esc(product.id)}"${!line.isNew && product.id === line.productId ? " selected" : ""}>${esc(product.name)}</option>`))
+      // Last, not first. A shop that stocks the thing should land on it in the
+      // list; creating one is the exception, and an exception at the top of a
+      // long list is the one people hit by accident.
+      .concat([`<option value="${DELIVERY_NEW_PRODUCT}"${line.isNew ? " selected" : ""}>${t("deliveries.lineNewProduct")}</option>`])
       .join("");
-    return `<div class="delivery-line${manual ? " has-manual" : ""}" data-line="${index}">
+    // The three fields a product needs to exist and be sellable. Not the whole
+    // product form -- brand, barcode, shelf and the rest can be filled in later
+    // from Inventory, but a name and a price cannot: one is the document's
+    // identity and the other is what the till would otherwise charge, which is
+    // nothing.
+    const newFields = line.isNew ? `<div class="delivery-line-new">
+      <p class="delivery-line-new-hint">${t("deliveries.newProductHint")}</p>
+      <div class="delivery-line-new-fields">
+        <label><span>${t("deliveries.lineNewName")}</span>
+          <input data-field="newName" type="text" maxlength="120" autocomplete="off"
+                 value="${esc(line.newName)}" />
+        </label>
+        <label><span>${t("deliveries.lineNewCategory")}</span>
+          <input data-field="newCategory" type="text" maxlength="60" autocomplete="off"
+                 list="categorySuggestions" value="${esc(line.newCategory)}" />
+        </label>
+        <label><span>${t("deliveries.lineNewPrice")}</span>
+          <input data-field="newSellingPrice" type="number" min="0" step="1" inputmode="decimal"
+                 value="${esc(line.newSellingPrice)}" autocomplete="off" />
+        </label>
+      </div>
+    </div>` : "";
+    return `<div class="delivery-line${manual ? " has-manual" : ""}${line.isNew ? " is-new" : ""}" data-line="${index}">
       <label><span>${t("deliveries.lineProduct")}</span>
         <select data-field="productId">${options}</select>
       </label>
@@ -11890,6 +12097,7 @@ function renderDeliveryLines() {
       </label>` : ""}
       <button class="icon-button line-remove" type="button" data-remove-line="${index}"
               aria-label="${t("deliveries.removeLine")}">&times;</button>
+      ${newFields}
     </div>`;
   }).join("");
 }
@@ -11942,7 +12150,8 @@ function renderDeliveryPreview() {
     basis: state.deliveryDraft.basis,
     manualAmounts: state.deliveryDraft.basis === "manual"
       ? state.deliveryDraft.lines.map((line) => safeNumber(line.manual))
-      : undefined
+      : undefined,
+    existingNames: deliveryExistingNames()
   });
 
   if (!prep.ok) {
@@ -12071,7 +12280,10 @@ async function submitDelivery() {
       basis: state.deliveryDraft.basis,
       manualAmounts: state.deliveryDraft.basis === "manual"
         ? state.deliveryDraft.lines.map((line) => safeNumber(line.manual))
-        : undefined
+        : undefined,
+      // The same catalogue the preview checked against. Omitting it here would
+      // let a duplicate name through on submit that the screen had refused.
+      existingNames: deliveryExistingNames()
     });
 
     if (!result.ok) {
@@ -12079,6 +12291,11 @@ async function submitDelivery() {
       return;
     }
 
+    // DELIBERATELY without existingNames. This runs AFTER the delivery landed,
+    // only to recount the header for the toast -- and by now the listener may
+    // have delivered the product this delivery just created, so checking the
+    // name against the catalogue would refuse it as a duplicate of itself and
+    // the shop would be told it received 0 lines worth TZS 0.
     const prep = prepareDelivery({
       lines: deliveryDraftLines(), costs: state.deliveryDraft.costs,
       basis: state.deliveryDraft.basis,
@@ -15273,9 +15490,23 @@ function openProductDialog(product = null) {
   // opening stock and there is no ledger to derive it from yet.
   const quantityInput = form.elements.quantity;
   const lockNote = qs("#productQuantityLockNote");
+  const openingNote = qs("#productQuantityOpeningNote");
   if (quantityInput) {
     quantityInput.readOnly = Boolean(product);
     if (lockNote) lockNote.hidden = !product;
+    // Prefilled with 0 on a new product, and said out loud.
+    //
+    // form.reset() left it empty and the field is required, so the owner had to
+    // type SOMETHING, and the obvious something is the quantity of the goods in
+    // front of them. Those goods are usually arriving on a delivery, which adds
+    // the same units again -- the shelf then holds twice what the shop has, and
+    // every figure built on it is wrong from the first hour.
+    //
+    // Zero is also the right default on its own terms: this box is opening
+    // stock, and a product being created because a delivery is on its way has
+    // none yet.
+    if (!product) quantityInput.value = "0";
+    if (openingNote) openingNote.hidden = Boolean(product);
   }
   renderProductCostFields(Boolean(product));
   qs("#productDialog").showModal();
@@ -22099,7 +22330,7 @@ function bindEvents() {
       if (slot) slot.textContent = t("deliveries.errTooManyLines", { max: String(DELIVERY_MAX_LINES) });
       return;
     }
-    state.deliveryDraft.lines.push({ productId: "", quantity: "", goodsCost: "", manual: "" });
+    state.deliveryDraft.lines.push(emptyDeliveryLine());
     renderDeliveryDialog();
   });
   // Delegated, and on `input` rather than `change`: the preview is the point of
@@ -22112,8 +22343,37 @@ function bindEvents() {
     const row = event.target.closest("[data-line]");
     const field = event.target.dataset.field;
     if (!row || !field) return;
-    const line = state.deliveryDraft.lines[Number(row.dataset.line)];
+    const index = Number(row.dataset.line);
+    const line = state.deliveryDraft.lines[index];
     if (!line) return;
+    // Choosing a product is the one field that can change the SHAPE of the row,
+    // so it re-renders the dialog rather than just the preview. Safe here and
+    // nowhere else: a select is not a text input, so there is no caret to lose.
+    if (field === "productId") {
+      const picked = event.target.value;
+      if (picked === DELIVERY_NEW_PRODUCT) {
+        line.isNew = true;
+        // Minted now, so the line carries a real id from this moment on. Reusing
+        // the sentinel as the id would put it in the duplicate check, in the
+        // document path, and eventually in Firestore.
+        line.productId = newDeliveryProductId();
+        renderDeliveryDialog();
+        qs(`#deliveryLines [data-line="${index}"] [data-field="newName"]`)?.focus();
+        return;
+      }
+      if (line.isNew) {
+        // Backing out. The minted id goes with the typing it belonged to --
+        // keeping it would leave a real product id attached to a line now
+        // pointing at a different product.
+        line.isNew = false;
+        line.newName = "";
+        line.newCategory = "";
+        line.newSellingPrice = "";
+        line.productId = picked;
+        renderDeliveryDialog();
+        return;
+      }
+    }
     line[field] = event.target.value;
     // The preview only, not the whole dialog: re-rendering the rows mid-keystroke
     // would rebuild the input the caret is sitting in and lose the caret with it.
@@ -22126,7 +22386,7 @@ function bindEvents() {
     // way back to a row, and "add a product" is a worse first instruction than
     // an empty line already waiting.
     if (state.deliveryDraft.lines.length <= 1) {
-      state.deliveryDraft.lines = [{ productId: "", quantity: "", goodsCost: "", manual: "" }];
+      state.deliveryDraft.lines = [emptyDeliveryLine()];
     } else {
       state.deliveryDraft.lines.splice(Number(remove.dataset.removeLine), 1);
     }

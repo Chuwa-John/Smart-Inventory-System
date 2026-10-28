@@ -26,7 +26,7 @@
   font-weight: 400 700;
   font-style: normal;
   font-display: swap;
-  src: url("./fonts/inter-latin.woff2?v=20261012a") format("woff2");
+  src: url("./fonts/inter-latin.woff2?v=20261028a") format("woff2");
 }
 
 :root {
@@ -2460,6 +2460,42 @@ dialog.wide-dialog {
 .delivery-line .line-remove {
   /* Aligns with the inputs rather than their labels. */
   margin-bottom: 2px;
+}
+
+/* The new-product fields are the LAST child of the row and span every column, so
+   they fall onto a second grid row underneath Product / Quantity / Total paid
+   rather than pushing those three sideways out of alignment. */
+.delivery-line-new {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-soft);
+}
+
+.delivery-line-new-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.delivery-line-new-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: end;
+}
+
+.delivery-line-new-fields label {
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .delivery-line-new-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {

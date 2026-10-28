@@ -2,6 +2,20 @@
   "_comment": "What changed in each release, in the words a shopkeeper would use. Unversioned on purpose: the running app fetches this by a stable URL to show what the INCOMING version brings, so a ?v= here would be a URL the old build cannot know. Newest first. tests/release-notes.test.mjs fails the build if the top entry does not match the stamp in app.html.",
   "releases": [
     {
+      "version": "20261028a",
+      "date": "2026-10-28",
+      "en": [
+        "You can now add a brand-new product straight from Receive Stock. Pick \u201c+ New product\u201d on a line, type the name and the selling price, and the product is created when you save the delivery \u2014 no need to enter it in Inventory first and then enter the delivery.",
+        "If you already stock something by that name, Receive Stock says so and points you at it, so you do not end up with two of the same product to count and price.",
+        "Adding a product in Inventory now starts the quantity at 0, with a note that stock arriving on a delivery should be left at 0 and recorded as a delivery. Before, a blank box invited a count that the delivery would then add to all over again."
+      ],
+      "sw": [
+        "Sasa unaweza kuongeza bidhaa mpya moja kwa moja kutoka Pokea Mzigo. Chagua \u201c+ Bidhaa mpya\u201d kwenye safu, andika jina na bei ya kuuza, na bidhaa inaundwa unapohifadhi mzigo \u2014 hakuna tena kuiandika kwenye Hisa kwanza na kisha kuandika mzigo.",
+        "Ikiwa unauza kitu kwa jina hilo tayari, Pokea Mzigo kinakwambia na kinakuelekeza kwake, ili usibaki na bidhaa mbili zinazofanana kuzihesabu na kuzipanga bei.",
+        "Kuongeza bidhaa kwenye Hisa sasa huanza idadi kwa 0, na dokezo kwamba hisa inayokuja kwa mzigo iachwe 0 na irekodiwe kama mzigo. Awali, kisanduku kitupu kilihamasisha kuhesabu ambako mzigo ungeongeza tena."
+      ]
+    },
+    {
       "version": "20261012a",
       "date": "2026-10-12",
       "en": [
