@@ -14,7 +14,7 @@
 // cannot. A confidently wrong COGS is worse than no COGS: it goes into a P&L.
 import { readFileSync } from "node:fs";
 
-const src = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+const src = readFileSync(new URL("../app.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 // Deliberately not the extract() in control-panel-math.test.mjs. That one
 // counts braces from the first "{" after the name, which for a function taking

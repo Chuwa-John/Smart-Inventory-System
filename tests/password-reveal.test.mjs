@@ -18,7 +18,7 @@
 //      one this solves.
 import { readFileSync } from "node:fs";
 
-const app = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+const app = readFileSync(new URL("../app.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const invite = readFileSync(new URL("../accept-invite.js", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const appHtml = readFileSync(new URL("../app.html", import.meta.url), "utf8");

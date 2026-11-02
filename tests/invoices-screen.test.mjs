@@ -20,7 +20,7 @@
 import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../app.html", import.meta.url), "utf8");
-const src = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+const src = readFileSync(new URL("../app.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const rules = readFileSync(new URL("../firestore.rules", import.meta.url), "utf8");
 const indexes = JSON.parse(readFileSync(new URL("../firestore.indexes.json", import.meta.url), "utf8"));
 

@@ -18,7 +18,7 @@
 import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../app.html", import.meta.url), "utf8");
-const src = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+const src = readFileSync(new URL("../app.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 const results = [];
 function check(name, pass, detail = "") {
