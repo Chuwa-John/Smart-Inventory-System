@@ -2,6 +2,16 @@
   "_comment": "What changed in each release, in the words a shopkeeper would use. Unversioned on purpose: the running app fetches this by a stable URL to show what the INCOMING version brings, so a ?v= here would be a URL the old build cannot know. Newest first. tests/release-notes.test.mjs fails the build if the top entry does not match the stamp in app.html.",
   "releases": [
     {
+      "version": "20261102a",
+      "date": "2026-11-02",
+      "en": [
+        "When you add a product that already has stock on the shelf, that opening count is now written into the stock record. Before, such a product showed no stock history until the next time it moved, so the shelf could not be checked against anything. Stock arriving on a delivery was already recorded this way \u2014 now both routes match."
+      ],
+      "sw": [
+        "Unapoongeza bidhaa ambayo tayari ina hisa rafuni, idadi hiyo ya kuanzia sasa inaandikwa kwenye kumbukumbu ya hisa. Awali, bidhaa kama hiyo haikuwa na historia ya hisa hadi itakapohamishwa tena, hivyo rafu haikuweza kulinganishwa na kitu chochote. Hisa inayokuja kwa mzigo ilikuwa tayari inarekodiwa hivi \u2014 sasa njia zote mbili zinalingana."
+      ]
+    },
+    {
       "version": "20261028b",
       "date": "2026-10-28",
       "en": [
