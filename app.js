@@ -15804,45 +15804,6 @@ async function saveProduct(product, costCapture = null) {
         } catch (ledgerError) {
           console.warn("Could not record stock correction in the ledger.", ledgerError);
         }
-      } else if (!existing && safeNumber(product.quantity) > 0) {
-        // OPENING STOCK, and the asymmetry it closes.
-        //
-        // reconcileProductStock() anchors a shelf against the newest ledger
-        // entry's quantityAfter, and a product with no entry at all is
-        // "unknown" -- correctly never a discrepancy, but also never verified.
-        // So a product entered WITH stock used to sit unverified until it next
-        // moved, while the same product arriving on a delivery was verified
-        // immediately, because receiveDelivery() records a restock from an
-        // empty shelf. Two ways onto a shelf should not produce two different
-        // reconciliation verdicts.
-        //
-        // reason: "adjustment" because that is what firestore.rules allows --
-        // "opening" is NOT in the allowlist, so it rides alongside as
-        // adjustmentReason, exactly as the Adjust dialog already writes it.
-        // quantityBefore is 0 because the shelf genuinely held nothing: this
-        // product did not exist a moment ago.
-        //
-        // Only on CREATE, and only above zero. A product created at 0 has no
-        // units to explain, which since the delivery-creates-product work is
-        // the common case -- the form now opens at 0 and tells the shop to
-        // record arriving goods as a delivery instead.
-        //
-        // Non-fatal by design, like the correction branch above. This is a
-        // second non-transactional write and there is nothing to race against
-        // -- the product did not exist to have a shelf -- so if it fails the
-        // product still saved and reconciliation reads "unknown", which is
-        // exactly the behaviour that shipped before this. Never a half-state.
-        try {
-          recordStockMovement({ set: setDoc }, {
-            productId: product.id, productName: product.name,
-            storeId: product.storeId, reason: "adjustment",
-            adjustmentReason: "opening",
-            delta: safeNumber(product.quantity),
-            quantityBefore: 0
-          });
-        } catch (ledgerError) {
-          console.warn("Could not record opening stock in the ledger.", ledgerError);
-        }
       }
       try {
         const auditRef = doc(collection(state.db, "users", state.businessOwnerUid, "auditLogs"));
